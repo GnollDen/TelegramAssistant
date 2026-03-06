@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <!-- Userbot (MTProto) for listening to chats -->
-    <PackageReference Include="WTelegramClient" Version="4.2.3" />
+    <PackageReference Include="WTelegramClient" Version="4.4.2" />
     
     <!-- Bot API for interaction with owner -->
     <PackageReference Include="Telegram.Bot" Version="22.3.0" />

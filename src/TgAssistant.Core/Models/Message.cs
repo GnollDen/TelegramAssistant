@@ -11,6 +11,7 @@ public class Message
     public long SenderId { get; set; }
     public string SenderName { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
+    public string? ForwardJson { get; set; }
     
     // Content
     public string? Text { get; set; }

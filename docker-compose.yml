@@ -69,6 +69,7 @@ services:
       Telegram__MonitoredChatIds__0: "885574984"
       Telegram__MonitoredChatIds__1: "5276431471"
       Telegram__MonitoredChatIds__2: "3719942125"
+      Telegram__MonitoredChatIds__3: "5215542170"
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data

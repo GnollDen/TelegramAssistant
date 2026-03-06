@@ -49,6 +49,8 @@ public class RawTelegramMessage
     public long? ReplyToMessageId { get; set; }
     public DateTime? EditTimestamp { get; set; }
     public string? ReactionsJson { get; set; }
+    public string? ForwardJson { get; set; }
+
 }
 
 public class MediaProcessingResult
