@@ -66,6 +66,9 @@ services:
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
       Media__StoragePath: /data/media
+      Telegram__MonitoredChatIds__0: "885574984"
+      Telegram__MonitoredChatIds__1: "5276431471"
+      Telegram__MonitoredChatIds__2: "3719942125"
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data

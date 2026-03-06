@@ -4,6 +4,7 @@ using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Redis;
+using TgAssistant.Processing.Media;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
 
@@ -23,7 +24,7 @@ try
         {
             var config = context.Configuration;
 
-            // === Configuration ===
+            // Configuration
             services.Configure<TelegramSettings>(config.GetSection(TelegramSettings.Section));
             services.Configure<RedisSettings>(config.GetSection(RedisSettings.Section));
             services.Configure<DatabaseSettings>(config.GetSection(DatabaseSettings.Section));
@@ -32,7 +33,7 @@ try
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
 
-            // === Redis ===
+            // Redis
             services.AddSingleton<IConnectionMultiplexer>(_ =>
                 ConnectionMultiplexer.Connect(
                     config.GetSection(RedisSettings.Section)
@@ -40,24 +41,20 @@ try
             services.AddSingleton<RedisMessageQueue>();
             services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
 
-            // === Database ===
+            // Database
             services.AddSingleton<DatabaseInitializer>();
             services.AddSingleton<IMessageRepository, MessageRepository>();
-            // TODO: Add EntityRepository, FactRepository, etc.
 
-            // === Media Processing ===
-            services.AddHttpClient();
-            // TODO: services.AddSingleton<IMediaProcessor, GeminiMediaProcessor>();
+            // Media Processing (stub for now)
+            services.AddSingleton<IMediaProcessor, StubMediaProcessor>();
 
-            // === Hosted Services ===
+            // Hosted Services
             services.AddHostedService<TelegramListenerService>();
-            // TODO: Uncomment when media processor is ready
-            // services.AddHostedService<BatchWorkerService>();
+            services.AddHostedService<BatchWorkerService>();
         });
 
     var host = builder.Build();
 
-    // Initialize infrastructure
     using (var scope = host.Services.CreateScope())
     {
         var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
