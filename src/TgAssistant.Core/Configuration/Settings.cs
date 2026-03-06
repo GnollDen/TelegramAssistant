@@ -9,6 +9,7 @@ public class TelegramSettings
     public string BotToken { get; set; } = string.Empty;
     public long OwnerUserId { get; set; }
     public List<long> MonitoredChatIds { get; set; } = new();
+    public string MonitoredChats { get; set; } = string.Empty;
 }
 
 public class RedisSettings

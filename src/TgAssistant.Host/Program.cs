@@ -31,6 +31,16 @@ try
             services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
+            services.PostConfigure<TelegramSettings>(s =>
+            {
+                if (!string.IsNullOrEmpty(s.MonitoredChats) && s.MonitoredChatIds.Count == 0)
+                {
+                    s.MonitoredChatIds = s.MonitoredChats
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(id => long.Parse(id.Trim()))
+                        .ToList();
+                }
+            });
 
             services.AddSingleton<IConnectionMultiplexer>(_ =>
                 ConnectionMultiplexer.Connect(
