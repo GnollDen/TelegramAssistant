@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>TgAssistant.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TgAssistant.Core\TgAssistant.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PostgreSQL -->
+    <PackageReference Include="Npgsql" Version="8.0.6" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    
+    <!-- Redis -->
+    <PackageReference Include="StackExchange.Redis" Version="2.8.22" />
+    
+    <!-- Configuration -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+</Project>

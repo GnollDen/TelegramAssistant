@@ -1,0 +1,24 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.vs/
+.idea/
+
+## Secrets - NEVER commit
+.env
+appsettings.Development.json
+appsettings.Production.json
+data/telegram.session
+
+## Logs
+logs/
+
+## Media storage
+/data/media/
+
+## OS
+.DS_Store
+Thumbs.db
