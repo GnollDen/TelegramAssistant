@@ -50,6 +50,7 @@ public class DatabaseInitializer
             reply_to_message_id BIGINT,
             edit_timestamp TIMESTAMPTZ,
             reactions_json TEXT,
+            forward_json TEXT,
             source SMALLINT NOT NULL DEFAULT 0,
             processing_status SMALLINT NOT NULL DEFAULT 0,
             processed_at TIMESTAMPTZ,

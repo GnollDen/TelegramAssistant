@@ -145,6 +145,7 @@ public class BatchWorkerService : BackgroundService
                 ReplyToMessageId = raw.ReplyToMessageId,
                 EditTimestamp = raw.EditTimestamp,
                 ReactionsJson = raw.ReactionsJson,
+                ForwardJson = raw.ForwardJson,
                 Source = MessageSource.Realtime,
                 ProcessingStatus = ProcessingStatus.Processed,
                 ProcessedAt = DateTime.UtcNow

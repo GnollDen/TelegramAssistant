@@ -34,12 +34,12 @@ public class MessageRepository : IMessageRepository
                 INSERT INTO messages (
                     telegram_message_id, chat_id, sender_id, sender_name, timestamp,
                     text, media_type, media_path, media_transcription, media_description,
-                    reply_to_message_id, edit_timestamp, reactions_json,
-                    source, processing_status, processed_at
+                    reply_to_message_id, edit_timestamp, reactions_json, forward_json,
+                    source, processing_status, processed_at, 
                 ) VALUES (
                     @TelegramMessageId, @ChatId, @SenderId, @SenderName, @Timestamp,
                     @Text, @MediaType, @MediaPath, @MediaTranscription, @MediaDescription,
-                    @ReplyToMessageId, @EditTimestamp, @ReactionsJson,
+                    @ReplyToMessageId, @EditTimestamp, @ReactionsJson, @ForwardJson,
                     @Source, @ProcessingStatus, @ProcessedAt
                 ) ON CONFLICT DO NOTHING
                 """, msg, tx);
