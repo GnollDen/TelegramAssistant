@@ -2,9 +2,6 @@ using TgAssistant.Core.Models;
 
 namespace TgAssistant.Core.Interfaces;
 
-/// <summary>
-/// Message queue for buffering between listener and batch worker.
-/// </summary>
 public interface IMessageQueue
 {
     Task EnqueueAsync(RawTelegramMessage message, CancellationToken ct = default);
@@ -12,17 +9,11 @@ public interface IMessageQueue
     Task AcknowledgeAsync(IEnumerable<string> messageIds, CancellationToken ct = default);
 }
 
-/// <summary>
-/// Media processing via Gemini Flash Lite.
-/// </summary>
 public interface IMediaProcessor
 {
     Task<MediaProcessingResult> ProcessAsync(string filePath, MediaType mediaType, CancellationToken ct = default);
 }
 
-/// <summary>
-/// Intelligence layer - Claude API for dossier and chat.
-/// </summary>
 public interface IIntelligenceService
 {
     Task<DossierDiff> UpdateDossierAsync(Guid entityId, List<Message> newMessages, CancellationToken ct = default);
@@ -30,14 +21,9 @@ public interface IIntelligenceService
     Task<List<string>> GenerateInlineRepliesAsync(Guid entityId, List<Message> recentMessages, CancellationToken ct = default);
 }
 
-// ===== DTOs =====
-
-/// <summary>
-/// Raw message from Telegram listener, before batch processing.
-/// </summary>
 public class RawTelegramMessage
 {
-    public string StreamId { get; set; } = string.Empty; // Redis stream ID for ACK
+    public string StreamId { get; set; } = string.Empty;
     public long MessageId { get; set; }
     public long ChatId { get; set; }
     public long SenderId { get; set; }
@@ -50,7 +36,6 @@ public class RawTelegramMessage
     public DateTime? EditTimestamp { get; set; }
     public string? ReactionsJson { get; set; }
     public string? ForwardJson { get; set; }
-
 }
 
 public class MediaProcessingResult

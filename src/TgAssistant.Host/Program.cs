@@ -24,7 +24,6 @@ try
         {
             var config = context.Configuration;
 
-            // Configuration
             services.Configure<TelegramSettings>(config.GetSection(TelegramSettings.Section));
             services.Configure<RedisSettings>(config.GetSection(RedisSettings.Section));
             services.Configure<DatabaseSettings>(config.GetSection(DatabaseSettings.Section));
@@ -33,22 +32,16 @@ try
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
 
-            // Redis
             services.AddSingleton<IConnectionMultiplexer>(_ =>
                 ConnectionMultiplexer.Connect(
-                    config.GetSection(RedisSettings.Section)
-                        .GetValue<string>("ConnectionString") ?? "localhost:6379"));
+                    config.GetSection(RedisSettings.Section).GetValue<string>("ConnectionString") ?? "localhost:6379"));
             services.AddSingleton<RedisMessageQueue>();
             services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
 
-            // Database
             services.AddSingleton<DatabaseInitializer>();
             services.AddSingleton<IMessageRepository, MessageRepository>();
-
-            // Media Processing (stub for now)
             services.AddSingleton<IMediaProcessor, StubMediaProcessor>();
 
-            // Hosted Services
             services.AddHostedService<TelegramListenerService>();
             services.AddHostedService<BatchWorkerService>();
         });
@@ -59,18 +52,11 @@ try
     {
         var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
         await dbInit.InitializeAsync();
-
         var redisQueue = scope.ServiceProvider.GetRequiredService<RedisMessageQueue>();
         await redisQueue.InitializeAsync();
     }
 
     await host.RunAsync();
 }
-catch (Exception ex)
-{
-    Log.Fatal(ex, "Application terminated unexpectedly");
-}
-finally
-{
-    Log.CloseAndFlush();
-}
+catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); }
+finally { Log.CloseAndFlush(); }

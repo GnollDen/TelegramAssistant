@@ -1,8 +1,5 @@
 namespace TgAssistant.Core.Models;
 
-/// <summary>
-/// Raw message from Telegram, stored after batch processing.
-/// </summary>
 public class Message
 {
     public long Id { get; set; }
@@ -11,21 +8,15 @@ public class Message
     public long SenderId { get; set; }
     public string SenderName { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
-    public string? ForwardJson { get; set; }
-    
-    // Content
     public string? Text { get; set; }
     public MediaType MediaType { get; set; } = MediaType.None;
     public string? MediaPath { get; set; }
     public string? MediaTranscription { get; set; }
     public string? MediaDescription { get; set; }
-    
-    // Context
     public long? ReplyToMessageId { get; set; }
     public DateTime? EditTimestamp { get; set; }
     public string? ReactionsJson { get; set; }
-    
-    // Processing
+    public string? ForwardJson { get; set; }
     public MessageSource Source { get; set; } = MessageSource.Realtime;
     public ProcessingStatus ProcessingStatus { get; set; } = ProcessingStatus.Pending;
     public DateTime? ProcessedAt { get; set; }
@@ -37,11 +28,11 @@ public enum MediaType
     None,
     Photo,
     Voice,
-    VideoNote,  // circles
+    VideoNote,
     Video,
     Document,
     Sticker,
-    Animation   // GIFs
+    Animation
 }
 
 public enum MessageSource
@@ -55,5 +46,5 @@ public enum ProcessingStatus
     Pending,
     Processed,
     Failed,
-    PendingReview  // unrecognized media, needs manual context
+    PendingReview
 }

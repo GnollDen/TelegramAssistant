@@ -1,8 +1,5 @@
 namespace TgAssistant.Core.Models;
 
-/// <summary>
-/// Compressed daily summary per contact, used to manage Claude context window.
-/// </summary>
 public class DailySummary
 {
     public Guid Id { get; set; } = Guid.NewGuid();

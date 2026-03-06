@@ -16,7 +16,6 @@ public interface IEntityRepository
     Task<Entity?> FindByTelegramIdAsync(long telegramUserId, CancellationToken ct = default);
     Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default);
     Task<List<Entity>> GetAllAsync(CancellationToken ct = default);
-    Task<Entity?> GetByIdAsync(Guid id, CancellationToken ct = default);
 }
 
 public interface IRelationshipRepository
@@ -30,7 +29,6 @@ public interface IFactRepository
 {
     Task<Fact> UpsertAsync(Fact fact, CancellationToken ct = default);
     Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default);
-    Task<List<Fact>> GetByEntityAndCategoryAsync(Guid entityId, string category, CancellationToken ct = default);
     Task SupersedeFactAsync(Guid oldFactId, Fact newFact, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default);
 }

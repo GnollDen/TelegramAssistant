@@ -5,17 +5,12 @@ using TgAssistant.Core.Configuration;
 
 namespace TgAssistant.Infrastructure.Database;
 
-/// <summary>
-/// Creates database schema on startup. Simple migration approach for MVP.
-/// </summary>
 public class DatabaseInitializer
 {
     private readonly DatabaseSettings _settings;
     private readonly ILogger<DatabaseInitializer> _logger;
 
-    public DatabaseInitializer(
-        IOptions<DatabaseSettings> settings,
-        ILogger<DatabaseInitializer> logger)
+    public DatabaseInitializer(IOptions<DatabaseSettings> settings, ILogger<DatabaseInitializer> logger)
     {
         _settings = settings.Value;
         _logger = logger;
@@ -25,16 +20,13 @@ public class DatabaseInitializer
     {
         await using var conn = new NpgsqlConnection(_settings.ConnectionString);
         await conn.OpenAsync(ct);
-
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = Schema;
         await cmd.ExecuteNonQueryAsync(ct);
-        
         _logger.LogInformation("Database schema initialized");
     }
 
     private const string Schema = """
-        -- Messages
         CREATE TABLE IF NOT EXISTS messages (
             id BIGSERIAL PRIMARY KEY,
             telegram_message_id BIGINT NOT NULL,
@@ -56,15 +48,10 @@ public class DatabaseInitializer
             processed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_messages_processing ON messages(processing_status) WHERE processing_status = 0;
+        CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id, timestamp);
 
-        CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp 
-            ON messages(chat_id, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_messages_processing 
-            ON messages(processing_status) WHERE processing_status = 0;
-        CREATE INDEX IF NOT EXISTS idx_messages_sender 
-            ON messages(sender_id, timestamp);
-
-        -- Entities (knowledge graph nodes)
         CREATE TABLE IF NOT EXISTS entities (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             type SMALLINT NOT NULL,
@@ -76,11 +63,8 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_telegram_user ON entities(telegram_user_id) WHERE telegram_user_id IS NOT NULL;
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_telegram_user 
-            ON entities(telegram_user_id) WHERE telegram_user_id IS NOT NULL;
-
-        -- Relationships (knowledge graph edges)
         CREATE TABLE IF NOT EXISTS relationships (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             from_entity_id UUID NOT NULL REFERENCES entities(id),
@@ -93,13 +77,9 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_entity_id);
+        CREATE INDEX IF NOT EXISTS idx_relationships_to ON relationships(to_entity_id);
 
-        CREATE INDEX IF NOT EXISTS idx_relationships_from 
-            ON relationships(from_entity_id);
-        CREATE INDEX IF NOT EXISTS idx_relationships_to 
-            ON relationships(to_entity_id);
-
-        -- Facts
         CREATE TABLE IF NOT EXISTS facts (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             entity_id UUID NOT NULL REFERENCES entities(id),
@@ -115,13 +95,8 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE INDEX IF NOT EXISTS idx_facts_entity_current ON facts(entity_id) WHERE is_current = TRUE;
 
-        CREATE INDEX IF NOT EXISTS idx_facts_entity_current 
-            ON facts(entity_id) WHERE is_current = TRUE;
-        CREATE INDEX IF NOT EXISTS idx_facts_entity_category 
-            ON facts(entity_id, category);
-
-        -- Daily summaries
         CREATE TABLE IF NOT EXISTS daily_summaries (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             chat_id BIGINT NOT NULL,
@@ -132,11 +107,8 @@ public class DatabaseInitializer
             media_count INT NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_chat_date ON daily_summaries(chat_id, date);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_chat_date 
-            ON daily_summaries(chat_id, date);
-
-        -- Analysis sessions
         CREATE TABLE IF NOT EXISTS analysis_sessions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             entity_id UUID NOT NULL REFERENCES entities(id),
@@ -149,7 +121,6 @@ public class DatabaseInitializer
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
-        -- Prompt templates
         CREATE TABLE IF NOT EXISTS prompt_templates (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -158,5 +129,11 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        -- Add forward_json if missing (migration for existing DB)
+        DO $$ BEGIN
+            ALTER TABLE messages ADD COLUMN forward_json TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
         """;
 }
