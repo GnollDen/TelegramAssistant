@@ -68,7 +68,7 @@ public class TelegramListenerService : BackgroundService
 
     private async Task OnUpdates(UpdatesBase updates)
     {
-        // Cache user names from updates
+        // Cache user names
         if (updates.Users != null)
         {
             foreach (var (id, user) in updates.Users)
@@ -80,7 +80,14 @@ public class TelegramListenerService : BackgroundService
 
         foreach (var update in updates.UpdateList)
         {
-            await HandleUpdate(update);
+            try
+            {
+                await HandleUpdate(update);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling update {Type}", update.GetType().Name);
+            }
         }
     }
 
@@ -118,24 +125,17 @@ public class TelegramListenerService : BackgroundService
 
         var senderId = message.from_id is PeerUser fromPeer ? fromPeer.user_id : 0;
         var senderName = ResolveSenderName(senderId);
-
         var mediaType = DetectMediaType(message);
 
         string? mediaPath = null;
         if (mediaType != Core.Models.MediaType.None && message.media != null)
-        {
             mediaPath = await DownloadMedia(message, chatId, mediaType);
-        }
 
         string? reactionsJson = null;
         if (message.reactions?.results != null)
         {
             var reactions = message.reactions.results
-                .Select(r => new
-                {
-                    emoji = r.reaction is ReactionEmoji re ? re.emoticon : "custom",
-                    count = r.count
-                })
+                .Select(r => new { emoji = r.reaction is ReactionEmoji re ? re.emoticon : "custom", count = r.count })
                 .ToList();
             reactionsJson = JsonSerializer.Serialize(reactions);
         }
@@ -175,12 +175,8 @@ public class TelegramListenerService : BackgroundService
 
         await _queue.EnqueueAsync(raw);
 
-        _logger.LogInformation(
-            "{Action} in chat {ChatId} from {Sender} ({SenderId}): {Preview}",
-            isEdit ? "Edited" : "Message",
-            chatId,
-            senderName,
-            senderId,
+        _logger.LogInformation("{Action} in chat {ChatId} from {Sender} ({SenderId}): {Preview}",
+            isEdit ? "Edited" : "Message", chatId, senderName, senderId,
             message.message?.Length > 80 ? message.message[..80] + "..." : message.message ?? $"[{mediaType}]");
     }
 
@@ -192,21 +188,11 @@ public class TelegramListenerService : BackgroundService
         foreach (var msgId in messageIds)
         {
             _logger.LogInformation("Deleted message {Id} in chat {ChatId}", msgId, chatId);
-
             var raw = new RawTelegramMessage
             {
-                MessageId = msgId,
-                ChatId = chatId,
-                SenderId = 0,
-                SenderName = "",
-                Timestamp = DateTime.UtcNow,
-                Text = "[DELETED]",
-                MediaType = Core.Models.MediaType.None,
-                ReplyToMessageId = null,
-                EditTimestamp = null,
-                ReactionsJson = null
+                MessageId = msgId, ChatId = chatId, SenderId = 0, SenderName = "",
+                Timestamp = DateTime.UtcNow, Text = "[DELETED]", MediaType = Core.Models.MediaType.None
             };
-
             await _queue.EnqueueAsync(raw);
         }
     }
@@ -225,31 +211,20 @@ public class TelegramListenerService : BackgroundService
             return;
 
         var reactions = react.reactions?.results?
-            .Select(r => new
-            {
-                emoji = r.reaction is ReactionEmoji re ? re.emoticon : "custom",
-                count = r.count
-            })
+            .Select(r => new { emoji = r.reaction is ReactionEmoji re ? re.emoticon : "custom", count = r.count })
             .ToList();
+        if (reactions == null || reactions.Count == 0) return;
 
-        if (reactions == null || reactions.Count == 0)
-            return;
-
-        _logger.LogInformation("Reactions updated on message {Id} in chat {ChatId}: {Reactions}",
+        _logger.LogInformation("Reactions on msg {Id} in chat {ChatId}: {R}",
             react.msg_id, chatId, JsonSerializer.Serialize(reactions));
 
         var raw = new RawTelegramMessage
         {
-            MessageId = react.msg_id,
-            ChatId = chatId,
-            SenderId = 0,
-            SenderName = "",
-            Timestamp = DateTime.UtcNow,
-            Text = "[REACTION_UPDATE]",
+            MessageId = react.msg_id, ChatId = chatId, SenderId = 0, SenderName = "",
+            Timestamp = DateTime.UtcNow, Text = "[REACTION_UPDATE]",
             MediaType = Core.Models.MediaType.None,
             ReactionsJson = JsonSerializer.Serialize(reactions)
         };
-
         await _queue.EnqueueAsync(raw);
     }
 
@@ -269,21 +244,16 @@ public class TelegramListenerService : BackgroundService
         {
             switch (attr)
             {
-                case DocumentAttributeSticker:
-                    return Core.Models.MediaType.Sticker;
-                case DocumentAttributeAnimated:
-                    return Core.Models.MediaType.Animation;
+                case DocumentAttributeSticker: return Core.Models.MediaType.Sticker;
+                case DocumentAttributeAnimated: return Core.Models.MediaType.Animation;
                 case DocumentAttributeVideo dav when dav.flags.HasFlag(DocumentAttributeVideo.Flags.round_message):
                     return Core.Models.MediaType.VideoNote;
-                case DocumentAttributeVideo:
-                    return Core.Models.MediaType.Video;
+                case DocumentAttributeVideo: return Core.Models.MediaType.Video;
                 case DocumentAttributeAudio daa when daa.flags.HasFlag(DocumentAttributeAudio.Flags.voice):
                     return Core.Models.MediaType.Voice;
-                case DocumentAttributeAudio:
-                    return Core.Models.MediaType.Voice;
+                case DocumentAttributeAudio: return Core.Models.MediaType.Voice;
             }
         }
-
         return doc.mime_type switch
         {
             var m when m?.StartsWith("audio/") == true => Core.Models.MediaType.Voice,
@@ -300,7 +270,6 @@ public class TelegramListenerService : BackgroundService
             var date = message.date.ToString("yyyy-MM-dd");
             var dir = Path.Combine(_mediaSettings.StoragePath, chatId.ToString(), date);
             Directory.CreateDirectory(dir);
-
             var ext = type switch
             {
                 Core.Models.MediaType.Voice => ".ogg",
@@ -311,19 +280,12 @@ public class TelegramListenerService : BackgroundService
                 Core.Models.MediaType.Animation => ".gif",
                 _ => ".bin"
             };
-
             var filePath = Path.Combine(dir, $"{message.id}{ext}");
             await using var fs = File.Create(filePath);
-
             if (message.media is MessageMediaPhoto { photo: Photo photo })
-            {
                 await _client!.DownloadFileAsync(photo, fs);
-            }
             else if (message.media is MessageMediaDocument { document: Document doc })
-            {
                 await _client!.DownloadFileAsync(doc, fs);
-            }
-
             _logger.LogInformation("Downloaded {Type} to {Path}", type, filePath);
             return filePath;
         }

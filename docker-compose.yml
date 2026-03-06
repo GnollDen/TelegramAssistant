@@ -1,7 +1,4 @@
 services:
-  # ============================================================
-  # PostgreSQL
-  # ============================================================
   postgres:
     image: postgres:16-alpine
     container_name: tga-postgres
@@ -13,16 +10,13 @@ services:
     volumes:
       - /opt/tgassistant/data/postgres:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"  # only localhost
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tgassistant"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ============================================================
-  # Redis
-  # ============================================================
   redis:
     image: redis:7-alpine
     container_name: tga-redis
@@ -31,22 +25,18 @@ services:
     volumes:
       - /opt/tgassistant/data/redis:/data
     ports:
-      - "127.0.0.1:6379:6379"  # only localhost
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ============================================================
-  # Application
-  # ============================================================
   app:
-    image: ${IMAGE_TAG:-ghcr.io/gnollden/tgassistant:latest}  # Set OWNER to your GitHub username
-    # Fallback: uncomment to build locally instead of pulling
-    # build:
-    #   context: .
-    #   dockerfile: deploy/Dockerfile
+    image: ${IMAGE_TAG:-}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
     container_name: tga-app
     restart: unless-stopped
     depends_on:
@@ -55,7 +45,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      # Host network mode: containers are on localhost
       Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:-changeme}"
       Redis__ConnectionString: "127.0.0.1:6379"
       Telegram__ApiId: ${TG_API_ID}
@@ -63,46 +52,14 @@ services:
       Telegram__PhoneNumber: ${TG_PHONE}
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
+      Telegram__MonitoredChatIds__0: ${TG_CHAT_0:-0}
+      Telegram__MonitoredChatIds__1: ${TG_CHAT_1:-0}
+      Telegram__MonitoredChatIds__2: ${TG_CHAT_2:-0}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
       Media__StoragePath: /data/media
-      Telegram__MonitoredChatIds__0: "885574984"
-      Telegram__MonitoredChatIds__1: "5276431471"
-      Telegram__MonitoredChatIds__2: "3719942125"
-      Telegram__MonitoredChatIds__3: "5215542170"
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data
       - /opt/tgassistant/logs:/app/logs
-    # Use host network for WireGuard VPN tunnel
-    # (container inherits VPN route from host)
     network_mode: "host"
-    # Override network_mode for postgres/redis access:
-    # If using host network, postgres is at localhost:5432
-    # Adjust connection strings accordingly
-
-  # ============================================================
-  # Alternative: app on bridge network (no host networking)
-  # Uncomment this and comment out the app above if you
-  # prefer isolated networking (won't use host WireGuard)
-  # ============================================================
-  # app-bridge:
-  #   build:
-  #     context: .
-  #     dockerfile: deploy/Dockerfile
-  #   container_name: tga-app
-  #   restart: unless-stopped
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   environment:
-  #     Database__ConnectionString: "Host=postgres;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:-changeme}"
-  #     Redis__ConnectionString: "redis:6379"
-  #   volumes:
-  #     - /opt/tgassistant/data/media:/data/media
-  #     - /opt/tgassistant/data/telegram-session:/app/data
-  #     - /opt/tgassistant/logs:/app/logs
-  #   ports:
-  #     - "127.0.0.1:8080:8080"
