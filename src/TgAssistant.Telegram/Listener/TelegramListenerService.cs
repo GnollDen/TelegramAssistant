@@ -9,10 +9,6 @@ using WTelegram;
 
 namespace TgAssistant.Telegram.Listener;
 
-/// <summary>
-/// Listens to Telegram chats via MTProto (userbot) and pushes messages to Redis.
-/// Thin layer: no business logic, just capture and forward.
-/// </summary>
 public class TelegramListenerService : BackgroundService
 {
     private readonly TelegramSettings _settings;
@@ -40,11 +36,9 @@ public class TelegramListenerService : BackgroundService
         _client = new Client(ConfigProvider);
         _client.OnUpdates += OnUpdates;
 
-        // Login (will prompt for verification code on first run)
         var user = await _client.LoginUserIfNeeded();
         _logger.LogInformation("Logged in as {Name} (ID: {Id})", user.first_name, user.id);
 
-        // Keep alive until cancellation
         await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
@@ -63,8 +57,6 @@ public class TelegramListenerService : BackgroundService
 
     private string GetVerificationCode()
     {
-        // For first run: read from console or implement bot-based code entry
-        // TODO: implement code delivery via bot for headless server
         Console.Write("Enter Telegram verification code: ");
         return Console.ReadLine() ?? "";
     }
@@ -73,22 +65,19 @@ public class TelegramListenerService : BackgroundService
     {
         foreach (var update in updates.UpdateList)
         {
-            if (update is UpdateNewMessage { message: Message msg })
+            if (update is UpdateNewMessage { message: TL.Message msg })
             {
-                await HandleMessage(msg);
+                await HandleMessage(msg, isEdit: false);
             }
-            else if (update is UpdateEditMessage { message: Message editMsg })
+            else if (update is UpdateEditMessage { message: TL.Message editMsg })
             {
                 await HandleMessage(editMsg, isEdit: true);
             }
         }
     }
 
-    private async Task HandleMessage(MessageBase messageBase, bool isEdit = false)
+    private async Task HandleMessage(TL.Message message, bool isEdit)
     {
-        if (messageBase is not Message message)
-            return;
-
         var chatId = message.peer_id switch
         {
             PeerUser pu => pu.user_id,
@@ -97,13 +86,11 @@ public class TelegramListenerService : BackgroundService
             _ => 0L
         };
 
-        // Filter: only monitored chats
         if (!_settings.MonitoredChatIds.Contains(chatId))
             return;
 
         _logger.LogDebug("Received message {Id} from chat {ChatId}", message.id, chatId);
 
-        // Download media if present
         string? mediaPath = null;
         var mediaType = Core.Models.MediaType.None;
 
@@ -117,21 +104,21 @@ public class TelegramListenerService : BackgroundService
             MessageId = message.id,
             ChatId = chatId,
             SenderId = message.from_id is PeerUser fromUser ? fromUser.user_id : 0,
-            SenderName = "", // Resolved later from cached user info
+            SenderName = "",
             Timestamp = message.date,
             Text = message.message,
             MediaType = mediaType,
             MediaPath = mediaPath,
             ReplyToMessageId = message.reply_to is MessageReplyHeader reply ? reply.reply_to_msg_id : null,
             EditTimestamp = isEdit ? message.edit_date : null,
-            ReactionsJson = null // TODO: handle reactions from UpdateMessageReactions
+            ReactionsJson = null
         };
 
         await _queue.EnqueueAsync(raw);
     }
 
     private async Task<(string? path, Core.Models.MediaType type)> DownloadMedia(
-        Message message, long chatId)
+        TL.Message message, long chatId)
     {
         var type = message.media switch
         {
@@ -165,8 +152,7 @@ public class TelegramListenerService : BackgroundService
             var filePath = Path.Combine(dir, $"{message.id}{ext}");
 
             await using var fs = File.Create(filePath);
-            
-            // WTelegramClient download
+
             if (message.media is MessageMediaPhoto { photo: Photo photo })
             {
                 await _client!.DownloadFileAsync(photo, fs);
