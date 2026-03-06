@@ -22,10 +22,11 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     public OpenRouterMediaProcessor(
         HttpClient http,
         IOptions<GeminiSettings> settings,
-        ILogger<OpenRouterMediaProcessor> logger)
+        ILoggerFactory loggerFactory)
     {
         _http = http;
         _settings = settings.Value;
+        _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
         _http.BaseAddress = new Uri(_settings.BaseUrl);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
     }
