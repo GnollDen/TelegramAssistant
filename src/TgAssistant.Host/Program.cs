@@ -4,7 +4,6 @@ using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Redis;
-using TgAssistant.Processing.Media;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
 
@@ -50,7 +49,8 @@ try
 
             services.AddSingleton<DatabaseInitializer>();
             services.AddSingleton<IMessageRepository, MessageRepository>();
-            services.AddSingleton<IMediaProcessor, StubMediaProcessor>();
+            // Media Processing
+            services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
 
             services.AddHostedService<TelegramListenerService>();
             services.AddHostedService<BatchWorkerService>();
