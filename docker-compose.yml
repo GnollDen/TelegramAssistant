@@ -52,9 +52,7 @@ services:
       Telegram__PhoneNumber: ${TG_PHONE}
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
-      Telegram__MonitoredChatIds__0: ${TG_CHAT_0:-0}
-      Telegram__MonitoredChatIds__1: ${TG_CHAT_1:-0}
-      Telegram__MonitoredChatIds__2: ${TG_CHAT_2:-0}
+      Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
       Media__StoragePath: /data/media
