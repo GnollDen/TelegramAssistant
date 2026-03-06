@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # ============================================================
   # PostgreSQL
@@ -44,7 +42,7 @@ services:
   # Application
   # ============================================================
   app:
-    image: ${IMAGE_TAG:-ghcr.io/OWNER/tgassistant:latest}  # Set OWNER to your GitHub username
+    image: ${IMAGE_TAG:-ghcr.io/gnollden/tgassistant:latest}  # Set OWNER to your GitHub username
     # Fallback: uncomment to build locally instead of pulling
     # build:
     #   context: .
