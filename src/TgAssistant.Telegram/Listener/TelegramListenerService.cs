@@ -32,6 +32,9 @@ public class TelegramListenerService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Telegram listener starting...");
+        _logger.LogInformation("Monitoring {Count} chats: {Chats}",
+            _settings.MonitoredChatIds.Count,
+            string.Join(", ", _settings.MonitoredChatIds));
 
         _client = new Client(ConfigProvider);
         _client.OnUpdates += OnUpdates;
@@ -73,6 +76,14 @@ public class TelegramListenerService : BackgroundService
             {
                 await HandleMessage(editMsg, isEdit: true);
             }
+            else if (update is UpdateNewChannelMessage { message: TL.Message chMsg })
+            {
+                await HandleMessage(chMsg, isEdit: false);
+            }
+            else if (update is UpdateEditChannelMessage { message: TL.Message chEditMsg })
+            {
+                await HandleMessage(chEditMsg, isEdit: true);
+            }
         }
     }
 
@@ -86,10 +97,17 @@ public class TelegramListenerService : BackgroundService
             _ => 0L
         };
 
-        if (!_settings.MonitoredChatIds.Contains(chatId))
+        // Filter: only monitored chats
+        if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
+        {
+            _logger.LogDebug("Skipping message from unmonitored chat {ChatId}", chatId);
             return;
+        }
 
-        _logger.LogDebug("Received message {Id} from chat {ChatId}", message.id, chatId);
+        _logger.LogInformation("Message from chat {ChatId}, sender {SenderId}: {Preview}",
+            chatId,
+            message.from_id is PeerUser fromUser ? fromUser.user_id : 0,
+            message.message?.Length > 80 ? message.message[..80] + "..." : message.message);
 
         string? mediaPath = null;
         var mediaType = Core.Models.MediaType.None;
@@ -103,7 +121,7 @@ public class TelegramListenerService : BackgroundService
         {
             MessageId = message.id,
             ChatId = chatId,
-            SenderId = message.from_id is PeerUser fromUser ? fromUser.user_id : 0,
+            SenderId = message.from_id is PeerUser fu ? fu.user_id : 0,
             SenderName = "",
             Timestamp = message.date,
             Text = message.message,
@@ -115,6 +133,7 @@ public class TelegramListenerService : BackgroundService
         };
 
         await _queue.EnqueueAsync(raw);
+        _logger.LogDebug("Enqueued message {Id} from chat {ChatId}", message.id, chatId);
     }
 
     private async Task<(string? path, Core.Models.MediaType type)> DownloadMedia(
@@ -162,7 +181,7 @@ public class TelegramListenerService : BackgroundService
                 await _client!.DownloadFileAsync(doc, fs);
             }
 
-            _logger.LogDebug("Downloaded media {Type} to {Path}", type, filePath);
+            _logger.LogInformation("Downloaded media {Type} to {Path}", type, filePath);
             return (filePath, type);
         }
         catch (Exception ex)
