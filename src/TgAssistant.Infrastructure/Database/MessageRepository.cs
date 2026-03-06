@@ -26,7 +26,6 @@ public class MessageRepository : IMessageRepository
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
-
         long count = 0;
         foreach (var msg in messages)
         {
@@ -35,7 +34,7 @@ public class MessageRepository : IMessageRepository
                     telegram_message_id, chat_id, sender_id, sender_name, timestamp,
                     text, media_type, media_path, media_transcription, media_description,
                     reply_to_message_id, edit_timestamp, reactions_json, forward_json,
-                    source, processing_status, processed_at, 
+                    source, processing_status, processed_at
                 ) VALUES (
                     @TelegramMessageId, @ChatId, @SenderId, @SenderName, @Timestamp,
                     @Text, @MediaType, @MediaPath, @MediaTranscription, @MediaDescription,
@@ -45,7 +44,6 @@ public class MessageRepository : IMessageRepository
                 """, msg, tx);
             count++;
         }
-
         await tx.CommitAsync(ct);
         _logger.LogDebug("Saved batch of {Count} messages", count);
         return count;
