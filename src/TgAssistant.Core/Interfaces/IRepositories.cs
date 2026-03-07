@@ -7,6 +7,7 @@ public interface IMessageRepository
     Task<long> SaveBatchAsync(IEnumerable<Message> messages, CancellationToken ct = default);
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
+    Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
@@ -49,4 +50,32 @@ public interface ISummaryRepository
 {
     Task SaveAsync(DailySummary summary, CancellationToken ct = default);
     Task<List<DailySummary>> GetByEntityAsync(Guid entityId, DateOnly from, DateOnly to, CancellationToken ct = default);
+}
+
+public interface IPromptTemplateRepository
+{
+    Task<PromptTemplate?> GetByIdAsync(string id, CancellationToken ct = default);
+    Task<PromptTemplate> UpsertAsync(PromptTemplate template, CancellationToken ct = default);
+}
+
+public interface IAnalysisStateRepository
+{
+    Task<long> GetWatermarkAsync(string key, CancellationToken ct = default);
+    Task SetWatermarkAsync(string key, long value, CancellationToken ct = default);
+}
+
+public interface IMessageExtractionRepository
+{
+    Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
+    Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
+    Task ResolveExpensiveAsync(long extractionId, string expensiveJson, CancellationToken ct = default);
+}
+
+public class MessageExtractionRecord
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public string CheapJson { get; set; } = "{}";
+    public string? ExpensiveJson { get; set; }
+    public bool NeedsExpensive { get; set; }
 }

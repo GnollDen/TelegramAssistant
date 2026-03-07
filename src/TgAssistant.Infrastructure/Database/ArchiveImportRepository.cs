@@ -1,145 +1,153 @@
-using Dapper;
-using Microsoft.Extensions.Options;
-using Npgsql;
-using TgAssistant.Core.Configuration;
+using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
 
 public class ArchiveImportRepository : IArchiveImportRepository
 {
-    private readonly string _connectionString;
+    private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
-    public ArchiveImportRepository(IOptions<DatabaseSettings> settings)
+    public ArchiveImportRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
     {
-        _connectionString = settings.Value.ConnectionString;
+        _dbFactory = dbFactory;
     }
-
-    private NpgsqlConnection CreateConnection() => new(_connectionString);
 
     public async Task<ArchiveImportRun?> GetRunningRunAsync(string sourcePath, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        return await conn.QuerySingleOrDefaultAsync<ArchiveImportRun>(new CommandDefinition(
-            SelectBase + " WHERE source_path = @SourcePath AND status = @Status ORDER BY created_at DESC LIMIT 1",
-            new { SourcePath = sourcePath, Status = ArchiveImportRunStatus.Running },
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.ArchiveImportRuns
+            .AsNoTracking()
+            .Where(x => x.SourcePath == sourcePath && x.Status == (short)ArchiveImportRunStatus.Running)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return row == null ? null : ToDomain(row);
     }
 
     public async Task<ArchiveImportRun?> GetLatestRunAsync(string sourcePath, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        return await conn.QuerySingleOrDefaultAsync<ArchiveImportRun>(new CommandDefinition(
-            SelectBase + " WHERE source_path = @SourcePath ORDER BY created_at DESC LIMIT 1",
-            new { SourcePath = sourcePath },
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.ArchiveImportRuns
+            .AsNoTracking()
+            .Where(x => x.SourcePath == sourcePath)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        return row == null ? null : ToDomain(row);
     }
 
     public async Task<ArchiveImportRun> CreateRunAsync(ArchiveImportRun run, CancellationToken ct = default)
     {
         run.Id = run.Id == Guid.Empty ? Guid.NewGuid() : run.Id;
 
-        await using var conn = CreateConnection();
-        await conn.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO archive_import_runs (
-                id, source_path, status, last_message_index,
-                imported_messages, queued_media, total_messages,
-                total_media, estimated_cost_usd, error
-            ) VALUES (
-                @Id, @SourcePath, @Status, @LastMessageIndex,
-                @ImportedMessages, @QueuedMedia, @TotalMessages,
-                @TotalMedia, @EstimatedCostUsd, @Error
-            )
-            """,
-            run,
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        db.ArchiveImportRuns.Add(new DbArchiveImportRun
+        {
+            Id = run.Id,
+            SourcePath = run.SourcePath,
+            Status = (short)run.Status,
+            LastMessageIndex = run.LastMessageIndex,
+            ImportedMessages = run.ImportedMessages,
+            QueuedMedia = run.QueuedMedia,
+            TotalMessages = run.TotalMessages,
+            TotalMedia = run.TotalMedia,
+            EstimatedCostUsd = run.EstimatedCostUsd,
+            Error = run.Error,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
 
+        await db.SaveChangesAsync(ct);
         return run;
     }
 
     public async Task UpsertEstimateAsync(string sourcePath, ArchiveCostEstimate estimate, ArchiveImportRunStatus status, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        var latest = await GetLatestRunAsync(sourcePath, ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var latest = await db.ArchiveImportRuns
+            .Where(x => x.SourcePath == sourcePath)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
 
-        if (latest is null || latest.Status is ArchiveImportRunStatus.Completed or ArchiveImportRunStatus.Failed)
+        if (latest == null || latest.Status is (short)ArchiveImportRunStatus.Completed or (short)ArchiveImportRunStatus.Failed)
         {
-            await CreateRunAsync(new ArchiveImportRun
+            db.ArchiveImportRuns.Add(new DbArchiveImportRun
             {
+                Id = Guid.NewGuid(),
                 SourcePath = sourcePath,
-                Status = status,
+                Status = (short)status,
                 LastMessageIndex = -1,
                 ImportedMessages = 0,
                 QueuedMedia = 0,
                 TotalMessages = estimate.TotalMessages,
                 TotalMedia = estimate.MediaMessages,
-                EstimatedCostUsd = estimate.EstimatedCostUsd
-            }, ct);
-            return;
+                EstimatedCostUsd = estimate.EstimatedCostUsd,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            latest.Status = (short)status;
+            latest.TotalMessages = estimate.TotalMessages;
+            latest.TotalMedia = estimate.MediaMessages;
+            latest.EstimatedCostUsd = estimate.EstimatedCostUsd;
+            latest.Error = null;
+            latest.UpdatedAt = DateTime.UtcNow;
         }
 
-        await conn.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE archive_import_runs
-            SET status = @Status,
-                total_messages = @TotalMessages,
-                total_media = @TotalMedia,
-                estimated_cost_usd = @EstimatedCostUsd,
-                error = NULL,
-                updated_at = NOW()
-            WHERE id = @RunId
-            """,
-            new
-            {
-                RunId = latest.Id,
-                Status = status,
-                TotalMessages = estimate.TotalMessages,
-                TotalMedia = estimate.MediaMessages,
-                EstimatedCostUsd = estimate.EstimatedCostUsd
-            },
-            cancellationToken: ct));
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task UpdateProgressAsync(Guid runId, int lastMessageIndex, long importedMessages, long queuedMedia, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        await conn.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE archive_import_runs
-            SET last_message_index = @LastMessageIndex,
-                imported_messages = @ImportedMessages,
-                queued_media = @QueuedMedia,
-                updated_at = NOW()
-            WHERE id = @RunId
-            """,
-            new { RunId = runId, LastMessageIndex = lastMessageIndex, ImportedMessages = importedMessages, QueuedMedia = queuedMedia },
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var run = await db.ArchiveImportRuns.FirstOrDefaultAsync(x => x.Id == runId, ct);
+        if (run == null)
+        {
+            return;
+        }
+
+        run.LastMessageIndex = lastMessageIndex;
+        run.ImportedMessages = importedMessages;
+        run.QueuedMedia = queuedMedia;
+        run.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task CompleteRunAsync(Guid runId, ArchiveImportRunStatus status, string? error, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        await conn.ExecuteAsync(new CommandDefinition(
-            """
-            UPDATE archive_import_runs
-            SET status = @Status,
-                error = @Error,
-                updated_at = NOW()
-            WHERE id = @RunId
-            """,
-            new { RunId = runId, Status = status, Error = error },
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var run = await db.ArchiveImportRuns.FirstOrDefaultAsync(x => x.Id == runId, ct);
+        if (run == null)
+        {
+            return;
+        }
+
+        run.Status = (short)status;
+        run.Error = error;
+        run.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
-    private const string SelectBase =
-        """
-        SELECT id, source_path AS SourcePath, status, last_message_index AS LastMessageIndex,
-               imported_messages AS ImportedMessages, queued_media AS QueuedMedia,
-               total_messages AS TotalMessages, total_media AS TotalMedia,
-               estimated_cost_usd AS EstimatedCostUsd, error,
-               created_at AS CreatedAt, updated_at AS UpdatedAt
-        FROM archive_import_runs
-        """;
+    private static ArchiveImportRun ToDomain(DbArchiveImportRun row)
+    {
+        return new ArchiveImportRun
+        {
+            Id = row.Id,
+            SourcePath = row.SourcePath,
+            Status = (ArchiveImportRunStatus)row.Status,
+            LastMessageIndex = row.LastMessageIndex,
+            ImportedMessages = row.ImportedMessages,
+            QueuedMedia = row.QueuedMedia,
+            TotalMessages = row.TotalMessages,
+            TotalMedia = row.TotalMedia,
+            EstimatedCostUsd = row.EstimatedCostUsd,
+            Error = row.Error,
+            CreatedAt = row.CreatedAt,
+            UpdatedAt = row.UpdatedAt
+        };
+    }
 }
