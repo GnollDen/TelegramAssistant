@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -16,6 +16,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     private readonly GeminiSettings _settings;
     private readonly MediaSettings _mediaSettings;
     private readonly ArchiveImportSettings _archiveSettings;
+    private readonly IStickerCacheRepository _stickerCacheRepository;
     private readonly ILogger<OpenRouterMediaProcessor> _logger;
 
     public OpenRouterMediaProcessor(
@@ -23,12 +24,14 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         IOptions<GeminiSettings> settings,
         IOptions<MediaSettings> mediaSettings,
         IOptions<ArchiveImportSettings> archiveSettings,
+        IStickerCacheRepository stickerCacheRepository,
         ILoggerFactory loggerFactory)
     {
         _http = http;
         _settings = settings.Value;
         _mediaSettings = mediaSettings.Value;
         _archiveSettings = archiveSettings.Value;
+        _stickerCacheRepository = stickerCacheRepository;
         _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
         _http.BaseAddress = new Uri(_settings.BaseUrl);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
@@ -61,7 +64,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             return mediaType switch
             {
                 MediaType.Photo => await ProcessImageAsync(filePath, BuildPhotoPrompt(filePath), ct),
-                MediaType.Sticker => await ProcessImageAsync(filePath, "Describe this sticker in 1 short sentence: object + emotion.", ct),
+                MediaType.Sticker => await ProcessStickerAsync(filePath, ct),
                 MediaType.Animation => await ProcessImageAsync(filePath, "Describe this GIF in 1 short sentence: action + emotion.", ct),
                 MediaType.Voice => await ProcessAudioAsync(filePath, ct),
                 MediaType.VideoNote => await ProcessAudioAsync(filePath, ct),
@@ -82,6 +85,30 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                 FailureReason = $"{ex.GetType().Name}: {ex.Message}"
             };
         }
+    }
+
+    private async Task<MediaProcessingResult> ProcessStickerAsync(string filePath, CancellationToken ct)
+    {
+        var contentHash = await ComputeContentHashAsync(filePath, ct);
+        var cached = await _stickerCacheRepository.GetByHashAsync(contentHash, ct);
+        if (cached is not null)
+        {
+            _logger.LogDebug("Sticker cache hit for hash {Hash}", contentHash);
+            return new MediaProcessingResult
+            {
+                Success = true,
+                Description = cached.Description,
+                Confidence = 0.99f
+            };
+        }
+
+        var result = await ProcessImageAsync(filePath, "Describe this sticker in 1 short sentence: object + emotion.", ct);
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Description))
+        {
+            await _stickerCacheRepository.UpsertAsync(contentHash, result.Description, ResolveVisionModel(filePath), ct);
+        }
+
+        return result;
     }
 
     private async Task<MediaProcessingResult> ProcessImageAsync(
@@ -269,6 +296,18 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             : _archiveSettings.MediaBasePath;
 
         return fullPath.StartsWith(Path.GetFullPath(archiveRoot), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveVisionModel(string filePath)
+    {
+        return IsArchiveMediaPath(filePath) ? _mediaSettings.ArchiveVisionModel : _mediaSettings.VisionModel;
+    }
+
+    private static async Task<string> ComputeContentHashAsync(string path, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        var hashBytes = await SHA256.HashDataAsync(stream, ct);
+        return Convert.ToHexString(hashBytes);
     }
 
     private static async Task ConvertToWavAsync(string inputPath, string outputPath, CancellationToken ct)
