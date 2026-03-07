@@ -9,6 +9,8 @@ namespace TgAssistant.Processing.Archive;
 
 public class ArchiveMediaProcessorService : BackgroundService
 {
+    private const string LegacyArchiveRootPrefix = "/opt/tgassistant/TelegramAssistant/archive/";
+
     private readonly ArchiveImportSettings _settings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMediaProcessor _mediaProcessor;
@@ -58,8 +60,16 @@ public class ArchiveMediaProcessorService : BackgroundService
 
     private async Task ProcessMessageAsync(Message message, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(message.MediaPath) || !File.Exists(message.MediaPath))
+        var resolvedPath = ResolveAccessiblePath(message.MediaPath);
+        if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath))
         {
+            _logger.LogWarning(
+                "Archive media missing for message_id={MessageId}. media_path={MediaPath}, resolved_path={ResolvedPath}, media_base={MediaBasePath}",
+                message.Id,
+                message.MediaPath,
+                resolvedPath,
+                _settings.MediaBasePath);
+
             await _messageRepository.UpdateMediaProcessingResultAsync(
                 message.Id,
                 new MediaProcessingResult { Success = false, FailureReason = "Media file not found" },
@@ -68,7 +78,7 @@ public class ArchiveMediaProcessorService : BackgroundService
             return;
         }
 
-        var fileSizeMb = new FileInfo(message.MediaPath).Length / (1024d * 1024d);
+        var fileSizeMb = new FileInfo(resolvedPath).Length / (1024d * 1024d);
         if (fileSizeMb > _settings.MaxMediaFileSizeMb)
         {
             await _messageRepository.UpdateMediaProcessingResultAsync(
@@ -83,7 +93,7 @@ public class ArchiveMediaProcessorService : BackgroundService
 
         try
         {
-            var result = await _mediaProcessor.ProcessAsync(message.MediaPath, message.MediaType, ct);
+            var result = await _mediaProcessor.ProcessAsync(resolvedPath, message.MediaType, ct);
             var status = result.Success ? ProcessingStatus.Processed : ProcessingStatus.PendingReview;
             await _messageRepository.UpdateMediaProcessingResultAsync(message.Id, result, status, ct);
 
@@ -99,5 +109,62 @@ public class ArchiveMediaProcessorService : BackgroundService
                 ct);
         }
     }
-}
 
+    private string? ResolveAccessiblePath(string? mediaPath)
+    {
+        if (string.IsNullOrWhiteSpace(mediaPath))
+        {
+            return null;
+        }
+
+        var trimmed = mediaPath.Trim();
+        if (File.Exists(trimmed))
+        {
+            return trimmed;
+        }
+
+        foreach (var candidate in BuildFallbackCandidates(trimmed))
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        if (Path.IsPathRooted(trimmed))
+        {
+            return trimmed;
+        }
+
+        var normalized = trimmed.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+        return Path.GetFullPath(Path.Combine(_settings.MediaBasePath, normalized));
+    }
+
+    private IEnumerable<string> BuildFallbackCandidates(string rootedPath)
+    {
+        if (!Path.IsPathRooted(rootedPath))
+        {
+            yield break;
+        }
+
+        var normalizedRooted = rootedPath.Replace('\\', '/');
+        if (normalizedRooted.StartsWith(LegacyArchiveRootPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var fromArchiveRoot = normalizedRooted[LegacyArchiveRootPrefix.Length..].TrimStart('/');
+            yield return Path.GetFullPath(Path.Combine(_settings.MediaBasePath, fromArchiveRoot));
+        }
+
+        var exportMarker = "/ChatExport_";
+        var exportIdx = normalizedRooted.IndexOf(exportMarker, StringComparison.OrdinalIgnoreCase);
+        if (exportIdx >= 0)
+        {
+            var afterExport = normalizedRooted[(exportIdx + 1)..];
+            var slashIdx = afterExport.IndexOf('/');
+            if (slashIdx > 0 && slashIdx + 1 < afterExport.Length)
+            {
+                var insideExport = afterExport[(slashIdx + 1)..];
+                yield return Path.GetFullPath(Path.Combine(_settings.MediaBasePath, insideExport));
+            }
+        }
+    }
+}
