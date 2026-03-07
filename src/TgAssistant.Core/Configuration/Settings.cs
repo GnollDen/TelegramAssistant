@@ -56,4 +56,24 @@ public class MediaSettings
 {
     public const string Section = "Media";
     public string StoragePath { get; set; } = "/data/media";
+    public int MaxProcessFileSizeMb { get; set; } = 25;
+    public int MaxImageLongSide { get; set; } = 1280;
+    public int JpegQuality { get; set; } = 80;
+    public bool EnablePhotoBurstGuard { get; set; } = true;
+    public int PhotoBurstThreshold { get; set; } = 10;
+    public int PhotoBurstKeepCount { get; set; } = 3;
+    public int PhotoBurstWindowSeconds { get; set; } = 120;
+}
+
+public class ArchiveImportSettings
+{
+    public const string Section = "ArchiveImport";
+    public bool Enabled { get; set; }
+    public string SourcePath { get; set; } = "/data/archive/result.json";
+    public string MediaBasePath { get; set; } = "/data/archive";
+    public int BatchSize { get; set; } = 500;
+    public int MaxParallelMedia { get; set; } = 2;
+    public int RequestsPerMinute { get; set; } = 30;
+    public int PollIntervalSeconds { get; set; } = 5;
+    public int MaxMediaFileSizeMb { get; set; } = 50;
 }

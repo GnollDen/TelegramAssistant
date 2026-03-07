@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,6 +14,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 {
     private readonly HttpClient _http;
     private readonly GeminiSettings _settings;
+    private readonly MediaSettings _mediaSettings;
     private readonly ILogger<OpenRouterMediaProcessor> _logger;
 
     // Model routing
@@ -22,10 +24,12 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     public OpenRouterMediaProcessor(
         HttpClient http,
         IOptions<GeminiSettings> settings,
+        IOptions<MediaSettings> mediaSettings,
         ILoggerFactory loggerFactory)
     {
         _http = http;
         _settings = settings.Value;
+        _mediaSettings = mediaSettings.Value;
         _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
         _http.BaseAddress = new Uri(_settings.BaseUrl);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
@@ -36,6 +40,25 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     {
         try
         {
+            if (!File.Exists(filePath))
+            {
+                return new MediaProcessingResult
+                {
+                    Success = false,
+                    FailureReason = "File not found"
+                };
+            }
+
+            var fileSizeMb = new FileInfo(filePath).Length / (1024d * 1024d);
+            if (fileSizeMb > _mediaSettings.MaxProcessFileSizeMb)
+            {
+                return new MediaProcessingResult
+                {
+                    Success = false,
+                    FailureReason = $"File too large: {fileSizeMb:F1}MB > {_mediaSettings.MaxProcessFileSizeMb}MB"
+                };
+            }
+
             return mediaType switch
             {
                 MediaType.Photo => await ProcessImageAsync(filePath, "Describe this image in detail. If there is text on the image, transcribe it. If it's a meme, describe the meme and its meaning. Respond in the same language as any text found.", ct),
@@ -65,36 +88,49 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     private async Task<MediaProcessingResult> ProcessImageAsync(
         string filePath, string prompt, CancellationToken ct)
     {
-        var bytes = await File.ReadAllBytesAsync(filePath, ct);
-        var base64 = Convert.ToBase64String(bytes);
-        var mimeType = DetectMimeType(filePath);
-
-        var request = new OpenRouterRequest
+        var optimizedPath = filePath;
+        try
         {
-            Model = ImageModel,
-            Messages = new[]
+            optimizedPath = await OptimizeImageForVisionAsync(filePath, ct);
+
+            var bytes = await File.ReadAllBytesAsync(optimizedPath, ct);
+            var base64 = Convert.ToBase64String(bytes);
+            var mimeType = DetectMimeType(optimizedPath);
+
+            var request = new OpenRouterRequest
             {
-                new OpenRouterMessage
+                Model = ImageModel,
+                Messages = new[]
                 {
-                    Role = "user",
-                    Content = new object[]
+                    new OpenRouterMessage
                     {
-                        new { type = "image_url", image_url = new { url = $"data:{mimeType};base64,{base64}" } },
-                        new { type = "text", text = prompt }
+                        Role = "user",
+                        Content = new object[]
+                        {
+                            new { type = "image_url", image_url = new { url = $"data:{mimeType};base64,{base64}" } },
+                            new { type = "text", text = prompt }
+                        }
                     }
-                }
-            },
-            MaxTokens = 500
-        };
+                },
+                MaxTokens = 500
+            };
 
-        var response = await SendRequestAsync(request, ct);
+            var response = await SendRequestAsync(request, ct);
 
-        return new MediaProcessingResult
+            return new MediaProcessingResult
+            {
+                Success = true,
+                Description = response,
+                Confidence = 0.9f
+            };
+        }
+        finally
         {
-            Success = true,
-            Description = response,
-            Confidence = 0.9f
-        };
+            if (!string.Equals(optimizedPath, filePath, StringComparison.OrdinalIgnoreCase) && File.Exists(optimizedPath))
+            {
+                File.Delete(optimizedPath);
+            }
+        }
     }
 
     private async Task<MediaProcessingResult> ProcessAudioAsync(
@@ -102,7 +138,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     {
         // Convert to wav if needed (GPT Audio Mini expects wav)
         var wavPath = filePath;
-        if (!filePath.EndsWith(".wav"))
+        if (!filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
             wavPath = Path.ChangeExtension(filePath, ".proc.wav");
             await ConvertToWavAsync(filePath, wavPath, ct);
@@ -143,6 +179,20 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         };
     }
 
+    private async Task<string> OptimizeImageForVisionAsync(string inputPath, CancellationToken ct)
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"tgassistant_{Guid.NewGuid():N}.jpg");
+        var maxSide = Math.Max(320, _mediaSettings.MaxImageLongSide);
+
+        // Convert any image-like input to JPEG and cap long side to control token usage.
+        var filter = $"scale='if(gt(iw,ih),min(iw,{maxSide}),-2)':'if(gt(iw,ih),-2,min(ih,{maxSide}))'";
+        var qScale = JpegQualityToQScale(_mediaSettings.JpegQuality);
+        var args = $"-i \"{inputPath}\" -vf {filter} -frames:v 1 -q:v {qScale} \"{outputPath}\" -y";
+
+        await RunFfmpegAsync(args, ct);
+        return outputPath;
+    }
+
     private async Task<string> SendRequestAsync(OpenRouterRequest request, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(request, JsonOptions);
@@ -168,12 +218,17 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
     private static async Task ConvertToWavAsync(string inputPath, string outputPath, CancellationToken ct)
     {
-        var process = new System.Diagnostics.Process
+        await RunFfmpegAsync($"-i \"{inputPath}\" -ar 16000 -ac 1 -f wav \"{outputPath}\" -y", ct);
+    }
+
+    private static async Task RunFfmpegAsync(string arguments, CancellationToken ct)
+    {
+        var process = new Process
         {
-            StartInfo = new System.Diagnostics.ProcessStartInfo
+            StartInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                Arguments = $"-i \"{inputPath}\" -ar 16000 -ac 1 -f wav \"{outputPath}\" -y",
+                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -191,9 +246,15 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
     }
 
+    private static int JpegQualityToQScale(int quality)
+    {
+        var q = Math.Clamp(quality, 1, 100);
+        return Math.Clamp(2 + (100 - q) / 6, 2, 31);
+    }
+
     private static string DetectMimeType(string filePath)
     {
-        return Path.GetExtension(filePath).ToLower() switch
+        return Path.GetExtension(filePath).ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",
             ".png" => "image/png",
