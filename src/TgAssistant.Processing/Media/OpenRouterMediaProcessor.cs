@@ -15,21 +15,20 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     private readonly HttpClient _http;
     private readonly GeminiSettings _settings;
     private readonly MediaSettings _mediaSettings;
+    private readonly ArchiveImportSettings _archiveSettings;
     private readonly ILogger<OpenRouterMediaProcessor> _logger;
-
-    // Model routing
-    private const string ImageModel = "openai/gpt-4o-mini";
-    private const string AudioModel = "openai/gpt-audio-mini";
 
     public OpenRouterMediaProcessor(
         HttpClient http,
         IOptions<GeminiSettings> settings,
         IOptions<MediaSettings> mediaSettings,
+        IOptions<ArchiveImportSettings> archiveSettings,
         ILoggerFactory loggerFactory)
     {
         _http = http;
         _settings = settings.Value;
         _mediaSettings = mediaSettings.Value;
+        _archiveSettings = archiveSettings.Value;
         _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
         _http.BaseAddress = new Uri(_settings.BaseUrl);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
@@ -61,9 +60,9 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
             return mediaType switch
             {
-                MediaType.Photo => await ProcessImageAsync(filePath, "Describe this image in detail. If there is text on the image, transcribe it. If it's a meme, describe the meme and its meaning. Respond in the same language as any text found.", ct),
-                MediaType.Sticker => await ProcessImageAsync(filePath, "Describe this sticker: what does it depict, what emotion does it convey?", ct),
-                MediaType.Animation => await ProcessImageAsync(filePath, "Describe this GIF/animation: what is happening, what emotion does it convey?", ct),
+                MediaType.Photo => await ProcessImageAsync(filePath, BuildPhotoPrompt(filePath), ct),
+                MediaType.Sticker => await ProcessImageAsync(filePath, "Describe this sticker in 1 short sentence: object + emotion.", ct),
+                MediaType.Animation => await ProcessImageAsync(filePath, "Describe this GIF in 1 short sentence: action + emotion.", ct),
                 MediaType.Voice => await ProcessAudioAsync(filePath, ct),
                 MediaType.VideoNote => await ProcessAudioAsync(filePath, ct),
                 MediaType.Video => await ProcessAudioAsync(filePath, ct),
@@ -97,25 +96,12 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             var base64 = Convert.ToBase64String(bytes);
             var mimeType = DetectMimeType(optimizedPath);
 
-            var request = new OpenRouterRequest
-            {
-                Model = ImageModel,
-                Messages = new[]
-                {
-                    new OpenRouterMessage
-                    {
-                        Role = "user",
-                        Content = new object[]
-                        {
-                            new { type = "image_url", image_url = new { url = $"data:{mimeType};base64,{base64}" } },
-                            new { type = "text", text = prompt }
-                        }
-                    }
-                },
-                MaxTokens = 500
-            };
+            var isArchive = IsArchiveMediaPath(filePath);
+            var primaryModel = isArchive ? _mediaSettings.ArchiveVisionModel : _mediaSettings.VisionModel;
+            var fallbackModel = isArchive ? _mediaSettings.VisionModel : null;
+            var maxTokens = isArchive ? _mediaSettings.ArchiveVisionMaxTokens : _mediaSettings.VisionMaxTokens;
 
-            var response = await SendRequestAsync(request, ct);
+            var response = await SendImageRequestWithFallbackAsync(primaryModel, fallbackModel, maxTokens, mimeType, base64, prompt, ct);
 
             return new MediaProcessingResult
             {
@@ -131,6 +117,50 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                 File.Delete(optimizedPath);
             }
         }
+    }
+
+    private async Task<string> SendImageRequestWithFallbackAsync(
+        string primaryModel,
+        string? fallbackModel,
+        int maxTokens,
+        string mimeType,
+        string base64,
+        string prompt,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await SendRequestAsync(BuildImageRequest(primaryModel, maxTokens, mimeType, base64, prompt), ct);
+        }
+        catch (Exception ex) when (!string.IsNullOrWhiteSpace(fallbackModel) && !string.Equals(primaryModel, fallbackModel, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(ex,
+                "Primary vision model failed ({PrimaryModel}), switching to fallback ({FallbackModel})",
+                primaryModel,
+                fallbackModel);
+            return await SendRequestAsync(BuildImageRequest(fallbackModel!, maxTokens, mimeType, base64, prompt), ct);
+        }
+    }
+
+    private OpenRouterRequest BuildImageRequest(string model, int maxTokens, string mimeType, string base64, string prompt)
+    {
+        return new OpenRouterRequest
+        {
+            Model = model,
+            Messages = new[]
+            {
+                new OpenRouterMessage
+                {
+                    Role = "user",
+                    Content = new object[]
+                    {
+                        new { type = "image_url", image_url = new { url = $"data:{mimeType};base64,{base64}" } },
+                        new { type = "text", text = prompt }
+                    }
+                }
+            },
+            MaxTokens = maxTokens
+        };
     }
 
     private async Task<MediaProcessingResult> ProcessAudioAsync(
@@ -149,7 +179,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
         var request = new OpenRouterRequest
         {
-            Model = AudioModel,
+            Model = _mediaSettings.AudioModel,
             Messages = new[]
             {
                 new OpenRouterMessage
@@ -214,6 +244,31 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             request.Model, text.Length > 100 ? text[..100] + "..." : text);
 
         return text;
+    }
+
+    private string BuildPhotoPrompt(string filePath)
+    {
+        if (IsArchiveMediaPath(filePath))
+        {
+            return "Give a very short description (max 20 words): key objects and context only. If visible text exists, include only critical text.";
+        }
+
+        return "Describe this image in detail. If there is text on the image, transcribe it. If it's a meme, describe the meme and its meaning. Respond in the same language as any text found.";
+    }
+
+    private bool IsArchiveMediaPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        var fullPath = Path.GetFullPath(filePath);
+        var archiveRoot = string.IsNullOrWhiteSpace(_archiveSettings.MediaBasePath)
+            ? "/data/archive"
+            : _archiveSettings.MediaBasePath;
+
+        return fullPath.StartsWith(Path.GetFullPath(archiveRoot), StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task ConvertToWavAsync(string inputPath, string outputPath, CancellationToken ct)

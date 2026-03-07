@@ -63,6 +63,11 @@ public class MediaSettings
     public int PhotoBurstThreshold { get; set; } = 10;
     public int PhotoBurstKeepCount { get; set; } = 3;
     public int PhotoBurstWindowSeconds { get; set; } = 120;
+    public string VisionModel { get; set; } = "openai/gpt-4o-mini";
+    public string ArchiveVisionModel { get; set; } = "meta-llama/llama-4-scout";
+    public string AudioModel { get; set; } = "openai/gpt-audio-mini";
+    public int VisionMaxTokens { get; set; } = 220;
+    public int ArchiveVisionMaxTokens { get; set; } = 120;
 }
 
 public class ArchiveImportSettings
