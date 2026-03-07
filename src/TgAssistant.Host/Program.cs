@@ -21,6 +21,9 @@ try
 {
     Log.Information("Starting Telegram Assistant...");
 
+    // Required for Dapper to map snake_case DB columns (media_path) to C# properties (MediaPath)
+    DefaultTypeMap.MatchNamesWithUnderscores = true;
+
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
         .ConfigureServices((context, services) =>
