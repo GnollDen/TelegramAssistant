@@ -17,10 +17,11 @@ docker compose up -d
 1. Put Telegram Desktop export JSON in `ArchiveImport:SourcePath`.
 2. Set `ArchiveImport:Enabled=true`.
 3. Configure `ArchiveImport:MediaBasePath` to exported media root.
-4. Restart host service.
+4. Set `ArchiveImport:ConfirmProcessing=false` and start app once to get cost estimate.
+5. After checking estimate, set `ArchiveImport:ConfirmProcessing=true` to start actual import.
 
 Importer is resumable via `archive_import_runs.last_message_index`.
-Archive media processing runs separately with rate limiting, file size caps, and image resize/compression before LLM calls.
+Archive media processing can run independently (`ArchiveImport:MediaProcessingEnabled`).
 
 ## Burst photo guard
 To control token spend for chat "file dumps":
@@ -42,3 +43,12 @@ When threshold is exceeded, only the first `PhotoBurstKeepCount` photos are sent
 - [ ] 7: Cron notifications
 - [ ] 8: Web UI
 - [ ] 9: Inline mode
+
+
+## Archive Recovery Script
+Run deploy/archive-repair.sh from repo root on server to:
+- remove duplicate messages,
+- normalize export placeholders,
+- show archive media status and reasons,
+- optionally re-queue not-found media with --retry-not-found.
+
