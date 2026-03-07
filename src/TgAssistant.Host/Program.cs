@@ -4,6 +4,7 @@ using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Redis;
+using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
 
@@ -30,6 +31,7 @@ try
             services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
+            services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
             services.PostConfigure<TelegramSettings>(s =>
             {
                 if (!string.IsNullOrEmpty(s.MonitoredChats) && s.MonitoredChatIds.Count == 0)
@@ -49,11 +51,18 @@ try
 
             services.AddSingleton<DatabaseInitializer>();
             services.AddSingleton<IMessageRepository, MessageRepository>();
+            services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
+
             // Media Processing
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
 
+            // Archive import
+            services.AddSingleton<TelegramDesktopArchiveParser>();
+
             services.AddHostedService<TelegramListenerService>();
             services.AddHostedService<BatchWorkerService>();
+            services.AddHostedService<ArchiveImportWorkerService>();
+            services.AddHostedService<ArchiveMediaProcessorService>();
         });
 
     var host = builder.Build();

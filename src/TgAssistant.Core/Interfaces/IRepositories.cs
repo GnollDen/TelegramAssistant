@@ -8,6 +8,16 @@ public interface IMessageRepository
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
+    Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
+    Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
+}
+
+public interface IArchiveImportRepository
+{
+    Task<ArchiveImportRun?> GetRunningRunAsync(string sourcePath, CancellationToken ct = default);
+    Task<ArchiveImportRun> CreateRunAsync(ArchiveImportRun run, CancellationToken ct = default);
+    Task UpdateProgressAsync(Guid runId, int lastMessageIndex, long importedMessages, long queuedMedia, CancellationToken ct = default);
+    Task CompleteRunAsync(Guid runId, ArchiveImportRunStatus status, string? error, CancellationToken ct = default);
 }
 
 public interface IEntityRepository

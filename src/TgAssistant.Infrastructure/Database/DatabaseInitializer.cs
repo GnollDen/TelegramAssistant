@@ -129,7 +129,21 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-
+        CREATE TABLE IF NOT EXISTS archive_import_runs (
+            id UUID PRIMARY KEY,
+            source_path TEXT NOT NULL,
+            status SMALLINT NOT NULL DEFAULT 0,
+            last_message_index INT NOT NULL DEFAULT -1,
+            imported_messages BIGINT NOT NULL DEFAULT 0,
+            queued_media BIGINT NOT NULL DEFAULT 0,
+            total_messages BIGINT NOT NULL DEFAULT 0,
+            total_media BIGINT NOT NULL DEFAULT 0,
+            estimated_cost_usd NUMERIC(12,4) NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_archive_import_runs_source ON archive_import_runs(source_path, created_at DESC);
         -- Add forward_json if missing (migration for existing DB)
         DO $$ BEGIN
             ALTER TABLE messages ADD COLUMN forward_json TEXT;
@@ -137,3 +151,4 @@ public class DatabaseInitializer
         END $$;
         """;
 }
+

@@ -56,6 +56,18 @@ services:
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
       Media__StoragePath: /data/media
+      Media__EnablePhotoBurstGuard: ${MEDIA_BURST_GUARD:-true}
+      Media__PhotoBurstThreshold: ${MEDIA_BURST_THRESHOLD:-10}
+      Media__PhotoBurstKeepCount: ${MEDIA_BURST_KEEP_COUNT:-2}
+      Media__PhotoBurstWindowSeconds: ${MEDIA_BURST_WINDOW_SECONDS:-120}
+      ArchiveImport__Enabled: ${ARCHIVE_IMPORT_ENABLED:-false}
+      ArchiveImport__SourcePath: ${ARCHIVE_IMPORT_SOURCE_PATH:-/data/archive/result.json}
+      ArchiveImport__MediaBasePath: ${ARCHIVE_IMPORT_MEDIA_BASE_PATH:-/data/archive}
+      ArchiveImport__BatchSize: ${ARCHIVE_IMPORT_BATCH_SIZE:-500}
+      ArchiveImport__MaxParallelMedia: ${ARCHIVE_IMPORT_MAX_PARALLEL_MEDIA:-2}
+      ArchiveImport__RequestsPerMinute: ${ARCHIVE_IMPORT_RPM:-30}
+      ArchiveImport__PollIntervalSeconds: ${ARCHIVE_IMPORT_POLL_INTERVAL_SECONDS:-5}
+      ArchiveImport__MaxMediaFileSizeMb: ${ARCHIVE_IMPORT_MAX_MEDIA_SIZE_MB:-50}
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data
