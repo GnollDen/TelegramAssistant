@@ -23,13 +23,20 @@ public class MessageRepository : IMessageRepository
 
     public async Task<long> SaveBatchAsync(IEnumerable<Message> messages, CancellationToken ct = default)
     {
+        var items = messages.ToList();
+        if (items.Count == 0)
+        {
+            return 0;
+        }
+
         await using var conn = CreateConnection();
         await conn.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
-        long count = 0;
-        foreach (var msg in messages)
+
+        foreach (var msg in items)
         {
-            await conn.ExecuteAsync("""
+            await conn.ExecuteAsync(new CommandDefinition(
+                """
                 INSERT INTO messages (
                     telegram_message_id, chat_id, sender_id, sender_name, timestamp,
                     text, media_type, media_path, media_transcription, media_description,
@@ -40,38 +47,92 @@ public class MessageRepository : IMessageRepository
                     @Text, @MediaType, @MediaPath, @MediaTranscription, @MediaDescription,
                     @ReplyToMessageId, @EditTimestamp, @ReactionsJson, @ForwardJson,
                     @Source, @ProcessingStatus, @ProcessedAt
-                ) ON CONFLICT DO NOTHING
-                """, msg, tx);
-            count++;
+                )
+                """,
+                msg,
+                tx,
+                cancellationToken: ct));
         }
+
         await tx.CommitAsync(ct);
-        _logger.LogDebug("Saved batch of {Count} messages", count);
-        return count;
+        _logger.LogDebug("Saved batch of {Count} messages", items.Count);
+        return items.Count;
     }
 
     public async Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default)
     {
         await using var conn = CreateConnection();
-        var results = await conn.QueryAsync<Message>(
+        var results = await conn.QueryAsync<Message>(new CommandDefinition(
             "SELECT * FROM messages WHERE processing_status = 0 ORDER BY timestamp LIMIT @Limit",
-            new { Limit = limit });
+            new { Limit = limit },
+            cancellationToken: ct));
         return results.ToList();
     }
 
     public async Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default)
     {
         await using var conn = CreateConnection();
-        var results = await conn.QueryAsync<Message>(
+        var results = await conn.QueryAsync<Message>(new CommandDefinition(
             "SELECT * FROM messages WHERE chat_id = @ChatId AND timestamp > @Since ORDER BY timestamp",
-            new { ChatId = chatId, Since = since });
+            new { ChatId = chatId, Since = since },
+            cancellationToken: ct));
         return results.ToList();
     }
 
     public async Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
     {
         await using var conn = CreateConnection();
-        await conn.ExecuteAsync(
+        await conn.ExecuteAsync(new CommandDefinition(
             "UPDATE messages SET processing_status = 1, processed_at = NOW() WHERE id = ANY(@Ids)",
-            new { Ids = messageIds.ToArray() });
+            new { Ids = messageIds.ToArray() },
+            cancellationToken: ct));
+    }
+
+    public async Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        var results = await conn.QueryAsync<Message>(new CommandDefinition(
+            """
+            SELECT *
+            FROM messages
+            WHERE source = @Source
+              AND processing_status = @Pending
+              AND media_type <> @None
+              AND media_path IS NOT NULL
+            ORDER BY timestamp
+            LIMIT @Limit
+            """,
+            new
+            {
+                Source = MessageSource.Archive,
+                Pending = ProcessingStatus.Pending,
+                None = MediaType.None,
+                Limit = limit
+            },
+            cancellationToken: ct));
+
+        return results.ToList();
+    }
+
+    public async Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE messages
+            SET media_transcription = @Transcription,
+                media_description = @Description,
+                processing_status = @Status,
+                processed_at = NOW()
+            WHERE id = @MessageId
+            """,
+            new
+            {
+                MessageId = messageId,
+                Transcription = result.Transcription,
+                Description = result.Success ? result.Description : $"Unrecognized: {result.FailureReason}",
+                Status = status
+            },
+            cancellationToken: ct));
     }
 }
