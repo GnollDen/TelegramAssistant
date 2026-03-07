@@ -48,6 +48,7 @@ public class MessageRepository : IMessageRepository
                     @ReplyToMessageId, @EditTimestamp, @ReactionsJson, @ForwardJson,
                     @Source, @ProcessingStatus, @ProcessedAt
                 )
+                ON CONFLICT (source, chat_id, telegram_message_id) DO NOTHING
                 """,
                 msg,
                 tx,

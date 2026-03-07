@@ -20,7 +20,8 @@ public enum ArchiveImportRunStatus
 {
     Running = 0,
     Completed = 1,
-    Failed = 2
+    Failed = 2,
+    AwaitingConfirmation = 3
 }
 
 public class ArchiveCostEstimate

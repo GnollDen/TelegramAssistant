@@ -30,9 +30,9 @@ public class ArchiveMediaProcessorService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_settings.Enabled)
+        if (!_settings.MediaProcessingEnabled)
         {
-            _logger.LogInformation("Archive media processor is disabled");
+            _logger.LogInformation("Archive media processor is disabled by config");
             return;
         }
 
@@ -100,3 +100,4 @@ public class ArchiveMediaProcessorService : BackgroundService
         }
     }
 }
+
