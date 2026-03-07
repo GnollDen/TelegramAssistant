@@ -67,8 +67,8 @@ services:
       ArchiveImport__SourcePath: ${ARCHIVE_IMPORT_SOURCE_PATH:-/data/archive/result.json}
       ArchiveImport__MediaBasePath: ${ARCHIVE_IMPORT_MEDIA_BASE_PATH:-/data/archive}
       ArchiveImport__BatchSize: ${ARCHIVE_IMPORT_BATCH_SIZE:-500}
-      ArchiveImport__MaxParallelMedia: ${ARCHIVE_IMPORT_MAX_PARALLEL_MEDIA:-2}
-      ArchiveImport__RequestsPerMinute: ${ARCHIVE_IMPORT_RPM:-30}
+      ArchiveImport__MaxParallelMedia: ${ARCHIVE_IMPORT_MAX_PARALLEL_MEDIA:-10}
+      ArchiveImport__RequestsPerMinute: ${ARCHIVE_IMPORT_RPM:-300}
       ArchiveImport__PollIntervalSeconds: ${ARCHIVE_IMPORT_POLL_INTERVAL_SECONDS:-5}
       ArchiveImport__MaxMediaFileSizeMb: ${ARCHIVE_IMPORT_MAX_MEDIA_SIZE_MB:-50}
     volumes:
