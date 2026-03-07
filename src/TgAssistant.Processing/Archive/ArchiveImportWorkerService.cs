@@ -9,6 +9,8 @@ namespace TgAssistant.Processing.Archive;
 
 public class ArchiveImportWorkerService : BackgroundService
 {
+    private const string ExportPlaceholderMarker = "(File exceeds maximum size.";
+
     private readonly ArchiveImportSettings _settings;
     private readonly MediaSettings _mediaSettings;
     private readonly TelegramDesktopArchiveParser _parser;
@@ -51,18 +53,34 @@ public class ArchiveImportWorkerService : BackgroundService
         {
             var parseResult = await _parser.ParseAsync(_settings.SourcePath, stoppingToken);
             var burstSkipIndices = BuildPhotoBurstSkipIndices(parseResult.Messages);
-            if (burstSkipIndices.Count > 0)
-            {
-                _logger.LogInformation(
-                    "Archive photo burst policy: skipping {Count} photo items from LLM processing",
-                    burstSkipIndices.Count);
-            }
 
             _logger.LogInformation(
                 "Archive cost estimate: messages={Messages}, media={Media}, estimated_usd={Cost}",
                 parseResult.CostEstimate.TotalMessages,
                 parseResult.CostEstimate.MediaMessages,
                 parseResult.CostEstimate.EstimatedCostUsd);
+
+            var latestRun = await _archiveImportRepository.GetLatestRunAsync(_settings.SourcePath, stoppingToken);
+            if (latestRun is { Status: ArchiveImportRunStatus.Completed }
+                && latestRun.ImportedMessages >= latestRun.TotalMessages
+                && latestRun.TotalMessages == parseResult.CostEstimate.TotalMessages)
+            {
+                _logger.LogInformation("Archive import already completed for this source. Skipping re-import.");
+                return;
+            }
+            if (_settings.RequireCostConfirmation && !_settings.ConfirmProcessing)
+            {
+                await _archiveImportRepository.UpsertEstimateAsync(
+                    _settings.SourcePath,
+                    parseResult.CostEstimate,
+                    ArchiveImportRunStatus.AwaitingConfirmation,
+                    stoppingToken);
+
+                _logger.LogWarning(
+                    "Archive import paused awaiting confirmation. Set ArchiveImport__ConfirmProcessing=true to continue. Estimated cost: {Cost} USD",
+                    parseResult.CostEstimate.EstimatedCostUsd);
+                return;
+            }
 
             run = await _archiveImportRepository.GetRunningRunAsync(_settings.SourcePath, stoppingToken)
                 ?? await _archiveImportRepository.CreateRunAsync(new ArchiveImportRun
@@ -98,9 +116,19 @@ public class ArchiveImportWorkerService : BackgroundService
 
                 var item = parseResult.Messages[i];
                 var mediaPath = ResolveMediaPath(item.RelativeMediaPath);
-                var hasMedia = item.MediaType != MediaType.None && !string.IsNullOrWhiteSpace(mediaPath);
-                var isProcessableMedia = hasMedia && IsProcessableMedia(item.MediaType);
+                var hasMediaPath = item.MediaType != MediaType.None && !string.IsNullOrWhiteSpace(mediaPath);
+                var isPlaceholderPath = IsExportPlaceholderPath(item.RelativeMediaPath);
+                var isProcessableMediaType = hasMediaPath && IsProcessableMedia(item.MediaType);
                 var isBurstSkippedPhoto = burstSkipIndices.Contains(item.Index);
+                var isUnsupportedExt = hasMediaPath && IsUnsupportedArchiveExtension(mediaPath!);
+                var fileExists = hasMediaPath && !isPlaceholderPath && File.Exists(mediaPath!);
+
+                var shouldQueue = hasMediaPath
+                                  && isProcessableMediaType
+                                  && !isBurstSkippedPhoto
+                                  && !isUnsupportedExt
+                                  && !isPlaceholderPath
+                                  && fileExists;
 
                 buffer.Add(new Message
                 {
@@ -110,14 +138,21 @@ public class ArchiveImportWorkerService : BackgroundService
                     SenderName = item.SenderName,
                     Timestamp = item.Timestamp,
                     Text = item.Text,
-                    MediaType = hasMedia ? item.MediaType : MediaType.None,
-                    MediaPath = hasMedia ? mediaPath : null,
-                    MediaDescription = BuildArchiveMediaDescription(item.MediaType, hasMedia, isProcessableMedia, isBurstSkippedPhoto),
+                    MediaType = hasMediaPath ? item.MediaType : MediaType.None,
+                    MediaPath = hasMediaPath ? mediaPath : null,
+                    MediaDescription = BuildArchiveMediaDescription(
+                        item.MediaType,
+                        hasMediaPath,
+                        isProcessableMediaType,
+                        isBurstSkippedPhoto,
+                        isUnsupportedExt,
+                        isPlaceholderPath,
+                        fileExists),
                     ReplyToMessageId = item.ReplyToMessageId,
                     ForwardJson = item.ForwardJson,
                     Source = MessageSource.Archive,
-                    ProcessingStatus = ResolveProcessingStatus(hasMedia, isProcessableMedia, isBurstSkippedPhoto),
-                    ProcessedAt = !hasMedia || !isProcessableMedia || isBurstSkippedPhoto ? DateTime.UtcNow : null
+                    ProcessingStatus = shouldQueue ? ProcessingStatus.Pending : hasMediaPath ? ProcessingStatus.PendingReview : ProcessingStatus.Processed,
+                    ProcessedAt = shouldQueue ? null : DateTime.UtcNow
                 });
 
                 lastIndex = item.Index;
@@ -181,36 +216,50 @@ public class ArchiveImportWorkerService : BackgroundService
         return type is MediaType.Photo or MediaType.Sticker or MediaType.Animation or MediaType.Voice or MediaType.Video or MediaType.VideoNote;
     }
 
-    private static ProcessingStatus ResolveProcessingStatus(bool hasMedia, bool isProcessableMedia, bool isBurstSkippedPhoto)
+    private static bool IsUnsupportedArchiveExtension(string mediaPath)
     {
-        if (!hasMedia)
-        {
-            return ProcessingStatus.Processed;
-        }
-
-        if (isBurstSkippedPhoto)
-        {
-            return ProcessingStatus.Processed;
-        }
-
-        if (isProcessableMedia)
-        {
-            return ProcessingStatus.Pending;
-        }
-
-        return ProcessingStatus.PendingReview;
+        var ext = Path.GetExtension(mediaPath).ToLowerInvariant();
+        return ext is ".tgs";
     }
 
-    private static string? BuildArchiveMediaDescription(MediaType mediaType, bool hasMedia, bool isProcessableMedia, bool isBurstSkippedPhoto)
+    private static bool IsExportPlaceholderPath(string? relativePath)
+    {
+        return !string.IsNullOrWhiteSpace(relativePath)
+               && relativePath.Contains(ExportPlaceholderMarker, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? BuildArchiveMediaDescription(
+        MediaType mediaType,
+        bool hasMedia,
+        bool isProcessableMedia,
+        bool isBurstSkippedPhoto,
+        bool isUnsupportedExt,
+        bool isPlaceholderPath,
+        bool fileExists)
     {
         if (!hasMedia)
         {
             return null;
         }
 
+        if (isPlaceholderPath)
+        {
+            return "Skipped: Telegram export placeholder (file not downloaded)";
+        }
+
+        if (!fileExists)
+        {
+            return "Skipped: archive media file missing";
+        }
+
         if (isBurstSkippedPhoto)
         {
             return "Skipped by burst policy: high-volume photo forwarding";
+        }
+
+        if (isUnsupportedExt)
+        {
+            return "Skipped by policy: unsupported archive media extension";
         }
 
         if (!isProcessableMedia)
@@ -274,3 +323,5 @@ public class ArchiveImportWorkerService : BackgroundService
         return skip;
     }
 }
+
+

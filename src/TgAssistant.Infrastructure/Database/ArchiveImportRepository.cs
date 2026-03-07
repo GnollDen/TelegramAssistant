@@ -22,18 +22,17 @@ public class ArchiveImportRepository : IArchiveImportRepository
     {
         await using var conn = CreateConnection();
         return await conn.QuerySingleOrDefaultAsync<ArchiveImportRun>(new CommandDefinition(
-            """
-            SELECT id, source_path AS SourcePath, status, last_message_index AS LastMessageIndex,
-                   imported_messages AS ImportedMessages, queued_media AS QueuedMedia,
-                   total_messages AS TotalMessages, total_media AS TotalMedia,
-                   estimated_cost_usd AS EstimatedCostUsd, error,
-                   created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM archive_import_runs
-            WHERE source_path = @SourcePath AND status = @Status
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
+            SelectBase + " WHERE source_path = @SourcePath AND status = @Status ORDER BY created_at DESC LIMIT 1",
             new { SourcePath = sourcePath, Status = ArchiveImportRunStatus.Running },
+            cancellationToken: ct));
+    }
+
+    public async Task<ArchiveImportRun?> GetLatestRunAsync(string sourcePath, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        return await conn.QuerySingleOrDefaultAsync<ArchiveImportRun>(new CommandDefinition(
+            SelectBase + " WHERE source_path = @SourcePath ORDER BY created_at DESC LIMIT 1",
+            new { SourcePath = sourcePath },
             cancellationToken: ct));
     }
 
@@ -58,6 +57,49 @@ public class ArchiveImportRepository : IArchiveImportRepository
             cancellationToken: ct));
 
         return run;
+    }
+
+    public async Task UpsertEstimateAsync(string sourcePath, ArchiveCostEstimate estimate, ArchiveImportRunStatus status, CancellationToken ct = default)
+    {
+        await using var conn = CreateConnection();
+        var latest = await GetLatestRunAsync(sourcePath, ct);
+
+        if (latest is null || latest.Status is ArchiveImportRunStatus.Completed or ArchiveImportRunStatus.Failed)
+        {
+            await CreateRunAsync(new ArchiveImportRun
+            {
+                SourcePath = sourcePath,
+                Status = status,
+                LastMessageIndex = -1,
+                ImportedMessages = 0,
+                QueuedMedia = 0,
+                TotalMessages = estimate.TotalMessages,
+                TotalMedia = estimate.MediaMessages,
+                EstimatedCostUsd = estimate.EstimatedCostUsd
+            }, ct);
+            return;
+        }
+
+        await conn.ExecuteAsync(new CommandDefinition(
+            """
+            UPDATE archive_import_runs
+            SET status = @Status,
+                total_messages = @TotalMessages,
+                total_media = @TotalMedia,
+                estimated_cost_usd = @EstimatedCostUsd,
+                error = NULL,
+                updated_at = NOW()
+            WHERE id = @RunId
+            """,
+            new
+            {
+                RunId = latest.Id,
+                Status = status,
+                TotalMessages = estimate.TotalMessages,
+                TotalMedia = estimate.MediaMessages,
+                EstimatedCostUsd = estimate.EstimatedCostUsd
+            },
+            cancellationToken: ct));
     }
 
     public async Task UpdateProgressAsync(Guid runId, int lastMessageIndex, long importedMessages, long queuedMedia, CancellationToken ct = default)
@@ -90,4 +132,14 @@ public class ArchiveImportRepository : IArchiveImportRepository
             new { RunId = runId, Status = status, Error = error },
             cancellationToken: ct));
     }
+
+    private const string SelectBase =
+        """
+        SELECT id, source_path AS SourcePath, status, last_message_index AS LastMessageIndex,
+               imported_messages AS ImportedMessages, queued_media AS QueuedMedia,
+               total_messages AS TotalMessages, total_media AS TotalMedia,
+               estimated_cost_usd AS EstimatedCostUsd, error,
+               created_at AS CreatedAt, updated_at AS UpdatedAt
+        FROM archive_import_runs
+        """;
 }

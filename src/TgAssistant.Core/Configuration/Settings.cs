@@ -69,6 +69,9 @@ public class ArchiveImportSettings
 {
     public const string Section = "ArchiveImport";
     public bool Enabled { get; set; }
+    public bool MediaProcessingEnabled { get; set; } = true;
+    public bool RequireCostConfirmation { get; set; } = true;
+    public bool ConfirmProcessing { get; set; }
     public string SourcePath { get; set; } = "/data/archive/result.json";
     public string MediaBasePath { get; set; } = "/data/archive";
     public int BatchSize { get; set; } = 500;
