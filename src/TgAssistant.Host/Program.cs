@@ -17,7 +17,6 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.File("logs/tgassistant-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
-DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 try
 {
