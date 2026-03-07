@@ -1,56 +1,63 @@
-using Dapper;
-using Microsoft.Extensions.Options;
-using Npgsql;
-using TgAssistant.Core.Configuration;
+using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
 
 public class StickerCacheRepository : IStickerCacheRepository
 {
-    private readonly string _connectionString;
+    private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
-    public StickerCacheRepository(IOptions<DatabaseSettings> settings)
+    public StickerCacheRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
     {
-        _connectionString = settings.Value.ConnectionString;
+        _dbFactory = dbFactory;
     }
-
-    private NpgsqlConnection CreateConnection() => new(_connectionString);
 
     public async Task<StickerCacheItem?> GetByHashAsync(string contentHash, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        return await conn.QuerySingleOrDefaultAsync<StickerCacheItem>(new CommandDefinition(
-            """
-            SELECT content_hash AS ContentHash,
-                   description AS Description,
-                   model AS Model
-            FROM sticker_cache
-            WHERE content_hash = @ContentHash
-            """,
-            new { ContentHash = contentHash },
-            cancellationToken: ct));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.StickerCache.FirstOrDefaultAsync(x => x.ContentHash == contentHash, ct);
+        if (row == null)
+        {
+            return null;
+        }
+
+        row.HitCount += 1;
+        row.LastUsedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return new StickerCacheItem
+        {
+            ContentHash = row.ContentHash,
+            Description = row.Description,
+            Model = row.Model
+        };
     }
 
     public async Task UpsertAsync(string contentHash, string description, string model, CancellationToken ct = default)
     {
-        await using var conn = CreateConnection();
-        await conn.ExecuteAsync(new CommandDefinition(
-            """
-            INSERT INTO sticker_cache (content_hash, description, model, hit_count, last_used_at)
-            VALUES (@ContentHash, @Description, @Model, 1, NOW())
-            ON CONFLICT (content_hash) DO UPDATE
-            SET description = EXCLUDED.description,
-                model = EXCLUDED.model,
-                hit_count = sticker_cache.hit_count + 1,
-                last_used_at = NOW()
-            """,
-            new
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.StickerCache.FirstOrDefaultAsync(x => x.ContentHash == contentHash, ct);
+        if (row == null)
+        {
+            db.StickerCache.Add(new DbStickerCache
             {
                 ContentHash = contentHash,
                 Description = description,
-                Model = model
-            },
-            cancellationToken: ct));
+                Model = model,
+                HitCount = 1,
+                CreatedAt = DateTime.UtcNow,
+                LastUsedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            row.Description = description;
+            row.Model = model;
+            row.HitCount += 1;
+            row.LastUsedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 }

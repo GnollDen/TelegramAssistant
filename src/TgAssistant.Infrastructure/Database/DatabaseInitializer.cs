@@ -162,6 +162,23 @@ public class DatabaseInitializer
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_archive_import_runs_source ON archive_import_runs(source_path, created_at DESC);
+        CREATE TABLE IF NOT EXISTS analysis_state (
+            key TEXT PRIMARY KEY,
+            value BIGINT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS message_extractions (
+            id BIGSERIAL PRIMARY KEY,
+            message_id BIGINT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+            cheap_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            expensive_json JSONB,
+            needs_expensive BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_message_extractions_needs_expensive ON message_extractions(needs_expensive) WHERE needs_expensive = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_messages_processed_by_id ON messages(id) WHERE processing_status = 1;
 
         -- Add forward_json if missing (migration for existing DB)
         DO $$ BEGIN
@@ -170,3 +187,4 @@ public class DatabaseInitializer
         END $$;
         """;
 }
+

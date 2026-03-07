@@ -10,9 +10,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="8.0.6" />
-    <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.22" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.8" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
   </ItemGroup>
 </Project>
