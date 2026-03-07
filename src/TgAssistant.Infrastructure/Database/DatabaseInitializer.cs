@@ -51,6 +51,14 @@ public class DatabaseInitializer
         CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp);
         CREATE INDEX IF NOT EXISTS idx_messages_processing ON messages(processing_status) WHERE processing_status = 0;
         CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id, timestamp);
+        -- Deduplicate before enforcing uniqueness to avoid startup failures on existing data.
+        DELETE FROM messages m
+        USING messages d
+        WHERE m.id > d.id
+          AND m.source = d.source
+          AND m.chat_id = d.chat_id
+          AND m.telegram_message_id = d.telegram_message_id;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_messages_source_chat_tg_message ON messages(source, chat_id, telegram_message_id);
 
         CREATE TABLE IF NOT EXISTS entities (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -129,6 +137,7 @@ public class DatabaseInitializer
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
         CREATE TABLE IF NOT EXISTS archive_import_runs (
             id UUID PRIMARY KEY,
             source_path TEXT NOT NULL,
@@ -144,6 +153,7 @@ public class DatabaseInitializer
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_archive_import_runs_source ON archive_import_runs(source_path, created_at DESC);
+
         -- Add forward_json if missing (migration for existing DB)
         DO $$ BEGIN
             ALTER TABLE messages ADD COLUMN forward_json TEXT;
@@ -151,4 +161,3 @@ public class DatabaseInitializer
         END $$;
         """;
 }
-

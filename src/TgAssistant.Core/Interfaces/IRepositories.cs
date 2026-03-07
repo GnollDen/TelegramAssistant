@@ -15,7 +15,9 @@ public interface IMessageRepository
 public interface IArchiveImportRepository
 {
     Task<ArchiveImportRun?> GetRunningRunAsync(string sourcePath, CancellationToken ct = default);
+    Task<ArchiveImportRun?> GetLatestRunAsync(string sourcePath, CancellationToken ct = default);
     Task<ArchiveImportRun> CreateRunAsync(ArchiveImportRun run, CancellationToken ct = default);
+    Task UpsertEstimateAsync(string sourcePath, ArchiveCostEstimate estimate, ArchiveImportRunStatus status, CancellationToken ct = default);
     Task UpdateProgressAsync(Guid runId, int lastMessageIndex, long importedMessages, long queuedMedia, CancellationToken ct = default);
     Task CompleteRunAsync(Guid runId, ArchiveImportRunStatus status, string? error, CancellationToken ct = default);
 }

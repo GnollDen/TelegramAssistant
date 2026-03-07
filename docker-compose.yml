@@ -61,6 +61,9 @@ services:
       Media__PhotoBurstKeepCount: ${MEDIA_BURST_KEEP_COUNT:-2}
       Media__PhotoBurstWindowSeconds: ${MEDIA_BURST_WINDOW_SECONDS:-120}
       ArchiveImport__Enabled: ${ARCHIVE_IMPORT_ENABLED:-false}
+      ArchiveImport__MediaProcessingEnabled: ${ARCHIVE_MEDIA_PROCESSING_ENABLED:-true}
+      ArchiveImport__RequireCostConfirmation: ${ARCHIVE_IMPORT_REQUIRE_CONFIRMATION:-true}
+      ArchiveImport__ConfirmProcessing: ${ARCHIVE_IMPORT_CONFIRM_PROCESSING:-false}
       ArchiveImport__SourcePath: ${ARCHIVE_IMPORT_SOURCE_PATH:-/data/archive/result.json}
       ArchiveImport__MediaBasePath: ${ARCHIVE_IMPORT_MEDIA_BASE_PATH:-/data/archive}
       ArchiveImport__BatchSize: ${ARCHIVE_IMPORT_BATCH_SIZE:-500}
