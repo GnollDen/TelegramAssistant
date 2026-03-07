@@ -1,10 +1,12 @@
-using Dapper;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StackExchange.Redis;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database;
+using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
+using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
@@ -21,9 +23,6 @@ try
 {
     Log.Information("Starting Telegram Assistant...");
 
-    // Required for Dapper to map snake_case DB columns (media_path) to C# properties (MediaPath)
-    DefaultTypeMap.MatchNamesWithUnderscores = true;
-
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
         .ConfigureServices((context, services) =>
@@ -38,6 +37,8 @@ try
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
+
+            services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -57,12 +58,31 @@ try
             services.AddSingleton<RedisMessageQueue>();
             services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
 
+            services.AddDbContextFactory<TgAssistantDbContext>(opt =>
+            {
+                var cs = config.GetSection(DatabaseSettings.Section).GetValue<string>("ConnectionString")
+                         ?? "Host=localhost;Database=tgassistant;Username=tgassistant;Password=changeme";
+                opt.UseNpgsql(cs);
+            });
+
             services.AddSingleton<DatabaseInitializer>();
+
+            // Data layer (EF Core)
             services.AddSingleton<IMessageRepository, MessageRepository>();
             services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
             services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
+            services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();
+            services.AddSingleton<IAnalysisStateRepository, AnalysisStateRepository>();
+            services.AddSingleton<IMessageExtractionRepository, MessageExtractionRepository>();
+            services.AddSingleton<IEntityRepository, EntityRepository>();
+            services.AddSingleton<IFactRepository, FactRepository>();
+            services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
+            services.AddSingleton<ISummaryRepository, SummaryRepository>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
+
+
+            services.AddHttpClient<OpenRouterAnalysisService>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
@@ -70,6 +90,7 @@ try
             services.AddHostedService<BatchWorkerService>();
             services.AddHostedService<ArchiveImportWorkerService>();
             services.AddHostedService<ArchiveMediaProcessorService>();
+            services.AddHostedService<AnalysisWorkerService>();
         });
 
     var host = builder.Build();

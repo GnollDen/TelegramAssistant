@@ -80,8 +80,20 @@ public class ArchiveImportSettings
     public string SourcePath { get; set; } = "/data/archive/result.json";
     public string MediaBasePath { get; set; } = "/data/archive";
     public int BatchSize { get; set; } = 500;
-    public int MaxParallelMedia { get; set; } = 2;
-    public int RequestsPerMinute { get; set; } = 30;
+    public int MaxParallelMedia { get; set; } = 10;
+    public int RequestsPerMinute { get; set; } = 300;
     public int PollIntervalSeconds { get; set; } = 5;
     public int MaxMediaFileSizeMb { get; set; } = 50;
+}
+
+public class AnalysisSettings
+{
+    public const string Section = "Analysis";
+    public bool Enabled { get; set; } = false;
+    public string CheapModel { get; set; } = "openai/gpt-4o-mini";
+    public string ExpensiveModel { get; set; } = "anthropic/claude-sonnet-4";
+    public int BatchSize { get; set; } = 50;
+    public int PollIntervalSeconds { get; set; } = 10;
+    public int MaxExpensivePerBatch { get; set; } = 10;
+    public float CheapConfidenceThreshold { get; set; } = 0.8f;
 }
