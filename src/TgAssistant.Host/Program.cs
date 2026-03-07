@@ -56,6 +56,7 @@ try
             services.AddSingleton<DatabaseInitializer>();
             services.AddSingleton<IMessageRepository, MessageRepository>();
             services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
+            services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
 
             // Media Processing
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();

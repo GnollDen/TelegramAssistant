@@ -138,6 +138,15 @@ public class DatabaseInitializer
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS sticker_cache (
+            content_hash TEXT PRIMARY KEY,
+            description TEXT NOT NULL,
+            model TEXT NOT NULL,
+            hit_count BIGINT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS archive_import_runs (
             id UUID PRIMARY KEY,
             source_path TEXT NOT NULL,

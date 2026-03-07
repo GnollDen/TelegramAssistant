@@ -14,6 +14,12 @@ public interface IMediaProcessor
     Task<MediaProcessingResult> ProcessAsync(string filePath, MediaType mediaType, CancellationToken ct = default);
 }
 
+public interface IStickerCacheRepository
+{
+    Task<StickerCacheItem?> GetByHashAsync(string contentHash, CancellationToken ct = default);
+    Task UpsertAsync(string contentHash, string description, string model, CancellationToken ct = default);
+}
+
 public interface IIntelligenceService
 {
     Task<DossierDiff> UpdateDossierAsync(Guid entityId, List<Message> newMessages, CancellationToken ct = default);
@@ -46,6 +52,13 @@ public class MediaProcessingResult
     public string? Sentiment { get; set; }
     public float Confidence { get; set; }
     public string? FailureReason { get; set; }
+}
+
+public class StickerCacheItem
+{
+    public string ContentHash { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
 }
 
 public class DossierDiff
