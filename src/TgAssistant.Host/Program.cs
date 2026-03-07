@@ -1,3 +1,4 @@
+using Dapper;
 using Serilog;
 using StackExchange.Redis;
 using TgAssistant.Core.Configuration;
@@ -13,6 +14,8 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
     .WriteTo.File("logs/tgassistant-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
+
+DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 try
 {
@@ -32,6 +35,7 @@ try
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
+
             services.PostConfigure<TelegramSettings>(s =>
             {
                 if (!string.IsNullOrEmpty(s.MonitoredChats) && s.MonitoredChatIds.Count == 0)
@@ -46,6 +50,7 @@ try
             services.AddSingleton<IConnectionMultiplexer>(_ =>
                 ConnectionMultiplexer.Connect(
                     config.GetSection(RedisSettings.Section).GetValue<string>("ConnectionString") ?? "localhost:6379"));
+
             services.AddSingleton<RedisMessageQueue>();
             services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
 
@@ -53,10 +58,8 @@ try
             services.AddSingleton<IMessageRepository, MessageRepository>();
             services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
 
-            // Media Processing
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
 
-            // Archive import
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
             services.AddHostedService<TelegramListenerService>();
@@ -71,11 +74,18 @@ try
     {
         var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
         await dbInit.InitializeAsync();
+
         var redisQueue = scope.ServiceProvider.GetRequiredService<RedisMessageQueue>();
         await redisQueue.InitializeAsync();
     }
 
     await host.RunAsync();
 }
-catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); }
-finally { Log.CloseAndFlush(); }
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
