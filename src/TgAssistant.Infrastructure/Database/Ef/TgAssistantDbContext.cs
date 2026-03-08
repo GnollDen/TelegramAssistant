@@ -74,7 +74,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Aliases).HasColumnName("aliases");
             e.Property(x => x.TelegramUserId).HasColumnName("telegram_user_id");
             e.Property(x => x.TelegramUsername).HasColumnName("telegram_username");
-            e.Property(x => x.Metadata).HasColumnName("metadata");
+            e.Property(x => x.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
