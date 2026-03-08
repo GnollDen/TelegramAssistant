@@ -38,8 +38,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.MediaTranscription).HasColumnName("media_transcription");
             e.Property(x => x.ReplyToMessageId).HasColumnName("reply_to_message_id");
             e.Property(x => x.EditTimestamp).HasColumnName("edit_timestamp");
-            e.Property(x => x.ReactionsJson).HasColumnName("reactions_json");
-            e.Property(x => x.ForwardJson).HasColumnName("forward_json");
+            e.Property(x => x.ReactionsJson).HasColumnName("reactions_json").HasColumnType("jsonb");
+            e.Property(x => x.ForwardJson).HasColumnName("forward_json").HasColumnType("jsonb");
             e.Property(x => x.ProcessingStatus).HasColumnName("processing_status");
             e.Property(x => x.Source).HasColumnName("source");
             e.Property(x => x.ProcessedAt).HasColumnName("processed_at");
@@ -155,8 +155,8 @@ public class TgAssistantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.MessageId).HasColumnName("message_id");
-            e.Property(x => x.CheapJson).HasColumnName("cheap_json");
-            e.Property(x => x.ExpensiveJson).HasColumnName("expensive_json");
+            e.Property(x => x.CheapJson).HasColumnName("cheap_json").HasColumnType("jsonb");
+            e.Property(x => x.ExpensiveJson).HasColumnName("expensive_json").HasColumnType("jsonb");
             e.Property(x => x.NeedsExpensive).HasColumnName("needs_expensive");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
@@ -176,3 +176,4 @@ public class TgAssistantDbContext : DbContext
         });
     }
 }
+

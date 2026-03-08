@@ -57,7 +57,9 @@ jobs:
           script: |
             cd /opt/tgassistant/TelegramAssistant
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u GnollDen --password-stdin
-            git pull origin master --ff-only || true
-            docker pull ghcr.io/gnollden/tgassistant:latest
-            docker compose up -d app
+            git fetch origin master
+            git reset --hard origin/master
+            export IMAGE_TAG=ghcr.io/gnollden/tgassistant:latest
+            docker pull "$IMAGE_TAG"
+            docker compose up -d --no-build --force-recreate app
             docker image prune -f

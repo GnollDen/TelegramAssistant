@@ -38,13 +38,24 @@ try
             services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
             services.PostConfigure<TelegramSettings>(s =>
             {
-                if (!string.IsNullOrEmpty(s.MonitoredChats) && s.MonitoredChatIds.Count == 0)
+                if (string.IsNullOrWhiteSpace(s.MonitoredChats))
                 {
-                    s.MonitoredChatIds = s.MonitoredChats
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(id => long.Parse(id.Trim()))
-                        .ToList();
+                    return;
                 }
+
+                var needsParse = s.MonitoredChatIds.Count == 0 || s.MonitoredChatIds.All(id => id <= 0);
+                if (!needsParse)
+                {
+                    s.MonitoredChatIds = s.MonitoredChatIds.Where(id => id > 0).Distinct().ToList();
+                    return;
+                }
+
+                s.MonitoredChatIds = s.MonitoredChats
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(raw => long.TryParse(raw.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .Distinct()
+                    .ToList();
             });
 
             services.AddSingleton<IConnectionMultiplexer>(_ =>
@@ -104,3 +115,4 @@ try
 }
 catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); }
 finally { Log.CloseAndFlush(); }
+
