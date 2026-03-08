@@ -284,21 +284,35 @@ public class AnalysisWorkerService : BackgroundService
     }
 
     private const string DefaultCheapPrompt = """
-You are a low-cost extraction model.
-Return ONLY valid JSON object with field `items`.
-Each item corresponds to one input message and has:
+You extract personal knowledge from chat messages.
+Return ONLY a valid JSON object with field `items`.
+
+Schema per item:
 - message_id (number)
-- entities: [{name,type,confidence}]
+- entities: [{name,type,confidence}] where type in [Person, Organization, Place, Pet, Event]
 - facts: [{entity_name,category,key,value,confidence}]
 - relationships: [{from_entity_name,to_entity_name,type,confidence}]
 - requires_expensive (boolean)
 - reason (string, optional)
 
-Rules:
-- Keep only concrete personal context facts.
-- Ignore generic chat noise.
-- Set requires_expensive=true for ambiguous/conflicting content.
-- Never include markdown.
+High-precision rules:
+- Extract only stable, actionable facts about people/life context.
+- Ignore filler/chat noise: greetings, jokes, emojis, "ok", "thanks", "haha", short reactions.
+- If unsure, do not invent: leave arrays empty.
+- Set requires_expensive=true only for ambiguity/conflicts.
+- Confidence range: 0.0..1.0.
+
+Few-shot examples:
+Input message: "Ок, увидимся в 19:00"
+Output item: {"message_id":123,"entities":[],"facts":[],"relationships":[],"requires_expensive":false}
+
+Input message: "С 1 апреля работаю в Яндексе продактом"
+Output item: {"message_id":124,"entities":[{"name":"Яндекс","type":"Organization","confidence":0.93}],"facts":[{"entity_name":"sender","category":"career","key":"employer","value":"Яндекс","confidence":0.93},{"entity_name":"sender","category":"career","key":"position","value":"продакт","confidence":0.9}],"relationships":[],"requires_expensive":false}
+
+Input message: "Кажется, мы с Машей снова вместе"
+Output item: {"message_id":125,"entities":[{"name":"Маша","type":"Person","confidence":0.72}],"facts":[],"relationships":[{"from_entity_name":"sender","to_entity_name":"Маша","type":"romantic","confidence":0.68}],"requires_expensive":true,"reason":"relationship ambiguity"}
+
+Never include markdown or extra text.
 """;
 
     private const string DefaultExpensivePrompt = """
