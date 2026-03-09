@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -39,8 +40,8 @@ public class OpenRouterAnalysisService
 
     public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
     {
-        var user = JsonSerializer.Serialize(new { messages = batch }, JsonOptions);
-        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000));
+        var user = BuildCheapBatchPrompt(batch);
+        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000), 0.0f);
         var json = await SendAndExtractJsonAsync(req, "cheap", ct);
         return ParseBatch(json);
     }
@@ -48,13 +49,27 @@ public class OpenRouterAnalysisService
     public async Task<ExtractionItem?> ResolveExpensiveAsync(string model, string systemPrompt, ExtractionItem candidate, List<string> currentFacts, CancellationToken ct)
     {
         var user = JsonSerializer.Serialize(new { candidate, current_facts = currentFacts }, JsonOptions);
-        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000));
+        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000), 0.0f);
         var json = await SendAndExtractJsonAsync(req, "expensive", ct);
         var parsed = ParseBatch(json);
         return parsed.Items.FirstOrDefault();
     }
 
-    private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens)
+    private static string BuildCheapBatchPrompt(List<AnalysisInputMessage> batch)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Analyze these chat messages and return one extraction item per message.");
+        foreach (var msg in batch)
+        {
+            sb.AppendLine($"<message id=\"{msg.MessageId}\" sender_name=\"{msg.SenderName}\" ts=\"{msg.Timestamp:O}\">");
+            sb.AppendLine(msg.Text);
+            sb.AppendLine("</message>");
+        }
+
+        return sb.ToString();
+    }
+
+    private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature)
     {
         return new OpenRouterRequest
         {
@@ -65,7 +80,8 @@ public class OpenRouterAnalysisService
                 new OpenRouterMessage { Role = "user", Content = userPrompt }
             ],
             ResponseFormat = new OpenRouterResponseFormat { Type = "json_object" },
-            MaxTokens = maxTokens
+            MaxTokens = maxTokens,
+            Temperature = temperature
         };
     }
 
@@ -123,6 +139,7 @@ public class OpenRouterAnalysisService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
@@ -138,6 +155,7 @@ internal class OpenRouterRequest
     public List<OpenRouterMessage> Messages { get; set; } = new();
     public OpenRouterResponseFormat? ResponseFormat { get; set; }
     public int? MaxTokens { get; set; }
+    public float Temperature { get; set; }
 }
 
 internal class OpenRouterMessage
