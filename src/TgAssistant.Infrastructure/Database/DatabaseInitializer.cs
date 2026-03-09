@@ -46,11 +46,13 @@ public class DatabaseInitializer
             source SMALLINT NOT NULL DEFAULT 0,
             processing_status SMALLINT NOT NULL DEFAULT 0,
             processed_at TIMESTAMPTZ,
+            needs_reanalysis BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp);
         CREATE INDEX IF NOT EXISTS idx_messages_processing ON messages(processing_status) WHERE processing_status = 0;
         CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_messages_needs_reanalysis ON messages(needs_reanalysis) WHERE needs_reanalysis = TRUE;
         -- Deduplicate before enforcing uniqueness to avoid startup failures on existing data.
         DELETE FROM messages m
         USING messages d
@@ -315,6 +317,11 @@ public class DatabaseInitializer
             ALTER TABLE messages ADD COLUMN forward_json TEXT;
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
+        DO $$ BEGIN
+            ALTER TABLE messages ADD COLUMN needs_reanalysis BOOLEAN NOT NULL DEFAULT FALSE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        CREATE INDEX IF NOT EXISTS idx_messages_needs_reanalysis ON messages(needs_reanalysis) WHERE needs_reanalysis = TRUE;
 
         -- Add actor_key if missing (migration for existing DB)
         DO $$ BEGIN

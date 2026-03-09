@@ -28,4 +28,17 @@ public class AnalysisUsageRepository : IAnalysisUsageRepository
         });
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<decimal> GetCostUsdSinceAsync(string phase, DateTime sinceUtc, CancellationToken ct = default)
+    {
+        var normalizedPhase = string.IsNullOrWhiteSpace(phase) ? "unknown" : phase.Trim();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var sum = await db.AnalysisUsageEvents
+            .AsNoTracking()
+            .Where(x => x.Phase == normalizedPhase && x.CreatedAt >= sinceUtc)
+            .Select(x => x.CostUsd)
+            .DefaultIfEmpty(0m)
+            .SumAsync(ct);
+        return sum;
+    }
 }

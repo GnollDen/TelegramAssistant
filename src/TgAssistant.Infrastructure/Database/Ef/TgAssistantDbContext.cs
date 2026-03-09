@@ -51,6 +51,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.ProcessingStatus).HasColumnName("processing_status");
             e.Property(x => x.Source).HasColumnName("source");
             e.Property(x => x.ProcessedAt).HasColumnName("processed_at");
+            e.Property(x => x.NeedsReanalysis).HasColumnName("needs_reanalysis");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 

@@ -88,6 +88,16 @@ public class ExtractionSchemaValidator
             return false;
         }
 
+        if (!ValidateEventArray(item, index, out error))
+        {
+            return false;
+        }
+
+        if (!ValidateProfileSignalArray(item, index, out error))
+        {
+            return false;
+        }
+
         if (item.TryGetProperty("requires_expensive", out var requiresExpensive) &&
             requiresExpensive.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
         {
@@ -207,6 +217,81 @@ public class ExtractionSchemaValidator
                 !IsNumberOrMissing(relationship, "confidence"))
             {
                 error = $"item_{index}_relationship_{i}_invalid_fields";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateEventArray(JsonElement item, int index, out string? error)
+    {
+        error = null;
+        if (!item.TryGetProperty("events", out var events))
+        {
+            return true;
+        }
+
+        if (events.ValueKind != JsonValueKind.Array)
+        {
+            error = $"item_{index}_events_not_array";
+            return false;
+        }
+
+        for (var i = 0; i < events.GetArrayLength(); i++)
+        {
+            var evt = events[i];
+            if (evt.ValueKind != JsonValueKind.Object)
+            {
+                error = $"item_{index}_event_{i}_not_object";
+                return false;
+            }
+
+            if (!IsStringOrMissing(evt, "type") ||
+                !IsStringOrMissing(evt, "subject_name") ||
+                !IsStringOrMissing(evt, "object_name") ||
+                !IsStringOrMissing(evt, "sentiment") ||
+                !IsStringOrMissing(evt, "summary") ||
+                !IsNumberOrMissing(evt, "confidence"))
+            {
+                error = $"item_{index}_event_{i}_invalid_fields";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateProfileSignalArray(JsonElement item, int index, out string? error)
+    {
+        error = null;
+        if (!item.TryGetProperty("profile_signals", out var signals))
+        {
+            return true;
+        }
+
+        if (signals.ValueKind != JsonValueKind.Array)
+        {
+            error = $"item_{index}_profile_signals_not_array";
+            return false;
+        }
+
+        for (var i = 0; i < signals.GetArrayLength(); i++)
+        {
+            var signal = signals[i];
+            if (signal.ValueKind != JsonValueKind.Object)
+            {
+                error = $"item_{index}_profile_signal_{i}_not_object";
+                return false;
+            }
+
+            if (!IsStringOrMissing(signal, "subject_name") ||
+                !IsStringOrMissing(signal, "trait") ||
+                !IsStringOrMissing(signal, "direction") ||
+                !IsStringOrMissing(signal, "evidence") ||
+                !IsNumberOrMissing(signal, "confidence"))
+            {
+                error = $"item_{index}_profile_signal_{i}_invalid_fields";
                 return false;
             }
         }

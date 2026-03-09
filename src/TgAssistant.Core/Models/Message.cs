@@ -20,6 +20,7 @@ public class Message
     public MessageSource Source { get; set; } = MessageSource.Realtime;
     public ProcessingStatus ProcessingStatus { get; set; } = ProcessingStatus.Pending;
     public DateTime? ProcessedAt { get; set; }
+    public bool NeedsReanalysis { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

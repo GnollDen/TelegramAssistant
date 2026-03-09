@@ -1,0 +1,96 @@
+{
+  "id": null,
+  "uid": "stage5-ops",
+  "title": "Stage5 Ops",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "tags": [
+    "tgassistant",
+    "stage5"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "links": [
+    {
+      "title": "Open LLM Cost Dashboard",
+      "type": "link",
+      "url": "/d/llm-cost/llm-cost",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Processed / Extractions / Expensive backlog",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT captured_at AS time, processed_messages::double precision AS value, 'processed_messages' AS metric FROM stage5_metrics_snapshots WHERE $__timeFilter(captured_at) UNION ALL SELECT captured_at AS time, extractions_total::double precision AS value, 'extractions_total' AS metric FROM stage5_metrics_snapshots WHERE $__timeFilter(captured_at) UNION ALL SELECT captured_at AS time, expensive_backlog::double precision AS value, 'expensive_backlog' AS metric FROM stage5_metrics_snapshots WHERE $__timeFilter(captured_at) ORDER BY time",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Stage5 errors (1h) and LLM cost (1h)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT captured_at AS time, extraction_errors_1h::double precision AS value, 'errors_1h' AS metric FROM stage5_metrics_snapshots WHERE $__timeFilter(captured_at) UNION ALL SELECT captured_at AS time, analysis_cost_usd_1h::double precision AS value, 'llm_cost_usd_1h' AS metric FROM stage5_metrics_snapshots WHERE $__timeFilter(captured_at) ORDER BY time",
+          "editorMode": "code"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Prometheus: Postgres & Redis up",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"postgres_exporter|redis_exporter\"}",
+          "legendFormat": "{{job}}",
+          "instant": false
+        }
+      ]
+    }
+  ]
+}

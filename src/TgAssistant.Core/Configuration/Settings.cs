@@ -40,7 +40,7 @@ public class ClaudeSettings
 {
     public const string Section = "Claude";
     public string ApiKey { get; set; } = string.Empty;
-    public string Model { get; set; } = "anthropic/claude-sonnet-4";
+    public string Model { get; set; } = "anthropic/claude-3.5-sonnet";
     public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
 }
 
@@ -63,8 +63,8 @@ public class MediaSettings
     public int PhotoBurstThreshold { get; set; } = 10;
     public int PhotoBurstKeepCount { get; set; } = 3;
     public int PhotoBurstWindowSeconds { get; set; } = 120;
-    public string VisionModel { get; set; } = "openai/gpt-4o-mini";
-    public string ArchiveVisionModel { get; set; } = "meta-llama/llama-4-scout";
+    public string VisionModel { get; set; } = "qwen/qwen2.5-vl-72b-instruct";
+    public string ArchiveVisionModel { get; set; } = "qwen/qwen2.5-vl-72b-instruct";
     public string AudioModel { get; set; } = "openai/gpt-audio-mini";
     public int VisionMaxTokens { get; set; } = 220;
     public int ArchiveVisionMaxTokens { get; set; } = 120;
@@ -90,9 +90,13 @@ public class AnalysisSettings
 {
     public const string Section = "Analysis";
     public bool Enabled { get; set; } = false;
-    public string CheapModel { get; set; } = "openai/gpt-4o-mini";
-    public string ExpensiveModel { get; set; } = "anthropic/claude-sonnet-4";
-    public string ExpensiveFallbackModel { get; set; } = "openai/gpt-4o-mini";
+    public string CheapModel { get; set; } = "deepseek/deepseek-chat";
+    public bool CheapModelAbEnabled { get; set; } = false;
+    public string CheapBaselineModel { get; set; } = "openai/gpt-4o-mini";
+    public string CheapCandidateModel { get; set; } = "deepseek/deepseek-chat";
+    public int CheapAbCandidatePercent { get; set; } = 50;
+    public string ExpensiveModel { get; set; } = "anthropic/claude-3.5-sonnet";
+    public string ExpensiveFallbackModel { get; set; } = "openai/gpt-4o";
     public int BatchSize { get; set; } = 50;
     public int PollIntervalSeconds { get; set; } = 10;
     public int MaxExpensivePerBatch { get; set; } = 10;
@@ -105,6 +109,7 @@ public class AnalysisSettings
     public int ExpensiveFailureBackoffMaxMinutes { get; set; } = 30;
     public int ExpensiveRetryBaseSeconds { get; set; } = 30;
     public int MaxExpensiveRetryCount { get; set; } = 5;
+    public decimal ExpensiveDailyBudgetUsd { get; set; } = 0m;
     public int FactReviewReenqueueHours { get; set; } = 24;
     public float CheapConfidenceThreshold { get; set; } = 0.8f;
     public float MinFactConfidence { get; set; } = 0.55f;
