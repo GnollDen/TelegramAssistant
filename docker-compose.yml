@@ -90,7 +90,7 @@ services:
       Analysis__CheapAbCandidatePercent: ${ANALYSIS_CHEAP_AB_CANDIDATE_PERCENT:-50}
       Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-anthropic/claude-3.5-sonnet}
       Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o}
-      Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-20}
+      Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-8}
       Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-5}
       Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
       Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}

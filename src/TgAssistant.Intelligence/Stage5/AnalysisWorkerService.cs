@@ -12,7 +12,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v2";
+    private const string CheapPromptId = "stage5_cheap_extract_v3";
+    private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
     private readonly EmbeddingSettings _embeddingSettings;
@@ -267,22 +268,26 @@ public class AnalysisWorkerService : BackgroundService
         {
             var model = modelGroup.Key;
             var modelBatch = modelGroup.ToList();
-            try
+            foreach (var chunk in modelBatch.Chunk(MaxCheapLlmBatchSize))
             {
-                var cheapResult = await _analysisService.ExtractCheapAsync(model, cheapPrompt.SystemPrompt, modelBatch, ct);
-                foreach (var item in cheapResult.Items.Where(x => x.MessageId > 0))
+                var cheapChunk = chunk.ToList();
+                try
                 {
-                    byId[item.MessageId] = item;
+                    var cheapResult = await _analysisService.ExtractCheapAsync(model, cheapPrompt.SystemPrompt, cheapChunk, ct);
+                    foreach (var item in cheapResult.Items.Where(x => x.MessageId > 0))
+                    {
+                        byId[item.MessageId] = item;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Stage5 cheap batch failed for model={Model}, count={Count}", model, modelBatch.Count);
-                await _extractionErrorRepository.LogAsync(
-                    stage: "stage5_cheap_batch_model",
-                    reason: ex.Message,
-                    payload: $"model={model};count={modelBatch.Count}",
-                    ct: ct);
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Stage5 cheap batch failed for model={Model}, count={Count}", model, cheapChunk.Count);
+                    await _extractionErrorRepository.LogAsync(
+                        stage: "stage5_cheap_batch_model",
+                        reason: ex.Message,
+                        payload: $"model={model};count={cheapChunk.Count}",
+                        ct: ct);
+                }
             }
         }
 
@@ -947,7 +952,7 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v2", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v3", DefaultCheapPrompt, ct);
         await EnsurePromptAsync("stage5_expensive_reason", "Stage5 Expensive Reasoning", DefaultExpensivePrompt, ct);
     }
 
@@ -1443,8 +1448,10 @@ public class AnalysisWorkerService : BackgroundService
 
         var filler = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "ок", "ok", "ага", "угу", "ясно", "пон", "понятно", "спс", "спасибо",
-            "thanks", "thank", "лол", "haha", "хаха", "хах", "мм", "эм", "угуу"
+            "\u043E\u043A", "ok", "\u0430\u0433\u0430", "\u0443\u0433\u0443", "\u044F\u0441\u043D\u043E",
+            "\u043F\u043E\u043D", "\u043F\u043E\u043D\u044F\u0442\u043D\u043E", "\u0441\u043F\u0441",
+            "\u0441\u043F\u0430\u0441\u0438\u0431\u043E", "thanks", "thank", "\u043B\u043E\u043B", "haha",
+            "\u0445\u0430\u0445\u0430", "\u0445\u0430\u0445", "\u043C\u043C", "\u044D\u043C", "\u0443\u0433\u0443\u0443"
         };
 
         return tokens.All(t => filler.Contains(t));
@@ -1465,30 +1472,31 @@ public class AnalysisWorkerService : BackgroundService
             return true;
         }
 
-        return normalized.Contains("завтра", StringComparison.Ordinal)
-               || normalized.Contains("сегодня", StringComparison.Ordinal)
-               || normalized.Contains("послезавтра", StringComparison.Ordinal)
-               || normalized.Contains("через ", StringComparison.Ordinal)
-               || normalized.Contains("буду ", StringComparison.Ordinal)
-               || normalized.Contains("работ", StringComparison.Ordinal)
-               || normalized.Contains("встреч", StringComparison.Ordinal)
-               || normalized.Contains("освобож", StringComparison.Ordinal)
-               || normalized.Contains("позвон", StringComparison.Ordinal)
-               || normalized.Contains("отношен", StringComparison.Ordinal)
-               || normalized.Contains("любл", StringComparison.Ordinal)
-               || normalized.Contains("вместе", StringComparison.Ordinal)
-               || normalized.Contains("дома", StringComparison.Ordinal)
-               || normalized.Contains("уволи", StringComparison.Ordinal)
-               || normalized.Contains("беремен", StringComparison.Ordinal)
-               || normalized.Contains("больниц", StringComparison.Ordinal)
-               || normalized.Contains("развел", StringComparison.Ordinal)
-               || normalized.Contains("купил", StringComparison.Ordinal)
-               || normalized.Contains("продал", StringComparison.Ordinal);
+        return normalized.Contains("\u0437\u0430\u0432\u0442\u0440\u0430", StringComparison.Ordinal)
+               || normalized.Contains("\u0441\u0435\u0433\u043E\u0434\u043D\u044F", StringComparison.Ordinal)
+               || normalized.Contains("\u043F\u043E\u0441\u043B\u0435\u0437\u0430\u0432\u0442\u0440\u0430", StringComparison.Ordinal)
+               || normalized.Contains("\u0447\u0435\u0440\u0435\u0437 ", StringComparison.Ordinal)
+               || normalized.Contains("\u0431\u0443\u0434\u0443 ", StringComparison.Ordinal)
+               || normalized.Contains("\u0440\u0430\u0431\u043E\u0442", StringComparison.Ordinal)
+               || normalized.Contains("\u0432\u0441\u0442\u0440\u0435\u0447", StringComparison.Ordinal)
+               || normalized.Contains("\u043E\u0441\u0432\u043E\u0431\u043E\u0436", StringComparison.Ordinal)
+               || normalized.Contains("\u043F\u043E\u0437\u0432\u043E\u043D", StringComparison.Ordinal)
+               || normalized.Contains("\u043E\u0442\u043D\u043E\u0448\u0435\u043D", StringComparison.Ordinal)
+               || normalized.Contains("\u043B\u044E\u0431\u043B", StringComparison.Ordinal)
+               || normalized.Contains("\u0432\u043C\u0435\u0441\u0442\u0435", StringComparison.Ordinal)
+               || normalized.Contains("\u0434\u043E\u043C\u0430", StringComparison.Ordinal)
+               || normalized.Contains("\u0443\u0432\u043E\u043B\u0438", StringComparison.Ordinal)
+               || normalized.Contains("\u0431\u0435\u0440\u0435\u043C\u0435\u043D", StringComparison.Ordinal)
+               || normalized.Contains("\u0431\u043E\u043B\u044C\u043D\u0438\u0446", StringComparison.Ordinal)
+               || normalized.Contains("\u0440\u0430\u0437\u0432\u0435\u043B", StringComparison.Ordinal)
+               || normalized.Contains("\u043A\u0443\u043F\u0438\u043B", StringComparison.Ordinal)
+               || normalized.Contains("\u043F\u0440\u043E\u0434\u0430\u043B", StringComparison.Ordinal);
     }
 
     private const string DefaultCheapPrompt = """
-You extract personal knowledge from chat messages.
+You extract dossier signals from chat logs.
 Return ONLY a valid JSON object with field `items`.
+For each input `<message id="...">` return exactly one item with the same `message_id`.
 
 Schema per item:
 - message_id (number)
@@ -1500,36 +1508,24 @@ Schema per item:
 - requires_expensive (boolean)
 - reason (string, optional)
 
-High-precision rules:
-- Use exact participant names from sender_name or message text; never use placeholders like sender/me/self/i.
-- Extract only stable, actionable facts about people and life context.
-- Ignore pure filler/chat noise: greetings-only, emojis-only, "ok", "thanks", "haha", stickers-only chatter.
-- Short messages are NOT automatically noise: if a short message contains time/date/intention/availability/relationship signal, extract at least one event or fact.
-- Use metadata (`sender_name`, `ts`, `reply_to`) to preserve who said what and when.
-- If a message references schedule/time/date, prefer fact category `schedule` with explicit time/date text in `value`.
-- Use `events` for dynamic states (conflict, reconciliation, complaint, stress, attitude_change).
-- Use `profile_signals` only for evidence-backed behavioral tendencies (Big Five style hints), not diagnosis.
-- Do not duplicate the same fact in both `facts` and `events` unless temporal change is explicit.
-- If unsure, do not invent; leave arrays empty.
-- Set requires_expensive=true only for ambiguity or contradiction.
-- Confidence range must be 0.0..1.0.
+Rules:
+- Use real participant names from sender_name/text. Never use placeholders (sender, me, self, i).
+- Ignore only pure noise (emoji-only, sticker-only, short acknowledgements like "ok", "thanks").
+- Short messages are NOT automatically noise if they carry meaning: time/date, plan, availability, money, health, relationship, movement.
+- `facts`: stable or actionable user information (availability, schedule, finance, location, work, health, preferences).
+- `events`: dynamic changes (argument, reconciliation, attitude shift, promise, urgent action, emotional reaction).
+- If context is ambiguous or pronouns are unresolved, set `requires_expensive=true`.
+- Do not invent facts. confidence must be 0.0..1.0.
 
-Few-shot examples:
-Input message: "Ok, see you at 19:00"
-Output item: {"message_id":123,"entities":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Examples:
+Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
+Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
-Input message: "From April 1, I work at Yandex as a product manager" (sender_name="Rinat")
-Output item: {"message_id":124,"entities":[{"name":"Rinat","type":"Person","confidence":0.95},{"name":"Yandex","type":"Organization","confidence":0.93}],"facts":[{"entity_name":"Rinat","category":"career","key":"employer","value":"Yandex","confidence":0.93},{"entity_name":"Rinat","category":"career","key":"position","value":"product manager","confidence":0.90}],"relationships":[],"events":[],"profile_signals":[{"subject_name":"Rinat","trait":"conscientiousness","direction":"up","evidence":"explicit career planning","confidence":0.68}],"requires_expensive":false}
-
-Input message: "I think Masha and I are together again" (sender_name="Rinat")
-Output item: {"message_id":125,"entities":[{"name":"Rinat","type":"Person","confidence":0.90},{"name":"Masha","type":"Person","confidence":0.72}],"facts":[],"relationships":[{"from_entity_name":"Rinat","to_entity_name":"Masha","type":"romantic","confidence":0.68}],"events":[{"type":"reconciliation_hint","subject_name":"Rinat","object_name":"Masha","sentiment":"positive","summary":"possible relationship restoration","confidence":0.66}],"profile_signals":[{"subject_name":"Rinat","trait":"neuroticism","direction":"up","evidence":"uncertainty marker 'I think' in intimate topic","confidence":0.55}],"requires_expensive":true,"reason":"relationship ambiguity"}
-
-Input message: "Опять этот офис, уже ненавижу туда ходить" (sender_name="Insar")
-Output item: {"message_id":126,"entities":[{"name":"Insar","type":"Person","confidence":0.94}],"facts":[],"relationships":[],"events":[{"type":"attitude_change","subject_name":"Insar","object_name":"work","sentiment":"negative","summary":"negative shift toward office work","confidence":0.79}],"profile_signals":[{"subject_name":"Insar","trait":"neuroticism","direction":"up","evidence":"strong negative affect about work routine","confidence":0.63}],"requires_expensive":false}
+Input: <message id="102">[meta] sender_name="Insar" ... Again this office, I hate going there</message>
+Output item: {"message_id":102,"entities":[{"name":"Insar","type":"Person","confidence":0.98}],"facts":[],"relationships":[],"events":[{"type":"attitude_change","subject_name":"Insar","object_name":"office work","sentiment":"negative","summary":"strongly negative attitude toward office routine","confidence":0.90}],"profile_signals":[{"subject_name":"Insar","trait":"neuroticism","direction":"up","evidence":"strong negative affect in wording","confidence":0.68}],"requires_expensive":false}
 
 Never include markdown or any extra text.
 """;
-
     private const string DefaultExpensivePrompt = """
 You are a high-accuracy resolver.
 Input includes one cheap candidate and current known facts.
