@@ -6,7 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/tgassistant
+  IMAGE_NAME: gnollden/tgassistant
 
 jobs:
   build:
@@ -14,6 +14,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_ref: ${{ steps.meta.outputs.image_ref }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,12 +27,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest
+        run: |
+          echo "image_ref=ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build and push
@@ -39,8 +37,9 @@ jobs:
           context: .
           file: deploy/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ steps.meta.outputs.image_ref }}
+            ghcr.io/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -53,11 +52,28 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd /opt/tgassistant/TelegramAssistant
+
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u GnollDen --password-stdin
-            git pull origin master --ff-only || true
-            docker pull ghcr.io/gnollden/tgassistant:latest
-            docker compose up -d app
+
+            # Keep VPS checkout deterministic and fail fast on git issues.
+            git fetch origin master
+            git checkout master
+            git pull --ff-only origin master
+
+            # Deploy immutable image built by this workflow run.
+            export IMAGE_TAG="${{ needs.build.outputs.image_ref }}"
+            docker pull "${IMAGE_TAG}"
+            IMAGE_TAG="${IMAGE_TAG}" docker compose up -d --force-recreate --no-deps app
+
+            # Post-deploy liveness checks.
+            sleep 8
+            docker compose ps app
+            docker compose ps --status running --services | grep -qx app
+            ! docker compose logs --since=2m app | grep -q "Application terminated unexpectedly"
+
             docker image prune -f
