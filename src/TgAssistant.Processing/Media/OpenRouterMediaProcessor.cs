@@ -78,17 +78,31 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
         catch (Exception ex)
         {
+            var reason = ClassifyFailureReason(ex, filePath, mediaType);
             _logger.LogError(ex, "Failed to process {Type} at {Path}", mediaType, filePath);
+            _logger.LogWarning("Media processing failure reason={Reason} type={Type} path={Path}", reason, mediaType, filePath);
             return new MediaProcessingResult
             {
                 Success = false,
-                FailureReason = $"{ex.GetType().Name}: {ex.Message}"
+                FailureReason = $"{reason}: {ex.GetType().Name}: {ex.Message}"
             };
         }
     }
 
     private async Task<MediaProcessingResult> ProcessStickerAsync(string filePath, CancellationToken ct)
     {
+        if (filePath.EndsWith(".tgs", StringComparison.OrdinalIgnoreCase))
+        {
+            // Telegram animated stickers (Lottie .tgs) are not directly decodable by ffmpeg.
+            _logger.LogInformation("Skipping animated sticker decode (reason=unsupported_animated_sticker) path={Path}", filePath);
+            return new MediaProcessingResult
+            {
+                Success = true,
+                Description = "Animated sticker (TGS), visual preview unavailable.",
+                Confidence = 0.3f
+            };
+        }
+
         var contentHash = await ComputeContentHashAsync(filePath, ct);
         var cached = await _stickerCacheRepository.GetByHashAsync(contentHash, ct);
         if (cached is not null)
@@ -195,45 +209,53 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     {
         // Convert to wav if needed (GPT Audio Mini expects wav)
         var wavPath = filePath;
+        var tempCreated = false;
         if (!filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
         {
-            wavPath = Path.ChangeExtension(filePath, ".proc.wav");
+            wavPath = Path.Combine(Path.GetTempPath(), $"tgassistant_{Guid.NewGuid():N}.proc.wav");
+            tempCreated = true;
             await ConvertToWavAsync(filePath, wavPath, ct);
         }
 
-        var bytes = await File.ReadAllBytesAsync(wavPath, ct);
-        var base64 = Convert.ToBase64String(bytes);
-
-        var request = new OpenRouterRequest
+        try
         {
-            Model = _mediaSettings.AudioModel,
-            Messages = new[]
+            var bytes = await File.ReadAllBytesAsync(wavPath, ct);
+            var base64 = Convert.ToBase64String(bytes);
+
+            var request = new OpenRouterRequest
             {
-                new OpenRouterMessage
+                Model = _mediaSettings.AudioModel,
+                Messages = new[]
                 {
-                    Role = "user",
-                    Content = new object[]
+                    new OpenRouterMessage
                     {
-                        new { type = "input_audio", input_audio = new { data = base64, format = "wav" } },
-                        new { type = "text", text = "Transcribe this audio message exactly. If you cannot understand it, describe what you hear (noise, music, etc). Respond ONLY with the transcription, no commentary." }
+                        Role = "user",
+                        Content = new object[]
+                        {
+                            new { type = "input_audio", input_audio = new { data = base64, format = "wav" } },
+                            new { type = "text", text = "Transcribe this audio message exactly. If you cannot understand it, describe what you hear (noise, music, etc). Respond ONLY with the transcription, no commentary." }
+                        }
                     }
-                }
-            },
-            MaxTokens = 1000
-        };
+                },
+                MaxTokens = 1000
+            };
 
-        var response = await SendRequestAsync(request, ct);
+            var response = await SendRequestAsync(request, ct);
 
-        // Cleanup temp wav file
-        if (wavPath != filePath && File.Exists(wavPath))
-            File.Delete(wavPath);
-
-        return new MediaProcessingResult
+            return new MediaProcessingResult
+            {
+                Success = true,
+                Transcription = response,
+                Confidence = 0.9f
+            };
+        }
+        finally
         {
-            Success = true,
-            Transcription = response,
-            Confidence = 0.9f
-        };
+            if (tempCreated && File.Exists(wavPath))
+            {
+                File.Delete(wavPath);
+            }
+        }
     }
 
     private async Task<string> OptimizeImageForVisionAsync(string inputPath, CancellationToken ct)
@@ -363,6 +385,33 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
+    private static string ClassifyFailureReason(Exception ex, string filePath, MediaType mediaType)
+    {
+        if (ex is IOException or UnauthorizedAccessException)
+        {
+            return "audio_temp_io";
+        }
+
+        var message = ex.Message;
+        if (message.Contains("Read-only file system", StringComparison.OrdinalIgnoreCase))
+        {
+            return "audio_temp_io";
+        }
+
+        if (mediaType == MediaType.Sticker && filePath.EndsWith(".tgs", StringComparison.OrdinalIgnoreCase))
+        {
+            return "unsupported_animated_sticker";
+        }
+
+        if (message.Contains("ffmpeg failed", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Invalid data found when processing input", StringComparison.OrdinalIgnoreCase))
+        {
+            return "ffmpeg_decode";
+        }
+
+        return "media_processing_error";
+    }
 }
 
 // === DTOs for OpenRouter API ===
