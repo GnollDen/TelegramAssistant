@@ -19,6 +19,8 @@ public class ExtractionItem
     public List<ExtractionEntity> Entities { get; set; } = new();
     public List<ExtractionFact> Facts { get; set; } = new();
     public List<ExtractionRelationship> Relationships { get; set; } = new();
+    public List<ExtractionEvent> Events { get; set; } = new();
+    public List<ExtractionProfileSignal> ProfileSignals { get; set; } = new();
     public bool RequiresExpensive { get; set; }
     public string? Reason { get; set; }
 }
@@ -44,5 +46,24 @@ public class ExtractionRelationship
     public string FromEntityName { get; set; } = string.Empty;
     public string ToEntityName { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
+    public float Confidence { get; set; } = 0.8f;
+}
+
+public class ExtractionEvent
+{
+    public string Type { get; set; } = string.Empty;
+    public string SubjectName { get; set; } = string.Empty;
+    public string? ObjectName { get; set; }
+    public string? Sentiment { get; set; }
+    public string? Summary { get; set; }
+    public float Confidence { get; set; } = 0.8f;
+}
+
+public class ExtractionProfileSignal
+{
+    public string SubjectName { get; set; } = string.Empty;
+    public string Trait { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string? Evidence { get; set; }
     public float Confidence { get; set; } = 0.8f;
 }

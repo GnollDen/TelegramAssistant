@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: TelegramAssistant
+    orgId: 1
+    folder: TelegramAssistant
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

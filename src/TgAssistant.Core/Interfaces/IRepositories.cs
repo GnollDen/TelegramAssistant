@@ -8,6 +8,7 @@ public interface IMessageRepository
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
         long chatId,
@@ -15,6 +16,7 @@ public interface IMessageRepository
         IReadOnlyCollection<long> telegramMessageIds,
         CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
+    Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
 }
@@ -123,6 +125,7 @@ public interface IStage5MetricsRepository
 public interface IAnalysisUsageRepository
 {
     Task LogAsync(AnalysisUsageEvent evt, CancellationToken ct = default);
+    Task<decimal> GetCostUsdSinceAsync(string phase, DateTime sinceUtc, CancellationToken ct = default);
 }
 
 public interface IMaintenanceRepository

@@ -1,0 +1,119 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: llm-cost-budgets
+    folder: TelegramAssistant
+    interval: 1m
+    rules:
+      - uid: llm-cost-hourly-exceeded
+        title: LLMCostHourlyExceeded
+        condition: B
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Hourly LLM spend exceeded configured budget
+        labels:
+          severity: warning
+          component: llm-cost
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: grafana-postgresql-datasource
+                uid: postgres
+              editorMode: code
+              format: time_series
+              intervalMs: 1000
+              maxDataPoints: 43200
+              rawSql: "SELECT (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint AS time, COALESCE(SUM(cost_usd), 0)::double precision AS value FROM analysis_usage_events WHERE created_at >= NOW() - INTERVAL '1 hour'"
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - ${LLM_BUDGET_HOURLY_USD}
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: classic_conditions
+
+      - uid: llm-cost-daily-exceeded
+        title: LLMCostDailyExceeded
+        condition: B
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        annotations:
+          summary: Daily LLM spend exceeded configured budget
+        labels:
+          severity: warning
+          component: llm-cost
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: postgres
+            model:
+              datasource:
+                type: grafana-postgresql-datasource
+                uid: postgres
+              editorMode: code
+              format: time_series
+              intervalMs: 1000
+              maxDataPoints: 43200
+              rawSql: "SELECT (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint AS time, COALESCE(SUM(cost_usd), 0)::double precision AS value FROM analysis_usage_events WHERE created_at >= NOW() - INTERVAL '24 hour'"
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - ${LLM_BUDGET_DAILY_USD}
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: classic_conditions

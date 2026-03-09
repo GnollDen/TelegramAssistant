@@ -35,20 +35,23 @@ public class MessageRepository : IMessageRepository
         var chatKeys = unique.Select(x => x.ChatId).Distinct().ToList();
 
         var existing = await db.Messages
-            .AsNoTracking()
             .Where(x => sourceKeys.Contains(x.Source) && chatKeys.Contains(x.ChatId))
-            .Select(x => new { x.Source, x.ChatId, x.TelegramMessageId })
             .ToListAsync(ct);
 
-        var existingSet = existing
-            .Select(x => $"{x.Source}:{x.ChatId}:{x.TelegramMessageId}")
-            .ToHashSet(StringComparer.Ordinal);
+        var existingMap = existing.ToDictionary(
+            x => $"{x.Source}:{x.ChatId}:{x.TelegramMessageId}",
+            x => x,
+            StringComparer.Ordinal);
 
         foreach (var msg in unique)
         {
             var key = $"{(short)msg.Source}:{msg.ChatId}:{msg.TelegramMessageId}";
-            if (existingSet.Contains(key))
+            if (existingMap.TryGetValue(key, out var current))
             {
+                if (ShouldUpdateExisting(current, msg))
+                {
+                    ApplyUpdate(current, msg);
+                }
                 continue;
             }
 
@@ -70,13 +73,51 @@ public class MessageRepository : IMessageRepository
                 ForwardJson = msg.ForwardJson,
                 Source = (short)msg.Source,
                 ProcessingStatus = (short)msg.ProcessingStatus,
-                ProcessedAt = msg.ProcessedAt
+                ProcessedAt = msg.ProcessedAt,
+                NeedsReanalysis = msg.NeedsReanalysis
             });
         }
 
         await db.SaveChangesAsync(ct);
         _logger.LogDebug("Saved batch of {Count} messages", unique.Count);
         return unique.Count;
+    }
+
+    private static bool ShouldUpdateExisting(DbMessage current, Message incoming)
+    {
+        if (incoming.EditTimestamp != null)
+        {
+            if (current.EditTimestamp == null || incoming.EditTimestamp > current.EditTimestamp)
+            {
+                return true;
+            }
+
+            if (!string.Equals(current.Text, incoming.Text, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (!string.Equals(current.ReactionsJson, incoming.ReactionsJson, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void ApplyUpdate(DbMessage current, Message incoming)
+    {
+        current.Text = incoming.Text;
+        current.EditTimestamp = incoming.EditTimestamp ?? current.EditTimestamp;
+        current.ReactionsJson = incoming.ReactionsJson ?? current.ReactionsJson;
+        current.ForwardJson = incoming.ForwardJson ?? current.ForwardJson;
+        current.NeedsReanalysis = true;
+        current.ProcessedAt = DateTime.UtcNow;
+        if (current.ProcessingStatus == (short)ProcessingStatus.Failed)
+        {
+            current.ProcessingStatus = (short)ProcessingStatus.Processed;
+        }
     }
 
     public async Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default)
@@ -109,9 +150,26 @@ public class MessageRepository : IMessageRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.Messages
             .AsNoTracking()
-            .Where(x => x.Id > afterId && x.ProcessingStatus == (short)ProcessingStatus.Processed)
+            .Where(x => x.Id > afterId
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
             .OrderBy(x => x.Id)
             .Take(limit)
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.NeedsReanalysis)
+            .OrderBy(x => x.Id)
+            .Take(Math.Max(1, limit))
             .ToListAsync(ct);
 
         return rows.Select(ToDomain).ToList();
@@ -171,6 +229,24 @@ public class MessageRepository : IMessageRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
+    {
+        var ids = messageIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages.Where(x => ids.Contains(x.Id)).ToListAsync(ct);
+        foreach (var row in rows)
+        {
+            row.NeedsReanalysis = false;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -200,6 +276,10 @@ public class MessageRepository : IMessageRepository
         row.MediaDescription = result.Success ? result.Description : $"Unrecognized: {result.FailureReason}";
         row.ProcessingStatus = (short)status;
         row.ProcessedAt = DateTime.UtcNow;
+        if (status == ProcessingStatus.Processed)
+        {
+            row.NeedsReanalysis = true;
+        }
         await db.SaveChangesAsync(ct);
     }
 
@@ -225,6 +305,7 @@ public class MessageRepository : IMessageRepository
             Source = (MessageSource)row.Source,
             ProcessingStatus = (ProcessingStatus)row.ProcessingStatus,
             ProcessedAt = row.ProcessedAt,
+            NeedsReanalysis = row.NeedsReanalysis,
             CreatedAt = row.CreatedAt
         };
     }

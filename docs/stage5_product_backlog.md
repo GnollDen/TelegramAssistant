@@ -32,6 +32,7 @@
     - `scripts/stage5-progress.sql`
     - `scripts/stage5-requeue.sql`
     - `scripts/stage5-expensive-health.sql`
+    - `scripts/stage5-cheap-ab-report.sql`
     - `scripts/stage5-quality-report.sql`
     - `scripts/fact-review-progress.sql`
     - `scripts/merge-command-progress.sql`
@@ -43,6 +44,7 @@
 ## Runtime Control Surface (Config)
 - `Analysis.*`:
   - `BatchSize`, `PollIntervalSeconds`, `CheapModel`, `ExpensiveModel`, `ExpensiveFallbackModel`
+  - cheap A/B controls: `CheapModelAbEnabled`, `CheapBaselineModel`, `CheapCandidateModel`, `CheapAbCandidatePercent`
   - `CheapMaxTokens`, `ExpensiveMaxTokens`
   - `MaxExpensivePerBatch`, `MaxExpensiveRetryCount`, `ExpensiveRetryBaseSeconds`
   - `ExpensiveCooldownMinutes`, `ExpensiveFailureBackoffBaseSeconds`, `ExpensiveFailureBackoffMaxMinutes`
