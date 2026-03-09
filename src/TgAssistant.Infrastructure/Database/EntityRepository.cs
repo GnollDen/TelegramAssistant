@@ -180,6 +180,18 @@ public class EntityRepository : IEntityRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Entity>> GetUpdatedSinceAsync(DateTime sinceUtc, int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Entities
+            .AsNoTracking()
+            .Where(x => x.UpdatedAt >= sinceUtc)
+            .OrderBy(x => x.UpdatedAt)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+        return rows.Select(ToDomain).ToList();
+    }
+
     public async Task MergeIntoAsync(Guid targetEntityId, Guid sourceEntityId, CancellationToken ct = default)
     {
         if (targetEntityId == sourceEntityId)

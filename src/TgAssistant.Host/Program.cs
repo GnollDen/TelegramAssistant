@@ -42,6 +42,7 @@ try
             services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
             services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
             services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
+            services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -108,6 +109,7 @@ try
 
 
             services.AddHttpClient<OpenRouterAnalysisService>();
+            services.AddHttpClient<ITextEmbeddingGenerator, OpenRouterEmbeddingService>();
             services.AddHttpClient<Neo4jSyncWorkerService>();
             services.AddSingleton<ExtractionSchemaValidator>();
 
@@ -119,6 +121,7 @@ try
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
+            services.AddHostedService<EntityEmbeddingWorkerService>();
             services.AddHostedService<Neo4jSyncWorkerService>();
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
