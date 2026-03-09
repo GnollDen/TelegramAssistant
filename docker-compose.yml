@@ -69,6 +69,8 @@ services:
       VoiceParalinguistics__MaxParallel: ${VOICE_PARALINGUISTICS_MAX_PARALLEL:-2}
       VoiceParalinguistics__Model: ${VOICE_PARALINGUISTICS_MODEL:-openai/gpt-audio-mini}
       VoiceParalinguistics__MaxTokens: ${VOICE_PARALINGUISTICS_MAX_TOKENS:-300}
+      VoiceParalinguistics__RetryCount: ${VOICE_PARALINGUISTICS_RETRY_COUNT:-2}
+      VoiceParalinguistics__RetryBaseDelaySeconds: ${VOICE_PARALINGUISTICS_RETRY_BASE_DELAY_SECONDS:-2}
       ArchiveImport__Enabled: ${ARCHIVE_IMPORT_ENABLED:-false}
       ArchiveImport__MediaProcessingEnabled: ${ARCHIVE_MEDIA_PROCESSING_ENABLED:-true}
       ArchiveImport__RequireCostConfirmation: ${ARCHIVE_IMPORT_REQUIRE_CONFIRMATION:-true}
@@ -102,6 +104,10 @@ services:
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}
+      Merge__SemanticGateEnabled: ${MERGE_SEMANTIC_GATE_ENABLED:-true}
+      Merge__SemanticRejectSimilarityThreshold: ${MERGE_SEMANTIC_REJECT_SIMILARITY_THRESHOLD:-0.55}
+      Merge__SemanticAutoMergeSimilarityThreshold: ${MERGE_SEMANTIC_AUTO_MERGE_SIMILARITY_THRESHOLD:-0.92}
+      Merge__SemanticAutoMergeMinEvidence: ${MERGE_SEMANTIC_AUTO_MERGE_MIN_EVIDENCE:-2}
       Monitoring__Enabled: ${MONITORING_ENABLED:-true}
       Monitoring__PollIntervalSeconds: ${MONITORING_POLL_INTERVAL_SECONDS:-60}
       Maintenance__Enabled: ${MAINTENANCE_ENABLED:-true}
@@ -116,6 +122,10 @@ services:
       Neo4j__Database: ${NEO4J_DATABASE:-neo4j}
       Neo4j__PollIntervalSeconds: ${NEO4J_POLL_INTERVAL_SECONDS:-30}
       Neo4j__BatchSize: ${NEO4J_BATCH_SIZE:-200}
+      Embedding__Enabled: ${EMBEDDING_ENABLED:-true}
+      Embedding__Model: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      Embedding__PollIntervalSeconds: ${EMBEDDING_POLL_INTERVAL_SECONDS:-30}
+      Embedding__BatchSize: ${EMBEDDING_BATCH_SIZE:-100}
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data
