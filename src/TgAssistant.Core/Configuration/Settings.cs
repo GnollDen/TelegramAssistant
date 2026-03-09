@@ -92,8 +92,53 @@ public class AnalysisSettings
     public bool Enabled { get; set; } = false;
     public string CheapModel { get; set; } = "openai/gpt-4o-mini";
     public string ExpensiveModel { get; set; } = "anthropic/claude-sonnet-4";
+    public string ExpensiveFallbackModel { get; set; } = "openai/gpt-4o-mini";
     public int BatchSize { get; set; } = 50;
     public int PollIntervalSeconds { get; set; } = 10;
     public int MaxExpensivePerBatch { get; set; } = 10;
+    public int FactReviewBatchSize { get; set; } = 100;
+    public int CheapMaxTokens { get; set; } = 2000;
+    public int ExpensiveMaxTokens { get; set; } = 3000;
+    public int HttpTimeoutSeconds { get; set; } = 120;
+    public int ExpensiveCooldownMinutes { get; set; } = 10;
+    public int ExpensiveFailureBackoffBaseSeconds { get; set; } = 30;
+    public int ExpensiveFailureBackoffMaxMinutes { get; set; } = 30;
+    public int ExpensiveRetryBaseSeconds { get; set; } = 30;
+    public int MaxExpensiveRetryCount { get; set; } = 5;
+    public int FactReviewReenqueueHours { get; set; } = 24;
     public float CheapConfidenceThreshold { get; set; } = 0.8f;
+    public float MinFactConfidence { get; set; } = 0.55f;
+    public float MinSensitiveFactConfidence { get; set; } = 0.75f;
+    public float AutoConfirmFactConfidence { get; set; } = 0.95f;
+    public float MinRelationshipConfidence { get; set; } = 0.6f;
+}
+
+public class MergeSettings
+{
+    public const string Section = "Merge";
+    public bool Enabled { get; set; } = true;
+    public int PollIntervalSeconds { get; set; } = 60;
+    public int MaxCandidatesPerRun { get; set; } = 500;
+    public int CommandBatchSize { get; set; } = 100;
+    public float AutoRejectScoreThreshold { get; set; } = 0.2f;
+    public int AutoRejectAliasLengthMax { get; set; } = 3;
+}
+
+public class MonitoringSettings
+{
+    public const string Section = "Monitoring";
+    public bool Enabled { get; set; } = true;
+    public int PollIntervalSeconds { get; set; } = 60;
+}
+
+public class MaintenanceSettings
+{
+    public const string Section = "Maintenance";
+    public bool Enabled { get; set; } = true;
+    public int PollIntervalMinutes { get; set; } = 60;
+    public int ExtractionErrorsRetentionDays { get; set; } = 14;
+    public int Stage5MetricsRetentionDays { get; set; } = 30;
+    public int MergeDecisionsRetentionDays { get; set; } = 90;
+    public int FactReviewCommandsRetentionDays { get; set; } = 30;
+    public int FactReviewPendingTimeoutDays { get; set; } = 7;
 }
