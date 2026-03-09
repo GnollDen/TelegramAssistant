@@ -20,7 +20,7 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 0
+              from: 3600
               to: 0
             datasourceUid: postgres
             model:
@@ -35,7 +35,7 @@ groups:
               refId: A
           - refId: B
             relativeTimeRange:
-              from: 0
+              from: 3600
               to: 0
             datasourceUid: __expr__
             model:
@@ -76,7 +76,7 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 0
+              from: 86400
               to: 0
             datasourceUid: postgres
             model:
@@ -91,7 +91,7 @@ groups:
               refId: A
           - refId: B
             relativeTimeRange:
-              from: 0
+              from: 86400
               to: 0
             datasourceUid: __expr__
             model:
