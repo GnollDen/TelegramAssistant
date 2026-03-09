@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
+using TgAssistant.Core.Interfaces;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -11,14 +12,27 @@ public class OpenRouterAnalysisService
 {
     private readonly HttpClient _http;
     private readonly ClaudeSettings _claude;
+    private readonly AnalysisSettings _analysis;
+    private readonly ExtractionSchemaValidator _schemaValidator;
+    private readonly IAnalysisUsageRepository _usageRepository;
     private readonly ILogger<OpenRouterAnalysisService> _logger;
 
-    public OpenRouterAnalysisService(HttpClient http, IOptions<ClaudeSettings> claude, ILogger<OpenRouterAnalysisService> logger)
+    public OpenRouterAnalysisService(
+        HttpClient http,
+        IOptions<ClaudeSettings> claude,
+        IOptions<AnalysisSettings> analysis,
+        ExtractionSchemaValidator schemaValidator,
+        IAnalysisUsageRepository usageRepository,
+        ILogger<OpenRouterAnalysisService> logger)
     {
         _http = http;
         _claude = claude.Value;
+        _analysis = analysis.Value;
+        _schemaValidator = schemaValidator;
+        _usageRepository = usageRepository;
         _logger = logger;
         _http.BaseAddress = new Uri(_claude.BaseUrl);
+        _http.Timeout = TimeSpan.FromSeconds(Math.Max(30, _analysis.HttpTimeoutSeconds));
         _http.DefaultRequestHeaders.Remove("Authorization");
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_claude.ApiKey}");
     }
@@ -26,16 +40,16 @@ public class OpenRouterAnalysisService
     public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
     {
         var user = JsonSerializer.Serialize(new { messages = batch }, JsonOptions);
-        var req = BuildRequest(model, systemPrompt, user, 4000);
-        var json = await SendAndExtractJsonAsync(req, ct);
+        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000));
+        var json = await SendAndExtractJsonAsync(req, "cheap", ct);
         return ParseBatch(json);
     }
 
     public async Task<ExtractionItem?> ResolveExpensiveAsync(string model, string systemPrompt, ExtractionItem candidate, List<string> currentFacts, CancellationToken ct)
     {
         var user = JsonSerializer.Serialize(new { candidate, current_facts = currentFacts }, JsonOptions);
-        var req = BuildRequest(model, systemPrompt, user, 3000);
-        var json = await SendAndExtractJsonAsync(req, ct);
+        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000));
+        var json = await SendAndExtractJsonAsync(req, "expensive", ct);
         var parsed = ParseBatch(json);
         return parsed.Items.FirstOrDefault();
     }
@@ -55,7 +69,7 @@ public class OpenRouterAnalysisService
         };
     }
 
-    private async Task<string> SendAndExtractJsonAsync(OpenRouterRequest request, CancellationToken ct)
+    private async Task<string> SendAndExtractJsonAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
         var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
         var body = await res.Content.ReadAsStringAsync(ct);
@@ -65,6 +79,7 @@ public class OpenRouterAnalysisService
         }
 
         var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
+        await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
         var content = parsed?.Choices?.FirstOrDefault()?.Message?.Content;
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -75,17 +90,34 @@ public class OpenRouterAnalysisService
         return content;
     }
 
-    private static ExtractionBatchResult ParseBatch(string json)
+    private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)
     {
-        try
+        if (usage == null)
         {
-            var parsed = JsonSerializer.Deserialize<ExtractionBatchResult>(json, JsonOptions);
-            return parsed ?? new ExtractionBatchResult();
+            return;
         }
-        catch
+
+        await _usageRepository.LogAsync(new AnalysisUsageEvent
         {
+            Phase = phase,
+            Model = model,
+            PromptTokens = usage.PromptTokens ?? 0,
+            CompletionTokens = usage.CompletionTokens ?? 0,
+            TotalTokens = usage.TotalTokens ?? 0,
+            CostUsd = usage.Cost ?? 0m,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private ExtractionBatchResult ParseBatch(string json)
+    {
+        if (!_schemaValidator.TryParseBatch(json, out var parsed, out var error))
+        {
+            _logger.LogWarning("Stage5 schema validation failed: {Reason}", error ?? "invalid_schema");
             return new ExtractionBatchResult();
         }
+
+        return parsed;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -93,6 +125,11 @@ public class OpenRouterAnalysisService
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
+    private static int NormalizeMaxTokens(int requested, int min, int max)
+    {
+        return Math.Max(min, Math.Min(max, requested));
+    }
 }
 
 internal class OpenRouterRequest
@@ -117,6 +154,7 @@ internal class OpenRouterResponseFormat
 internal class OpenRouterResponse
 {
     public List<OpenRouterChoice>? Choices { get; set; }
+    public OpenRouterUsage? Usage { get; set; }
 }
 
 internal class OpenRouterChoice
@@ -127,4 +165,12 @@ internal class OpenRouterChoice
 internal class OpenRouterResponseMessage
 {
     public string Content { get; set; } = string.Empty;
+}
+
+internal class OpenRouterUsage
+{
+    public int? PromptTokens { get; set; }
+    public int? CompletionTokens { get; set; }
+    public int? TotalTokens { get; set; }
+    public decimal? Cost { get; set; }
 }

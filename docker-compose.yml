@@ -71,8 +71,32 @@ services:
       ArchiveImport__RequestsPerMinute: ${ARCHIVE_IMPORT_RPM:-300}
       ArchiveImport__PollIntervalSeconds: ${ARCHIVE_IMPORT_POLL_INTERVAL_SECONDS:-5}
       ArchiveImport__MaxMediaFileSizeMb: ${ARCHIVE_IMPORT_MAX_MEDIA_SIZE_MB:-50}
+      Analysis__Enabled: ${ANALYSIS_ENABLED:-false}
+      Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-openai/gpt-4o-mini}
+      Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-openai/gpt-4o-mini}
+      Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o-mini}
+      Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-20}
+      Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-5}
+      Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
+      Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}
+      Analysis__ExpensiveCooldownMinutes: ${ANALYSIS_EXPENSIVE_COOLDOWN_MINUTES:-10}
+      Analysis__CheapConfidenceThreshold: ${ANALYSIS_CHEAP_CONFIDENCE_THRESHOLD:-0.8}
+      Analysis__MinFactConfidence: ${ANALYSIS_MIN_FACT_CONFIDENCE:-0.55}
+      Analysis__MinSensitiveFactConfidence: ${ANALYSIS_MIN_SENSITIVE_FACT_CONFIDENCE:-0.75}
+      Analysis__MinRelationshipConfidence: ${ANALYSIS_MIN_RELATIONSHIP_CONFIDENCE:-0.6}
+      Merge__Enabled: ${MERGE_ENABLED:-true}
+      Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
+      Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}
+      Monitoring__Enabled: ${MONITORING_ENABLED:-true}
+      Monitoring__PollIntervalSeconds: ${MONITORING_POLL_INTERVAL_SECONDS:-60}
+      Maintenance__Enabled: ${MAINTENANCE_ENABLED:-true}
+      Maintenance__PollIntervalMinutes: ${MAINTENANCE_POLL_INTERVAL_MINUTES:-60}
+      Maintenance__ExtractionErrorsRetentionDays: ${MAINTENANCE_EXTRACTION_ERRORS_RETENTION_DAYS:-14}
+      Maintenance__Stage5MetricsRetentionDays: ${MAINTENANCE_STAGE5_METRICS_RETENTION_DAYS:-30}
+      Maintenance__MergeDecisionsRetentionDays: ${MAINTENANCE_MERGE_DECISIONS_RETENTION_DAYS:-90}
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data
       - /opt/tgassistant/logs:/app/logs
     network_mode: "host"
+

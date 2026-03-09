@@ -6,6 +6,7 @@ public class Entity
     public EntityType Type { get; set; }
     public string Name { get; set; } = string.Empty;
     public List<string> Aliases { get; set; } = new();
+    public string? ActorKey { get; set; }
     public long? TelegramUserId { get; set; }
     public string? TelegramUsername { get; set; }
     public Dictionary<string, string> Metadata { get; set; } = new();
