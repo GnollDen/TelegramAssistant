@@ -1,0 +1,191 @@
+{
+  "id": null,
+  "uid": "llm-cost",
+  "title": "LLM Cost",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "browser",
+  "tags": [
+    "tgassistant",
+    "llm",
+    "cost"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Cost USD by Model",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1h'), model, SUM(cost_usd)::double precision AS value FROM analysis_usage_events WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Cost USD by Phase",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1h'), phase, SUM(cost_usd)::double precision AS value FROM analysis_usage_events WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Tokens by Model/Phase",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1h'), phase || ':' || model AS metric, SUM(total_tokens)::double precision AS value FROM analysis_usage_events WHERE $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cost per 1k analyzed messages",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "WITH usage_cost AS (SELECT COALESCE(SUM(cost_usd), 0)::double precision AS cost FROM analysis_usage_events WHERE $__timeFilter(created_at)), analyzed AS (SELECT COUNT(*)::double precision AS cnt FROM message_extractions WHERE $__timeFilter(created_at)) SELECT (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint AS time, CASE WHEN analyzed.cnt = 0 THEN NULL ELSE usage_cost.cost / (analyzed.cnt / 1000.0) END AS value FROM usage_cost CROSS JOIN analyzed",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Sanity: snapshot 1h cost delta",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "WITH snap AS (SELECT analysis_cost_usd_1h::double precision AS v FROM stage5_metrics_snapshots ORDER BY captured_at DESC LIMIT 1), usage AS (SELECT COALESCE(SUM(cost_usd), 0)::double precision AS v FROM analysis_usage_events WHERE created_at >= NOW() - INTERVAL '1 hour') SELECT (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint AS time, (usage.v - COALESCE(snap.v, 0)) AS value FROM usage LEFT JOIN snap ON TRUE",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Top expensive models",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT model, phase, ROUND(SUM(cost_usd)::numeric, 6) AS cost_usd, SUM(total_tokens) AS total_tokens, COUNT(*) AS requests FROM analysis_usage_events WHERE $__timeFilter(created_at) GROUP BY model, phase ORDER BY SUM(cost_usd) DESC LIMIT 20",
+          "editorMode": "code"
+        }
+      ]
+    }
+  ]
+}

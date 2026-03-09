@@ -22,6 +22,7 @@ public class AnalysisWorkerService : BackgroundService
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IPromptTemplateRepository _promptRepository;
+    private readonly IAnalysisUsageRepository _analysisUsageRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly ILogger<AnalysisWorkerService> _logger;
     private readonly Dictionary<string, DateTimeOffset> _expensiveBlockedUntilByModel = new(StringComparer.OrdinalIgnoreCase);
@@ -39,6 +40,7 @@ public class AnalysisWorkerService : BackgroundService
         IExtractionErrorRepository extractionErrorRepository,
         IAnalysisStateRepository stateRepository,
         IPromptTemplateRepository promptRepository,
+        IAnalysisUsageRepository analysisUsageRepository,
         OpenRouterAnalysisService analysisService,
         ILogger<AnalysisWorkerService> logger)
     {
@@ -53,6 +55,7 @@ public class AnalysisWorkerService : BackgroundService
         _extractionErrorRepository = extractionErrorRepository;
         _stateRepository = stateRepository;
         _promptRepository = promptRepository;
+        _analysisUsageRepository = analysisUsageRepository;
         _analysisService = analysisService;
         _logger = logger;
     }
@@ -74,6 +77,15 @@ public class AnalysisWorkerService : BackgroundService
             {
                 await ProcessExpensiveBacklogAsync(stoppingToken);
 
+                var reanalysis = await _messageRepository.GetNeedsReanalysisAsync(_settings.BatchSize, stoppingToken);
+                if (reanalysis.Count > 0)
+                {
+                    await ProcessCheapBatchAsync(reanalysis, stoppingToken);
+                    await _messageRepository.MarkNeedsReanalysisDoneAsync(reanalysis.Select(x => x.Id), stoppingToken);
+                    _logger.LogInformation("Stage5 reanalysis pass done: processed={Count}", reanalysis.Count);
+                    continue;
+                }
+
                 var watermark = await _stateRepository.GetWatermarkAsync(WatermarkKey, stoppingToken);
                 var messages = await _messageRepository.GetProcessedAfterIdAsync(watermark, _settings.BatchSize, stoppingToken);
                 if (messages.Count == 0)
@@ -82,71 +94,7 @@ public class AnalysisWorkerService : BackgroundService
                     continue;
                 }
 
-                var replyContext = await LoadReplyContextAsync(messages, stoppingToken);
-                var batch = messages.Select(m => new AnalysisInputMessage
-                {
-                    MessageId = m.Id,
-                    SenderName = m.SenderName,
-                    Timestamp = m.Timestamp,
-                    Text = BuildMessageText(m, replyContext.GetValueOrDefault(m.Id))
-                }).ToList();
-
-                var cheapPrompt = await GetPromptAsync("stage5_cheap_extract", DefaultCheapPrompt, stoppingToken);
-                var cheapResult = await _analysisService.ExtractCheapAsync(_settings.CheapModel, cheapPrompt.SystemPrompt, batch, stoppingToken);
-                var byId = cheapResult.Items
-                    .Where(x => x.MessageId > 0)
-                    .GroupBy(x => x.MessageId)
-                    .ToDictionary(g => g.Key, g => g.Last());
-
-                foreach (var message in messages)
-                {
-                    try
-                    {
-                        byId.TryGetValue(message.Id, out var extracted);
-                        extracted ??= new ExtractionItem { MessageId = message.Id };
-                        extracted = NormalizeExtractionForMessage(extracted, message);
-                        extracted = SanitizeExtraction(extracted);
-                        extracted.MessageId = message.Id;
-
-                        if (!ValidateExtractionForMessage(extracted, message, out var validationError))
-                        {
-                            _logger.LogWarning(
-                                "Stage5 extraction validation rejected message_id={MessageId}: {Reason}",
-                                message.Id,
-                                validationError);
-
-                            await _extractionErrorRepository.LogAsync(
-                                stage: "stage5_validation",
-                                reason: validationError ?? "invalid_extraction",
-                                messageId: message.Id,
-                                payload: JsonSerializer.Serialize(extracted),
-                                ct: stoppingToken);
-
-                            extracted = new ExtractionItem { MessageId = message.Id };
-                        }
-
-                        var needsExpensive = extracted.RequiresExpensive
-                                             || extracted.Facts.Any(f => f.Confidence < _settings.CheapConfidenceThreshold)
-                                             || extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold);
-
-                        await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted), needsExpensive, stoppingToken);
-
-                        if (!needsExpensive)
-                        {
-                            await ApplyExtractionAsync(message.Id, extracted, message, stoppingToken);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Stage5 cheap item failed for message_id={MessageId}", message.Id);
-                        await _extractionErrorRepository.LogAsync(
-                            stage: "stage5_cheap_item",
-                            reason: ex.Message,
-                            messageId: message.Id,
-                            payload: ex.GetType().Name,
-                            ct: stoppingToken);
-                    }
-                }
+                await ProcessCheapBatchAsync(messages, stoppingToken);
 
                 var maxId = messages.Max(x => x.Id);
                 await _stateRepository.SetWatermarkAsync(WatermarkKey, maxId, stoppingToken);
@@ -176,6 +124,11 @@ public class AnalysisWorkerService : BackgroundService
             return;
         }
 
+        if (!await CanRunExpensivePassAsync(ct))
+        {
+            return;
+        }
+
         if (AreAllExpensiveModelsBlocked())
         {
             return;
@@ -192,6 +145,11 @@ public class AnalysisWorkerService : BackgroundService
 
         foreach (var row in backlog)
         {
+            if (!await CanRunExpensivePassAsync(ct))
+            {
+                break;
+            }
+
             var candidate = JsonSerializer.Deserialize<ExtractionItem>(row.CheapJson) ?? new ExtractionItem { MessageId = row.MessageId };
             var currentFacts = await GetCurrentFactStringsAsync(candidate, ct);
 
@@ -273,6 +231,125 @@ public class AnalysisWorkerService : BackgroundService
         }
 
         _logger.LogInformation("Stage5 expensive pass done: resolved={Count} of {Total}", resolvedCount, backlog.Count);
+    }
+
+    private async Task ProcessCheapBatchAsync(List<Message> messages, CancellationToken ct)
+    {
+        var replyContext = await LoadReplyContextAsync(messages, ct);
+        var batch = messages.Select(m => new AnalysisInputMessage
+        {
+            MessageId = m.Id,
+            SenderName = m.SenderName,
+            Timestamp = m.Timestamp,
+            Text = BuildMessageText(m, replyContext.GetValueOrDefault(m.Id))
+        }).ToList();
+
+        var cheapPrompt = await GetPromptAsync("stage5_cheap_extract", DefaultCheapPrompt, ct);
+        var modelByMessageId = BuildCheapModelMap(messages);
+        var byId = new Dictionary<long, ExtractionItem>();
+
+        foreach (var modelGroup in batch.GroupBy(x => modelByMessageId.GetValueOrDefault(x.MessageId, _settings.CheapModel)))
+        {
+            var model = modelGroup.Key;
+            var modelBatch = modelGroup.ToList();
+            try
+            {
+                var cheapResult = await _analysisService.ExtractCheapAsync(model, cheapPrompt.SystemPrompt, modelBatch, ct);
+                foreach (var item in cheapResult.Items.Where(x => x.MessageId > 0))
+                {
+                    byId[item.MessageId] = item;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stage5 cheap batch failed for model={Model}, count={Count}", model, modelBatch.Count);
+                await _extractionErrorRepository.LogAsync(
+                    stage: "stage5_cheap_batch_model",
+                    reason: ex.Message,
+                    payload: $"model={model};count={modelBatch.Count}",
+                    ct: ct);
+            }
+        }
+
+        foreach (var message in messages)
+        {
+            try
+            {
+                byId.TryGetValue(message.Id, out var extracted);
+                extracted ??= new ExtractionItem { MessageId = message.Id };
+                extracted = NormalizeExtractionForMessage(extracted, message);
+                extracted = SanitizeExtraction(extracted);
+                extracted.MessageId = message.Id;
+
+                if (!ValidateExtractionForMessage(extracted, message, out var validationError))
+                {
+                    _logger.LogWarning(
+                        "Stage5 extraction validation rejected message_id={MessageId}: {Reason}",
+                        message.Id,
+                        validationError);
+
+                    await _extractionErrorRepository.LogAsync(
+                        stage: "stage5_validation",
+                        reason: validationError ?? "invalid_extraction",
+                        messageId: message.Id,
+                        payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};json={JsonSerializer.Serialize(extracted)}",
+                        ct: ct);
+
+                    extracted = new ExtractionItem { MessageId = message.Id };
+                }
+
+                var needsExpensive = extracted.RequiresExpensive
+                                     || extracted.Facts.Any(f => f.Confidence < _settings.CheapConfidenceThreshold)
+                                     || extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold);
+
+                await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted), needsExpensive, ct);
+
+                if (!needsExpensive)
+                {
+                    await ApplyExtractionAsync(message.Id, extracted, message, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stage5 cheap item failed for message_id={MessageId}", message.Id);
+                await _extractionErrorRepository.LogAsync(
+                    stage: "stage5_cheap_item",
+                    reason: ex.Message,
+                    messageId: message.Id,
+                    payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};exception={ex.GetType().Name}",
+                    ct: ct);
+            }
+        }
+    }
+
+    private Dictionary<long, string> BuildCheapModelMap(List<Message> messages)
+    {
+        var map = new Dictionary<long, string>(messages.Count);
+        if (!_settings.CheapModelAbEnabled)
+        {
+            foreach (var message in messages)
+            {
+                map[message.Id] = _settings.CheapModel;
+            }
+
+            return map;
+        }
+
+        var baseline = string.IsNullOrWhiteSpace(_settings.CheapBaselineModel)
+            ? "openai/gpt-4o-mini"
+            : _settings.CheapBaselineModel.Trim();
+        var candidate = string.IsNullOrWhiteSpace(_settings.CheapCandidateModel)
+            ? _settings.CheapModel
+            : _settings.CheapCandidateModel.Trim();
+        var candidatePercent = Math.Clamp(_settings.CheapAbCandidatePercent, 0, 100);
+
+        foreach (var message in messages)
+        {
+            var bucket = (int)(Math.Abs(message.Id % 100));
+            map[message.Id] = bucket < candidatePercent ? candidate : baseline;
+        }
+
+        return map;
     }
 
     private async Task<ExtractionItem?> ResolveWithFallbackAsync(
@@ -884,12 +961,22 @@ public class AnalysisWorkerService : BackgroundService
 
         foreach (var rel in item.Relationships)
         {
-            if (IsGenericEntityToken(rel.FromEntityName))
+            var fromGeneric = IsGenericEntityToken(rel.FromEntityName);
+            var toGeneric = IsGenericEntityToken(rel.ToEntityName);
+            if (fromGeneric && toGeneric)
+            {
+                // Drop ambiguous self/self placeholders; they produce noisy links.
+                rel.FromEntityName = string.Empty;
+                rel.ToEntityName = string.Empty;
+                continue;
+            }
+
+            if (fromGeneric)
             {
                 rel.FromEntityName = senderName;
             }
 
-            if (IsGenericEntityToken(rel.ToEntityName))
+            if (toGeneric)
             {
                 rel.ToEntityName = senderName;
             }
@@ -937,6 +1024,33 @@ public class AnalysisWorkerService : BackgroundService
             .Where(r => r.FromEntityName.Length > 0 && r.ToEntityName.Length > 0 && r.Type.Length > 0)
             .ToList();
 
+        item.Events = item.Events
+            .Where(e => !string.IsNullOrWhiteSpace(e.Type) && !string.IsNullOrWhiteSpace(e.SubjectName))
+            .Select(e => new ExtractionEvent
+            {
+                Type = e.Type.Trim(),
+                SubjectName = e.SubjectName.Trim(),
+                ObjectName = string.IsNullOrWhiteSpace(e.ObjectName) ? null : e.ObjectName.Trim(),
+                Sentiment = string.IsNullOrWhiteSpace(e.Sentiment) ? null : e.Sentiment.Trim().ToLowerInvariant(),
+                Summary = string.IsNullOrWhiteSpace(e.Summary) ? null : e.Summary.Trim(),
+                Confidence = Clamp01(e.Confidence)
+            })
+            .Where(e => e.Type.Length > 0 && e.SubjectName.Length > 0)
+            .ToList();
+
+        item.ProfileSignals = item.ProfileSignals
+            .Where(s => !string.IsNullOrWhiteSpace(s.SubjectName) && !string.IsNullOrWhiteSpace(s.Trait))
+            .Select(s => new ExtractionProfileSignal
+            {
+                SubjectName = s.SubjectName.Trim(),
+                Trait = s.Trait.Trim().ToLowerInvariant(),
+                Direction = string.IsNullOrWhiteSpace(s.Direction) ? "neutral" : s.Direction.Trim().ToLowerInvariant(),
+                Evidence = string.IsNullOrWhiteSpace(s.Evidence) ? null : s.Evidence.Trim(),
+                Confidence = Clamp01(s.Confidence)
+            })
+            .Where(s => s.SubjectName.Length > 0 && s.Trait.Length > 0)
+            .ToList();
+
         return item;
     }
 
@@ -953,9 +1067,34 @@ public class AnalysisWorkerService : BackgroundService
         return ValidateExtractionRecord(item, out error);
     }
 
+    private async Task<bool> CanRunExpensivePassAsync(CancellationToken ct)
+    {
+        if (_settings.ExpensiveDailyBudgetUsd <= 0)
+        {
+            return true;
+        }
+
+        var sinceUtc = DateTime.UtcNow.AddDays(-1);
+        var spent = await _analysisUsageRepository.GetCostUsdSinceAsync("expensive", sinceUtc, ct);
+        if (spent < _settings.ExpensiveDailyBudgetUsd)
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Stage5 expensive daily budget reached. spent_usd={Spent:0.000000}, budget_usd={Budget:0.000000}",
+            spent,
+            _settings.ExpensiveDailyBudgetUsd);
+        return false;
+    }
+
     private static bool ValidateExtractionRecord(ExtractionItem item, out string? error)
     {
-        if (item.Entities.Count > 20 || item.Facts.Count > 30 || item.Relationships.Count > 20)
+        if (item.Entities.Count > 20 ||
+            item.Facts.Count > 30 ||
+            item.Relationships.Count > 20 ||
+            item.Events.Count > 20 ||
+            item.ProfileSignals.Count > 20)
         {
             error = "too_many_items";
             return false;
@@ -993,6 +1132,31 @@ public class AnalysisWorkerService : BackgroundService
             }
         }
 
+        foreach (var evt in item.Events)
+        {
+            if (!IsReasonableText(evt.Type, 64) ||
+                !IsReasonableText(evt.SubjectName, 120) ||
+                (evt.ObjectName is not null && !IsReasonableText(evt.ObjectName, 120)) ||
+                (evt.Sentiment is not null && !IsReasonableText(evt.Sentiment, 32)) ||
+                (evt.Summary is not null && !IsReasonableText(evt.Summary, 500)))
+            {
+                error = "invalid_event_payload";
+                return false;
+            }
+        }
+
+        foreach (var signal in item.ProfileSignals)
+        {
+            if (!IsReasonableText(signal.SubjectName, 120) ||
+                !IsReasonableText(signal.Trait, 64) ||
+                !IsReasonableText(signal.Direction, 32) ||
+                (signal.Evidence is not null && !IsReasonableText(signal.Evidence, 500)))
+            {
+                error = "invalid_profile_signal_payload";
+                return false;
+            }
+        }
+
         error = null;
         return true;
     }
@@ -1022,28 +1186,36 @@ Schema per item:
 - entities: [{name,type,confidence}] where type in [Person, Organization, Place, Pet, Event]
 - facts: [{entity_name,category,key,value,confidence}]
 - relationships: [{from_entity_name,to_entity_name,type,confidence}]
+- events: [{type,subject_name,object_name,sentiment,summary,confidence}]
+- profile_signals: [{subject_name,trait,direction,evidence,confidence}]
 - requires_expensive (boolean)
 - reason (string, optional)
 
 High-precision rules:
 - Use exact participant names from sender_name or message text; never use placeholders like sender/me/self/i.
 - Extract only stable, actionable facts about people and life context.
-- Ignore filler/chat noise: greetings, jokes, emojis, "ok", "thanks", "haha", short reactions.
+- Ignore filler/chat noise: greetings, jokes, emojis, "ok", "thanks", "haha", short reactions, stickers-only chatter.
 - Use metadata (`sender_name`, `ts`, `reply_to`) to preserve who said what and when.
 - If a message references schedule/time/date, prefer fact category `schedule` with explicit time/date text in `value`.
+- Use `events` for dynamic states (conflict, reconciliation, complaint, stress, attitude_change).
+- Use `profile_signals` only for evidence-backed behavioral tendencies (Big Five style hints), not diagnosis.
+- Do not duplicate the same fact in both `facts` and `events` unless temporal change is explicit.
 - If unsure, do not invent; leave arrays empty.
 - Set requires_expensive=true only for ambiguity or contradiction.
 - Confidence range must be 0.0..1.0.
 
 Few-shot examples:
 Input message: "Ok, see you at 19:00"
-Output item: {"message_id":123,"entities":[],"facts":[],"relationships":[],"requires_expensive":false}
+Output item: {"message_id":123,"entities":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input message: "From April 1, I work at Yandex as a product manager" (sender_name="Rinat")
-Output item: {"message_id":124,"entities":[{"name":"Rinat","type":"Person","confidence":0.95},{"name":"Yandex","type":"Organization","confidence":0.93}],"facts":[{"entity_name":"Rinat","category":"career","key":"employer","value":"Yandex","confidence":0.93},{"entity_name":"Rinat","category":"career","key":"position","value":"product manager","confidence":0.90}],"relationships":[],"requires_expensive":false}
+Output item: {"message_id":124,"entities":[{"name":"Rinat","type":"Person","confidence":0.95},{"name":"Yandex","type":"Organization","confidence":0.93}],"facts":[{"entity_name":"Rinat","category":"career","key":"employer","value":"Yandex","confidence":0.93},{"entity_name":"Rinat","category":"career","key":"position","value":"product manager","confidence":0.90}],"relationships":[],"events":[],"profile_signals":[{"subject_name":"Rinat","trait":"conscientiousness","direction":"up","evidence":"explicit career planning","confidence":0.68}],"requires_expensive":false}
 
 Input message: "I think Masha and I are together again" (sender_name="Rinat")
-Output item: {"message_id":125,"entities":[{"name":"Rinat","type":"Person","confidence":0.90},{"name":"Masha","type":"Person","confidence":0.72}],"facts":[],"relationships":[{"from_entity_name":"Rinat","to_entity_name":"Masha","type":"romantic","confidence":0.68}],"requires_expensive":true,"reason":"relationship ambiguity"}
+Output item: {"message_id":125,"entities":[{"name":"Rinat","type":"Person","confidence":0.90},{"name":"Masha","type":"Person","confidence":0.72}],"facts":[],"relationships":[{"from_entity_name":"Rinat","to_entity_name":"Masha","type":"romantic","confidence":0.68}],"events":[{"type":"reconciliation_hint","subject_name":"Rinat","object_name":"Masha","sentiment":"positive","summary":"possible relationship restoration","confidence":0.66}],"profile_signals":[{"subject_name":"Rinat","trait":"neuroticism","direction":"up","evidence":"uncertainty marker 'I think' in intimate topic","confidence":0.55}],"requires_expensive":true,"reason":"relationship ambiguity"}
+
+Input message: "Опять этот офис, уже ненавижу туда ходить" (sender_name="Insar")
+Output item: {"message_id":126,"entities":[{"name":"Insar","type":"Person","confidence":0.94}],"facts":[],"relationships":[],"events":[{"type":"attitude_change","subject_name":"Insar","object_name":"work","sentiment":"negative","summary":"negative shift toward office work","confidence":0.79}],"profile_signals":[{"subject_name":"Insar","trait":"neuroticism","direction":"up","evidence":"strong negative affect about work routine","confidence":0.63}],"requires_expensive":false}
 
 Never include markdown or any extra text.
 """;
