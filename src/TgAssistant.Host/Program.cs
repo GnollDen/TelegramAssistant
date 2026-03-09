@@ -35,11 +35,13 @@ try
             services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
+            services.Configure<VoiceParalinguisticsSettings>(config.GetSection(VoiceParalinguisticsSettings.Section));
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
             services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
             services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
             services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
             services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
+            services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -93,6 +95,8 @@ try
             services.AddSingleton<IEntityMergeCommandRepository, EntityMergeCommandRepository>();
             services.AddSingleton<IStage5MetricsRepository, Stage5MetricsRepository>();
             services.AddSingleton<IAnalysisUsageRepository, AnalysisUsageRepository>();
+            services.AddSingleton<ICommunicationEventRepository, CommunicationEventRepository>();
+            services.AddSingleton<IEmbeddingRepository, EmbeddingRepository>();
             services.AddSingleton<IMaintenanceRepository, MaintenanceRepository>();
             services.AddSingleton<IFactReviewCommandRepository, FactReviewCommandRepository>();
             services.AddSingleton<IFactRepository, FactRepository>();
@@ -100,9 +104,11 @@ try
             services.AddSingleton<ISummaryRepository, SummaryRepository>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
+            services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
 
 
             services.AddHttpClient<OpenRouterAnalysisService>();
+            services.AddHttpClient<Neo4jSyncWorkerService>();
             services.AddSingleton<ExtractionSchemaValidator>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
@@ -111,7 +117,9 @@ try
             services.AddHostedService<BatchWorkerService>();
             services.AddHostedService<ArchiveImportWorkerService>();
             services.AddHostedService<ArchiveMediaProcessorService>();
+            services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
+            services.AddHostedService<Neo4jSyncWorkerService>();
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
             services.AddHostedService<FactReviewCommandWorkerService>();

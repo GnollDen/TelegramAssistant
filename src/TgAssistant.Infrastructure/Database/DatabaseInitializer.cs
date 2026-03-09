@@ -39,6 +39,7 @@ public class DatabaseInitializer
             media_path TEXT,
             media_transcription TEXT,
             media_description TEXT,
+            media_paralinguistics_json JSONB,
             reply_to_message_id BIGINT,
             edit_timestamp TIMESTAMPTZ,
             reactions_json TEXT,
@@ -146,6 +147,21 @@ public class DatabaseInitializer
         );
         CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_entity_id);
         CREATE INDEX IF NOT EXISTS idx_relationships_to ON relationships(to_entity_id);
+
+        -- Semantic/event layer foundation
+        CREATE TABLE IF NOT EXISTS communication_events (
+            id BIGSERIAL PRIMARY KEY,
+            message_id BIGINT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            entity_id UUID REFERENCES entities(id) ON DELETE SET NULL,
+            event_type TEXT NOT NULL,
+            object_name TEXT,
+            sentiment TEXT,
+            summary TEXT,
+            confidence REAL NOT NULL DEFAULT 0.5,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_communication_events_entity_time ON communication_events(entity_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_communication_events_message_event ON communication_events(message_id, event_type);
 
         CREATE TABLE IF NOT EXISTS facts (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -312,6 +328,31 @@ public class DatabaseInitializer
         CREATE INDEX IF NOT EXISTS idx_analysis_usage_events_created ON analysis_usage_events(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_analysis_usage_events_phase_model_created ON analysis_usage_events(phase, model, created_at DESC);
 
+        -- Vector search foundation (pgvector optional; falls back to real[] storage)
+        DO $$ BEGIN
+            CREATE EXTENSION IF NOT EXISTS vector;
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS text_embeddings (
+            id BIGSERIAL PRIMARY KEY,
+            owner_type TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            source_text TEXT NOT NULL,
+            model TEXT NOT NULL,
+            vector REAL[] NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_text_embeddings_owner_model ON text_embeddings(owner_type, owner_id, model);
+        CREATE INDEX IF NOT EXISTS idx_text_embeddings_owner_model ON text_embeddings(owner_type, owner_id, model);
+        DO $$ BEGIN
+            CREATE INDEX IF NOT EXISTS idx_text_embeddings_vector_ivfflat
+                ON text_embeddings
+                USING ivfflat ((( '[' || array_to_string(vector, ',') || ']' )::vector) vector_cosine_ops)
+                WITH (lists = 100);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+
         -- Add forward_json if missing (migration for existing DB)
         DO $$ BEGIN
             ALTER TABLE messages ADD COLUMN forward_json TEXT;
@@ -319,6 +360,10 @@ public class DatabaseInitializer
         END $$;
         DO $$ BEGIN
             ALTER TABLE messages ADD COLUMN needs_reanalysis BOOLEAN NOT NULL DEFAULT FALSE;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+        DO $$ BEGIN
+            ALTER TABLE messages ADD COLUMN media_paralinguistics_json JSONB;
         EXCEPTION WHEN duplicate_column THEN NULL;
         END $$;
         CREATE INDEX IF NOT EXISTS idx_messages_needs_reanalysis ON messages(needs_reanalysis) WHERE needs_reanalysis = TRUE;
