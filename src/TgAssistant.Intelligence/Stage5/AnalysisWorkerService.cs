@@ -11,11 +11,15 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
+    private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
+    private readonly EmbeddingSettings _embeddingSettings;
     private readonly IMessageRepository _messageRepository;
     private readonly IEntityRepository _entityRepository;
     private readonly IEntityAliasRepository _entityAliasRepository;
     private readonly IFactRepository _factRepository;
+    private readonly IEmbeddingRepository _embeddingRepository;
+    private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly ICommunicationEventRepository _communicationEventRepository;
     private readonly IRelationshipRepository _relationshipRepository;
     private readonly IFactReviewCommandRepository _factReviewCommandRepository;
@@ -31,10 +35,13 @@ public class AnalysisWorkerService : BackgroundService
 
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
+        IOptions<EmbeddingSettings> embeddingSettings,
         IMessageRepository messageRepository,
         IEntityRepository entityRepository,
         IEntityAliasRepository entityAliasRepository,
         IFactRepository factRepository,
+        IEmbeddingRepository embeddingRepository,
+        ITextEmbeddingGenerator embeddingGenerator,
         ICommunicationEventRepository communicationEventRepository,
         IRelationshipRepository relationshipRepository,
         IFactReviewCommandRepository factReviewCommandRepository,
@@ -47,10 +54,13 @@ public class AnalysisWorkerService : BackgroundService
         ILogger<AnalysisWorkerService> logger)
     {
         _settings = settings.Value;
+        _embeddingSettings = embeddingSettings.Value;
         _messageRepository = messageRepository;
         _entityRepository = entityRepository;
         _entityAliasRepository = entityAliasRepository;
         _factRepository = factRepository;
+        _embeddingRepository = embeddingRepository;
+        _embeddingGenerator = embeddingGenerator;
         _communicationEventRepository = communicationEventRepository;
         _relationshipRepository = relationshipRepository;
         _factReviewCommandRepository = factReviewCommandRepository;
@@ -700,6 +710,15 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task<List<string>> GetCurrentFactStringsAsync(ExtractionItem item, CancellationToken ct)
     {
+        if (_embeddingSettings.Enabled && !string.IsNullOrWhiteSpace(_embeddingSettings.Model))
+        {
+            var semantic = await TryGetSemanticFactContextAsync(item, ct);
+            if (semantic.Count > 0)
+            {
+                return semantic;
+            }
+        }
+
         var list = new List<string>();
         var maxFacts = Math.Max(10, _settings.ExpensiveContextMaxFacts);
         var maxChars = Math.Max(1000, _settings.ExpensiveContextMaxChars);
@@ -735,6 +754,104 @@ public class AnalysisWorkerService : BackgroundService
         }
 
         return list;
+    }
+
+    private async Task<List<string>> TryGetSemanticFactContextAsync(ExtractionItem item, CancellationToken ct)
+    {
+        try
+        {
+            var query = BuildFactQueryText(item);
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return new List<string>();
+            }
+
+            var queryVector = await _embeddingGenerator.GenerateAsync(_embeddingSettings.Model, query, ct);
+            if (queryVector.Length == 0)
+            {
+                return new List<string>();
+            }
+
+            var maxFacts = Math.Max(5, _settings.ExpensiveContextMaxFacts);
+            var maxChars = Math.Max(1000, _settings.ExpensiveContextMaxChars);
+            var nearest = await _embeddingRepository.FindNearestAsync(FactEmbeddingOwnerType, queryVector, maxFacts, ct);
+            if (nearest.Count == 0)
+            {
+                return new List<string>();
+            }
+
+            var result = new List<string>(maxFacts);
+            var totalChars = 0;
+            var seen = new HashSet<Guid>();
+
+            foreach (var emb in nearest)
+            {
+                if (!Guid.TryParse(emb.OwnerId, out var factId))
+                {
+                    continue;
+                }
+
+                if (!seen.Add(factId))
+                {
+                    continue;
+                }
+
+                var fact = await _factRepository.GetByIdAsync(factId, ct);
+                if (fact == null || !fact.IsCurrent)
+                {
+                    continue;
+                }
+
+                var entity = await _entityRepository.GetByIdAsync(fact.EntityId, ct);
+                var entityName = entity?.Name ?? fact.EntityId.ToString();
+                var line = $"{entityName}:{fact.Category}:{fact.Key}={fact.Value}";
+                if (line.Length > 400)
+                {
+                    line = line[..400] + "...";
+                }
+
+                if (totalChars + line.Length > maxChars || result.Count >= maxFacts)
+                {
+                    break;
+                }
+
+                result.Add(line);
+                totalChars += line.Length;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Stage5 semantic fact context fallback to recency mode");
+            return new List<string>();
+        }
+    }
+
+    private static string BuildFactQueryText(ExtractionItem item)
+    {
+        var parts = new List<string>();
+        foreach (var entity in item.Entities.Where(e => !string.IsNullOrWhiteSpace(e.Name)).Take(10))
+        {
+            parts.Add($"entity:{entity.Name}");
+        }
+
+        foreach (var fact in item.Facts.Where(f => !string.IsNullOrWhiteSpace(f.Key)).Take(20))
+        {
+            parts.Add($"fact:{fact.Category}:{fact.Key}={fact.Value}");
+        }
+
+        foreach (var rel in item.Relationships.Where(r => !string.IsNullOrWhiteSpace(r.Type)).Take(10))
+        {
+            parts.Add($"rel:{rel.FromEntityName}->{rel.Type}->{rel.ToEntityName}");
+        }
+
+        foreach (var evt in item.Events.Where(e => !string.IsNullOrWhiteSpace(e.Type)).Take(10))
+        {
+            parts.Add($"event:{evt.SubjectName}:{evt.Type}:{evt.Summary}");
+        }
+
+        return string.Join('\n', parts);
     }
 
     private static string BuildMessageText(Message m, Message? replyTo)
