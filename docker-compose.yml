@@ -63,6 +63,12 @@ services:
       Media__VisionModel: ${MEDIA_VISION_MODEL:-qwen/qwen2.5-vl-72b-instruct}
       Media__ArchiveVisionModel: ${MEDIA_ARCHIVE_VISION_MODEL:-qwen/qwen2.5-vl-72b-instruct}
       Media__AudioModel: ${MEDIA_AUDIO_MODEL:-openai/gpt-audio-mini}
+      VoiceParalinguistics__Enabled: ${VOICE_PARALINGUISTICS_ENABLED:-true}
+      VoiceParalinguistics__PollIntervalSeconds: ${VOICE_PARALINGUISTICS_POLL_INTERVAL_SECONDS:-10}
+      VoiceParalinguistics__BatchSize: ${VOICE_PARALINGUISTICS_BATCH_SIZE:-30}
+      VoiceParalinguistics__MaxParallel: ${VOICE_PARALINGUISTICS_MAX_PARALLEL:-2}
+      VoiceParalinguistics__Model: ${VOICE_PARALINGUISTICS_MODEL:-openai/gpt-audio-mini}
+      VoiceParalinguistics__MaxTokens: ${VOICE_PARALINGUISTICS_MAX_TOKENS:-300}
       ArchiveImport__Enabled: ${ARCHIVE_IMPORT_ENABLED:-false}
       ArchiveImport__MediaProcessingEnabled: ${ARCHIVE_MEDIA_PROCESSING_ENABLED:-true}
       ArchiveImport__RequireCostConfirmation: ${ARCHIVE_IMPORT_REQUIRE_CONFIRMATION:-true}
@@ -87,6 +93,8 @@ services:
       Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
       Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}
       Analysis__ExpensiveCooldownMinutes: ${ANALYSIS_EXPENSIVE_COOLDOWN_MINUTES:-10}
+      Analysis__ExpensiveContextMaxFacts: ${ANALYSIS_EXPENSIVE_CONTEXT_MAX_FACTS:-60}
+      Analysis__ExpensiveContextMaxChars: ${ANALYSIS_EXPENSIVE_CONTEXT_MAX_CHARS:-12000}
       Analysis__CheapConfidenceThreshold: ${ANALYSIS_CHEAP_CONFIDENCE_THRESHOLD:-0.8}
       Analysis__MinFactConfidence: ${ANALYSIS_MIN_FACT_CONFIDENCE:-0.55}
       Analysis__MinSensitiveFactConfidence: ${ANALYSIS_MIN_SENSITIVE_FACT_CONFIDENCE:-0.75}
@@ -101,6 +109,13 @@ services:
       Maintenance__ExtractionErrorsRetentionDays: ${MAINTENANCE_EXTRACTION_ERRORS_RETENTION_DAYS:-14}
       Maintenance__Stage5MetricsRetentionDays: ${MAINTENANCE_STAGE5_METRICS_RETENTION_DAYS:-30}
       Maintenance__MergeDecisionsRetentionDays: ${MAINTENANCE_MERGE_DECISIONS_RETENTION_DAYS:-90}
+      Neo4j__Enabled: ${NEO4J_ENABLED:-false}
+      Neo4j__BaseUrl: ${NEO4J_BASE_URL:-http://127.0.0.1:7474}
+      Neo4j__Username: ${NEO4J_USERNAME:-neo4j}
+      Neo4j__Password: ${NEO4J_PASSWORD:-}
+      Neo4j__Database: ${NEO4J_DATABASE:-neo4j}
+      Neo4j__PollIntervalSeconds: ${NEO4J_POLL_INTERVAL_SECONDS:-30}
+      Neo4j__BatchSize: ${NEO4J_BATCH_SIZE:-200}
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data

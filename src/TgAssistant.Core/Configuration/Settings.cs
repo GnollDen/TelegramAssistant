@@ -70,6 +70,17 @@ public class MediaSettings
     public int ArchiveVisionMaxTokens { get; set; } = 120;
 }
 
+public class VoiceParalinguisticsSettings
+{
+    public const string Section = "VoiceParalinguistics";
+    public bool Enabled { get; set; } = true;
+    public int PollIntervalSeconds { get; set; } = 10;
+    public int BatchSize { get; set; } = 30;
+    public int MaxParallel { get; set; } = 2;
+    public string Model { get; set; } = "openai/gpt-audio-mini";
+    public int MaxTokens { get; set; } = 300;
+}
+
 public class ArchiveImportSettings
 {
     public const string Section = "ArchiveImport";
@@ -110,6 +121,8 @@ public class AnalysisSettings
     public int ExpensiveRetryBaseSeconds { get; set; } = 30;
     public int MaxExpensiveRetryCount { get; set; } = 5;
     public decimal ExpensiveDailyBudgetUsd { get; set; } = 0m;
+    public int ExpensiveContextMaxFacts { get; set; } = 60;
+    public int ExpensiveContextMaxChars { get; set; } = 12000;
     public int FactReviewReenqueueHours { get; set; } = 24;
     public float CheapConfidenceThreshold { get; set; } = 0.8f;
     public float MinFactConfidence { get; set; } = 0.55f;
@@ -146,4 +159,16 @@ public class MaintenanceSettings
     public int MergeDecisionsRetentionDays { get; set; } = 90;
     public int FactReviewCommandsRetentionDays { get; set; } = 30;
     public int FactReviewPendingTimeoutDays { get; set; } = 7;
+}
+
+public class Neo4jSettings
+{
+    public const string Section = "Neo4j";
+    public bool Enabled { get; set; } = false;
+    public string BaseUrl { get; set; } = "http://localhost:7474";
+    public string Username { get; set; } = "neo4j";
+    public string Password { get; set; } = string.Empty;
+    public string Database { get; set; } = "neo4j";
+    public int PollIntervalSeconds { get; set; } = 30;
+    public int BatchSize { get; set; } = 200;
 }

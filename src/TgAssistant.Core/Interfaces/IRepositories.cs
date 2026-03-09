@@ -18,7 +18,9 @@ public interface IMessageRepository
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
+    Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
+    Task UpdateMediaParalinguisticsAsync(long messageId, string jsonPayload, CancellationToken ct = default);
 }
 
 public interface IArchiveImportRepository
@@ -69,6 +71,12 @@ public interface IRelationshipRepository
     Task<Relationship> UpsertAsync(Relationship relationship, CancellationToken ct = default);
     Task<List<Relationship>> GetByEntityAsync(Guid entityId, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default);
+}
+
+public interface ICommunicationEventRepository
+{
+    Task AddRangeAsync(IEnumerable<CommunicationEvent> events, CancellationToken ct = default);
+    Task<List<CommunicationEvent>> GetByEntityAsync(Guid entityId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
 }
 
 public interface IFactRepository
@@ -126,6 +134,12 @@ public interface IAnalysisUsageRepository
 {
     Task LogAsync(AnalysisUsageEvent evt, CancellationToken ct = default);
     Task<decimal> GetCostUsdSinceAsync(string phase, DateTime sinceUtc, CancellationToken ct = default);
+}
+
+public interface IEmbeddingRepository
+{
+    Task UpsertAsync(TextEmbedding embedding, CancellationToken ct = default);
+    Task<List<TextEmbedding>> FindNearestAsync(string ownerType, float[] vector, int limit = 10, CancellationToken ct = default);
 }
 
 public interface IMaintenanceRepository
