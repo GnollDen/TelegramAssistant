@@ -8,6 +8,12 @@ public interface IMessageRepository
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
+    Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
+    Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
+        long chatId,
+        MessageSource source,
+        IReadOnlyCollection<long> telegramMessageIds,
+        CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
@@ -26,9 +32,34 @@ public interface IArchiveImportRepository
 public interface IEntityRepository
 {
     Task<Entity> UpsertAsync(Entity entity, CancellationToken ct = default);
+    Task<Entity?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<Entity?> FindByActorKeyAsync(string actorKey, CancellationToken ct = default);
     Task<Entity?> FindByTelegramIdAsync(long telegramUserId, CancellationToken ct = default);
     Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default);
+    Task MergeIntoAsync(Guid targetEntityId, Guid sourceEntityId, CancellationToken ct = default);
     Task<List<Entity>> GetAllAsync(CancellationToken ct = default);
+}
+
+public interface IEntityAliasRepository
+{
+    Task UpsertAliasAsync(Guid entityId, string alias, long? sourceMessageId = null, float confidence = 1.0f, CancellationToken ct = default);
+}
+
+public interface IEntityMergeRepository
+{
+    Task<int> RefreshAliasMergeCandidatesAsync(int maxCandidates, CancellationToken ct = default);
+    Task<int> RecomputeScoresAsync(int limit, CancellationToken ct = default);
+    Task<List<EntityMergeCandidate>> GetPendingAsync(int limit, CancellationToken ct = default);
+    Task<List<EntityMergeReviewItem>> GetReviewQueueAsync(int limit, CancellationToken ct = default);
+    Task<EntityMergeCandidate?> GetByIdAsync(long candidateId, CancellationToken ct = default);
+    Task MarkDecisionAsync(long candidateId, MergeDecision decision, string? note = null, CancellationToken ct = default);
+}
+
+public interface IEntityMergeCommandRepository
+{
+    Task<List<EntityMergeCommand>> GetPendingAsync(int limit, CancellationToken ct = default);
+    Task MarkDoneAsync(long commandId, CancellationToken ct = default);
+    Task MarkFailedAsync(long commandId, string error, CancellationToken ct = default);
 }
 
 public interface IRelationshipRepository
@@ -40,6 +71,7 @@ public interface IRelationshipRepository
 
 public interface IFactRepository
 {
+    Task<Fact?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Fact> UpsertAsync(Fact fact, CancellationToken ct = default);
     Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default);
     Task SupersedeFactAsync(Guid oldFactId, Fact newFact, CancellationToken ct = default);
@@ -69,6 +101,41 @@ public interface IMessageExtractionRepository
     Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
     Task ResolveExpensiveAsync(long extractionId, string expensiveJson, CancellationToken ct = default);
+    Task<ExpensiveRetryResult> MarkExpensiveFailedAsync(
+        long extractionId,
+        string? error,
+        int maxRetries,
+        int baseDelaySeconds,
+        CancellationToken ct = default);
+}
+
+public interface IExtractionErrorRepository
+{
+    Task LogAsync(string stage, string reason, long? messageId = null, string? payload = null, CancellationToken ct = default);
+}
+
+public interface IStage5MetricsRepository
+{
+    Task SaveSnapshotAsync(Stage5MetricsSnapshot snapshot, CancellationToken ct = default);
+    Task<Stage5MetricsSnapshot> CaptureAsync(CancellationToken ct = default);
+}
+
+public interface IAnalysisUsageRepository
+{
+    Task LogAsync(AnalysisUsageEvent evt, CancellationToken ct = default);
+}
+
+public interface IMaintenanceRepository
+{
+    Task<MaintenanceCleanupResult> CleanupAsync(MaintenanceCleanupRequest request, CancellationToken ct = default);
+}
+
+public interface IFactReviewCommandRepository
+{
+    Task<List<FactReviewCommand>> GetPendingAsync(int limit, CancellationToken ct = default);
+    Task EnqueueAsync(Guid factId, string command, string? reason = null, CancellationToken ct = default);
+    Task MarkDoneAsync(long commandId, CancellationToken ct = default);
+    Task MarkFailedAsync(long commandId, string error, CancellationToken ct = default);
 }
 
 public class MessageExtractionRecord
@@ -78,4 +145,106 @@ public class MessageExtractionRecord
     public string CheapJson { get; set; } = "{}";
     public string? ExpensiveJson { get; set; }
     public bool NeedsExpensive { get; set; }
+    public int ExpensiveRetryCount { get; set; }
+    public DateTime? ExpensiveNextRetryAt { get; set; }
+    public string? ExpensiveLastError { get; set; }
+}
+
+public class ExpensiveRetryResult
+{
+    public bool Found { get; set; }
+    public bool IsExhausted { get; set; }
+    public int RetryCount { get; set; }
+    public DateTime? NextRetryAt { get; set; }
+}
+
+public class EntityMergeCandidate
+{
+    public long Id { get; set; }
+    public Guid EntityLowId { get; set; }
+    public Guid EntityHighId { get; set; }
+    public string AliasNorm { get; set; } = string.Empty;
+    public int EvidenceCount { get; set; }
+    public float Score { get; set; }
+    public short ReviewPriority { get; set; }
+    public short Status { get; set; }
+}
+
+public class EntityMergeReviewItem
+{
+    public long CandidateId { get; set; }
+    public Guid EntityLowId { get; set; }
+    public Guid EntityHighId { get; set; }
+    public string EntityLowName { get; set; } = string.Empty;
+    public string EntityHighName { get; set; } = string.Empty;
+    public string AliasNorm { get; set; } = string.Empty;
+    public int EvidenceCount { get; set; }
+    public float Score { get; set; }
+    public short ReviewPriority { get; set; }
+}
+
+public class EntityMergeCommand
+{
+    public long Id { get; set; }
+    public long CandidateId { get; set; }
+    public string Command { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+}
+
+public enum MergeDecision : short
+{
+    Pending = 0,
+    Merged = 1,
+    Rejected = 2
+}
+
+public class Stage5MetricsSnapshot
+{
+    public DateTime CapturedAt { get; set; }
+    public long ProcessedMessages { get; set; }
+    public long ExtractionsTotal { get; set; }
+    public long ExpensiveBacklog { get; set; }
+    public long MergeCandidatesPending { get; set; }
+    public long FactReviewsPending { get; set; }
+    public long ExtractionErrors1h { get; set; }
+    public long AnalysisRequests1h { get; set; }
+    public long AnalysisTokens1h { get; set; }
+    public decimal AnalysisCostUsd1h { get; set; }
+}
+
+public class MaintenanceCleanupRequest
+{
+    public int ExtractionErrorsRetentionDays { get; set; }
+    public int Stage5MetricsRetentionDays { get; set; }
+    public int MergeDecisionsRetentionDays { get; set; }
+    public int FactReviewCommandsRetentionDays { get; set; }
+    public int FactReviewPendingTimeoutDays { get; set; }
+}
+
+public class MaintenanceCleanupResult
+{
+    public int ExtractionErrorsDeleted { get; set; }
+    public int Stage5MetricsDeleted { get; set; }
+    public int MergeDecisionsDeleted { get; set; }
+    public int FactReviewCommandsDeleted { get; set; }
+    public int FactReviewCommandsTimedOut { get; set; }
+}
+
+public class FactReviewCommand
+{
+    public long Id { get; set; }
+    public Guid FactId { get; set; }
+    public string Command { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+}
+
+public class AnalysisUsageEvent
+{
+    public string Phase { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public int PromptTokens { get; set; }
+    public int CompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
+    public decimal CostUsd { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

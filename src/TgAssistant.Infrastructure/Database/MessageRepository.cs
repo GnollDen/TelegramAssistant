@@ -117,6 +117,41 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<Message?> GetByIdAsync(long id, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.Messages.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        return row == null ? null : ToDomain(row);
+    }
+
+    public async Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
+        long chatId,
+        MessageSource source,
+        IReadOnlyCollection<long> telegramMessageIds,
+        CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, Message>();
+        if (telegramMessageIds.Count == 0)
+        {
+            return result;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ChatId == chatId
+                        && x.Source == (short)source
+                        && telegramMessageIds.Contains(x.TelegramMessageId))
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            result[row.TelegramMessageId] = ToDomain(row);
+        }
+
+        return result;
+    }
+
     public async Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
     {
         var ids = messageIds.Distinct().ToList();

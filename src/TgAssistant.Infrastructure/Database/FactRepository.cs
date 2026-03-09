@@ -20,7 +20,7 @@ public class FactRepository : IFactRepository
         var existing = await db.Facts.FirstOrDefaultAsync(x => x.EntityId == fact.EntityId && x.Category == fact.Category && x.Key == fact.Key && x.Value == fact.Value && x.IsCurrent, ct);
         if (existing == null)
         {
-            db.Facts.Add(new DbFact
+            var row = new DbFact
             {
                 Id = fact.Id == Guid.Empty ? Guid.NewGuid() : fact.Id,
                 EntityId = fact.EntityId,
@@ -35,18 +35,26 @@ public class FactRepository : IFactRepository
                 IsCurrent = fact.IsCurrent,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
-            });
-        }
-        else
-        {
-            existing.Confidence = Math.Max(existing.Confidence, fact.Confidence);
-            existing.Status = (short)fact.Status;
-            existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
-            existing.UpdatedAt = DateTime.UtcNow;
+            };
+            db.Facts.Add(row);
+            await db.SaveChangesAsync(ct);
+            return ToDomain(row);
         }
 
+        existing.Confidence = Math.Max(existing.Confidence, fact.Confidence);
+        existing.Status = (short)fact.Status;
+        existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
+        existing.UpdatedAt = DateTime.UtcNow;
+
         await db.SaveChangesAsync(ct);
-        return fact;
+        return ToDomain(existing);
+    }
+
+    public async Task<Fact?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.Facts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        return row == null ? null : ToDomain(row);
     }
 
     public async Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default)

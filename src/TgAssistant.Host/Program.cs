@@ -36,8 +36,10 @@ try
             services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
-
             services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
+            services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
+            services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
+            services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -84,7 +86,15 @@ try
             services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();
             services.AddSingleton<IAnalysisStateRepository, AnalysisStateRepository>();
             services.AddSingleton<IMessageExtractionRepository, MessageExtractionRepository>();
+            services.AddSingleton<IExtractionErrorRepository, ExtractionErrorRepository>();
             services.AddSingleton<IEntityRepository, EntityRepository>();
+            services.AddSingleton<IEntityAliasRepository, EntityAliasRepository>();
+            services.AddSingleton<IEntityMergeRepository, EntityMergeRepository>();
+            services.AddSingleton<IEntityMergeCommandRepository, EntityMergeCommandRepository>();
+            services.AddSingleton<IStage5MetricsRepository, Stage5MetricsRepository>();
+            services.AddSingleton<IAnalysisUsageRepository, AnalysisUsageRepository>();
+            services.AddSingleton<IMaintenanceRepository, MaintenanceRepository>();
+            services.AddSingleton<IFactReviewCommandRepository, FactReviewCommandRepository>();
             services.AddSingleton<IFactRepository, FactRepository>();
             services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
             services.AddSingleton<ISummaryRepository, SummaryRepository>();
@@ -93,6 +103,7 @@ try
 
 
             services.AddHttpClient<OpenRouterAnalysisService>();
+            services.AddSingleton<ExtractionSchemaValidator>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
@@ -101,6 +112,11 @@ try
             services.AddHostedService<ArchiveImportWorkerService>();
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<AnalysisWorkerService>();
+            services.AddHostedService<EntityMergeCandidateWorkerService>();
+            services.AddHostedService<EntityMergeCommandWorkerService>();
+            services.AddHostedService<FactReviewCommandWorkerService>();
+            services.AddHostedService<Stage5MetricsWorkerService>();
+            services.AddHostedService<MaintenanceWorkerService>();
         });
 
     var host = builder.Build();
