@@ -1455,7 +1455,7 @@ public class AnalysisWorkerService : BackgroundService
         var normalized = text.ToLowerInvariant();
         var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
 
-        if (tokenCount >= 6)
+        if (tokenCount >= 3)
         {
             return true;
         }
@@ -1477,7 +1477,13 @@ public class AnalysisWorkerService : BackgroundService
                || normalized.Contains("отношен", StringComparison.Ordinal)
                || normalized.Contains("любл", StringComparison.Ordinal)
                || normalized.Contains("вместе", StringComparison.Ordinal)
-               || normalized.Contains("дома", StringComparison.Ordinal);
+               || normalized.Contains("дома", StringComparison.Ordinal)
+               || normalized.Contains("уволи", StringComparison.Ordinal)
+               || normalized.Contains("беремен", StringComparison.Ordinal)
+               || normalized.Contains("больниц", StringComparison.Ordinal)
+               || normalized.Contains("развел", StringComparison.Ordinal)
+               || normalized.Contains("купил", StringComparison.Ordinal)
+               || normalized.Contains("продал", StringComparison.Ordinal);
     }
 
     private const string DefaultCheapPrompt = """
