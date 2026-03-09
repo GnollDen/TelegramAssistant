@@ -79,6 +79,8 @@ public class VoiceParalinguisticsSettings
     public int MaxParallel { get; set; } = 2;
     public string Model { get; set; } = "openai/gpt-audio-mini";
     public int MaxTokens { get; set; } = 300;
+    public int RetryCount { get; set; } = 2;
+    public int RetryBaseDelaySeconds { get; set; } = 2;
 }
 
 public class ArchiveImportSettings
@@ -140,6 +142,10 @@ public class MergeSettings
     public int CommandBatchSize { get; set; } = 100;
     public float AutoRejectScoreThreshold { get; set; } = 0.2f;
     public int AutoRejectAliasLengthMax { get; set; } = 3;
+    public bool SemanticGateEnabled { get; set; } = true;
+    public float SemanticRejectSimilarityThreshold { get; set; } = 0.55f;
+    public float SemanticAutoMergeSimilarityThreshold { get; set; } = 0.92f;
+    public int SemanticAutoMergeMinEvidence { get; set; } = 2;
 }
 
 public class MonitoringSettings
@@ -171,4 +177,13 @@ public class Neo4jSettings
     public string Database { get; set; } = "neo4j";
     public int PollIntervalSeconds { get; set; } = 30;
     public int BatchSize { get; set; } = 200;
+}
+
+public class EmbeddingSettings
+{
+    public const string Section = "Embedding";
+    public bool Enabled { get; set; } = true;
+    public string Model { get; set; } = "text-embedding-3-small";
+    public int PollIntervalSeconds { get; set; } = 30;
+    public int BatchSize { get; set; } = 100;
 }

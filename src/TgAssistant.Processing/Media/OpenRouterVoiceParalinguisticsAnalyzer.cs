@@ -86,8 +86,9 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
             }
 
             var sanitized = TryExtractJson(text);
-            _ = JsonDocument.Parse(sanitized);
-            return sanitized;
+            using var doc = JsonDocument.Parse(sanitized);
+            var normalized = NormalizePayload(doc.RootElement);
+            return JsonSerializer.Serialize(normalized, JsonOptions);
         }
         finally
         {
@@ -97,6 +98,99 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
             }
         }
     }
+
+    private static object NormalizePayload(JsonElement root)
+    {
+        var primary = NormalizeEmotion(TryGetString(root, "primary_emotion"));
+        var secondary = NormalizeEmotion(TryGetString(root, "secondary_emotion"));
+        var valence = Clamp(TryGetFloat(root, "valence"), -1f, 1f);
+        var arousal = Clamp(TryGetFloat(root, "arousal"), 0f, 1f);
+        var dominance = Clamp(TryGetFloat(root, "dominance"), 0f, 1f);
+        var sarcasm = Clamp(TryGetFloat(root, "sarcasm_probability"), 0f, 1f);
+        var confidence = Clamp(TryGetFloat(root, "confidence"), 0f, 1f);
+
+        var evidence = new List<string>();
+        if (root.TryGetProperty("evidence", out var evidenceElement) && evidenceElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in evidenceElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var value = item.GetString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        evidence.Add(value.Length > 240 ? value[..240] : value);
+                    }
+                }
+            }
+        }
+
+        return new
+        {
+            primary_emotion = primary,
+            secondary_emotion = secondary,
+            valence,
+            arousal,
+            dominance,
+            sarcasm_probability = sarcasm,
+            confidence,
+            evidence
+        };
+    }
+
+    private static string NormalizeEmotion(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "neutral";
+        }
+
+        var key = raw.Trim().ToLowerInvariant();
+        return key switch
+        {
+            "neutral" => "neutral",
+            "joy" or "happy" or "happiness" => "joy",
+            "sad" or "sadness" => "sadness",
+            "anger" or "angry" => "anger",
+            "fear" or "anxiety" => "fear",
+            "surprise" => "surprise",
+            "disgust" => "disgust",
+            "calm" => "calm",
+            "irritation" => "irritation",
+            "excitement" => "excitement",
+            "sarcasm" => "sarcasm",
+            _ => "neutral"
+        };
+    }
+
+    private static string? TryGetString(JsonElement root, string name)
+    {
+        return root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static float TryGetFloat(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var value))
+        {
+            return 0f;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var number))
+        {
+            return number;
+        }
+
+        if (value.ValueKind == JsonValueKind.String && float.TryParse(value.GetString(), out var parsed))
+        {
+            return parsed;
+        }
+
+        return 0f;
+    }
+
+    private static float Clamp(float value, float min, float max) => Math.Min(max, Math.Max(min, value));
 
     private static string TryExtractJson(string raw)
     {

@@ -19,6 +19,11 @@ public interface IVoiceParalinguisticsAnalyzer
     Task<string> AnalyzeAsync(string filePath, CancellationToken ct = default);
 }
 
+public interface ITextEmbeddingGenerator
+{
+    Task<float[]> GenerateAsync(string model, string input, CancellationToken ct = default);
+}
+
 public interface IStickerCacheRepository
 {
     Task<StickerCacheItem?> GetByHashAsync(string contentHash, CancellationToken ct = default);

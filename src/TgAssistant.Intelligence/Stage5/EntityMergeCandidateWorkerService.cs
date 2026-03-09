@@ -9,20 +9,24 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class EntityMergeCandidateWorkerService : BackgroundService
 {
+    private const string EmbeddingOwnerType = "entity_profile";
     private readonly MergeSettings _settings;
     private readonly IEntityMergeRepository _mergeRepository;
     private readonly IEntityRepository _entityRepository;
+    private readonly IEmbeddingRepository _embeddingRepository;
     private readonly ILogger<EntityMergeCandidateWorkerService> _logger;
 
     public EntityMergeCandidateWorkerService(
         IOptions<MergeSettings> settings,
         IEntityMergeRepository mergeRepository,
         IEntityRepository entityRepository,
+        IEmbeddingRepository embeddingRepository,
         ILogger<EntityMergeCandidateWorkerService> logger)
     {
         _settings = settings.Value;
         _mergeRepository = mergeRepository;
         _entityRepository = entityRepository;
+        _embeddingRepository = embeddingRepository;
         _logger = logger;
     }
 
@@ -90,6 +94,44 @@ public class EntityMergeCandidateWorkerService : BackgroundService
 
             if (!sameTelegram && !sameActor)
             {
+                if (_settings.SemanticGateEnabled)
+                {
+                    var similarity = await GetSemanticSimilarityAsync(low, high, ct);
+                    if (similarity.HasValue)
+                    {
+                        if (similarity.Value < _settings.SemanticRejectSimilarityThreshold && IsWeakCandidate(c, low, high, _settings))
+                        {
+                            await _mergeRepository.MarkDecisionAsync(
+                                c.Id,
+                                MergeDecision.Rejected,
+                                $"semantic_reject similarity={similarity.Value:0.000}",
+                                ct);
+                            continue;
+                        }
+
+                        if (similarity.Value >= _settings.SemanticAutoMergeSimilarityThreshold
+                            && c.EvidenceCount >= Math.Max(1, _settings.SemanticAutoMergeMinEvidence)
+                            && CanSemanticAutoMerge(low, high))
+                        {
+                            var targetBySemantic = ChooseTarget(low, high);
+                            var sourceBySemantic = targetBySemantic.Id == low.Id ? high : low;
+                            await _entityRepository.MergeIntoAsync(targetBySemantic.Id, sourceBySemantic.Id, ct);
+                            await _mergeRepository.MarkDecisionAsync(
+                                c.Id,
+                                MergeDecision.Merged,
+                                $"auto_semantic similarity={similarity.Value:0.000}",
+                                ct);
+                            _logger.LogInformation(
+                                "Entity semantic auto-merge done: candidate={CandidateId} target={Target} source={Source} similarity={Similarity}",
+                                c.Id,
+                                targetBySemantic.Id,
+                                sourceBySemantic.Id,
+                                similarity.Value);
+                            continue;
+                        }
+                    }
+                }
+
                 if (IsWeakCandidate(c, low, high, _settings))
                 {
                     await _mergeRepository.MarkDecisionAsync(c.Id, MergeDecision.Rejected, "auto_weak_alias_evidence", ct);
@@ -109,6 +151,56 @@ public class EntityMergeCandidateWorkerService : BackgroundService
                 source.Id,
                 sameActor ? "same_actor_key" : "same_telegram_user");
         }
+    }
+
+    private async Task<float?> GetSemanticSimilarityAsync(Entity low, Entity high, CancellationToken ct)
+    {
+        var lowEmbedding = await _embeddingRepository.GetByOwnerAsync(EmbeddingOwnerType, low.Id.ToString(), ct: ct);
+        var highEmbedding = await _embeddingRepository.GetByOwnerAsync(EmbeddingOwnerType, high.Id.ToString(), ct: ct);
+        if (lowEmbedding?.Vector == null || highEmbedding?.Vector == null)
+        {
+            return null;
+        }
+
+        return Cosine(lowEmbedding.Vector, highEmbedding.Vector);
+    }
+
+    private static bool CanSemanticAutoMerge(Entity low, Entity high)
+    {
+        // Never merge if two explicit Telegram IDs conflict.
+        if (low.TelegramUserId.HasValue
+            && high.TelegramUserId.HasValue
+            && low.TelegramUserId.Value != high.TelegramUserId.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static float Cosine(float[] a, float[] b)
+    {
+        if (a.Length == 0 || b.Length == 0 || a.Length != b.Length)
+        {
+            return -1f;
+        }
+
+        double dot = 0;
+        double normA = 0;
+        double normB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        if (normA <= 0 || normB <= 0)
+        {
+            return -1f;
+        }
+
+        return (float)(dot / (Math.Sqrt(normA) * Math.Sqrt(normB)));
     }
 
     private static Entity ChooseTarget(Entity a, Entity b)

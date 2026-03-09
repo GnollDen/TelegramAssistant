@@ -42,6 +42,7 @@ public interface IEntityRepository
     Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default);
     Task MergeIntoAsync(Guid targetEntityId, Guid sourceEntityId, CancellationToken ct = default);
     Task<List<Entity>> GetAllAsync(CancellationToken ct = default);
+    Task<List<Entity>> GetUpdatedSinceAsync(DateTime sinceUtc, int limit, CancellationToken ct = default);
 }
 
 public interface IEntityAliasRepository
@@ -139,6 +140,7 @@ public interface IAnalysisUsageRepository
 public interface IEmbeddingRepository
 {
     Task UpsertAsync(TextEmbedding embedding, CancellationToken ct = default);
+    Task<TextEmbedding?> GetByOwnerAsync(string ownerType, string ownerId, string? model = null, CancellationToken ct = default);
     Task<List<TextEmbedding>> FindNearestAsync(string ownerType, float[] vector, int limit = 10, CancellationToken ct = default);
 }
 

@@ -105,6 +105,40 @@ public class EmbeddingRepository : IEmbeddingRepository
         }
     }
 
+    public async Task<TextEmbedding?> GetByOwnerAsync(string ownerType, string ownerId, string? model = null, CancellationToken ct = default)
+    {
+        var normalizedType = ownerType.Trim();
+        var normalizedId = ownerId.Trim();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        IQueryable<DbTextEmbedding> query = db.TextEmbeddings
+            .AsNoTracking()
+            .Where(x => x.OwnerType == normalizedType && x.OwnerId == normalizedId);
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            var normalizedModel = model.Trim();
+            query = query.Where(x => x.Model == normalizedModel);
+        }
+
+        var row = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (row == null)
+        {
+            return null;
+        }
+
+        return new TextEmbedding
+        {
+            Id = row.Id,
+            OwnerType = row.OwnerType,
+            OwnerId = row.OwnerId,
+            SourceText = row.SourceText,
+            Model = row.Model,
+            Vector = row.Vector,
+            CreatedAt = row.CreatedAt
+        };
+    }
+
     private async Task<List<TextEmbedding>> FindNearestFallbackAsync(string ownerType, float[] vector, int limit, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
