@@ -13,6 +13,7 @@ public class Message
     public string? MediaPath { get; set; }
     public string? MediaTranscription { get; set; }
     public string? MediaDescription { get; set; }
+    public string? MediaParalinguisticsJson { get; set; }
     public long? ReplyToMessageId { get; set; }
     public DateTime? EditTimestamp { get; set; }
     public string? ReactionsJson { get; set; }

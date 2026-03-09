@@ -14,6 +14,11 @@ public interface IMediaProcessor
     Task<MediaProcessingResult> ProcessAsync(string filePath, MediaType mediaType, CancellationToken ct = default);
 }
 
+public interface IVoiceParalinguisticsAnalyzer
+{
+    Task<string> AnalyzeAsync(string filePath, CancellationToken ct = default);
+}
+
 public interface IStickerCacheRepository
 {
     Task<StickerCacheItem?> GetByHashAsync(string contentHash, CancellationToken ct = default);

@@ -15,6 +15,7 @@ public class DbMessage
     public string? MediaPath { get; set; }
     public string? MediaDescription { get; set; }
     public string? MediaTranscription { get; set; }
+    public string? MediaParalinguisticsJson { get; set; }
     public long? ReplyToMessageId { get; set; }
     public DateTime? EditTimestamp { get; set; }
     public string? ReactionsJson { get; set; }
@@ -193,6 +194,19 @@ public class DbMessageExtraction
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbCommunicationEvent
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public Guid? EntityId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string? ObjectName { get; set; }
+    public string? Sentiment { get; set; }
+    public string? Summary { get; set; }
+    public float Confidence { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbExtractionError
 {
     public long Id { get; set; }
@@ -227,6 +241,17 @@ public class DbAnalysisUsageEvent
     public int CompletionTokens { get; set; }
     public int TotalTokens { get; set; }
     public decimal CostUsd { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbTextEmbedding
+{
+    public long Id { get; set; }
+    public string OwnerType { get; set; } = string.Empty;
+    public string OwnerId { get; set; } = string.Empty;
+    public string SourceText { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public float[] Vector { get; set; } = Array.Empty<float>();
     public DateTime CreatedAt { get; set; }
 }
 
