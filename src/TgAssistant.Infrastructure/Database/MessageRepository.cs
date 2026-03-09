@@ -67,6 +67,7 @@ public class MessageRepository : IMessageRepository
                 MediaPath = msg.MediaPath,
                 MediaTranscription = msg.MediaTranscription,
                 MediaDescription = msg.MediaDescription,
+                MediaParalinguisticsJson = msg.MediaParalinguisticsJson,
                 ReplyToMessageId = msg.ReplyToMessageId,
                 EditTimestamp = msg.EditTimestamp,
                 ReactionsJson = msg.ReactionsJson,
@@ -167,7 +168,10 @@ public class MessageRepository : IMessageRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.Messages
             .AsNoTracking()
-            .Where(x => x.NeedsReanalysis)
+            .Where(x => x.NeedsReanalysis
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
             .OrderBy(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
@@ -263,6 +267,23 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default)
+    {
+        var voiceTypes = new short[] { (short)MediaType.Voice, (short)MediaType.VideoNote, (short)MediaType.Video };
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && voiceTypes.Contains(x.MediaType)
+                        && x.MediaPath != null
+                        && x.MediaParalinguisticsJson == null)
+            .OrderBy(x => x.Timestamp)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
     public async Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -283,6 +304,21 @@ public class MessageRepository : IMessageRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateMediaParalinguisticsAsync(long messageId, string jsonPayload, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.Messages.FirstOrDefaultAsync(x => x.Id == messageId, ct);
+        if (row == null)
+        {
+            return;
+        }
+
+        row.MediaParalinguisticsJson = jsonPayload;
+        row.NeedsReanalysis = true;
+        row.ProcessedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     private static Message ToDomain(DbMessage row)
     {
         return new Message
@@ -298,6 +334,7 @@ public class MessageRepository : IMessageRepository
             MediaPath = row.MediaPath,
             MediaTranscription = row.MediaTranscription,
             MediaDescription = row.MediaDescription,
+            MediaParalinguisticsJson = row.MediaParalinguisticsJson,
             ReplyToMessageId = row.ReplyToMessageId,
             EditTimestamp = row.EditTimestamp,
             ReactionsJson = row.ReactionsJson,

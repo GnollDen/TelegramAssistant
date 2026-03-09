@@ -18,6 +18,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbFactReviewCommand> FactReviewCommands => Set<DbFactReviewCommand>();
     public DbSet<DbFact> Facts => Set<DbFact>();
     public DbSet<DbRelationship> Relationships => Set<DbRelationship>();
+    public DbSet<DbCommunicationEvent> CommunicationEvents => Set<DbCommunicationEvent>();
     public DbSet<DbDailySummary> DailySummaries => Set<DbDailySummary>();
     public DbSet<DbPromptTemplate> PromptTemplates => Set<DbPromptTemplate>();
     public DbSet<DbAnalysisState> AnalysisStates => Set<DbAnalysisState>();
@@ -25,6 +26,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbExtractionError> ExtractionErrors => Set<DbExtractionError>();
     public DbSet<DbStage5MetricsSnapshot> Stage5MetricsSnapshots => Set<DbStage5MetricsSnapshot>();
     public DbSet<DbAnalysisUsageEvent> AnalysisUsageEvents => Set<DbAnalysisUsageEvent>();
+    public DbSet<DbTextEmbedding> TextEmbeddings => Set<DbTextEmbedding>();
     public DbSet<DbStickerCache> StickerCache => Set<DbStickerCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -44,6 +46,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.MediaPath).HasColumnName("media_path");
             e.Property(x => x.MediaDescription).HasColumnName("media_description");
             e.Property(x => x.MediaTranscription).HasColumnName("media_transcription");
+            e.Property(x => x.MediaParalinguisticsJson).HasColumnName("media_paralinguistics_json").HasColumnType("jsonb");
             e.Property(x => x.ReplyToMessageId).HasColumnName("reply_to_message_id");
             e.Property(x => x.EditTimestamp).HasColumnName("edit_timestamp");
             e.Property(x => x.ReactionsJson).HasColumnName("reactions_json").HasColumnType("jsonb");
@@ -208,6 +211,23 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
 
+        modelBuilder.Entity<DbCommunicationEvent>(e =>
+        {
+            e.ToTable("communication_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.MessageId).HasColumnName("message_id");
+            e.Property(x => x.EntityId).HasColumnName("entity_id");
+            e.Property(x => x.EventType).HasColumnName("event_type");
+            e.Property(x => x.ObjectName).HasColumnName("object_name");
+            e.Property(x => x.Sentiment).HasColumnName("sentiment");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.EntityId, x.CreatedAt });
+            e.HasIndex(x => new { x.MessageId, x.EventType });
+        });
+
         modelBuilder.Entity<DbDailySummary>(e =>
         {
             e.ToTable("daily_summaries");
@@ -307,6 +327,20 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.CreatedAt);
             e.HasIndex(x => new { x.Phase, x.Model, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbTextEmbedding>(e =>
+        {
+            e.ToTable("text_embeddings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.OwnerType).HasColumnName("owner_type");
+            e.Property(x => x.OwnerId).HasColumnName("owner_id");
+            e.Property(x => x.SourceText).HasColumnName("source_text");
+            e.Property(x => x.Model).HasColumnName("model");
+            e.Property(x => x.Vector).HasColumnName("vector").HasColumnType("real[]");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.OwnerType, x.OwnerId, x.Model });
         });
 
         modelBuilder.Entity<DbStickerCache>(e =>

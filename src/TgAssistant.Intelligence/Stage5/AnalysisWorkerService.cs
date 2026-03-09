@@ -16,6 +16,7 @@ public class AnalysisWorkerService : BackgroundService
     private readonly IEntityRepository _entityRepository;
     private readonly IEntityAliasRepository _entityAliasRepository;
     private readonly IFactRepository _factRepository;
+    private readonly ICommunicationEventRepository _communicationEventRepository;
     private readonly IRelationshipRepository _relationshipRepository;
     private readonly IFactReviewCommandRepository _factReviewCommandRepository;
     private readonly IMessageExtractionRepository _extractionRepository;
@@ -34,6 +35,7 @@ public class AnalysisWorkerService : BackgroundService
         IEntityRepository entityRepository,
         IEntityAliasRepository entityAliasRepository,
         IFactRepository factRepository,
+        ICommunicationEventRepository communicationEventRepository,
         IRelationshipRepository relationshipRepository,
         IFactReviewCommandRepository factReviewCommandRepository,
         IMessageExtractionRepository extractionRepository,
@@ -49,6 +51,7 @@ public class AnalysisWorkerService : BackgroundService
         _entityRepository = entityRepository;
         _entityAliasRepository = entityAliasRepository;
         _factRepository = factRepository;
+        _communicationEventRepository = communicationEventRepository;
         _relationshipRepository = relationshipRepository;
         _factReviewCommandRepository = factReviewCommandRepository;
         _extractionRepository = extractionRepository;
@@ -534,6 +537,7 @@ public class AnalysisWorkerService : BackgroundService
     private async Task ApplyExtractionAsync(long messageId, ExtractionItem extraction, Message? sourceMessage, CancellationToken ct)
     {
         var entityByName = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        var eventBuffer = new List<CommunicationEvent>();
         var senderName = sourceMessage?.SenderName?.Trim();
 
         foreach (var entity in extraction.Entities.Where(e => !string.IsNullOrWhiteSpace(e.Name)))
@@ -600,6 +604,17 @@ public class AnalysisWorkerService : BackgroundService
 
             if (sameKey != null && !string.Equals(sameKey.Value, newFact.Value, StringComparison.OrdinalIgnoreCase))
             {
+                eventBuffer.Add(new CommunicationEvent
+                {
+                    MessageId = messageId,
+                    EntityId = entity.Id,
+                    EventType = "fact_contradiction",
+                    ObjectName = $"{normalizedCategory}:{fact.Key.Trim()}",
+                    Sentiment = null,
+                    Summary = $"value changed from '{sameKey.Value}' to '{newFact.Value}'",
+                    Confidence = Math.Max(0.6f, fact.Confidence)
+                });
+
                 switch (strategy)
                 {
                     case FactConflictStrategy.Supersede:
@@ -645,11 +660,50 @@ public class AnalysisWorkerService : BackgroundService
                 SourceMessageId = messageId
             }, ct);
         }
+
+        foreach (var evt in extraction.Events.Where(e => !string.IsNullOrWhiteSpace(e.Type) && !string.IsNullOrWhiteSpace(e.SubjectName)))
+        {
+            var subjectName = evt.SubjectName.Trim();
+            if (IsGenericEntityToken(subjectName))
+            {
+                continue;
+            }
+
+            if (!entityByName.TryGetValue(subjectName, out var subjectEntity))
+            {
+                subjectEntity = await UpsertEntityWithActorContextAsync(
+                    subjectName,
+                    EntityType.Person,
+                    sourceMessage,
+                    senderName,
+                    ct);
+                entityByName[subjectEntity.Name] = subjectEntity;
+            }
+
+            eventBuffer.Add(new CommunicationEvent
+            {
+                MessageId = messageId,
+                EntityId = subjectEntity.Id,
+                EventType = evt.Type.Trim().ToLowerInvariant(),
+                ObjectName = string.IsNullOrWhiteSpace(evt.ObjectName) ? null : evt.ObjectName.Trim(),
+                Sentiment = string.IsNullOrWhiteSpace(evt.Sentiment) ? null : evt.Sentiment.Trim().ToLowerInvariant(),
+                Summary = string.IsNullOrWhiteSpace(evt.Summary) ? null : evt.Summary.Trim(),
+                Confidence = evt.Confidence
+            });
+        }
+
+        if (eventBuffer.Count > 0)
+        {
+            await _communicationEventRepository.AddRangeAsync(eventBuffer, ct);
+        }
     }
 
     private async Task<List<string>> GetCurrentFactStringsAsync(ExtractionItem item, CancellationToken ct)
     {
         var list = new List<string>();
+        var maxFacts = Math.Max(10, _settings.ExpensiveContextMaxFacts);
+        var maxChars = Math.Max(1000, _settings.ExpensiveContextMaxChars);
+        var totalChars = 0;
         foreach (var name in item.Entities.Select(x => x.Name.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var entity = await _entityRepository.FindByNameOrAliasAsync(name, ct);
@@ -659,10 +713,28 @@ public class AnalysisWorkerService : BackgroundService
             }
 
             var facts = await _factRepository.GetCurrentByEntityAsync(entity.Id, ct);
-            list.AddRange(facts.Select(f => $"{entity.Name}:{f.Category}:{f.Key}={f.Value}"));
+            foreach (var fact in facts
+                         .OrderByDescending(f => f.UpdatedAt)
+                         .ThenByDescending(f => f.Confidence)
+                         .Take(20))
+            {
+                var line = $"{entity.Name}:{fact.Category}:{fact.Key}={fact.Value}";
+                if (line.Length > 400)
+                {
+                    line = line[..400] + "...";
+                }
+
+                if (totalChars + line.Length > maxChars || list.Count >= maxFacts)
+                {
+                    return list;
+                }
+
+                list.Add(line);
+                totalChars += line.Length;
+            }
         }
 
-        return list.Take(200).ToList();
+        return list;
     }
 
     private static string BuildMessageText(Message m, Message? replyTo)
@@ -690,6 +762,7 @@ public class AnalysisWorkerService : BackgroundService
         if (!string.IsNullOrWhiteSpace(m.Text)) parts.Add(m.Text);
         if (!string.IsNullOrWhiteSpace(m.MediaTranscription)) parts.Add($"[media_transcription] {m.MediaTranscription}");
         if (!string.IsNullOrWhiteSpace(m.MediaDescription)) parts.Add($"[media_description] {m.MediaDescription}");
+        if (!string.IsNullOrWhiteSpace(m.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {m.MediaParalinguisticsJson}");
         return string.Join("\n", parts);
     }
 
