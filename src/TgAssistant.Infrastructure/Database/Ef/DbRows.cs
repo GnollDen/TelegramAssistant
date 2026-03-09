@@ -22,6 +22,7 @@ public class DbMessage
     public short ProcessingStatus { get; set; }
     public short Source { get; set; }
     public DateTime? ProcessedAt { get; set; }
+    public bool NeedsReanalysis { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 

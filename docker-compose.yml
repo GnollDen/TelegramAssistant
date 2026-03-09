@@ -60,6 +60,9 @@ services:
       Media__PhotoBurstThreshold: ${MEDIA_BURST_THRESHOLD:-10}
       Media__PhotoBurstKeepCount: ${MEDIA_BURST_KEEP_COUNT:-2}
       Media__PhotoBurstWindowSeconds: ${MEDIA_BURST_WINDOW_SECONDS:-120}
+      Media__VisionModel: ${MEDIA_VISION_MODEL:-qwen/qwen2.5-vl-72b-instruct}
+      Media__ArchiveVisionModel: ${MEDIA_ARCHIVE_VISION_MODEL:-qwen/qwen2.5-vl-72b-instruct}
+      Media__AudioModel: ${MEDIA_AUDIO_MODEL:-openai/gpt-audio-mini}
       ArchiveImport__Enabled: ${ARCHIVE_IMPORT_ENABLED:-false}
       ArchiveImport__MediaProcessingEnabled: ${ARCHIVE_MEDIA_PROCESSING_ENABLED:-true}
       ArchiveImport__RequireCostConfirmation: ${ARCHIVE_IMPORT_REQUIRE_CONFIRMATION:-true}
@@ -72,9 +75,13 @@ services:
       ArchiveImport__PollIntervalSeconds: ${ARCHIVE_IMPORT_POLL_INTERVAL_SECONDS:-5}
       ArchiveImport__MaxMediaFileSizeMb: ${ARCHIVE_IMPORT_MAX_MEDIA_SIZE_MB:-50}
       Analysis__Enabled: ${ANALYSIS_ENABLED:-false}
-      Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-openai/gpt-4o-mini}
-      Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-openai/gpt-4o-mini}
-      Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o-mini}
+      Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-deepseek/deepseek-chat}
+      Analysis__CheapModelAbEnabled: ${ANALYSIS_CHEAP_MODEL_AB_ENABLED:-false}
+      Analysis__CheapBaselineModel: ${ANALYSIS_CHEAP_BASELINE_MODEL:-openai/gpt-4o-mini}
+      Analysis__CheapCandidateModel: ${ANALYSIS_CHEAP_CANDIDATE_MODEL:-deepseek/deepseek-chat}
+      Analysis__CheapAbCandidatePercent: ${ANALYSIS_CHEAP_AB_CANDIDATE_PERCENT:-50}
+      Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-anthropic/claude-3.5-sonnet}
+      Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o}
       Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-20}
       Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-5}
       Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
@@ -99,4 +106,70 @@ services:
       - /opt/tgassistant/data/telegram-session:/app/data
       - /opt/tgassistant/logs:/app/logs
     network_mode: "host"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: tga-postgres-exporter
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: "postgresql://tgassistant:${POSTGRES_PASSWORD:-changeme}@postgres:5432/tgassistant?sslmode=disable"
+    ports:
+      - "127.0.0.1:9187:9187"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: tga-redis-exporter
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    ports:
+      - "127.0.0.1:9121:9121"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: tga-prometheus
+    restart: unless-stopped
+    depends_on:
+      postgres-exporter:
+        condition: service_started
+      redis-exporter:
+        condition: service_started
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/tgassistant/data/prometheus:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: tga-grafana
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      LLM_BUDGET_HOURLY_USD: ${LLM_BUDGET_HOURLY_USD:-0.50}
+      LLM_BUDGET_DAILY_USD: ${LLM_BUDGET_DAILY_USD:-10.00}
+    volumes:
+      - /opt/tgassistant/data/grafana:/var/lib/grafana
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
 

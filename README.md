@@ -52,3 +52,32 @@ Run deploy/archive-repair.sh from repo root on server to:
 - show archive media status and reasons,
 - optionally re-queue not-found media with --retry-not-found.
 
+# Monitoring (Grafana + Prometheus)
+
+Bring up monitoring stack together with app:
+
+```bash
+docker compose up -d prometheus grafana postgres-exporter redis-exporter app
+```
+
+Default local endpoints:
+- Grafana: http://127.0.0.1:3000
+- Prometheus: http://127.0.0.1:9090
+
+Configure budgets in `.env`:
+- `LLM_BUDGET_HOURLY_USD`
+- `LLM_BUDGET_DAILY_USD`
+
+Provisioned dashboards:
+- `Stage5 Ops` (drilldown link to `LLM Cost`)
+- `LLM Cost`
+
+Provisioned alert rules (UI-only):
+- `LLMCostHourlyExceeded`
+- `LLMCostDailyExceeded`
+
+Sanity-check SQL:
+
+```bash
+docker compose exec -T postgres psql -U tgassistant -d tgassistant -f scripts/llm-cost-sanity.sql
+```
