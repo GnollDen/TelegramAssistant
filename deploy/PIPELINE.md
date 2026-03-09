@@ -43,12 +43,15 @@ cat ~/.ssh/tgassistant_deploy
 
 ## Deploy Flow
 
-1. Push/merge to `main` branch
-2. GitHub Actions builds Docker image (~2-3 min)
-3. Image pushed to ghcr.io
-4. GitHub Actions SSHs into VPS
-5. VPS pulls new image and restarts app container
-6. Postgres and Redis are NOT restarted
+1. Push/merge to `master` branch
+2. GitHub Actions builds Docker image and pushes:
+   - immutable tag: `<commit-sha>`
+   - moving tag: `latest`
+3. Deploy job SSHs to VPS
+4. VPS updates repo with `git pull --ff-only origin master`
+5. VPS pulls immutable image for this run and recreates only `app`
+6. Liveness check verifies app is running and no immediate fatal startup
+7. Postgres and Redis are NOT restarted
 
 ## Manual Operations
 
