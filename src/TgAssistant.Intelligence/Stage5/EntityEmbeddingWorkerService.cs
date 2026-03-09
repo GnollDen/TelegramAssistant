@@ -62,7 +62,9 @@ public class EntityEmbeddingWorkerService : BackgroundService
 
                 foreach (var entity in entities)
                 {
-                    var text = await BuildEntityProfileTextAsync(entity, stoppingToken);
+                    var facts = await _factRepository.GetCurrentByEntityAsync(entity.Id, stoppingToken);
+
+                    var text = BuildEntityProfileText(entity, facts);
                     var vector = await _embeddingGenerator.GenerateAsync(_settings.Model, text, stoppingToken);
                     await _embeddingRepository.UpsertAsync(new TextEmbedding
                     {
@@ -73,6 +75,21 @@ public class EntityEmbeddingWorkerService : BackgroundService
                         Vector = vector,
                         CreatedAt = DateTime.UtcNow
                     }, stoppingToken);
+
+                    foreach (var fact in facts.OrderByDescending(f => f.UpdatedAt).Take(80))
+                    {
+                        var factText = BuildFactText(entity, fact);
+                        var factVector = await _embeddingGenerator.GenerateAsync(_settings.Model, factText, stoppingToken);
+                        await _embeddingRepository.UpsertAsync(new TextEmbedding
+                        {
+                            OwnerType = "fact",
+                            OwnerId = fact.Id.ToString(),
+                            SourceText = factText,
+                            Model = _settings.Model,
+                            Vector = factVector,
+                            CreatedAt = DateTime.UtcNow
+                        }, stoppingToken);
+                    }
                 }
 
                 var nextMs = entities.Max(x => new DateTimeOffset(x.UpdatedAt).ToUnixTimeMilliseconds()) + 1;
@@ -91,9 +108,8 @@ public class EntityEmbeddingWorkerService : BackgroundService
         }
     }
 
-    private async Task<string> BuildEntityProfileTextAsync(Entity entity, CancellationToken ct)
+    private static string BuildEntityProfileText(Entity entity, List<Fact> facts)
     {
-        var facts = await _factRepository.GetCurrentByEntityAsync(entity.Id, ct);
         var topFacts = facts
             .OrderByDescending(f => f.UpdatedAt)
             .ThenByDescending(f => f.Confidence)
@@ -112,6 +128,21 @@ public class EntityEmbeddingWorkerService : BackgroundService
             $"type:{entity.Type}",
             $"aliases:{string.Join(", ", aliases)}",
             $"facts:{string.Join(" | ", topFacts)}"
+        });
+    }
+
+    private static string BuildFactText(Entity entity, Fact fact)
+    {
+        return string.Join('\n', new[]
+        {
+            $"entity_id:{entity.Id}",
+            $"entity_name:{entity.Name}",
+            $"entity_type:{entity.Type}",
+            $"category:{fact.Category}",
+            $"key:{fact.Key}",
+            $"value:{fact.Value}",
+            $"confidence:{fact.Confidence:0.000}",
+            $"is_current:{fact.IsCurrent}"
         });
     }
 }
