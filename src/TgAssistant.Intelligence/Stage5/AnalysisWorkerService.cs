@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,7 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
+    private const string CheapPromptId = "stage5_cheap_extract_v2";
     private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
     private readonly EmbeddingSettings _embeddingSettings;
@@ -257,7 +259,7 @@ public class AnalysisWorkerService : BackgroundService
             Text = BuildMessageText(m, replyContext.GetValueOrDefault(m.Id))
         }).ToList();
 
-        var cheapPrompt = await GetPromptAsync("stage5_cheap_extract", DefaultCheapPrompt, ct);
+        var cheapPrompt = await GetPromptAsync(CheapPromptId, DefaultCheapPrompt, ct);
         var modelByMessageId = BuildCheapModelMap(messages);
         var byId = new Dictionary<long, ExtractionItem>();
 
@@ -313,7 +315,8 @@ public class AnalysisWorkerService : BackgroundService
 
                 var needsExpensive = extracted.RequiresExpensive
                                      || extracted.Facts.Any(f => f.Confidence < _settings.CheapConfidenceThreshold)
-                                     || extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold);
+                                     || extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold)
+                                     || ShouldEscalateLowSignalExtraction(message, extracted);
 
                 await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted), needsExpensive, ct);
 
@@ -944,7 +947,7 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync("stage5_cheap_extract", "Stage5 Cheap Extraction", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v2", DefaultCheapPrompt, ct);
         await EnsurePromptAsync("stage5_expensive_reason", "Stage5 Expensive Reasoning", DefaultExpensivePrompt, ct);
     }
 
@@ -1367,6 +1370,116 @@ public class AnalysisWorkerService : BackgroundService
         return text.All(ch => !char.IsControl(ch));
     }
 
+    private static bool ShouldEscalateLowSignalExtraction(Message message, ExtractionItem extracted)
+    {
+        if (!IsLowSignalExtraction(extracted))
+        {
+            return false;
+        }
+
+        var content = BuildSemanticContent(message);
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        if (IsLikelyFillerMessage(content))
+        {
+            return false;
+        }
+
+        return HasSemanticSignal(content);
+    }
+
+    private static bool IsLowSignalExtraction(ExtractionItem item)
+    {
+        return item.Facts.Count == 0
+               && item.Events.Count == 0
+               && item.Relationships.Count == 0
+               && item.ProfileSignals.Count == 0;
+    }
+
+    private static string BuildSemanticContent(Message message)
+    {
+        var parts = new List<string>(3);
+        if (!string.IsNullOrWhiteSpace(message.Text))
+        {
+            parts.Add(message.Text);
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.MediaTranscription))
+        {
+            parts.Add(message.MediaTranscription);
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.MediaDescription))
+        {
+            parts.Add(message.MediaDescription);
+        }
+
+        return string.Join(' ', parts).Trim();
+    }
+
+    private static bool IsLikelyFillerMessage(string text)
+    {
+        var normalized = text.Trim().ToLowerInvariant();
+        if (normalized.Length == 0)
+        {
+            return true;
+        }
+
+        if (!normalized.Any(char.IsLetterOrDigit))
+        {
+            return true;
+        }
+
+        var tokens = Regex.Matches(normalized, @"[\p{L}\p{N}]+")
+            .Select(m => m.Value)
+            .ToList();
+        if (tokens.Count == 0)
+        {
+            return true;
+        }
+
+        var filler = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "ок", "ok", "ага", "угу", "ясно", "пон", "понятно", "спс", "спасибо",
+            "thanks", "thank", "лол", "haha", "хаха", "хах", "мм", "эм", "угуу"
+        };
+
+        return tokens.All(t => filler.Contains(t));
+    }
+
+    private static bool HasSemanticSignal(string text)
+    {
+        var normalized = text.ToLowerInvariant();
+        var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
+
+        if (tokenCount >= 6)
+        {
+            return true;
+        }
+
+        if (Regex.IsMatch(normalized, @"\b\d{1,2}(:\d{2})?\b"))
+        {
+            return true;
+        }
+
+        return normalized.Contains("завтра", StringComparison.Ordinal)
+               || normalized.Contains("сегодня", StringComparison.Ordinal)
+               || normalized.Contains("послезавтра", StringComparison.Ordinal)
+               || normalized.Contains("через ", StringComparison.Ordinal)
+               || normalized.Contains("буду ", StringComparison.Ordinal)
+               || normalized.Contains("работ", StringComparison.Ordinal)
+               || normalized.Contains("встреч", StringComparison.Ordinal)
+               || normalized.Contains("освобож", StringComparison.Ordinal)
+               || normalized.Contains("позвон", StringComparison.Ordinal)
+               || normalized.Contains("отношен", StringComparison.Ordinal)
+               || normalized.Contains("любл", StringComparison.Ordinal)
+               || normalized.Contains("вместе", StringComparison.Ordinal)
+               || normalized.Contains("дома", StringComparison.Ordinal);
+    }
+
     private const string DefaultCheapPrompt = """
 You extract personal knowledge from chat messages.
 Return ONLY a valid JSON object with field `items`.
@@ -1384,7 +1497,8 @@ Schema per item:
 High-precision rules:
 - Use exact participant names from sender_name or message text; never use placeholders like sender/me/self/i.
 - Extract only stable, actionable facts about people and life context.
-- Ignore filler/chat noise: greetings, jokes, emojis, "ok", "thanks", "haha", short reactions, stickers-only chatter.
+- Ignore pure filler/chat noise: greetings-only, emojis-only, "ok", "thanks", "haha", stickers-only chatter.
+- Short messages are NOT automatically noise: if a short message contains time/date/intention/availability/relationship signal, extract at least one event or fact.
 - Use metadata (`sender_name`, `ts`, `reply_to`) to preserve who said what and when.
 - If a message references schedule/time/date, prefer fact category `schedule` with explicit time/date text in `value`.
 - Use `events` for dynamic states (conflict, reconciliation, complaint, stress, attitude_change).
