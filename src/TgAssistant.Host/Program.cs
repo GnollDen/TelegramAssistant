@@ -89,6 +89,7 @@ try
             services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();
             services.AddSingleton<IAnalysisStateRepository, AnalysisStateRepository>();
             services.AddSingleton<IMessageExtractionRepository, MessageExtractionRepository>();
+            services.AddSingleton<IIntelligenceRepository, IntelligenceRepository>();
             services.AddSingleton<IExtractionErrorRepository, ExtractionErrorRepository>();
             services.AddSingleton<IEntityRepository, EntityRepository>();
             services.AddSingleton<IEntityAliasRepository, EntityAliasRepository>();

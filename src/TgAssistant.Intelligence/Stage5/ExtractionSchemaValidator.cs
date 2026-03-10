@@ -78,6 +78,16 @@ public class ExtractionSchemaValidator
             return false;
         }
 
+        if (!ValidateObservationArray(item, index, out error))
+        {
+            return false;
+        }
+
+        if (!ValidateClaimArray(item, index, out error))
+        {
+            return false;
+        }
+
         if (!ValidateFactArray(item, index, out error))
         {
             return false;
@@ -144,6 +154,83 @@ public class ExtractionSchemaValidator
                 !IsNumberOrMissing(entity, "confidence"))
             {
                 error = $"item_{index}_entity_{i}_invalid_fields";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateObservationArray(JsonElement item, int index, out string? error)
+    {
+        error = null;
+        if (!item.TryGetProperty("observations", out var observations))
+        {
+            return true;
+        }
+
+        if (observations.ValueKind != JsonValueKind.Array)
+        {
+            error = $"item_{index}_observations_not_array";
+            return false;
+        }
+
+        for (var i = 0; i < observations.GetArrayLength(); i++)
+        {
+            var observation = observations[i];
+            if (observation.ValueKind != JsonValueKind.Object)
+            {
+                error = $"item_{index}_observation_{i}_not_object";
+                return false;
+            }
+
+            if (!IsStringOrMissing(observation, "subject_name") ||
+                !IsStringOrMissing(observation, "type") ||
+                !IsStringOrMissing(observation, "object_name") ||
+                !IsStringOrMissing(observation, "value") ||
+                !IsStringOrMissing(observation, "evidence") ||
+                !IsNumberOrMissing(observation, "confidence"))
+            {
+                error = $"item_{index}_observation_{i}_invalid_fields";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ValidateClaimArray(JsonElement item, int index, out string? error)
+    {
+        error = null;
+        if (!item.TryGetProperty("claims", out var claims))
+        {
+            return true;
+        }
+
+        if (claims.ValueKind != JsonValueKind.Array)
+        {
+            error = $"item_{index}_claims_not_array";
+            return false;
+        }
+
+        for (var i = 0; i < claims.GetArrayLength(); i++)
+        {
+            var claim = claims[i];
+            if (claim.ValueKind != JsonValueKind.Object)
+            {
+                error = $"item_{index}_claim_{i}_not_object";
+                return false;
+            }
+
+            if (!IsStringOrMissing(claim, "entity_name") ||
+                !IsStringOrMissing(claim, "claim_type") ||
+                !IsStringOrMissing(claim, "category") ||
+                !IsStringOrMissing(claim, "key") ||
+                !IsStringOrMissing(claim, "value") ||
+                !IsStringOrMissing(claim, "evidence") ||
+                !IsNumberOrMissing(claim, "confidence"))
+            {
+                error = $"item_{index}_claim_{i}_invalid_fields";
                 return false;
             }
         }
@@ -315,6 +402,7 @@ public class ExtractionSchemaValidator
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true
     };
 }

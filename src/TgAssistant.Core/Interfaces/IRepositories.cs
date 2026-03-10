@@ -120,6 +120,15 @@ public interface IMessageExtractionRepository
         CancellationToken ct = default);
 }
 
+public interface IIntelligenceRepository
+{
+    Task ReplaceMessageIntelligenceAsync(
+        long messageId,
+        IReadOnlyCollection<IntelligenceObservation> observations,
+        IReadOnlyCollection<IntelligenceClaim> claims,
+        CancellationToken ct = default);
+}
+
 public interface IExtractionErrorRepository
 {
     Task LogAsync(string stage, string reason, long? messageId = null, string? payload = null, CancellationToken ct = default);

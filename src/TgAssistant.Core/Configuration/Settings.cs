@@ -110,7 +110,7 @@ public class AnalysisSettings
     public int CheapAbCandidatePercent { get; set; } = 50;
     public string ExpensiveModel { get; set; } = "anthropic/claude-3.5-sonnet";
     public string ExpensiveFallbackModel { get; set; } = "openai/gpt-4o";
-    public int BatchSize { get; set; } = 50;
+    public int BatchSize { get; set; } = 8;
     public int PollIntervalSeconds { get; set; } = 10;
     public int MaxExpensivePerBatch { get; set; } = 10;
     public int FactReviewBatchSize { get; set; } = 100;
