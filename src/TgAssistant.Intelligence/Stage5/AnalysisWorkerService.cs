@@ -12,7 +12,7 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v3";
+    private const string CheapPromptId = "stage5_cheap_extract_v4";
     private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
@@ -27,6 +27,7 @@ public class AnalysisWorkerService : BackgroundService
     private readonly IRelationshipRepository _relationshipRepository;
     private readonly IFactReviewCommandRepository _factReviewCommandRepository;
     private readonly IMessageExtractionRepository _extractionRepository;
+    private readonly IIntelligenceRepository _intelligenceRepository;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IPromptTemplateRepository _promptRepository;
@@ -49,6 +50,7 @@ public class AnalysisWorkerService : BackgroundService
         IRelationshipRepository relationshipRepository,
         IFactReviewCommandRepository factReviewCommandRepository,
         IMessageExtractionRepository extractionRepository,
+        IIntelligenceRepository intelligenceRepository,
         IExtractionErrorRepository extractionErrorRepository,
         IAnalysisStateRepository stateRepository,
         IPromptTemplateRepository promptRepository,
@@ -68,6 +70,7 @@ public class AnalysisWorkerService : BackgroundService
         _relationshipRepository = relationshipRepository;
         _factReviewCommandRepository = factReviewCommandRepository;
         _extractionRepository = extractionRepository;
+        _intelligenceRepository = intelligenceRepository;
         _extractionErrorRepository = extractionErrorRepository;
         _stateRepository = stateRepository;
         _promptRepository = promptRepository;
@@ -710,10 +713,161 @@ public class AnalysisWorkerService : BackgroundService
             });
         }
 
+        await PersistIntelligenceAsync(messageId, extraction, sourceMessage, senderName, entityByName, ct);
+
         if (eventBuffer.Count > 0)
         {
             await _communicationEventRepository.AddRangeAsync(eventBuffer, ct);
         }
+    }
+
+    private async Task PersistIntelligenceAsync(
+        long messageId,
+        ExtractionItem extraction,
+        Message? sourceMessage,
+        string? senderName,
+        Dictionary<string, Entity> entityByName,
+        CancellationToken ct)
+    {
+        var observations = SelectIntelligenceObservations(extraction);
+        var claims = SelectIntelligenceClaims(extraction);
+
+        var observationRows = new List<IntelligenceObservation>(observations.Count);
+        foreach (var observation in observations)
+        {
+            var subjectName = observation.SubjectName.Trim();
+            if (subjectName.Length == 0 || IsGenericEntityToken(subjectName))
+            {
+                continue;
+            }
+
+            var subjectEntity = await ResolveIntelligenceEntityAsync(subjectName, entityByName, sourceMessage, senderName, ct);
+            observationRows.Add(new IntelligenceObservation
+            {
+                MessageId = messageId,
+                EntityId = subjectEntity?.Id,
+                SubjectName = subjectName,
+                ObservationType = observation.Type.Trim().ToLowerInvariant(),
+                ObjectName = string.IsNullOrWhiteSpace(observation.ObjectName) ? null : observation.ObjectName.Trim(),
+                Value = string.IsNullOrWhiteSpace(observation.Value) ? null : observation.Value.Trim(),
+                Evidence = string.IsNullOrWhiteSpace(observation.Evidence) ? null : observation.Evidence.Trim(),
+                Confidence = observation.Confidence,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        var claimRows = new List<IntelligenceClaim>(claims.Count);
+        foreach (var claim in claims)
+        {
+            var entityName = claim.EntityName.Trim();
+            if (entityName.Length == 0 || IsGenericEntityToken(entityName))
+            {
+                continue;
+            }
+
+            var entity = await ResolveIntelligenceEntityAsync(entityName, entityByName, sourceMessage, senderName, ct);
+            var normalizedCategory = string.IsNullOrWhiteSpace(claim.Category) ? "general" : claim.Category.Trim().ToLowerInvariant();
+            claimRows.Add(new IntelligenceClaim
+            {
+                MessageId = messageId,
+                EntityId = entity?.Id,
+                EntityName = entityName,
+                ClaimType = string.IsNullOrWhiteSpace(claim.ClaimType) ? "fact" : claim.ClaimType.Trim().ToLowerInvariant(),
+                Category = normalizedCategory,
+                Key = claim.Key.Trim(),
+                Value = claim.Value.Trim(),
+                Evidence = string.IsNullOrWhiteSpace(claim.Evidence) ? null : claim.Evidence.Trim(),
+                Status = ResolveFactStatus(normalizedCategory, claim.Confidence),
+                Confidence = claim.Confidence,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _intelligenceRepository.ReplaceMessageIntelligenceAsync(messageId, observationRows, claimRows, ct);
+    }
+
+    private async Task<Entity?> ResolveIntelligenceEntityAsync(
+        string entityName,
+        Dictionary<string, Entity> entityByName,
+        Message? sourceMessage,
+        string? senderName,
+        CancellationToken ct)
+    {
+        if (entityByName.TryGetValue(entityName, out var mapped))
+        {
+            return mapped;
+        }
+
+        var entity = await UpsertEntityWithActorContextAsync(
+            entityName,
+            EntityType.Person,
+            sourceMessage,
+            senderName,
+            ct);
+        entityByName[entity.Name] = entity;
+        return entity;
+    }
+
+    private static List<ExtractionObservation> SelectIntelligenceObservations(ExtractionItem extraction)
+    {
+        if (extraction.Observations.Count > 0)
+        {
+            return extraction.Observations;
+        }
+
+        return extraction.Events
+            .Where(e => !string.IsNullOrWhiteSpace(e.Type) && !string.IsNullOrWhiteSpace(e.SubjectName))
+            .Select(e => new ExtractionObservation
+            {
+                SubjectName = e.SubjectName,
+                Type = e.Type,
+                ObjectName = e.ObjectName,
+                Value = e.Summary,
+                Evidence = e.Summary,
+                Confidence = e.Confidence
+            })
+            .ToList();
+    }
+
+    private static List<ExtractionClaim> SelectIntelligenceClaims(ExtractionItem extraction)
+    {
+        if (extraction.Claims.Count > 0)
+        {
+            return extraction.Claims;
+        }
+
+        var claims = new List<ExtractionClaim>();
+        claims.AddRange(extraction.Facts.Select(f => new ExtractionClaim
+        {
+            EntityName = f.EntityName,
+            ClaimType = "fact",
+            Category = f.Category,
+            Key = f.Key,
+            Value = f.Value,
+            Evidence = f.Value,
+            Confidence = f.Confidence
+        }));
+        claims.AddRange(extraction.Relationships.Select(r => new ExtractionClaim
+        {
+            EntityName = r.FromEntityName,
+            ClaimType = "relationship",
+            Category = "relationship",
+            Key = r.Type,
+            Value = r.ToEntityName,
+            Evidence = $"{r.FromEntityName} -> {r.Type} -> {r.ToEntityName}",
+            Confidence = r.Confidence
+        }));
+        claims.AddRange(extraction.ProfileSignals.Select(s => new ExtractionClaim
+        {
+            EntityName = s.SubjectName,
+            ClaimType = "profile_signal",
+            Category = "profile",
+            Key = s.Trait,
+            Value = s.Direction,
+            Evidence = s.Evidence,
+            Confidence = s.Confidence
+        }));
+        return claims;
     }
 
     private async Task<List<string>> GetCurrentFactStringsAsync(ExtractionItem item, CancellationToken ct)
@@ -749,6 +903,47 @@ public class AnalysisWorkerService : BackgroundService
                 if (line.Length > 400)
                 {
                     line = line[..400] + "...";
+                }
+
+                if (totalChars + line.Length > maxChars || list.Count >= maxFacts)
+                {
+                    return list;
+                }
+
+                list.Add(line);
+                totalChars += line.Length;
+            }
+        }
+
+        foreach (var name in item.Claims
+                     .Select(x => x.EntityName.Trim())
+                     .Concat(item.Facts.Select(x => x.EntityName.Trim()))
+                     .Where(x => x.Length > 0)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (list.Count >= maxFacts || totalChars >= maxChars)
+            {
+                break;
+            }
+
+            var entity = await _entityRepository.FindByNameOrAliasAsync(name, ct);
+            if (entity == null)
+            {
+                continue;
+            }
+
+            var facts = await _factRepository.GetCurrentByEntityAsync(entity.Id, ct);
+            foreach (var fact in facts.OrderByDescending(f => f.UpdatedAt).Take(10))
+            {
+                var line = $"{entity.Name}:{fact.Category}:{fact.Key}={fact.Value}";
+                if (line.Length > 400)
+                {
+                    line = line[..400] + "...";
+                }
+
+                if (list.Contains(line, StringComparer.OrdinalIgnoreCase))
+                {
+                    continue;
                 }
 
                 if (totalChars + line.Length > maxChars || list.Count >= maxFacts)
@@ -849,6 +1044,11 @@ public class AnalysisWorkerService : BackgroundService
             parts.Add($"fact:{fact.Category}:{fact.Key}={fact.Value}");
         }
 
+        foreach (var claim in item.Claims.Where(c => !string.IsNullOrWhiteSpace(c.Key)).Take(20))
+        {
+            parts.Add($"claim:{claim.EntityName}:{claim.Category}:{claim.Key}={claim.Value}");
+        }
+
         foreach (var rel in item.Relationships.Where(r => !string.IsNullOrWhiteSpace(r.Type)).Take(10))
         {
             parts.Add($"rel:{rel.FromEntityName}->{rel.Type}->{rel.ToEntityName}");
@@ -857,6 +1057,11 @@ public class AnalysisWorkerService : BackgroundService
         foreach (var evt in item.Events.Where(e => !string.IsNullOrWhiteSpace(e.Type)).Take(10))
         {
             parts.Add($"event:{evt.SubjectName}:{evt.Type}:{evt.Summary}");
+        }
+
+        foreach (var observation in item.Observations.Where(o => !string.IsNullOrWhiteSpace(o.Type)).Take(10))
+        {
+            parts.Add($"obs:{observation.SubjectName}:{observation.Type}:{observation.Value ?? observation.Evidence}");
         }
 
         return string.Join('\n', parts);
@@ -952,7 +1157,7 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v3", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v4", DefaultCheapPrompt, ct);
         await EnsurePromptAsync("stage5_expensive_reason", "Stage5 Expensive Reasoning", DefaultExpensivePrompt, ct);
     }
 
@@ -1157,6 +1362,14 @@ public class AnalysisWorkerService : BackgroundService
             }
         }
 
+        foreach (var claim in item.Claims)
+        {
+            if (IsGenericEntityToken(claim.EntityName))
+            {
+                claim.EntityName = senderName;
+            }
+        }
+
         foreach (var rel in item.Relationships)
         {
             var fromGeneric = IsGenericEntityToken(rel.FromEntityName);
@@ -1180,6 +1393,19 @@ public class AnalysisWorkerService : BackgroundService
             }
         }
 
+        foreach (var observation in item.Observations)
+        {
+            if (IsGenericEntityToken(observation.SubjectName))
+            {
+                observation.SubjectName = senderName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(observation.ObjectName) && IsGenericEntityToken(observation.ObjectName))
+            {
+                observation.ObjectName = senderName;
+            }
+        }
+
         return item;
     }
 
@@ -1193,6 +1419,35 @@ public class AnalysisWorkerService : BackgroundService
                 Type = string.IsNullOrWhiteSpace(e.Type) ? "Person" : e.Type.Trim(),
                 Confidence = Clamp01(e.Confidence)
             })
+            .ToList();
+
+        item.Observations = item.Observations
+            .Where(o => !string.IsNullOrWhiteSpace(o.SubjectName) && !string.IsNullOrWhiteSpace(o.Type))
+            .Select(o => new ExtractionObservation
+            {
+                SubjectName = o.SubjectName.Trim(),
+                Type = o.Type.Trim(),
+                ObjectName = string.IsNullOrWhiteSpace(o.ObjectName) ? null : o.ObjectName.Trim(),
+                Value = string.IsNullOrWhiteSpace(o.Value) ? null : o.Value.Trim(),
+                Evidence = string.IsNullOrWhiteSpace(o.Evidence) ? null : o.Evidence.Trim(),
+                Confidence = Clamp01(o.Confidence)
+            })
+            .Where(o => o.SubjectName.Length > 0 && o.Type.Length > 0)
+            .ToList();
+
+        item.Claims = item.Claims
+            .Where(c => !string.IsNullOrWhiteSpace(c.EntityName) && !string.IsNullOrWhiteSpace(c.Key))
+            .Select(c => new ExtractionClaim
+            {
+                EntityName = c.EntityName.Trim(),
+                ClaimType = string.IsNullOrWhiteSpace(c.ClaimType) ? "fact" : c.ClaimType.Trim(),
+                Category = string.IsNullOrWhiteSpace(c.Category) ? "general" : c.Category.Trim(),
+                Key = c.Key.Trim(),
+                Value = (c.Value ?? string.Empty).Trim(),
+                Evidence = string.IsNullOrWhiteSpace(c.Evidence) ? null : c.Evidence.Trim(),
+                Confidence = Clamp01(c.Confidence)
+            })
+            .Where(c => c.EntityName.Length > 0 && c.Key.Length > 0)
             .ToList();
 
         item.Facts = item.Facts
@@ -1289,6 +1544,8 @@ public class AnalysisWorkerService : BackgroundService
     private static bool ValidateExtractionRecord(ExtractionItem item, out string? error)
     {
         if (item.Entities.Count > 20 ||
+            item.Observations.Count > 30 ||
+            item.Claims.Count > 40 ||
             item.Facts.Count > 30 ||
             item.Relationships.Count > 20 ||
             item.Events.Count > 20 ||
@@ -1303,6 +1560,33 @@ public class AnalysisWorkerService : BackgroundService
             if (!IsReasonableText(entity.Name, 120))
             {
                 error = "invalid_entity_name";
+                return false;
+            }
+        }
+
+        foreach (var observation in item.Observations)
+        {
+            if (!IsReasonableText(observation.SubjectName, 120) ||
+                !IsReasonableText(observation.Type, 64) ||
+                (observation.ObjectName is not null && !IsReasonableText(observation.ObjectName, 120)) ||
+                (observation.Value is not null && !IsReasonableText(observation.Value, 500)) ||
+                (observation.Evidence is not null && !IsReasonableText(observation.Evidence, 500)))
+            {
+                error = "invalid_observation_payload";
+                return false;
+            }
+        }
+
+        foreach (var claim in item.Claims)
+        {
+            if (!IsReasonableText(claim.EntityName, 120) ||
+                !IsReasonableText(claim.ClaimType, 64) ||
+                !IsReasonableText(claim.Category, 64) ||
+                !IsReasonableText(claim.Key, 96) ||
+                !IsReasonableText(claim.Value, 500) ||
+                (claim.Evidence is not null && !IsReasonableText(claim.Evidence, 500)))
+            {
+                error = "invalid_claim_payload";
                 return false;
             }
         }
@@ -1398,7 +1682,9 @@ public class AnalysisWorkerService : BackgroundService
 
     private static bool IsLowSignalExtraction(ExtractionItem item)
     {
-        return item.Facts.Count == 0
+        return item.Claims.Count == 0
+               && item.Observations.Count == 0
+               && item.Facts.Count == 0
                && item.Events.Count == 0
                && item.Relationships.Count == 0
                && item.ProfileSignals.Count == 0;
@@ -1494,13 +1780,20 @@ public class AnalysisWorkerService : BackgroundService
     }
 
     private const string DefaultCheapPrompt = """
-You extract dossier signals from chat logs.
-Return ONLY a valid JSON object with field `items`.
-For each input `<message id="...">` return exactly one item with the same `message_id`.
+Ты извлекаешь intelligence-сигналы из переписки.
+Верни ТОЛЬКО валидный JSON-объект с полем `items`.
+Для каждого входного `<message id="...">` верни ровно один item с тем же `message_id`.
+
+Главное правило: сначала думай как аналитик доказательств, а не как составитель биографии.
+Каждый meaningful message должен по возможности дать:
+- `observations`: то, что наблюдается в этом конкретном сообщении
+- `claims`: атомарные утверждения, которые можно использовать в досье
 
 Schema per item:
 - message_id (number)
 - entities: [{name,type,confidence}] where type in [Person, Organization, Place, Pet, Event]
+- observations: [{subject_name,type,object_name,value,evidence,confidence}]
+- claims: [{entity_name,claim_type,category,key,value,evidence,confidence}]
 - facts: [{entity_name,category,key,value,confidence}]
 - relationships: [{from_entity_name,to_entity_name,type,confidence}]
 - events: [{type,subject_name,object_name,sentiment,summary,confidence}]
@@ -1508,23 +1801,28 @@ Schema per item:
 - requires_expensive (boolean)
 - reason (string, optional)
 
+Definitions:
+- `observations`: message-local signals. Examples: someone is going home, will be free later, sounds angry, plans a call, reports a payment.
+- `claims`: atomic dossier-ready claims grounded in one message. Examples: monthly_income=5000, credit_status=wants_to_close, free_time=in 20 minutes.
+- `facts/relationships/events/profile_signals` stay for backward compatibility. Fill them when confident.
+
 Rules:
-- Use real participant names from sender_name/text. Never use placeholders (sender, me, self, i).
-- Ignore only pure noise (emoji-only, sticker-only, short acknowledgements like "ok", "thanks").
-- Short messages are NOT automatically noise if they carry meaning: time/date, plan, availability, money, health, relationship, movement.
-- `facts`: stable or actionable user information (availability, schedule, finance, location, work, health, preferences).
-- `events`: dynamic changes (argument, reconciliation, attitude shift, promise, urgent action, emotional reaction).
-- If context is ambiguous or pronouns are unresolved, set `requires_expensive=true`.
-- Do not invent facts. confidence must be 0.0..1.0.
+- Use real participant names from sender_name/text. Never use placeholders like sender, author, me, self, i.
+- Do not treat short messages as noise if they contain time, movement, intent, schedule, money, health, relationship, ownership, work, or availability.
+- Ignore only pure noise: emoji-only, sticker-only, laughter-only, empty acknowledgements.
+- Prefer recall over over-conservatism, but do not invent content.
+- `evidence` should be a short grounded snippet or tight paraphrase from the same message.
+- If actor is ambiguous, pronouns are unresolved, or the message clearly depends on missing context, set `requires_expensive=true`.
+- confidence must be 0.0..1.0.
 
 Examples:
 Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
-Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"free_time","value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
-Input: <message id="102">[meta] sender_name="Insar" ... Again this office, I hate going there</message>
-Output item: {"message_id":102,"entities":[{"name":"Insar","type":"Person","confidence":0.98}],"facts":[],"relationships":[],"events":[{"type":"attitude_change","subject_name":"Insar","object_name":"office work","sentiment":"negative","summary":"strongly negative attitude toward office routine","confidence":0.90}],"profile_signals":[{"subject_name":"Insar","trait":"neuroticism","direction":"up","evidence":"strong negative affect in wording","confidence":0.68}],"requires_expensive":false}
+Input: <message id="102">[meta] sender_name="Alena" ... My income is stable around 5000 per month</message>
+Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"finance_report","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.87}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
-Never include markdown or any extra text.
+Never include markdown or extra text.
 """;
     private const string DefaultExpensivePrompt = """
 You are a high-accuracy resolver.

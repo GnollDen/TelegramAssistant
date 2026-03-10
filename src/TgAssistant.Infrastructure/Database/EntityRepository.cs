@@ -245,6 +245,8 @@ public class EntityRepository : IEntityRepository
             UPDATE daily_summaries SET entity_id = {targetEntityId} WHERE entity_id = {sourceEntityId};
             UPDATE analysis_sessions SET entity_id = {targetEntityId} WHERE entity_id = {sourceEntityId};
             UPDATE entity_aliases SET entity_id = {targetEntityId} WHERE entity_id = {sourceEntityId};
+            UPDATE intelligence_observations SET entity_id = {targetEntityId} WHERE entity_id = {sourceEntityId};
+            UPDATE intelligence_claims SET entity_id = {targetEntityId} WHERE entity_id = {sourceEntityId};
             """, ct);
 
         await db.Database.ExecuteSqlInterpolatedAsync($"""
