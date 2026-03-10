@@ -23,6 +23,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbPromptTemplate> PromptTemplates => Set<DbPromptTemplate>();
     public DbSet<DbAnalysisState> AnalysisStates => Set<DbAnalysisState>();
     public DbSet<DbMessageExtraction> MessageExtractions => Set<DbMessageExtraction>();
+    public DbSet<DbIntelligenceObservation> IntelligenceObservations => Set<DbIntelligenceObservation>();
+    public DbSet<DbIntelligenceClaim> IntelligenceClaims => Set<DbIntelligenceClaim>();
     public DbSet<DbExtractionError> ExtractionErrors => Set<DbExtractionError>();
     public DbSet<DbStage5MetricsSnapshot> Stage5MetricsSnapshots => Set<DbStage5MetricsSnapshot>();
     public DbSet<DbAnalysisUsageEvent> AnalysisUsageEvents => Set<DbAnalysisUsageEvent>();
@@ -278,6 +280,44 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => x.MessageId).IsUnique();
+        });
+
+        modelBuilder.Entity<DbIntelligenceObservation>(e =>
+        {
+            e.ToTable("intelligence_observations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.MessageId).HasColumnName("message_id");
+            e.Property(x => x.EntityId).HasColumnName("entity_id");
+            e.Property(x => x.SubjectName).HasColumnName("subject_name");
+            e.Property(x => x.ObservationType).HasColumnName("observation_type");
+            e.Property(x => x.ObjectName).HasColumnName("object_name");
+            e.Property(x => x.Value).HasColumnName("value");
+            e.Property(x => x.Evidence).HasColumnName("evidence");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.MessageId);
+            e.HasIndex(x => new { x.EntityId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbIntelligenceClaim>(e =>
+        {
+            e.ToTable("intelligence_claims");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.MessageId).HasColumnName("message_id");
+            e.Property(x => x.EntityId).HasColumnName("entity_id");
+            e.Property(x => x.EntityName).HasColumnName("entity_name");
+            e.Property(x => x.ClaimType).HasColumnName("claim_type");
+            e.Property(x => x.Category).HasColumnName("category");
+            e.Property(x => x.Key).HasColumnName("key");
+            e.Property(x => x.Value).HasColumnName("value");
+            e.Property(x => x.Evidence).HasColumnName("evidence");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.MessageId);
+            e.HasIndex(x => new { x.EntityId, x.Category, x.Key });
         });
 
         modelBuilder.Entity<DbExtractionError>(e =>

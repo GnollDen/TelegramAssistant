@@ -194,6 +194,36 @@ public class DbMessageExtraction
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbIntelligenceObservation
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public Guid? EntityId { get; set; }
+    public string SubjectName { get; set; } = string.Empty;
+    public string ObservationType { get; set; } = string.Empty;
+    public string? ObjectName { get; set; }
+    public string? Value { get; set; }
+    public string? Evidence { get; set; }
+    public float Confidence { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbIntelligenceClaim
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public Guid? EntityId { get; set; }
+    public string EntityName { get; set; } = string.Empty;
+    public string ClaimType { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string? Evidence { get; set; }
+    public short Status { get; set; }
+    public float Confidence { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbCommunicationEvent
 {
     public long Id { get; set; }

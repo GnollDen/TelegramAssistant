@@ -228,6 +228,7 @@ public class MessageRepository : IMessageRepository
         {
             row.ProcessingStatus = (short)ProcessingStatus.Processed;
             row.ProcessedAt = DateTime.UtcNow;
+            row.NeedsReanalysis = true;
         }
 
         await db.SaveChangesAsync(ct);
