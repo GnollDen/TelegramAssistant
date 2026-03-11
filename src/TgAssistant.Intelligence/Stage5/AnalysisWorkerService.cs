@@ -172,10 +172,11 @@ public class AnalysisWorkerService : BackgroundService
 
             var sourceMessage = await _messageRepository.GetByIdAsync(row.MessageId, ct);
             var candidate = JsonSerializer.Deserialize<ExtractionItem>(row.CheapJson) ?? new ExtractionItem { MessageId = row.MessageId };
+            var finalizedCandidate = FinalizeResolvedExtraction(candidate);
             if (!ShouldRunExpensivePass(sourceMessage, candidate))
             {
-                await ApplyExtractionAsync(row.MessageId, SanitizeExtraction(candidate), sourceMessage, ct);
-                await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(candidate), ct);
+                await ApplyExtractionAsync(row.MessageId, finalizedCandidate, sourceMessage, ct);
+                await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(finalizedCandidate), ct);
                 continue;
             }
 
@@ -188,7 +189,7 @@ public class AnalysisWorkerService : BackgroundService
             try
             {
                 var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, messageText, expensivePrompt.SystemPrompt, ct);
-                var effective = SanitizeExtraction(resolved ?? candidate);
+                var effective = FinalizeResolvedExtraction(resolved ?? candidate);
                 effective.MessageId = row.MessageId;
                 if (!ValidateExtractionRecord(effective, out var validationError))
                 {
@@ -205,7 +206,7 @@ public class AnalysisWorkerService : BackgroundService
                         payload: JsonSerializer.Serialize(effective),
                         ct: ct);
 
-                    effective = new ExtractionItem { MessageId = row.MessageId };
+                    effective = FinalizeResolvedExtraction(new ExtractionItem { MessageId = row.MessageId });
                 }
                 await ApplyExtractionAsync(row.MessageId, effective, sourceMessage, ct);
                 await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(effective), ct);
@@ -218,7 +219,7 @@ public class AnalysisWorkerService : BackgroundService
                     row.MessageId);
 
                 // Do not block the whole pipeline: finalize with cheap candidate.
-                var sanitized = SanitizeExtraction(candidate);
+                var sanitized = finalizedCandidate;
                 await ApplyExtractionAsync(row.MessageId, sanitized, sourceMessage, ct);
                 await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(sanitized), ct);
                 resolvedCount++;
@@ -241,7 +242,7 @@ public class AnalysisWorkerService : BackgroundService
 
                 if (retry.IsExhausted)
                 {
-                    var sanitized = SanitizeExtraction(candidate);
+                    var sanitized = finalizedCandidate;
                     await ApplyExtractionAsync(row.MessageId, sanitized, sourceMessage, ct);
                     await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(sanitized), ct);
                     _logger.LogWarning(
@@ -1481,6 +1482,8 @@ public class AnalysisWorkerService : BackgroundService
 
     private static ExtractionItem SanitizeExtraction(ExtractionItem item)
     {
+        item.Reason = string.IsNullOrWhiteSpace(item.Reason) ? null : item.Reason.Trim();
+
         item.Entities = item.Entities
             .Where(e => !string.IsNullOrWhiteSpace(e.Name))
             .Select(e => new ExtractionEntity
@@ -1513,11 +1516,11 @@ public class AnalysisWorkerService : BackgroundService
                 ClaimType = string.IsNullOrWhiteSpace(c.ClaimType) ? "fact" : c.ClaimType.Trim(),
                 Category = string.IsNullOrWhiteSpace(c.Category) ? "general" : c.Category.Trim(),
                 Key = c.Key.Trim(),
-                Value = (c.Value ?? string.Empty).Trim(),
+                Value = NormalizeClaimValue(c),
                 Evidence = string.IsNullOrWhiteSpace(c.Evidence) ? null : c.Evidence.Trim(),
                 Confidence = Clamp01(c.Confidence)
             })
-            .Where(c => c.EntityName.Length > 0 && c.Key.Length > 0)
+            .Where(c => c.EntityName.Length > 0 && c.Key.Length > 0 && c.Value.Length > 0)
             .ToList();
 
         item.Facts = item.Facts
@@ -1527,10 +1530,10 @@ public class AnalysisWorkerService : BackgroundService
                 EntityName = f.EntityName.Trim(),
                 Category = string.IsNullOrWhiteSpace(f.Category) ? "general" : f.Category.Trim(),
                 Key = f.Key.Trim(),
-                Value = (f.Value ?? string.Empty).Trim(),
+                Value = NormalizePlainValue(f.Value),
                 Confidence = Clamp01(f.Confidence)
             })
-            .Where(f => f.EntityName.Length > 0 && f.Key.Length > 0)
+            .Where(f => f.EntityName.Length > 0 && f.Key.Length > 0 && f.Value.Length > 0)
             .ToList();
 
         item.Relationships = item.Relationships
@@ -1577,7 +1580,52 @@ public class AnalysisWorkerService : BackgroundService
         return item;
     }
 
+    private static ExtractionItem FinalizeResolvedExtraction(ExtractionItem item)
+    {
+        var effective = SanitizeExtraction(item);
+        effective.RequiresExpensive = false;
+
+        if (IsLowSignalExtraction(effective) && IsLowValueAmbiguityReason(effective.Reason))
+        {
+            effective.Entities = new List<ExtractionEntity>();
+        }
+
+        return effective;
+    }
+
     private static float Clamp01(float value) => Math.Max(0f, Math.Min(1f, value));
+
+    private static string NormalizeClaimValue(ExtractionClaim claim)
+    {
+        var direct = NormalizePlainValue(claim.Value);
+        if (direct.Length > 0)
+        {
+            return direct;
+        }
+
+        var evidence = NormalizePlainValue(claim.Evidence);
+        if (evidence.Length > 0)
+        {
+            return evidence;
+        }
+
+        return HumanizeKey(claim.Key);
+    }
+
+    private static string NormalizePlainValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    }
+
+    private static string HumanizeKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return string.Empty;
+        }
+
+        return key.Trim().Replace('_', ' ').Replace('-', ' ');
+    }
 
     private static bool ValidateExtractionForMessage(ExtractionItem item, Message message, out string? error)
     {
@@ -1962,6 +2010,21 @@ public class AnalysisWorkerService : BackgroundService
                    "в ", "на ", "к ", "до ", "после ", "через ",
                    "сегодня", "завтра", "послезавтра",
                    "домой", "дом", "офис", "работ", "встреч", "звон", "позвон", "куп", "прод", "верн");
+    }
+
+    private static bool IsLowValueAmbiguityReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        var normalized = reason.Trim().ToLowerInvariant();
+        return normalized.Contains("ambiguous", StringComparison.Ordinal)
+               || normalized.Contains("incomplete", StringComparison.Ordinal)
+               || normalized.Contains("too little context", StringComparison.Ordinal)
+               || normalized.Contains("missing context", StringComparison.Ordinal)
+               || normalized.Contains("unclear", StringComparison.Ordinal);
     }
 
     private static bool ContainsAny(string text, params string[] patterns)
