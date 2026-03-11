@@ -46,9 +46,9 @@ public class OpenRouterAnalysisService
         return ParseBatch(json);
     }
 
-    public async Task<ExtractionItem?> ResolveExpensiveAsync(string model, string systemPrompt, ExtractionItem candidate, List<string> currentFacts, CancellationToken ct)
+    public async Task<ExtractionItem?> ResolveExpensiveAsync(string model, string systemPrompt, ExtractionItem candidate, List<string> currentFacts, string messageText, CancellationToken ct)
     {
-        var user = JsonSerializer.Serialize(new { candidate, current_facts = currentFacts }, JsonOptions);
+        var user = JsonSerializer.Serialize(new { message_text = messageText, candidate, current_facts = currentFacts }, JsonOptions);
         var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000), 0.0f);
         var json = await SendAndExtractJsonAsync(req, "expensive", ct);
         var parsed = ParseBatch(json);
