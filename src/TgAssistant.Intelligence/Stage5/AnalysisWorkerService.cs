@@ -12,7 +12,7 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v4";
+    private const string CheapPromptId = "stage5_cheap_extract_v5";
     private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
@@ -558,6 +558,7 @@ public class AnalysisWorkerService : BackgroundService
     private async Task ApplyExtractionAsync(long messageId, ExtractionItem extraction, Message? sourceMessage, CancellationToken ct)
     {
         var entityByName = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        var currentFactsByEntityId = new Dictionary<Guid, List<Fact>>();
         var eventBuffer = new List<CommunicationEvent>();
         var senderName = sourceMessage?.SenderName?.Trim();
 
@@ -568,13 +569,13 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            var upserted = await UpsertEntityWithActorContextAsync(
+            await GetOrCreateCachedEntityAsync(
+                entityByName,
                 entity.Name.Trim(),
                 ParseEntityType(entity.Type),
                 sourceMessage,
                 senderName,
                 ct);
-            entityByName[upserted.Name] = upserted;
         }
 
         foreach (var fact in extraction.Facts.Where(f => !string.IsNullOrWhiteSpace(f.EntityName) && !string.IsNullOrWhiteSpace(f.Key)))
@@ -593,18 +594,15 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            if (!entityByName.TryGetValue(fact.EntityName.Trim(), out var entity))
-            {
-                entity = await UpsertEntityWithActorContextAsync(
-                    fact.EntityName.Trim(),
-                    EntityType.Person,
-                    sourceMessage,
-                    senderName,
-                    ct);
-                entityByName[entity.Name] = entity;
-            }
+            var entity = await GetOrCreateCachedEntityAsync(
+                entityByName,
+                fact.EntityName.Trim(),
+                EntityType.Person,
+                sourceMessage,
+                senderName,
+                ct);
 
-            var current = await _factRepository.GetCurrentByEntityAsync(entity.Id, ct);
+            var current = await GetCurrentFactsCachedAsync(currentFactsByEntityId, entity.Id, ct);
             var sameKey = current.FirstOrDefault(x => x.Category.Equals(normalizedCategory, StringComparison.OrdinalIgnoreCase)
                                                  && x.Key.Equals(fact.Key.Trim(), StringComparison.OrdinalIgnoreCase));
             var strategy = GetFactConflictStrategy(normalizedCategory);
@@ -640,11 +638,13 @@ public class AnalysisWorkerService : BackgroundService
                 {
                     case FactConflictStrategy.Supersede:
                         await _factRepository.SupersedeFactAsync(sameKey.Id, newFact, ct);
+                        currentFactsByEntityId.Remove(entity.Id);
                         await QueueFactReviewIfNeededAsync(newFact, factThreshold, ct);
                         break;
                     case FactConflictStrategy.Parallel:
                     case FactConflictStrategy.Tentative:
                         var parallelSaved = await _factRepository.UpsertAsync(newFact, ct);
+                        currentFactsByEntityId.Remove(entity.Id);
                         await QueueFactReviewIfNeededAsync(parallelSaved, factThreshold, ct);
                         break;
                 }
@@ -652,6 +652,7 @@ public class AnalysisWorkerService : BackgroundService
             else
             {
                 var saved = await _factRepository.UpsertAsync(newFact, ct);
+                currentFactsByEntityId.Remove(entity.Id);
                 await QueueFactReviewIfNeededAsync(saved, factThreshold, ct);
             }
         }
@@ -668,8 +669,8 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            var from = await UpsertEntityWithActorContextAsync(rel.FromEntityName.Trim(), EntityType.Person, sourceMessage, senderName, ct);
-            var to = await UpsertEntityWithActorContextAsync(rel.ToEntityName.Trim(), EntityType.Person, sourceMessage, senderName, ct);
+            var from = await GetOrCreateCachedEntityAsync(entityByName, rel.FromEntityName.Trim(), EntityType.Person, sourceMessage, senderName, ct);
+            var to = await GetOrCreateCachedEntityAsync(entityByName, rel.ToEntityName.Trim(), EntityType.Person, sourceMessage, senderName, ct);
 
             await _relationshipRepository.UpsertAsync(new Relationship
             {
@@ -690,16 +691,13 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            if (!entityByName.TryGetValue(subjectName, out var subjectEntity))
-            {
-                subjectEntity = await UpsertEntityWithActorContextAsync(
-                    subjectName,
-                    EntityType.Person,
-                    sourceMessage,
-                    senderName,
-                    ct);
-                entityByName[subjectEntity.Name] = subjectEntity;
-            }
+            var subjectEntity = await GetOrCreateCachedEntityAsync(
+                entityByName,
+                subjectName,
+                EntityType.Person,
+                sourceMessage,
+                senderName,
+                ct);
 
             eventBuffer.Add(new CommunicationEvent
             {
@@ -741,7 +739,13 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            var subjectEntity = await ResolveIntelligenceEntityAsync(subjectName, entityByName, sourceMessage, senderName, ct);
+            var subjectEntity = await GetOrCreateCachedEntityAsync(
+                entityByName,
+                subjectName,
+                EntityType.Person,
+                sourceMessage,
+                senderName,
+                ct);
             observationRows.Add(new IntelligenceObservation
             {
                 MessageId = messageId,
@@ -765,7 +769,13 @@ public class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            var entity = await ResolveIntelligenceEntityAsync(entityName, entityByName, sourceMessage, senderName, ct);
+            var entity = await GetOrCreateCachedEntityAsync(
+                entityByName,
+                entityName,
+                EntityType.Person,
+                sourceMessage,
+                senderName,
+                ct);
             var normalizedCategory = string.IsNullOrWhiteSpace(claim.Category) ? "general" : claim.Category.Trim().ToLowerInvariant();
             claimRows.Add(new IntelligenceClaim
             {
@@ -784,6 +794,41 @@ public class AnalysisWorkerService : BackgroundService
         }
 
         await _intelligenceRepository.ReplaceMessageIntelligenceAsync(messageId, observationRows, claimRows, ct);
+    }
+
+    private async Task<Entity> GetOrCreateCachedEntityAsync(
+        Dictionary<string, Entity> entityByName,
+        string entityName,
+        EntityType fallbackType,
+        Message? sourceMessage,
+        string? senderName,
+        CancellationToken ct)
+    {
+        var normalized = entityName.Trim();
+        if (entityByName.TryGetValue(normalized, out var cached))
+        {
+            return cached;
+        }
+
+        var entity = await UpsertEntityWithActorContextAsync(normalized, fallbackType, sourceMessage, senderName, ct);
+        entityByName[normalized] = entity;
+        entityByName[entity.Name] = entity;
+        return entity;
+    }
+
+    private async Task<List<Fact>> GetCurrentFactsCachedAsync(
+        Dictionary<Guid, List<Fact>> currentFactsByEntityId,
+        Guid entityId,
+        CancellationToken ct)
+    {
+        if (currentFactsByEntityId.TryGetValue(entityId, out var cached))
+        {
+            return cached;
+        }
+
+        var facts = await _factRepository.GetCurrentByEntityAsync(entityId, ct);
+        currentFactsByEntityId[entityId] = facts;
+        return facts;
     }
 
     private async Task<Entity?> ResolveIntelligenceEntityAsync(
@@ -1157,7 +1202,7 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v4", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v5", DefaultCheapPrompt, ct);
         await EnsurePromptAsync("stage5_expensive_reason", "Stage5 Expensive Reasoning", DefaultExpensivePrompt, ct);
     }
 
@@ -1780,14 +1825,14 @@ public class AnalysisWorkerService : BackgroundService
     }
 
     private const string DefaultCheapPrompt = """
-Ты извлекаешь intelligence-сигналы из переписки.
-Верни ТОЛЬКО валидный JSON-объект с полем `items`.
-Для каждого входного `<message id="...">` верни ровно один item с тем же `message_id`.
+You extract intelligence signals from chat logs.
+Return ONLY a valid JSON object with field `items`.
+For each input `<message id="...">` return exactly one item with the same `message_id`.
 
-Главное правило: сначала думай как аналитик доказательств, а не как составитель биографии.
-Каждый meaningful message должен по возможности дать:
-- `observations`: то, что наблюдается в этом конкретном сообщении
-- `claims`: атомарные утверждения, которые можно использовать в досье
+Goal:
+- maximize grounded recall for useful signals
+- keep labels reusable and concise
+- avoid inventing niche one-off types unless clearly needed
 
 Schema per item:
 - message_id (number)
@@ -1802,25 +1847,37 @@ Schema per item:
 - reason (string, optional)
 
 Definitions:
-- `observations`: message-local signals. Examples: someone is going home, will be free later, sounds angry, plans a call, reports a payment.
-- `claims`: atomic dossier-ready claims grounded in one message. Examples: monthly_income=5000, credit_status=wants_to_close, free_time=in 20 minutes.
-- `facts/relationships/events/profile_signals` stay for backward compatibility. Fill them when confident.
+- observations: message-local signals grounded in one message
+- claims: atomic dossier-ready statements grounded in one message
+- facts/relationships/events/profile_signals remain for backward compatibility
+
+Type guidance:
+- observation.type should be short snake_case and reusable across many messages
+- prefer broad stable labels like availability_update, movement, request, question, intent, agreement, work_update, schedule_update, purchase, health_update, emotion, status_update, relationship_signal, communication, other
+- claim.claim_type should usually be one of: fact, intent, preference, relationship, state, need
+- category should be broad and reusable: availability, schedule, travel, work, finance, health, relationship, communication, activity, purchase, location, education, family, project, other
+- do not create near-duplicate labels just because wording differs
 
 Rules:
-- Use real participant names from sender_name/text. Never use placeholders like sender, author, me, self, i.
-- Do not treat short messages as noise if they contain time, movement, intent, schedule, money, health, relationship, ownership, work, or availability.
-- Ignore only pure noise: emoji-only, sticker-only, laughter-only, empty acknowledgements.
-- Prefer recall over over-conservatism, but do not invent content.
-- `evidence` should be a short grounded snippet or tight paraphrase from the same message.
-- If actor is ambiguous, pronouns are unresolved, or the message clearly depends on missing context, set `requires_expensive=true`.
-- confidence must be 0.0..1.0.
+- use real participant names from sender_name/text; never use placeholders like sender, author, me, self, i
+- do not treat short messages as noise if they contain time, movement, intent, schedule, money, health, relationship, ownership, work, availability, or an explicit ask
+- ignore only pure noise: emoji-only, sticker-only, laughter-only, empty acknowledgements
+- prefer recall over over-conservatism, but do not invent content
+- evidence should be a short grounded snippet or tight paraphrase from the same message
+- if there is a useful fact or relationship, also try to emit at least one supporting claim
+- if there is a useful event-like signal, also try to emit at least one observation
+- if actor is ambiguous, pronouns are unresolved, or the message clearly depends on missing context, set requires_expensive=true
+- confidence must be 0.0..1.0
 
 Examples:
 Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
 Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"free_time","value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="102">[meta] sender_name="Alena" ... My income is stable around 5000 per month</message>
-Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"finance_report","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.87}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.87}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
+Input: <message id="103">[meta] sender_name="Alena" ... Call me when you leave the office</message>
+Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"request","object_name":"call","value":"when you leave the office","evidence":"call me when you leave the office","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"need","category":"communication","key":"requested_call_timing","value":"when the other person leaves the office","evidence":"call me when you leave the office","confidence":0.84}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Never include markdown or extra text.
 """;
