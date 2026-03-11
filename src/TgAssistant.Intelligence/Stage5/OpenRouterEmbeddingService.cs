@@ -49,13 +49,15 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
         var root = doc.RootElement;
         if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array || data.GetArrayLength() == 0)
         {
-            throw new InvalidOperationException("OpenRouter embedding response missing data");
+            _logger.LogDebug("OpenRouter embedding response missing data for model={Model}", model);
+            return Array.Empty<float>();
         }
 
         var first = data[0];
         if (!first.TryGetProperty("embedding", out var emb) || emb.ValueKind != JsonValueKind.Array)
         {
-            throw new InvalidOperationException("OpenRouter embedding response missing vector");
+            _logger.LogDebug("OpenRouter embedding response missing vector for model={Model}", model);
+            return Array.Empty<float>();
         }
 
         var vector = new float[emb.GetArrayLength()];
