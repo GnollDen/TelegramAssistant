@@ -76,6 +76,15 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                 }
             };
         }
+        catch (TaskCanceledException)
+        {
+            _logger.LogWarning("Timeout processing {Type} at {Path}", mediaType, filePath);
+            return new MediaProcessingResult
+            {
+                Success = false,
+                FailureReason = "Request timeout (30s)"
+            };
+        }
         catch (Exception ex)
         {
             var reason = ClassifyFailureReason(ex, filePath, mediaType);
@@ -277,7 +286,9 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         var json = JsonSerializer.Serialize(request, JsonOptions);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-        var response = await _http.PostAsync("/api/v1/chat/completions", content, ct);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+        var response = await _http.PostAsync("/api/v1/chat/completions", content, cts.Token);
         var responseJson = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)

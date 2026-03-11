@@ -16,8 +16,8 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-    .WriteTo.Console()
-    .WriteTo.File("logs/tgassistant-.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.Async(a => a.Console())
+    .WriteTo.Async(a => a.File("logs/tgassistant-.log", rollingInterval: RollingInterval.Day))
     .CreateLogger();
 
 

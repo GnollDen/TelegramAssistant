@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>TgAssistant.Processing</RootNamespace>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TgAssistant.Core\TgAssistant.Core.csproj" />
