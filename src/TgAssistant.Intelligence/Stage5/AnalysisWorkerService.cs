@@ -16,6 +16,14 @@ public class AnalysisWorkerService : BackgroundService
     private const string ExpensivePromptId = "stage5_expensive_reason_v2";
     private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
+    private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
+    private static readonly Regex WordTokenRegex = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex HouseNumberTailRegex = new(
+        @"^[\p{L}\-]+\s+[\p{L}\-]+(?:\s+[\p{L}\-]+){0,2}\s+\d+(?:/\d+)?$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex AnyDigitRegex = new(@"\d", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex TimeTokenRegex = new(@"\b\d{1,2}(:\d{2})?\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex NumberTokenRegex = new(@"\b\d+\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly AnalysisSettings _settings;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly IMessageRepository _messageRepository;
@@ -95,7 +103,11 @@ public class AnalysisWorkerService : BackgroundService
         {
             try
             {
-                await ProcessExpensiveBacklogAsync(stoppingToken);
+                var expensiveResolved = await ProcessExpensiveBacklogAsync(stoppingToken);
+                if (expensiveResolved > 0)
+                {
+                    await DelayBetweenBatchesAsync(stoppingToken);
+                }
 
                 var reanalysis = await _messageRepository.GetNeedsReanalysisAsync(_settings.BatchSize, stoppingToken);
                 if (reanalysis.Count > 0)
@@ -103,6 +115,7 @@ public class AnalysisWorkerService : BackgroundService
                     await ProcessCheapBatchAsync(reanalysis, stoppingToken);
                     await _messageRepository.MarkNeedsReanalysisDoneAsync(reanalysis.Select(x => x.Id), stoppingToken);
                     _logger.LogInformation("Stage5 reanalysis pass done: processed={Count}", reanalysis.Count);
+                    await DelayBetweenBatchesAsync(stoppingToken);
                     continue;
                 }
 
@@ -119,6 +132,7 @@ public class AnalysisWorkerService : BackgroundService
                 var maxId = messages.Max(x => x.Id);
                 await _stateRepository.SetWatermarkAsync(WatermarkKey, maxId, stoppingToken);
                 _logger.LogInformation("Stage5 cheap pass done: processed={Count}, watermark={Watermark}", messages.Count, maxId);
+                await DelayBetweenBatchesAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -137,27 +151,27 @@ public class AnalysisWorkerService : BackgroundService
         }
     }
 
-    private async Task ProcessExpensiveBacklogAsync(CancellationToken ct)
+    private async Task<int> ProcessExpensiveBacklogAsync(CancellationToken ct)
     {
         if (_settings.MaxExpensivePerBatch <= 0)
         {
-            return;
+            return 0;
         }
 
         if (!await CanRunExpensivePassAsync(ct))
         {
-            return;
+            return 0;
         }
 
         if (AreAllExpensiveModelsBlocked())
         {
-            return;
+            return 0;
         }
 
         var backlog = await _extractionRepository.GetExpensiveBacklogAsync(_settings.MaxExpensivePerBatch, ct);
         if (backlog.Count == 0)
         {
-            return;
+            return 0;
         }
 
         var expensivePrompt = await GetPromptAsync(ExpensivePromptId, DefaultExpensivePrompt, ct);
@@ -262,6 +276,7 @@ public class AnalysisWorkerService : BackgroundService
         }
 
         _logger.LogInformation("Stage5 expensive pass done: resolved={Count} of {Total}", resolvedCount, backlog.Count);
+        return resolvedCount;
     }
 
     private async Task ProcessCheapBatchAsync(List<Message> messages, CancellationToken ct)
@@ -1905,8 +1920,8 @@ public class AnalysisWorkerService : BackgroundService
             var hasAddressLexeme = ContainsAny(normalizedLine,
                 "ул", "улиц", "просп", "шоссе", "переул", "бул", "дом", "д.", "кв", "корп", "подъезд", "этаж", "адрес");
 
-            var looksLikeHouseNumberTail = Regex.IsMatch(trimmed, @"^[\p{L}\-]+\s+[\p{L}\-]+(?:\s+[\p{L}\-]+){0,2}\s+\d+(?:/\d+)?$", RegexOptions.IgnoreCase);
-            if ((hasAddressLexeme && Regex.IsMatch(trimmed, @"\d")) || (hasMapLink && looksLikeHouseNumberTail) || looksLikeHouseNumberTail)
+            var looksLikeHouseNumberTail = HouseNumberTailRegex.IsMatch(trimmed);
+            if ((hasAddressLexeme && AnyDigitRegex.IsMatch(trimmed)) || (hasMapLink && looksLikeHouseNumberTail) || looksLikeHouseNumberTail)
             {
                 address = trimmed;
                 return true;
@@ -2386,7 +2401,7 @@ public class AnalysisWorkerService : BackgroundService
             return true;
         }
 
-        var tokens = Regex.Matches(normalized, @"[\p{L}\p{N}]+")
+        var tokens = WordTokenRegex.Matches(normalized)
             .Select(m => m.Value)
             .ToList();
         if (tokens.Count == 0)
@@ -2408,7 +2423,7 @@ public class AnalysisWorkerService : BackgroundService
     private static bool HasSemanticSignal(string text)
     {
         var normalized = text.ToLowerInvariant();
-        var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
+        var tokenCount = WordTokenRegex.Matches(normalized).Count;
 
         if (tokenCount >= 6)
         {
@@ -2426,7 +2441,7 @@ public class AnalysisWorkerService : BackgroundService
     private static bool IsHighValueEscalationCandidate(string text, ExtractionItem extracted)
     {
         var normalized = text.ToLowerInvariant();
-        var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
+        var tokenCount = WordTokenRegex.Matches(normalized).Count;
 
         if (HasHighValueStructuredSignal(extracted))
         {
@@ -2517,8 +2532,8 @@ public class AnalysisWorkerService : BackgroundService
 
     private static bool HasConcreteActionableAnchor(string normalized)
     {
-        return Regex.IsMatch(normalized, @"\b\d{1,2}(:\d{2})?\b")
-               || Regex.IsMatch(normalized, @"\b\d+\b")
+        return TimeTokenRegex.IsMatch(normalized)
+               || NumberTokenRegex.IsMatch(normalized)
                || ContainsAny(normalized,
                    "в ", "на ", "к ", "до ", "после ", "через ",
                    "сегодня", "завтра", "послезавтра", "утром", "днем", "днём", "вечером",
@@ -2552,6 +2567,11 @@ public class AnalysisWorkerService : BackgroundService
         }
 
         return false;
+    }
+
+    private static Task DelayBetweenBatchesAsync(CancellationToken ct)
+    {
+        return Task.Delay(BatchThrottleDelay, ct);
     }
 
     private const string DefaultCheapPrompt = """
