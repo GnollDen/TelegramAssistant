@@ -12,7 +12,7 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v6";
+    private const string CheapPromptId = "stage5_cheap_extract_v7";
     private const string ExpensivePromptId = "stage5_expensive_reason_v2";
     private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
@@ -190,6 +190,7 @@ public class AnalysisWorkerService : BackgroundService
             {
                 var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, messageText, expensivePrompt.SystemPrompt, ct);
                 var effective = FinalizeResolvedExtraction(resolved ?? candidate);
+                effective = RefineExtractionForMessage(effective, sourceMessage);
                 effective.MessageId = row.MessageId;
                 if (!ValidateExtractionRecord(effective, out var validationError))
                 {
@@ -313,6 +314,7 @@ public class AnalysisWorkerService : BackgroundService
                 extracted ??= new ExtractionItem { MessageId = message.Id };
                 extracted = NormalizeExtractionForMessage(extracted, message);
                 extracted = SanitizeExtraction(extracted);
+                extracted = RefineExtractionForMessage(extracted, message);
                 extracted.MessageId = message.Id;
 
                 if (!ValidateExtractionForMessage(extracted, message, out var validationError))
@@ -1580,6 +1582,514 @@ public class AnalysisWorkerService : BackgroundService
         return item;
     }
 
+    private static ExtractionItem RefineExtractionForMessage(ExtractionItem item, Message? message)
+    {
+        if (message == null)
+        {
+            return item;
+        }
+
+        var rawContent = BuildSemanticContent(message);
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            item.Entities = TrimUnreferencedEntities(item);
+            return item;
+        }
+
+        var content = CollapseWhitespace(rawContent);
+        var normalized = content.ToLowerInvariant();
+        PromoteLocationFallback(item, message, rawContent, normalized);
+        PromoteContactFallback(item, message, rawContent);
+        PromoteWorkAssessmentFallback(item, message, content, normalized);
+        PruneLowValueSignals(item, normalized);
+        item.Entities = TrimUnreferencedEntities(item);
+        return item;
+    }
+
+    private static void PromoteLocationFallback(ExtractionItem item, Message message, string content, string normalizedContent)
+    {
+        if (HasLocationSignal(item))
+        {
+            return;
+        }
+
+        if (!TryExtractAddressLikeText(content, normalizedContent, out var address))
+        {
+            return;
+        }
+
+        var senderName = message.SenderName?.Trim();
+        if (string.IsNullOrWhiteSpace(senderName))
+        {
+            return;
+        }
+
+        var evidence = TruncateForContext(address, 200);
+        AddEntityIfMissing(item.Entities, address, "Place", 0.9f);
+        AddObservationIfMissing(item.Observations, new ExtractionObservation
+        {
+            SubjectName = senderName,
+            Type = "location_update",
+            ObjectName = address,
+            Value = address,
+            Evidence = evidence,
+            Confidence = 0.84f
+        });
+        AddClaimIfMissing(item.Claims, new ExtractionClaim
+        {
+            EntityName = senderName,
+            ClaimType = "fact",
+            Category = "location",
+            Key = "shared_location",
+            Value = address,
+            Evidence = evidence,
+            Confidence = 0.84f
+        });
+        AddFactIfMissing(item.Facts, new ExtractionFact
+        {
+            EntityName = senderName,
+            Category = "location",
+            Key = "shared_location",
+            Value = address,
+            Confidence = 0.84f
+        });
+    }
+
+    private static void PromoteContactFallback(ExtractionItem item, Message message, string content)
+    {
+        if (HasContactSignal(item))
+        {
+            return;
+        }
+
+        if (!TryExtractContactShare(content, out var contactName, out var handle, out var evidence))
+        {
+            return;
+        }
+
+        var senderName = message.SenderName?.Trim();
+        if (string.IsNullOrWhiteSpace(senderName))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(contactName))
+        {
+            AddEntityIfMissing(item.Entities, contactName, "Person", 0.9f);
+        }
+
+        var contactValue = string.IsNullOrWhiteSpace(contactName)
+            ? handle
+            : $"{contactName} {handle}";
+
+        AddObservationIfMissing(item.Observations, new ExtractionObservation
+        {
+            SubjectName = senderName,
+            Type = "contact_share",
+            ObjectName = string.IsNullOrWhiteSpace(contactName) ? handle : contactName,
+            Value = handle,
+            Evidence = evidence,
+            Confidence = 0.84f
+        });
+        AddClaimIfMissing(item.Claims, new ExtractionClaim
+        {
+            EntityName = senderName,
+            ClaimType = "fact",
+            Category = "contact",
+            Key = "shared_contact",
+            Value = contactValue,
+            Evidence = evidence,
+            Confidence = 0.84f
+        });
+        AddFactIfMissing(item.Facts, new ExtractionFact
+        {
+            EntityName = senderName,
+            Category = "contact",
+            Key = "shared_contact",
+            Value = contactValue,
+            Confidence = 0.84f
+        });
+    }
+
+    private static void PromoteWorkAssessmentFallback(ExtractionItem item, Message message, string content, string normalizedContent)
+    {
+        if (item.Claims.Any(c => string.Equals(c.Category, "work", StringComparison.OrdinalIgnoreCase)) ||
+            item.Facts.Any(f => string.Equals(f.Category, "work", StringComparison.OrdinalIgnoreCase)) ||
+            item.Observations.Any(o => string.Equals(o.Type, "work_assessment", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        if (!LooksLikeWorkAssessmentMessage(normalizedContent))
+        {
+            return;
+        }
+
+        var senderName = message.SenderName?.Trim();
+        if (string.IsNullOrWhiteSpace(senderName))
+        {
+            return;
+        }
+
+        var evidence = TruncateForContext(content, 220);
+        AddObservationIfMissing(item.Observations, new ExtractionObservation
+        {
+            SubjectName = senderName,
+            Type = "work_assessment",
+            ObjectName = "team",
+            Value = evidence,
+            Evidence = evidence,
+            Confidence = 0.8f
+        });
+        AddClaimIfMissing(item.Claims, new ExtractionClaim
+        {
+            EntityName = senderName,
+            ClaimType = "state",
+            Category = "work",
+            Key = "team_assessment",
+            Value = evidence,
+            Evidence = evidence,
+            Confidence = 0.8f
+        });
+    }
+
+    private static void PruneLowValueSignals(ExtractionItem item, string normalizedContent)
+    {
+        if (HasHighValueStructuredSignal(item))
+        {
+            return;
+        }
+
+        var keepOperational = HasConcreteActionableAnchor(normalizedContent) && HasOperationalSignal(item);
+        var keepContextual = HasStrongDossierSignal(normalizedContent) && HasNonTrivialStructuredSignal(item);
+
+        if (!keepOperational && !keepContextual)
+        {
+            item.Observations.Clear();
+            item.Claims.Clear();
+            item.Facts.Clear();
+            item.Relationships.Clear();
+            item.Events.Clear();
+            item.ProfileSignals.Clear();
+            return;
+        }
+
+        item.Observations = item.Observations
+            .Where(o => ShouldKeepOperationalObservation(o, normalizedContent))
+            .ToList();
+
+        item.Claims = item.Claims
+            .Where(c => ShouldKeepOperationalClaim(c, normalizedContent))
+            .ToList();
+
+        item.Facts = item.Facts
+            .Where(f => ShouldKeepOperationalFact(f))
+            .ToList();
+    }
+
+    private static bool HasOperationalSignal(ExtractionItem item)
+    {
+        return item.Observations.Any(o => IsOperationalObservationType(o.Type))
+               || item.Claims.Any(c => IsOperationalClaim(c))
+               || item.Facts.Any(ShouldKeepOperationalFact);
+    }
+
+    private static bool HasNonTrivialStructuredSignal(ExtractionItem item)
+    {
+        return item.Observations.Count > 0
+               || item.Claims.Count > 0
+               || item.Facts.Count > 0
+               || item.Relationships.Count > 0
+               || item.Events.Count > 0
+               || item.ProfileSignals.Count > 0;
+    }
+
+    private static bool ShouldKeepOperationalObservation(ExtractionObservation observation, string normalizedContent)
+    {
+        if (IsHighValueObservationType(observation.Type))
+        {
+            return true;
+        }
+
+        var type = observation.Type.Trim().ToLowerInvariant();
+        return type switch
+        {
+            "request" or "question" or "intent" => HasConcreteActionableAnchor(normalizedContent),
+            "status_update" => HasStrongDossierSignal(normalizedContent),
+            _ => false
+        };
+    }
+
+    private static bool ShouldKeepOperationalClaim(ExtractionClaim claim, string normalizedContent)
+    {
+        if (IsHighValueCategory(claim.Category) || IsLocationOrContactKey(claim.Key))
+        {
+            return true;
+        }
+
+        var claimType = string.IsNullOrWhiteSpace(claim.ClaimType)
+            ? string.Empty
+            : claim.ClaimType.Trim().ToLowerInvariant();
+
+        return claimType is "intent" or "need"
+               && HasConcreteActionableAnchor(normalizedContent);
+    }
+
+    private static bool ShouldKeepOperationalFact(ExtractionFact fact)
+    {
+        return IsHighValueCategory(fact.Category) || IsLocationOrContactKey(fact.Key);
+    }
+
+    private static bool IsOperationalObservationType(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return false;
+        }
+
+        return type.Trim().ToLowerInvariant() is
+            "request" or "question" or "intent" or "status_update"
+            or "availability_update" or "schedule_update" or "movement"
+            or "location_update" or "contact_share" or "work_assessment";
+    }
+
+    private static bool IsOperationalClaim(ExtractionClaim claim)
+    {
+        return IsHighValueCategory(claim.Category)
+               || IsLocationOrContactKey(claim.Key)
+               || string.Equals(claim.ClaimType, "intent", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(claim.ClaimType, "need", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasLocationSignal(ExtractionItem item)
+    {
+        return item.Facts.Any(f => string.Equals(f.Category, "location", StringComparison.OrdinalIgnoreCase))
+               || item.Claims.Any(c => string.Equals(c.Category, "location", StringComparison.OrdinalIgnoreCase))
+               || item.Observations.Any(o => string.Equals(o.Type, "location_update", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasContactSignal(ExtractionItem item)
+    {
+        return item.Facts.Any(f => string.Equals(f.Category, "contact", StringComparison.OrdinalIgnoreCase) || IsLocationOrContactKey(f.Key))
+               || item.Claims.Any(c => string.Equals(c.Category, "contact", StringComparison.OrdinalIgnoreCase) || IsLocationOrContactKey(c.Key))
+               || item.Observations.Any(o => string.Equals(o.Type, "contact_share", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsLocationOrContactKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        return key.Trim().ToLowerInvariant() is "shared_location" or "shared_address" or "shared_contact";
+    }
+
+    private static bool TryExtractAddressLikeText(string content, string normalizedContent, out string address)
+    {
+        address = string.Empty;
+        var lines = SplitMeaningfulLines(content).ToList();
+        var hasMapLink = normalizedContent.Contains("yandex.ru/maps", StringComparison.Ordinal)
+                         || normalizedContent.Contains("google.com/maps", StringComparison.Ordinal)
+                         || normalizedContent.Contains("2gis.ru", StringComparison.Ordinal);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0 || trimmed.Contains("http://", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var normalizedLine = trimmed.ToLowerInvariant();
+            var hasAddressLexeme = ContainsAny(normalizedLine,
+                "ул", "улиц", "просп", "шоссе", "переул", "бул", "дом", "д.", "кв", "корп", "подъезд", "этаж", "адрес");
+
+            var looksLikeHouseNumberTail = Regex.IsMatch(trimmed, @"^[\p{L}\-]+\s+[\p{L}\-]+(?:\s+[\p{L}\-]+){0,2}\s+\d+(?:/\d+)?$", RegexOptions.IgnoreCase);
+            if ((hasAddressLexeme && Regex.IsMatch(trimmed, @"\d")) || (hasMapLink && looksLikeHouseNumberTail) || looksLikeHouseNumberTail)
+            {
+                address = trimmed;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractContactShare(string content, out string contactName, out string handle, out string evidence)
+    {
+        contactName = string.Empty;
+        handle = string.Empty;
+        evidence = string.Empty;
+
+        var match = Regex.Match(
+            content,
+            @"(?im)^(?<name>[\p{L}][\p{L}\-]+(?:\s+[\p{L}][\p{L}\-]+){0,2})\s+@(?<handle>[A-Za-z0-9_]{3,32})\s*$");
+
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        contactName = match.Groups["name"].Value.Trim();
+        handle = "@" + match.Groups["handle"].Value.Trim();
+        evidence = TruncateForContext(match.Value.Trim(), 160);
+        return true;
+    }
+
+    private static bool LooksLikeWorkAssessmentMessage(string normalizedContent)
+    {
+        if (!ContainsAny(normalizedContent, "команд", "трайб", "алерт", "дефект", "тойл", "работ", "релиз", "проект"))
+        {
+            return false;
+        }
+
+        return ContainsAny(normalizedContent,
+            "не сравним", "хуже", "лучше", "все плохо", "всё плохо", "пиздец", "амеб", "амёб",
+            "шикар", "горди", "прибавилось", "мастер класс", "мастер-класс", "хорошо", "плохо");
+    }
+
+    private static void AddEntityIfMissing(List<ExtractionEntity> entities, string name, string type, float confidence)
+    {
+        if (string.IsNullOrWhiteSpace(name) || entities.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        entities.Add(new ExtractionEntity
+        {
+            Name = name,
+            Type = type,
+            Confidence = confidence
+        });
+    }
+
+    private static void AddObservationIfMissing(List<ExtractionObservation> observations, ExtractionObservation observation)
+    {
+        if (observations.Any(existing =>
+                string.Equals(existing.SubjectName, observation.SubjectName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Type, observation.Type, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Value, observation.Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        observations.Add(observation);
+    }
+
+    private static void AddClaimIfMissing(List<ExtractionClaim> claims, ExtractionClaim claim)
+    {
+        if (claims.Any(existing =>
+                string.Equals(existing.EntityName, claim.EntityName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Category, claim.Category, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Key, claim.Key, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Value, claim.Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        claims.Add(claim);
+    }
+
+    private static void AddFactIfMissing(List<ExtractionFact> facts, ExtractionFact fact)
+    {
+        if (facts.Any(existing =>
+                string.Equals(existing.EntityName, fact.EntityName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Category, fact.Category, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Key, fact.Key, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Value, fact.Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        facts.Add(fact);
+    }
+
+    private static List<ExtractionEntity> TrimUnreferencedEntities(ExtractionItem item)
+    {
+        var referencedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var fact in item.Facts)
+        {
+            if (!string.IsNullOrWhiteSpace(fact.EntityName))
+            {
+                referencedNames.Add(fact.EntityName);
+            }
+        }
+
+        foreach (var claim in item.Claims)
+        {
+            if (!string.IsNullOrWhiteSpace(claim.EntityName))
+            {
+                referencedNames.Add(claim.EntityName);
+            }
+        }
+
+        foreach (var relation in item.Relationships)
+        {
+            if (!string.IsNullOrWhiteSpace(relation.FromEntityName))
+            {
+                referencedNames.Add(relation.FromEntityName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(relation.ToEntityName))
+            {
+                referencedNames.Add(relation.ToEntityName);
+            }
+        }
+
+        foreach (var observation in item.Observations)
+        {
+            if (!string.IsNullOrWhiteSpace(observation.SubjectName))
+            {
+                referencedNames.Add(observation.SubjectName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(observation.ObjectName))
+            {
+                referencedNames.Add(observation.ObjectName);
+            }
+        }
+
+        foreach (var evt in item.Events)
+        {
+            if (!string.IsNullOrWhiteSpace(evt.SubjectName))
+            {
+                referencedNames.Add(evt.SubjectName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(evt.ObjectName))
+            {
+                referencedNames.Add(evt.ObjectName);
+            }
+        }
+
+        foreach (var signal in item.ProfileSignals)
+        {
+            if (!string.IsNullOrWhiteSpace(signal.SubjectName))
+            {
+                referencedNames.Add(signal.SubjectName);
+            }
+        }
+
+        return item.Entities
+            .Where(e => !string.IsNullOrWhiteSpace(e.Name) && referencedNames.Contains(e.Name))
+            .ToList();
+    }
+
+    private static IEnumerable<string> SplitMeaningfulLines(string content)
+    {
+        return content
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    private static string CollapseWhitespace(string value)
+    {
+        return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
     private static ExtractionItem FinalizeResolvedExtraction(ExtractionItem item)
     {
         var effective = SanitizeExtraction(item);
@@ -1952,15 +2462,18 @@ public class AnalysisWorkerService : BackgroundService
             "availability" => true,
             "schedule" => true,
             "travel" => true,
+            "transportation" => true,
             "work" => true,
             "finance" => true,
             "health" => true,
             "relationship" => true,
             "location" => true,
+            "contact" => true,
             "purchase" => true,
             "family" => true,
             "career" => true,
             "education" => true,
+            "project" => true,
             _ => false
         };
     }
@@ -1978,14 +2491,13 @@ public class AnalysisWorkerService : BackgroundService
             "movement" => true,
             "travel_plan" => true,
             "schedule_update" => true,
-            "request" => true,
-            "question" => true,
             "work_update" => true,
             "work_status" => true,
-            "status_update" => true,
+            "work_assessment" => true,
             "health_update" => true,
             "health_report" => true,
             "location_update" => true,
+            "contact_share" => true,
             "relationship_signal" => true,
             _ => false
         };
@@ -1994,12 +2506,13 @@ public class AnalysisWorkerService : BackgroundService
     private static bool HasStrongDossierSignal(string normalized)
     {
         return ContainsAny(normalized,
-            "работ", "офис", "уволи", "зарплат", "доход", "кредит", "ипотек", "долг", "лимит",
-            "боль", "врач", "больниц", "беремен", "травм", "температур", "диагноз",
+            "работ", "офис", "уволи", "зарплат", "доход", "кредит", "ипотек", "долг", "лимит", "команд", "трайб", "алерт", "дефект", "тойл", "проект",
+            "боль", "врач", "больниц", "беремен", "травм", "температур", "диагноз", "лекар", "антибиот", "леч",
             "встреч", "развел", "расст", "муж", "жена", "парень", "девуш", "любл",
             "купил", "продал", "заказ", "стоим", "цена", "руб", "тыс", "деньг",
-            "домой", "дома", "приед", "уед", "поед", "вылет", "летим", "поезд",
-            "сегодня", "завтра", "послезавтра", "через ", "буду ", "свобод", "занят");
+            "домой", "дома", "приед", "уед", "поед", "вылет", "летим", "поезд", "такси", "забрать", "выхожу", "еду",
+            "сегодня", "завтра", "послезавтра", "через ", "буду ", "свобод", "занят",
+            "адрес", "улица", "ул.", "просп", "шоссе", "подъезд", "этаж", "@");
     }
 
     private static bool HasConcreteActionableAnchor(string normalized)
@@ -2008,8 +2521,9 @@ public class AnalysisWorkerService : BackgroundService
                || Regex.IsMatch(normalized, @"\b\d+\b")
                || ContainsAny(normalized,
                    "в ", "на ", "к ", "до ", "после ", "через ",
-                   "сегодня", "завтра", "послезавтра",
-                   "домой", "дом", "офис", "работ", "встреч", "звон", "позвон", "куп", "прод", "верн");
+                   "сегодня", "завтра", "послезавтра", "утром", "днем", "днём", "вечером",
+                   "минут", "час", "домой", "дом", "офис", "работ", "встреч", "звон", "позвон", "куп", "прод", "верн",
+                   "адрес", "улица", "ул.", "просп", "подъезд", "этаж", "забрать", "такси", "@", "maps");
     }
 
     private static bool IsLowValueAmbiguityReason(string? reason)
@@ -2046,9 +2560,9 @@ Return ONLY a valid JSON object with field `items`.
 For each input `<message id="...">` return exactly one item with the same `message_id`.
 
 Goal:
-- maximize grounded recall for useful signals
+- maximize grounded recall for dossier-useful or operationally useful signals
+- keep empty for low-value chatter, filler, or generic chat summarization
 - keep labels reusable and concise
-- avoid inventing niche one-off types unless clearly needed
 
 Schema per item:
 - message_id (number)
@@ -2063,41 +2577,49 @@ Schema per item:
 - reason (string, optional)
 
 Definitions:
-- observations: message-local signals grounded in one message
+- observations: message-local grounded signals
 - claims: atomic dossier-ready statements grounded in one message
 - facts/relationships/events/profile_signals remain for backward compatibility
 
 Type guidance:
-- observation.type should be short snake_case and reusable across many messages
-- prefer broad stable labels like availability_update, movement, request, question, intent, agreement, work_update, schedule_update, purchase, health_update, emotion, status_update, relationship_signal, communication, other
+- observation.type should be short snake_case and reusable
+- prefer stable labels like availability_update, movement, request, question, intent, schedule_update, work_update, work_assessment, health_update, location_update, contact_share, relationship_signal, communication, other
 - claim.claim_type should usually be one of: fact, intent, preference, relationship, state, need
-- category should be broad and reusable: availability, schedule, travel, work, finance, health, relationship, communication, activity, purchase, location, education, family, project, other
+- category should be broad and reusable: availability, schedule, travel, transportation, work, finance, health, relationship, communication, activity, purchase, location, contact, education, family, project, other
 - do not create near-duplicate labels just because wording differs
 
 Rules:
-- use real participant names from sender_name/text; never use placeholders like sender, author, me, self, i
-- do not treat short messages as noise if they contain time, movement, intent, schedule, money, health, relationship, ownership, work, availability, or an explicit ask
-- ignore only pure noise: emoji-only, sticker-only, laughter-only, empty acknowledgements
-- prefer recall over over-conservatism, but do not invent content
+- use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
+- prioritize signals with durable or actionable value: availability, schedule, travel, movement, pickup/dropoff, work/team/project state, finance, health, relationship, address/location, shared contacts
+- keep empty for pure noise and low-value chat filler: emoji-only, sticker-only, laughter-only, generic agreements, vague acknowledgements, rhetorical filler, low-value reactions, generic tech gripes with no lasting relevance
+- a question/request/agreement is only worth extracting when it is actionable: time, place, movement, pickup, call, meeting, health, work, travel, money, address, contact
+- if a third party is explicit in the message or reply_context, attribute the signal to that third party instead of automatically using the sender
+- if the subject is unresolved and the signal is low-value, return empty arrays
+- when a Russian person or place is in oblique case and the canonical form is obvious, normalize to the canonical form; otherwise keep the observed form
+- extract shared addresses, map links, @handles, pickup/dropoff logistics, and destination options as location/contact/travel signals
+- prefer grounded claims/facts only when the current message supports them; do not invent hidden context
 - evidence should be a short grounded snippet or tight paraphrase from the same message
 - if there is a useful fact or relationship, also try to emit at least one supporting claim
 - if there is a useful event-like signal, also try to emit at least one observation
 - set requires_expensive=true only when the message is materially useful for a dossier but grounded extraction is blocked by ambiguity or missing context
-- do NOT set requires_expensive=true for vague short coordination, filler planning, incomplete chatter, or low-value snippets like "and then I'll go", "maybe a bit more", "okay later"
+- do NOT set requires_expensive=true for vague short coordination, filler planning, incomplete chatter, or low-value snippets
 - confidence must be 0.0..1.0
 
 Examples:
 Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
 Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"free_time","value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
-Input: <message id="102">[meta] sender_name="Alena" ... My income is stable around 5000 per month</message>
-Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.87}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.87}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Input: <message id="102">[meta] sender_name="Rinat" ... улица Шавалеева, 1 ... https://yandex.ru/maps/...</message>
+Output item: {"message_id":102,"entities":[{"name":"Rinat","type":"Person","confidence":0.98},{"name":"улица Шавалеева, 1","type":"Place","confidence":0.92}],"observations":[{"subject_name":"Rinat","type":"location_update","object_name":"улица Шавалеева, 1","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"location","key":"shared_location","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"facts":[{"entity_name":"Rinat","category":"location","key":"shared_location","value":"улица Шавалеева, 1","confidence":0.86}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
-Input: <message id="103">[meta] sender_name="Alena" ... Call me when you leave the office</message>
-Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"request","object_name":"call","value":"when you leave the office","evidence":"call me when you leave the office","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"need","category":"communication","key":"requested_call_timing","value":"when the other person leaves the office","evidence":"call me when you leave the office","confidence":0.84}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Input: <message id="103">[meta] sender_name="Alena" ... Катя @Kotyonoksok</message>
+Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98},{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Alena","type":"contact_share","object_name":"Катя","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"contact","key":"shared_contact","value":"Катя @Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"facts":[{"entity_name":"Alena","category":"contact","key":"shared_contact","value":"Катя @Kotyonoksok","confidence":0.84}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
-Input: <message id="104">[meta] sender_name="Alena" ... and then I'll go</message>
-Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Input: <message id="104">[reply_context] from_sender="Alena" text="Катя уже неделю болеет" [meta] sender_name="Rinat" ... Она все еще на антибиотиках</message>
+Output item: {"message_id":104,"entities":[{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Катя","type":"health_update","object_name":"antibiotics","value":"still on antibiotics","evidence":"Она все еще на антибиотиках","confidence":0.86}],"claims":[{"entity_name":"Катя","claim_type":"state","category":"health","key":"antibiotics_course","value":"still on antibiotics","evidence":"Она все еще на антибиотиках","confidence":0.86}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
+Input: <message id="105">[meta] sender_name="Alena" ... ну да</message>
+Output item: {"message_id":105,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Never include markdown or extra text.
 """;
