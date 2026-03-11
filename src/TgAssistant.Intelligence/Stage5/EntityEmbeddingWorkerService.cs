@@ -66,20 +66,28 @@ public class EntityEmbeddingWorkerService : BackgroundService
 
                     var text = BuildEntityProfileText(entity, facts);
                     var vector = await _embeddingGenerator.GenerateAsync(_settings.Model, text, stoppingToken);
-                    await _embeddingRepository.UpsertAsync(new TextEmbedding
+                    if (vector.Length > 0)
                     {
-                        OwnerType = "entity_profile",
-                        OwnerId = entity.Id.ToString(),
-                        SourceText = text,
-                        Model = _settings.Model,
-                        Vector = vector,
-                        CreatedAt = DateTime.UtcNow
-                    }, stoppingToken);
+                        await _embeddingRepository.UpsertAsync(new TextEmbedding
+                        {
+                            OwnerType = "entity_profile",
+                            OwnerId = entity.Id.ToString(),
+                            SourceText = text,
+                            Model = _settings.Model,
+                            Vector = vector,
+                            CreatedAt = DateTime.UtcNow
+                        }, stoppingToken);
+                    }
 
                     foreach (var fact in facts.OrderByDescending(f => f.UpdatedAt).Take(80))
                     {
                         var factText = BuildFactText(entity, fact);
                         var factVector = await _embeddingGenerator.GenerateAsync(_settings.Model, factText, stoppingToken);
+                        if (factVector.Length == 0)
+                        {
+                            continue;
+                        }
+
                         await _embeddingRepository.UpsertAsync(new TextEmbedding
                         {
                             OwnerType = "fact",
