@@ -12,7 +12,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v5";
+    private const string CheapPromptId = "stage5_cheap_extract_v6";
+    private const string ExpensivePromptId = "stage5_expensive_reason_v2";
     private const int MaxCheapLlmBatchSize = 10;
     private const string FactEmbeddingOwnerType = "fact";
     private readonly AnalysisSettings _settings;
@@ -159,7 +160,7 @@ public class AnalysisWorkerService : BackgroundService
             return;
         }
 
-        var expensivePrompt = await GetPromptAsync("stage5_expensive_reason", DefaultExpensivePrompt, ct);
+        var expensivePrompt = await GetPromptAsync(ExpensivePromptId, DefaultExpensivePrompt, ct);
         var resolvedCount = 0;
 
         foreach (var row in backlog)
@@ -169,12 +170,24 @@ public class AnalysisWorkerService : BackgroundService
                 break;
             }
 
+            var sourceMessage = await _messageRepository.GetByIdAsync(row.MessageId, ct);
             var candidate = JsonSerializer.Deserialize<ExtractionItem>(row.CheapJson) ?? new ExtractionItem { MessageId = row.MessageId };
+            if (!ShouldRunExpensivePass(sourceMessage, candidate))
+            {
+                await ApplyExtractionAsync(row.MessageId, SanitizeExtraction(candidate), sourceMessage, ct);
+                await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(candidate), ct);
+                continue;
+            }
+
             var currentFacts = await GetCurrentFactStringsAsync(candidate, ct);
+            var replyMessage = await LoadReplyMessageAsync(sourceMessage, ct);
+            var messageText = sourceMessage == null
+                ? string.Empty
+                : BuildMessageText(sourceMessage, replyMessage);
 
             try
             {
-                var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, expensivePrompt.SystemPrompt, ct);
+                var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, messageText, expensivePrompt.SystemPrompt, ct);
                 var effective = SanitizeExtraction(resolved ?? candidate);
                 effective.MessageId = row.MessageId;
                 if (!ValidateExtractionRecord(effective, out var validationError))
@@ -194,7 +207,6 @@ public class AnalysisWorkerService : BackgroundService
 
                     effective = new ExtractionItem { MessageId = row.MessageId };
                 }
-                var sourceMessage = await _messageRepository.GetByIdAsync(row.MessageId, ct);
                 await ApplyExtractionAsync(row.MessageId, effective, sourceMessage, ct);
                 await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(effective), ct);
                 resolvedCount++;
@@ -206,7 +218,6 @@ public class AnalysisWorkerService : BackgroundService
                     row.MessageId);
 
                 // Do not block the whole pipeline: finalize with cheap candidate.
-                var sourceMessage = await _messageRepository.GetByIdAsync(row.MessageId, ct);
                 var sanitized = SanitizeExtraction(candidate);
                 await ApplyExtractionAsync(row.MessageId, sanitized, sourceMessage, ct);
                 await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(sanitized), ct);
@@ -230,7 +241,6 @@ public class AnalysisWorkerService : BackgroundService
 
                 if (retry.IsExhausted)
                 {
-                    var sourceMessage = await _messageRepository.GetByIdAsync(row.MessageId, ct);
                     var sanitized = SanitizeExtraction(candidate);
                     await ApplyExtractionAsync(row.MessageId, sanitized, sourceMessage, ct);
                     await _extractionRepository.ResolveExpensiveAsync(row.Id, JsonSerializer.Serialize(sanitized), ct);
@@ -321,10 +331,7 @@ public class AnalysisWorkerService : BackgroundService
                     extracted = new ExtractionItem { MessageId = message.Id };
                 }
 
-                var needsExpensive = extracted.RequiresExpensive
-                                     || extracted.Facts.Any(f => f.Confidence < _settings.CheapConfidenceThreshold)
-                                     || extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold)
-                                     || ShouldEscalateLowSignalExtraction(message, extracted);
+                var needsExpensive = ShouldRunExpensivePass(message, extracted);
 
                 await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted), needsExpensive, ct);
 
@@ -379,6 +386,7 @@ public class AnalysisWorkerService : BackgroundService
     private async Task<ExtractionItem?> ResolveWithFallbackAsync(
         ExtractionItem candidate,
         List<string> currentFacts,
+        string messageText,
         string systemPrompt,
         CancellationToken ct)
     {
@@ -402,6 +410,7 @@ public class AnalysisWorkerService : BackgroundService
                     systemPrompt,
                     candidate,
                     currentFacts,
+                    messageText,
                     ct);
                 RegisterModelSuccess(model);
                 return resolved;
@@ -1184,6 +1193,22 @@ public class AnalysisWorkerService : BackgroundService
         return result;
     }
 
+    private async Task<Message?> LoadReplyMessageAsync(Message? message, CancellationToken ct)
+    {
+        if (message?.ReplyToMessageId is null || message.ReplyToMessageId.Value <= 0)
+        {
+            return null;
+        }
+
+        var byTelegramId = await _messageRepository.GetByTelegramMessageIdsAsync(
+            message.ChatId,
+            message.Source,
+            [message.ReplyToMessageId.Value],
+            ct);
+
+        return byTelegramId.GetValueOrDefault(message.ReplyToMessageId.Value);
+    }
+
     private static string TruncateForContext(string? value, int maxLen)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1202,8 +1227,8 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v5", DefaultCheapPrompt, ct);
-        await EnsurePromptAsync("stage5_expensive_reason", "Stage5 Expensive Reasoning", DefaultExpensivePrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v6", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v2", DefaultExpensivePrompt, ct);
     }
 
     private async Task EnsurePromptAsync(string id, string name, string systemPrompt, CancellationToken ct)
@@ -1725,6 +1750,40 @@ public class AnalysisWorkerService : BackgroundService
         return HasSemanticSignal(content);
     }
 
+    private bool ShouldRunExpensivePass(Message? message, ExtractionItem extracted)
+    {
+        if (message == null)
+        {
+            return false;
+        }
+
+        var content = BuildSemanticContent(message);
+        if (string.IsNullOrWhiteSpace(content) || IsLikelyFillerMessage(content))
+        {
+            return false;
+        }
+
+        var lowSignalEscalation = ShouldEscalateLowSignalExtraction(message, extracted);
+        if (lowSignalEscalation)
+        {
+            return true;
+        }
+
+        var hasLowConfidenceStructuredSignal =
+            extracted.Facts.Any(f => f.Confidence < _settings.CheapConfidenceThreshold && IsHighValueCategory(f.Category)) ||
+            extracted.Relationships.Any(r => r.Confidence < _settings.CheapConfidenceThreshold) ||
+            extracted.Claims.Any(c => c.Confidence < _settings.CheapConfidenceThreshold && IsHighValueCategory(c.Category)) ||
+            extracted.Events.Any(e => e.Confidence < _settings.CheapConfidenceThreshold) ||
+            extracted.Observations.Any(o => o.Confidence < _settings.CheapConfidenceThreshold && IsHighValueObservationType(o.Type));
+
+        if (!extracted.RequiresExpensive && !hasLowConfidenceStructuredSignal)
+        {
+            return false;
+        }
+
+        return IsHighValueEscalationCandidate(content, extracted);
+    }
+
     private static bool IsLowSignalExtraction(ExtractionItem item)
     {
         return item.Claims.Count == 0
@@ -1793,35 +1852,129 @@ public class AnalysisWorkerService : BackgroundService
         var normalized = text.ToLowerInvariant();
         var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
 
-        if (tokenCount >= 3)
+        if (tokenCount >= 6)
         {
             return true;
         }
 
-        if (Regex.IsMatch(normalized, @"\b\d{1,2}(:\d{2})?\b"))
+        if (HasStrongDossierSignal(normalized))
         {
             return true;
         }
 
-        return normalized.Contains("\u0437\u0430\u0432\u0442\u0440\u0430", StringComparison.Ordinal)
-               || normalized.Contains("\u0441\u0435\u0433\u043E\u0434\u043D\u044F", StringComparison.Ordinal)
-               || normalized.Contains("\u043F\u043E\u0441\u043B\u0435\u0437\u0430\u0432\u0442\u0440\u0430", StringComparison.Ordinal)
-               || normalized.Contains("\u0447\u0435\u0440\u0435\u0437 ", StringComparison.Ordinal)
-               || normalized.Contains("\u0431\u0443\u0434\u0443 ", StringComparison.Ordinal)
-               || normalized.Contains("\u0440\u0430\u0431\u043E\u0442", StringComparison.Ordinal)
-               || normalized.Contains("\u0432\u0441\u0442\u0440\u0435\u0447", StringComparison.Ordinal)
-               || normalized.Contains("\u043E\u0441\u0432\u043E\u0431\u043E\u0436", StringComparison.Ordinal)
-               || normalized.Contains("\u043F\u043E\u0437\u0432\u043E\u043D", StringComparison.Ordinal)
-               || normalized.Contains("\u043E\u0442\u043D\u043E\u0448\u0435\u043D", StringComparison.Ordinal)
-               || normalized.Contains("\u043B\u044E\u0431\u043B", StringComparison.Ordinal)
-               || normalized.Contains("\u0432\u043C\u0435\u0441\u0442\u0435", StringComparison.Ordinal)
-               || normalized.Contains("\u0434\u043E\u043C\u0430", StringComparison.Ordinal)
-               || normalized.Contains("\u0443\u0432\u043E\u043B\u0438", StringComparison.Ordinal)
-               || normalized.Contains("\u0431\u0435\u0440\u0435\u043C\u0435\u043D", StringComparison.Ordinal)
-               || normalized.Contains("\u0431\u043E\u043B\u044C\u043D\u0438\u0446", StringComparison.Ordinal)
-               || normalized.Contains("\u0440\u0430\u0437\u0432\u0435\u043B", StringComparison.Ordinal)
-               || normalized.Contains("\u043A\u0443\u043F\u0438\u043B", StringComparison.Ordinal)
-               || normalized.Contains("\u043F\u0440\u043E\u0434\u0430\u043B", StringComparison.Ordinal);
+        return HasConcreteActionableAnchor(normalized) && tokenCount >= 3;
+    }
+
+    private static bool IsHighValueEscalationCandidate(string text, ExtractionItem extracted)
+    {
+        var normalized = text.ToLowerInvariant();
+        var tokenCount = Regex.Matches(normalized, @"[\p{L}\p{N}]+").Count;
+
+        if (HasHighValueStructuredSignal(extracted))
+        {
+            return true;
+        }
+
+        if (HasStrongDossierSignal(normalized))
+        {
+            return true;
+        }
+
+        return tokenCount >= 8 && HasConcreteActionableAnchor(normalized);
+    }
+
+    private static bool HasHighValueStructuredSignal(ExtractionItem extracted)
+    {
+        return extracted.Relationships.Count > 0
+               || extracted.Events.Count > 0
+               || extracted.Facts.Any(f => IsHighValueCategory(f.Category))
+               || extracted.Claims.Any(c => IsHighValueCategory(c.Category))
+               || extracted.Observations.Any(o => IsHighValueObservationType(o.Type));
+    }
+
+    private static bool IsHighValueCategory(string? category)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+        {
+            return false;
+        }
+
+        return category.Trim().ToLowerInvariant() switch
+        {
+            "availability" => true,
+            "schedule" => true,
+            "travel" => true,
+            "work" => true,
+            "finance" => true,
+            "health" => true,
+            "relationship" => true,
+            "location" => true,
+            "purchase" => true,
+            "family" => true,
+            "career" => true,
+            "education" => true,
+            _ => false
+        };
+    }
+
+    private static bool IsHighValueObservationType(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return false;
+        }
+
+        return type.Trim().ToLowerInvariant() switch
+        {
+            "availability_update" => true,
+            "movement" => true,
+            "travel_plan" => true,
+            "schedule_update" => true,
+            "request" => true,
+            "question" => true,
+            "work_update" => true,
+            "work_status" => true,
+            "status_update" => true,
+            "health_update" => true,
+            "health_report" => true,
+            "location_update" => true,
+            "relationship_signal" => true,
+            _ => false
+        };
+    }
+
+    private static bool HasStrongDossierSignal(string normalized)
+    {
+        return ContainsAny(normalized,
+            "работ", "офис", "уволи", "зарплат", "доход", "кредит", "ипотек", "долг", "лимит",
+            "боль", "врач", "больниц", "беремен", "травм", "температур", "диагноз",
+            "встреч", "развел", "расст", "муж", "жена", "парень", "девуш", "любл",
+            "купил", "продал", "заказ", "стоим", "цена", "руб", "тыс", "деньг",
+            "домой", "дома", "приед", "уед", "поед", "вылет", "летим", "поезд",
+            "сегодня", "завтра", "послезавтра", "через ", "буду ", "свобод", "занят");
+    }
+
+    private static bool HasConcreteActionableAnchor(string normalized)
+    {
+        return Regex.IsMatch(normalized, @"\b\d{1,2}(:\d{2})?\b")
+               || Regex.IsMatch(normalized, @"\b\d+\b")
+               || ContainsAny(normalized,
+                   "в ", "на ", "к ", "до ", "после ", "через ",
+                   "сегодня", "завтра", "послезавтра",
+                   "домой", "дом", "офис", "работ", "встреч", "звон", "позвон", "куп", "прод", "верн");
+    }
+
+    private static bool ContainsAny(string text, params string[] patterns)
+    {
+        foreach (var pattern in patterns)
+        {
+            if (text.Contains(pattern, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private const string DefaultCheapPrompt = """
@@ -1866,7 +2019,8 @@ Rules:
 - evidence should be a short grounded snippet or tight paraphrase from the same message
 - if there is a useful fact or relationship, also try to emit at least one supporting claim
 - if there is a useful event-like signal, also try to emit at least one observation
-- if actor is ambiguous, pronouns are unresolved, or the message clearly depends on missing context, set requires_expensive=true
+- set requires_expensive=true only when the message is materially useful for a dossier but grounded extraction is blocked by ambiguity or missing context
+- do NOT set requires_expensive=true for vague short coordination, filler planning, incomplete chatter, or low-value snippets like "and then I'll go", "maybe a bit more", "okay later"
 - confidence must be 0.0..1.0
 
 Examples:
@@ -1879,13 +2033,46 @@ Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","conf
 Input: <message id="103">[meta] sender_name="Alena" ... Call me when you leave the office</message>
 Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"request","object_name":"call","value":"when you leave the office","evidence":"call me when you leave the office","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"need","category":"communication","key":"requested_call_timing","value":"when the other person leaves the office","evidence":"call me when you leave the office","confidence":0.84}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
+Input: <message id="104">[meta] sender_name="Alena" ... and then I'll go</message>
+Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
 Never include markdown or extra text.
 """;
     private const string DefaultExpensivePrompt = """
-You are a high-accuracy resolver.
-Input includes one cheap candidate and current known facts.
-Return ONLY valid JSON object with field `items` containing exactly one normalized item.
-Prioritize consistency, deduplication and conflict-aware fact output.
-If uncertainty remains, keep requires_expensive=true.
+You are a high-accuracy resolver for dossier extraction.
+Input includes:
+- the original message text with metadata
+- one cheap candidate extraction
+- current known facts for the same entity set
+
+Return ONLY a valid JSON object with field `items` containing exactly one item.
+The item schema is the same as cheap extraction:
+- message_id
+- entities
+- observations
+- claims
+- facts
+- relationships
+- events
+- profile_signals
+- requires_expensive
+- reason
+
+Rules:
+- use the original message text as the primary evidence source
+- improve the cheap candidate only when the current message contains grounded, useful information
+- keep labels reusable and normalized
+- do not hallucinate missing context
+- if the message is vague, low-value, or too context-dependent to extract safely, return empty arrays and requires_expensive=false
+- if the message is clearly important but still ambiguous after careful reading, keep requires_expensive=true and set reason
+- prefer grounded claims and observations over speculative interpretation
+- preserve durable facts only when directly supported by the current message
+
+Examples:
+Input message: [meta] sender_name="Alena" ... My income is stable around 5000 per month
+Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.9}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.9}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.9}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
+Input message: [meta] sender_name="Alena" ... and then I'll go
+Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 """;
 }
