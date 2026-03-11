@@ -16,6 +16,7 @@ public class Neo4jSyncWorkerService : BackgroundService
     private const string EntityWatermarkKey = "neo4j:entity_watermark_ms";
     private const string RelationshipWatermarkKey = "neo4j:relationship_watermark_ms";
     private const string FactWatermarkKey = "neo4j:fact_watermark_ms";
+    private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
 
     private readonly Neo4jSettings _settings;
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
@@ -56,6 +57,10 @@ public class Neo4jSyncWorkerService : BackgroundService
                 if (!synced)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(_settings.PollIntervalSeconds), stoppingToken);
+                }
+                else
+                {
+                    await Task.Delay(BatchThrottleDelay, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

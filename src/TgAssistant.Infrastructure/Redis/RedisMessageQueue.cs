@@ -48,7 +48,11 @@ public class RedisMessageQueue : IMessageQueue
         var db = _redis.GetDatabase();
         var results = new List<RawTelegramMessage>();
         var entries = await db.StreamReadGroupAsync(_settings.StreamName, _settings.ConsumerGroup, _settings.ConsumerName, position: StreamPosition.NewMessages, count: maxCount);
-        if (entries.Length == 0) return results;
+        if (entries.Length == 0)
+        {
+            await Task.Delay(timeout, ct);
+            return results;
+        }
         foreach (var entry in entries)
         {
             try
