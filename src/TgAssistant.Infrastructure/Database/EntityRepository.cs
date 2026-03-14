@@ -18,6 +18,12 @@ public class EntityRepository : IEntityRepository
 
     public async Task<Entity> UpsertAsync(Entity entity, CancellationToken ct = default)
     {
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            return await UpsertCoreAsync(ambientDb, entity, ct);
+        }
+
         var retries = 0;
         while (true)
         {
@@ -25,65 +31,8 @@ public class EntityRepository : IEntityRepository
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             try
             {
-                var lockKey = BuildEntityLockKey(entity);
-                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({lockKey}))", ct);
-                var row = await FindMatchForUpsertAsync(db, entity, ct);
-
-                if (row == null)
-                {
-                    row = new DbEntity
-                    {
-                        Id = entity.Id == Guid.Empty ? Guid.NewGuid() : entity.Id,
-                        Name = entity.Name,
-                        Type = (short)entity.Type,
-                        Aliases = entity.Aliases.ToArray(),
-                        ActorKey = string.IsNullOrWhiteSpace(entity.ActorKey) ? null : entity.ActorKey.Trim(),
-                        TelegramUserId = entity.TelegramUserId,
-                        TelegramUsername = entity.TelegramUsername,
-                        Metadata = JsonDocument.Parse("{}"),
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                    db.Entities.Add(row);
-                }
-                else
-                {
-                    var incomingName = entity.Name.Trim();
-                    if (string.IsNullOrWhiteSpace(row.Name))
-                    {
-                        row.Name = incomingName;
-                    }
-                    else if (!string.IsNullOrWhiteSpace(incomingName) &&
-                             !string.Equals(row.Name, incomingName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        row.Aliases = row.Aliases
-                            .Append(incomingName)
-                            .Where(x => !string.IsNullOrWhiteSpace(x))
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .ToArray();
-                    }
-
-                    row.Type = (short)entity.Type;
-                    if (entity.Aliases.Count > 0)
-                    {
-                        row.Aliases = row.Aliases
-                            .Concat(entity.Aliases)
-                            .Where(x => !string.IsNullOrWhiteSpace(x))
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .ToArray();
-                    }
-
-                    row.ActorKey = string.IsNullOrWhiteSpace(row.ActorKey) ? entity.ActorKey?.Trim() : row.ActorKey;
-                    row.TelegramUserId = entity.TelegramUserId ?? row.TelegramUserId;
-                    row.TelegramUsername = entity.TelegramUsername ?? row.TelegramUsername;
-                    row.UpdatedAt = DateTime.UtcNow;
-                }
-
-                await db.SaveChangesAsync(ct);
+                await UpsertCoreAsync(db, entity, ct);
                 await tx.CommitAsync(ct);
-                entity.Id = row.Id;
-                entity.CreatedAt = row.CreatedAt;
-                entity.UpdatedAt = row.UpdatedAt;
                 return entity;
             }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex) && retries < 2)
@@ -92,6 +41,69 @@ public class EntityRepository : IEntityRepository
                 await tx.RollbackAsync(ct);
             }
         }
+    }
+
+    private static async Task<Entity> UpsertCoreAsync(TgAssistantDbContext db, Entity entity, CancellationToken ct)
+    {
+        var lockKey = BuildEntityLockKey(entity);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext({lockKey}))", ct);
+        var row = await FindMatchForUpsertAsync(db, entity, ct);
+
+        if (row == null)
+        {
+            row = new DbEntity
+            {
+                Id = entity.Id == Guid.Empty ? Guid.NewGuid() : entity.Id,
+                Name = entity.Name,
+                Type = (short)entity.Type,
+                Aliases = entity.Aliases.ToArray(),
+                ActorKey = string.IsNullOrWhiteSpace(entity.ActorKey) ? null : entity.ActorKey.Trim(),
+                TelegramUserId = entity.TelegramUserId,
+                TelegramUsername = entity.TelegramUsername,
+                Metadata = JsonDocument.Parse("{}"),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.Entities.Add(row);
+        }
+        else
+        {
+            var incomingName = entity.Name.Trim();
+            if (string.IsNullOrWhiteSpace(row.Name))
+            {
+                row.Name = incomingName;
+            }
+            else if (!string.IsNullOrWhiteSpace(incomingName) &&
+                     !string.Equals(row.Name, incomingName, StringComparison.OrdinalIgnoreCase))
+            {
+                row.Aliases = row.Aliases
+                    .Append(incomingName)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
+            row.Type = (short)entity.Type;
+            if (entity.Aliases.Count > 0)
+            {
+                row.Aliases = row.Aliases
+                    .Concat(entity.Aliases)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+
+            row.ActorKey = string.IsNullOrWhiteSpace(row.ActorKey) ? entity.ActorKey?.Trim() : row.ActorKey;
+            row.TelegramUserId = entity.TelegramUserId ?? row.TelegramUserId;
+            row.TelegramUsername = entity.TelegramUsername ?? row.TelegramUsername;
+            row.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
+        entity.Id = row.Id;
+        entity.CreatedAt = row.CreatedAt;
+        entity.UpdatedAt = row.UpdatedAt;
+        return entity;
     }
 
     private static async Task<DbEntity?> FindMatchForUpsertAsync(TgAssistantDbContext db, Entity entity, CancellationToken ct)

@@ -1,11 +1,13 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -41,6 +43,7 @@ public class AnalysisWorkerService : BackgroundService
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IPromptTemplateRepository _promptRepository;
     private readonly IAnalysisUsageRepository _analysisUsageRepository;
+    private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly ILogger<AnalysisWorkerService> _logger;
     private readonly Dictionary<string, DateTimeOffset> _expensiveBlockedUntilByModel = new(StringComparer.OrdinalIgnoreCase);
@@ -49,6 +52,7 @@ public class AnalysisWorkerService : BackgroundService
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
         IOptions<EmbeddingSettings> embeddingSettings,
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
         IMessageRepository messageRepository,
         IEntityRepository entityRepository,
         IEntityAliasRepository entityAliasRepository,
@@ -69,6 +73,7 @@ public class AnalysisWorkerService : BackgroundService
     {
         _settings = settings.Value;
         _embeddingSettings = embeddingSettings.Value;
+        _dbFactory = dbFactory;
         _messageRepository = messageRepository;
         _entityRepository = entityRepository;
         _entityAliasRepository = entityAliasRepository;
@@ -584,6 +589,11 @@ public class AnalysisWorkerService : BackgroundService
 
     private async Task ApplyExtractionAsync(long messageId, ExtractionItem extraction, Message? sourceMessage, CancellationToken ct)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Transactional boundary: all entity/fact/relationship/intelligence writes for one message commit atomically.
+        using var dbScope = AmbientDbContextScope.Enter(db);
+
         var entityByName = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
         var currentFactsByEntityId = new Dictionary<Guid, List<Fact>>();
         var eventBuffer = new List<CommunicationEvent>();
@@ -744,6 +754,8 @@ public class AnalysisWorkerService : BackgroundService
         {
             await _communicationEventRepository.AddRangeAsync(eventBuffer, ct);
         }
+
+        await tx.CommitAsync(ct);
     }
 
     private async Task PersistIntelligenceAsync(
