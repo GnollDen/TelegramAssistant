@@ -101,6 +101,7 @@ services:
       Analysis__MinFactConfidence: ${ANALYSIS_MIN_FACT_CONFIDENCE:-0.55}
       Analysis__MinSensitiveFactConfidence: ${ANALYSIS_MIN_SENSITIVE_FACT_CONFIDENCE:-0.75}
       Analysis__MinRelationshipConfidence: ${ANALYSIS_MIN_RELATIONSHIP_CONFIDENCE:-0.6}
+      Analysis__TemporalFactSupersedeTtlHours: ${ANALYSIS_TEMPORAL_FACT_SUPERSEDE_TTL_HOURS:-12}
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}
@@ -197,4 +198,3 @@ services:
       - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
-
