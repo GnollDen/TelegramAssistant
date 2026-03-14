@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Infrastructure.OpenRouter;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -147,48 +148,4 @@ public class OpenRouterAnalysisService
     {
         return Math.Max(min, Math.Min(max, requested));
     }
-}
-
-internal class OpenRouterRequest
-{
-    public string Model { get; set; } = string.Empty;
-    public List<OpenRouterMessage> Messages { get; set; } = new();
-    public OpenRouterResponseFormat? ResponseFormat { get; set; }
-    public int? MaxTokens { get; set; }
-    public float Temperature { get; set; }
-}
-
-internal class OpenRouterMessage
-{
-    public string Role { get; set; } = string.Empty;
-    public string Content { get; set; } = string.Empty;
-}
-
-internal class OpenRouterResponseFormat
-{
-    public string Type { get; set; } = string.Empty;
-}
-
-internal class OpenRouterResponse
-{
-    public List<OpenRouterChoice>? Choices { get; set; }
-    public OpenRouterUsage? Usage { get; set; }
-}
-
-internal class OpenRouterChoice
-{
-    public OpenRouterResponseMessage? Message { get; set; }
-}
-
-internal class OpenRouterResponseMessage
-{
-    public string Content { get; set; } = string.Empty;
-}
-
-internal class OpenRouterUsage
-{
-    public int? PromptTokens { get; set; }
-    public int? CompletionTokens { get; set; }
-    public int? TotalTokens { get; set; }
-    public decimal? Cost { get; set; }
 }
