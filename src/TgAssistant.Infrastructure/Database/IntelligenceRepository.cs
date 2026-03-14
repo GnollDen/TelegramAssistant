@@ -20,9 +20,26 @@ public class IntelligenceRepository : IIntelligenceRepository
         IReadOnlyCollection<IntelligenceClaim> claims,
         CancellationToken ct = default)
     {
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            await ReplaceInternalAsync(ambientDb, messageId, observations, claims, ct);
+            return;
+        }
+
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await ReplaceInternalAsync(db, messageId, observations, claims, ct);
+        await tx.CommitAsync(ct);
+    }
 
+    private static async Task ReplaceInternalAsync(
+        TgAssistantDbContext db,
+        long messageId,
+        IReadOnlyCollection<IntelligenceObservation> observations,
+        IReadOnlyCollection<IntelligenceClaim> claims,
+        CancellationToken ct)
+    {
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"DELETE FROM intelligence_observations WHERE message_id = {messageId};",
             ct);
@@ -65,6 +82,5 @@ public class IntelligenceRepository : IIntelligenceRepository
         }
 
         await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
     }
 }
