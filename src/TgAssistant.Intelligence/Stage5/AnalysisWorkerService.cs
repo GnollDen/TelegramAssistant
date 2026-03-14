@@ -1575,7 +1575,7 @@ public class AnalysisWorkerService : BackgroundService
         return item;
     }
 
-    private static ExtractionItem RefineExtractionForMessage(ExtractionItem item, Message? message)
+    private ExtractionItem RefineExtractionForMessage(ExtractionItem item, Message? message)
     {
         if (message == null)
         {
@@ -1746,8 +1746,22 @@ public class AnalysisWorkerService : BackgroundService
         });
     }
 
-    private static void PruneLowValueSignals(ExtractionItem item, string normalizedContent)
+    private void PruneLowValueSignals(ExtractionItem item, string normalizedContent)
     {
+        var hasHighValueCategory = item.Facts.Any(f => IsHighValueCategory(f.Category))
+                                   || item.Claims.Any(c => IsHighValueCategory(c.Category));
+        if (hasHighValueCategory)
+        {
+            return;
+        }
+
+        var hasConfidentSignal = item.Facts.Any(f => f.Confidence >= _settings.MinFactConfidence)
+                                 || item.Claims.Any(c => c.Confidence >= _settings.MinFactConfidence);
+        if (hasConfidentSignal)
+        {
+            return;
+        }
+
         if (HasHighValueStructuredSignal(item))
         {
             return;
