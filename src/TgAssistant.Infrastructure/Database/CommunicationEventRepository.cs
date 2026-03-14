@@ -22,41 +22,74 @@ public class CommunicationEventRepository : ICommunicationEventRepository
             return;
         }
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.CommunicationEvents.AddRange(rows.Select(evt => new DbCommunicationEvent
+        await WithDbContextAsync(async db =>
         {
-            MessageId = evt.MessageId,
-            EntityId = evt.EntityId,
-            EventType = evt.EventType,
-            ObjectName = evt.ObjectName,
-            Sentiment = evt.Sentiment,
-            Summary = evt.Summary,
-            Confidence = evt.Confidence,
-            CreatedAt = evt.CreatedAt == default ? DateTime.UtcNow : evt.CreatedAt
-        }));
-        await db.SaveChangesAsync(ct);
+            db.CommunicationEvents.AddRange(rows.Select(evt => new DbCommunicationEvent
+            {
+                MessageId = evt.MessageId,
+                EntityId = evt.EntityId,
+                EventType = evt.EventType,
+                ObjectName = evt.ObjectName,
+                Sentiment = evt.Sentiment,
+                Summary = evt.Summary,
+                Confidence = evt.Confidence,
+                CreatedAt = evt.CreatedAt == default ? DateTime.UtcNow : evt.CreatedAt
+            }));
+            await db.SaveChangesAsync(ct);
+        }, ct);
     }
 
     public async Task<List<CommunicationEvent>> GetByEntityAsync(Guid entityId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var rows = await db.CommunicationEvents
-            .AsNoTracking()
-            .Where(x => x.EntityId == entityId && x.CreatedAt >= fromUtc && x.CreatedAt <= toUtc)
-            .OrderBy(x => x.CreatedAt)
-            .ToListAsync(ct);
-
-        return rows.Select(x => new CommunicationEvent
+        return await WithDbContextAsync(async db =>
         {
-            Id = x.Id,
-            MessageId = x.MessageId,
-            EntityId = x.EntityId,
-            EventType = x.EventType,
-            ObjectName = x.ObjectName,
-            Sentiment = x.Sentiment,
-            Summary = x.Summary,
-            Confidence = x.Confidence,
-            CreatedAt = x.CreatedAt
-        }).ToList();
+            var rows = await db.CommunicationEvents
+                .AsNoTracking()
+                .Where(x => x.EntityId == entityId && x.CreatedAt >= fromUtc && x.CreatedAt <= toUtc)
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            return rows.Select(x => new CommunicationEvent
+            {
+                Id = x.Id,
+                MessageId = x.MessageId,
+                EntityId = x.EntityId,
+                EventType = x.EventType,
+                ObjectName = x.ObjectName,
+                Sentiment = x.Sentiment,
+                Summary = x.Summary,
+                Confidence = x.Confidence,
+                CreatedAt = x.CreatedAt
+            }).ToList();
+        }, ct);
+    }
+
+    private async Task<TResult> WithDbContextAsync<TResult>(
+        Func<TgAssistantDbContext, Task<TResult>> action,
+        CancellationToken ct)
+    {
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            return await action(ambientDb);
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await action(db);
+    }
+
+    private async Task WithDbContextAsync(
+        Func<TgAssistantDbContext, Task> action,
+        CancellationToken ct)
+    {
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            await action(ambientDb);
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await action(db);
     }
 }
