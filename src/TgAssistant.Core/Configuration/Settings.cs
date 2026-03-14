@@ -131,6 +131,7 @@ public class AnalysisSettings
     public float MinSensitiveFactConfidence { get; set; } = 0.75f;
     public float AutoConfirmFactConfidence { get; set; } = 0.95f;
     public float MinRelationshipConfidence { get; set; } = 0.6f;
+    public int TemporalFactSupersedeTtlHours { get; set; } = 12;
 }
 
 public class MergeSettings

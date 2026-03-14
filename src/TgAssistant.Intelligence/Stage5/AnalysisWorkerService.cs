@@ -632,7 +632,7 @@ public class AnalysisWorkerService : BackgroundService
             var current = await GetCurrentFactsCachedAsync(currentFactsByEntityId, entity.Id, ct);
             var sameKey = current.FirstOrDefault(x => x.Category.Equals(normalizedCategory, StringComparison.OrdinalIgnoreCase)
                                                  && x.Key.Equals(fact.Key.Trim(), StringComparison.OrdinalIgnoreCase));
-            var strategy = GetFactConflictStrategy(normalizedCategory);
+            var strategy = GetFactConflictStrategy(normalizedCategory, sameKey);
             var status = ResolveFactStatus(normalizedCategory, fact.Confidence);
 
             var newFact = new Fact
@@ -1295,7 +1295,7 @@ public class AnalysisWorkerService : BackgroundService
         };
     }
 
-    private static FactConflictStrategy GetFactConflictStrategy(string? category)
+    private FactConflictStrategy GetFactConflictStrategy(string? category, Fact? sameKey)
     {
         return category?.Trim().ToLowerInvariant() switch
         {
@@ -1305,8 +1305,15 @@ public class AnalysisWorkerService : BackgroundService
             "money" => FactConflictStrategy.Parallel,
             "relationship" => FactConflictStrategy.Parallel,
             "legal" => FactConflictStrategy.Parallel,
-            // Schedule updates are temporal by nature and should not erase prior versions aggressively.
-            "schedule" => FactConflictStrategy.Parallel,
+            // Availability/schedule updates are temporal: supersede stale values, keep recent versions in parallel.
+            "availability" => sameKey != null
+                              && (DateTime.UtcNow - sameKey.UpdatedAt).TotalHours > _settings.TemporalFactSupersedeTtlHours
+                ? FactConflictStrategy.Supersede
+                : FactConflictStrategy.Parallel,
+            "schedule" => sameKey != null
+                          && (DateTime.UtcNow - sameKey.UpdatedAt).TotalHours > _settings.TemporalFactSupersedeTtlHours
+                ? FactConflictStrategy.Supersede
+                : FactConflictStrategy.Parallel,
             // Career and other stable profile fields are safe to supersede on direct conflict.
             "career" => FactConflictStrategy.Supersede,
             _ => FactConflictStrategy.Supersede
