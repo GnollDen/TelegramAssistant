@@ -32,6 +32,22 @@ public class EntityAliasRepository : IEntityAliasRepository
             return;
         }
 
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            await ambientDb.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO entity_aliases (entity_id, alias, alias_norm, source_message_id, confidence, created_at, updated_at)
+                VALUES ({entityId}, {raw}, {norm}, {sourceMessageId}, {confidence}, NOW(), NOW())
+                ON CONFLICT (entity_id, alias_norm)
+                DO UPDATE SET
+                    alias = EXCLUDED.alias,
+                    source_message_id = COALESCE(EXCLUDED.source_message_id, entity_aliases.source_message_id),
+                    confidence = GREATEST(entity_aliases.confidence, EXCLUDED.confidence),
+                    updated_at = NOW()
+                """, ct);
+            return;
+        }
+
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO entity_aliases (entity_id, alias, alias_norm, source_message_id, confidence, created_at, updated_at)
