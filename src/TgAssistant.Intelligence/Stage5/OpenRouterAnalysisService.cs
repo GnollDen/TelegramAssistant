@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -34,7 +33,7 @@ public class OpenRouterAnalysisService
 
     public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
     {
-        var user = BuildCheapBatchPrompt(batch);
+        var user = MessageContentBuilder.BuildCheapBatchPrompt(batch);
         var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000), 0.0f);
         var json = await SendAndExtractJsonAsync(req, "cheap", ct);
         return ParseBatch(json);
@@ -47,20 +46,6 @@ public class OpenRouterAnalysisService
         var json = await SendAndExtractJsonAsync(req, "expensive", ct);
         var parsed = ParseBatch(json);
         return parsed.Items.FirstOrDefault();
-    }
-
-    private static string BuildCheapBatchPrompt(List<AnalysisInputMessage> batch)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Analyze these chat messages and return one extraction item per message.");
-        foreach (var msg in batch)
-        {
-            sb.AppendLine($"<message id=\"{msg.MessageId}\" sender_name=\"{msg.SenderName}\" ts=\"{msg.Timestamp:O}\">");
-            sb.AppendLine(msg.Text);
-            sb.AppendLine("</message>");
-        }
-
-        return sb.ToString();
     }
 
     private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature)

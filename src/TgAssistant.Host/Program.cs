@@ -137,6 +137,9 @@ try
             });
             services.AddHttpClient<Neo4jSyncWorkerService>();
             services.AddSingleton<ExtractionSchemaValidator>();
+            services.AddSingleton<MessageContentBuilder>();
+            services.AddSingleton<ExtractionApplier>();
+            services.AddSingleton<ExpensivePassResolver>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
