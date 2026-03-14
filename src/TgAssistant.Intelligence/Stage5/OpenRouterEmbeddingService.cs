@@ -1,8 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 
 namespace TgAssistant.Intelligence.Stage5;
@@ -10,24 +8,17 @@ namespace TgAssistant.Intelligence.Stage5;
 public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
 {
     private readonly HttpClient _http;
-    private readonly ClaudeSettings _claude;
     private readonly IAnalysisUsageRepository _usageRepository;
     private readonly ILogger<OpenRouterEmbeddingService> _logger;
 
     public OpenRouterEmbeddingService(
         HttpClient http,
-        IOptions<ClaudeSettings> claude,
         IAnalysisUsageRepository usageRepository,
         ILogger<OpenRouterEmbeddingService> logger)
     {
         _http = http;
-        _claude = claude.Value;
         _usageRepository = usageRepository;
         _logger = logger;
-        _http.BaseAddress = new Uri(_claude.BaseUrl);
-        _http.Timeout = TimeSpan.FromSeconds(60);
-        _http.DefaultRequestHeaders.Remove("Authorization");
-        _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_claude.ApiKey}");
     }
 
     public async Task<float[]> GenerateAsync(string model, string input, CancellationToken ct = default)

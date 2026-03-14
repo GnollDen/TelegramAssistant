@@ -13,7 +13,6 @@ namespace TgAssistant.Intelligence.Stage5;
 public class OpenRouterAnalysisService
 {
     private readonly HttpClient _http;
-    private readonly ClaudeSettings _claude;
     private readonly AnalysisSettings _analysis;
     private readonly ExtractionSchemaValidator _schemaValidator;
     private readonly IAnalysisUsageRepository _usageRepository;
@@ -21,22 +20,16 @@ public class OpenRouterAnalysisService
 
     public OpenRouterAnalysisService(
         HttpClient http,
-        IOptions<ClaudeSettings> claude,
         IOptions<AnalysisSettings> analysis,
         ExtractionSchemaValidator schemaValidator,
         IAnalysisUsageRepository usageRepository,
         ILogger<OpenRouterAnalysisService> logger)
     {
         _http = http;
-        _claude = claude.Value;
         _analysis = analysis.Value;
         _schemaValidator = schemaValidator;
         _usageRepository = usageRepository;
         _logger = logger;
-        _http.BaseAddress = new Uri(_claude.BaseUrl);
-        _http.Timeout = TimeSpan.FromSeconds(Math.Max(30, _analysis.HttpTimeoutSeconds));
-        _http.DefaultRequestHeaders.Remove("Authorization");
-        _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_claude.ApiKey}");
     }
 
     public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
