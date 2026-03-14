@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Infrastructure.OpenRouter;
 
 namespace TgAssistant.Processing.Media;
 
@@ -197,8 +198,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         return new OpenRouterRequest
         {
             Model = model,
-            Messages = new[]
-            {
+            Messages =
+            [
                 new OpenRouterMessage
                 {
                     Role = "user",
@@ -208,7 +209,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                         new { type = "text", text = prompt }
                     }
                 }
-            },
+            ],
             MaxTokens = maxTokens
         };
     }
@@ -234,8 +235,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             var request = new OpenRouterRequest
             {
                 Model = _mediaSettings.AudioModel,
-                Messages = new[]
-                {
+                Messages =
+                [
                     new OpenRouterMessage
                     {
                         Role = "user",
@@ -245,7 +246,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                             new { type = "text", text = "Transcribe this audio message exactly. If you cannot understand it, describe what you hear (noise, music, etc). Respond ONLY with the transcription, no commentary." }
                         }
                     }
-                },
+                ],
                 MaxTokens = 1000
             };
 
@@ -423,34 +424,4 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
         return "media_processing_error";
     }
-}
-
-// === DTOs for OpenRouter API ===
-
-internal class OpenRouterRequest
-{
-    public string Model { get; set; } = "";
-    public OpenRouterMessage[] Messages { get; set; } = Array.Empty<OpenRouterMessage>();
-    public int? MaxTokens { get; set; }
-}
-
-internal class OpenRouterMessage
-{
-    public string Role { get; set; } = "";
-    public object Content { get; set; } = "";
-}
-
-internal class OpenRouterResponse
-{
-    public List<OpenRouterChoice>? Choices { get; set; }
-}
-
-internal class OpenRouterChoice
-{
-    public OpenRouterResponseMessage? Message { get; set; }
-}
-
-internal class OpenRouterResponseMessage
-{
-    public string Content { get; set; } = "";
 }
