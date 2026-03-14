@@ -858,28 +858,6 @@ public class AnalysisWorkerService : BackgroundService
         return facts;
     }
 
-    private async Task<Entity?> ResolveIntelligenceEntityAsync(
-        string entityName,
-        Dictionary<string, Entity> entityByName,
-        Message? sourceMessage,
-        string? senderName,
-        CancellationToken ct)
-    {
-        if (entityByName.TryGetValue(entityName, out var mapped))
-        {
-            return mapped;
-        }
-
-        var entity = await UpsertEntityWithActorContextAsync(
-            entityName,
-            EntityType.Person,
-            sourceMessage,
-            senderName,
-            ct);
-        entityByName[entity.Name] = entity;
-        return entity;
-    }
-
     private static List<ExtractionObservation> SelectIntelligenceObservations(ExtractionItem extraction)
     {
         if (extraction.Observations.Count > 0)
