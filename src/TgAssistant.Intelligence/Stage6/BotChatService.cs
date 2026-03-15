@@ -53,7 +53,11 @@ public class BotChatService : IBotChatService
             return "I cannot answer now because context retrieval failed.";
         }
 
-        var facts = await _factRepository.SearchSimilarFactsAsync(embedding, DefaultFactLimit);
+        var facts = await _factRepository.SearchSimilarFactsAsync(
+            _embeddingSettings.Model,
+            embedding,
+            DefaultFactLimit,
+            CancellationToken.None);
         if (facts.Count == 0)
         {
             return "I do not have relevant context facts yet.";
