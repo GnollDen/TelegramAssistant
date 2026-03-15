@@ -51,6 +51,7 @@ try
             services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
             services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
             services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
+            services.Configure<ContinuousRefinementSettings>(config.GetSection(ContinuousRefinementSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -176,6 +177,7 @@ try
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
+            services.AddHostedService<ContinuousRefinementWorkerService>();
             services.AddHostedService<EntityEmbeddingWorkerService>();
             services.AddHostedService<FactEmbeddingBackfillWorkerService>();
             services.AddHostedService<Neo4jSyncWorkerService>();

@@ -43,6 +43,7 @@ public interface IEntityRepository
     Task<Entity?> FindByActorKeyAsync(string actorKey, CancellationToken ct = default);
     Task<Entity?> FindByTelegramIdAsync(long telegramUserId, CancellationToken ct = default);
     Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default);
+    Task<Entity?> FindBestByNameAsync(string name, CancellationToken ct = default);
     Task MergeIntoAsync(Guid targetEntityId, Guid sourceEntityId, CancellationToken ct = default);
     Task<List<Entity>> GetAllAsync(CancellationToken ct = default);
     Task<List<Entity>> GetUpdatedSinceAsync(DateTime sinceUtc, int limit, CancellationToken ct = default);
@@ -74,6 +75,7 @@ public interface IRelationshipRepository
 {
     Task<Relationship> UpsertAsync(Relationship relationship, CancellationToken ct = default);
     Task<List<Relationship>> GetByEntityAsync(Guid entityId, CancellationToken ct = default);
+    Task<List<EntityRelationshipInfo>> GetByEntityWithNamesAsync(Guid entityId, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default);
 }
 
@@ -123,6 +125,14 @@ public interface IMessageExtractionRepository
 {
     Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
+    Task<List<RefinementCandidate>> GetRefinementCandidatesAsync(
+        long afterExtractionId,
+        int limit,
+        int minMessageLength,
+        int staleAfterHours,
+        DateTime cheapPromptUpdatedAtUtc,
+        float lowConfidenceThreshold,
+        CancellationToken ct = default);
     Task ResolveExpensiveAsync(long extractionId, string expensiveJson, CancellationToken ct = default);
     Task<ExpensiveRetryResult> MarkExpensiveFailedAsync(
         long extractionId,

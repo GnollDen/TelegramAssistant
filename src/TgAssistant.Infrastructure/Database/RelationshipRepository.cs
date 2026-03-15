@@ -70,6 +70,36 @@ public class RelationshipRepository : IRelationshipRepository
         }, ct);
     }
 
+    public async Task<List<EntityRelationshipInfo>> GetByEntityWithNamesAsync(Guid entityId, CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await (from relationship in db.Relationships.AsNoTracking()
+                              join fromEntity in db.Entities.AsNoTracking() on relationship.FromEntityId equals fromEntity.Id
+                              join toEntity in db.Entities.AsNoTracking() on relationship.ToEntityId equals toEntity.Id
+                              where relationship.FromEntityId == entityId || relationship.ToEntityId == entityId
+                              orderby relationship.UpdatedAt descending, relationship.CreatedAt descending
+                              select new EntityRelationshipInfo
+                              {
+                                  RelationshipId = relationship.Id,
+                                  FromEntityId = relationship.FromEntityId,
+                                  FromEntityName = fromEntity.Name,
+                                  ToEntityId = relationship.ToEntityId,
+                                  ToEntityName = toEntity.Name,
+                                  Type = relationship.Type,
+                                  Status = (ConfidenceStatus)relationship.Status,
+                                  Confidence = relationship.Confidence,
+                                  ContextText = relationship.ContextText,
+                                  SourceMessageId = relationship.SourceMessageId,
+                                  CreatedAt = relationship.CreatedAt,
+                                  UpdatedAt = relationship.UpdatedAt
+                              })
+                .ToListAsync(ct);
+
+            return rows;
+        }, ct);
+    }
+
     public async Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default)
     {
         await WithDbContextAsync(async db =>
