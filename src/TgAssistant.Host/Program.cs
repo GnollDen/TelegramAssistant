@@ -11,6 +11,7 @@ using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
+using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
 
 Log.Logger = new LoggerConfiguration()
@@ -168,6 +169,7 @@ try
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
             services.AddHostedService<TelegramListenerService>();
+            services.AddHostedService<TelegramBotHostedService>();
             services.AddHostedService<HistoryBackfillService>();
             services.AddHostedService<BatchWorkerService>();
             services.AddHostedService<ArchiveImportWorkerService>();
