@@ -88,7 +88,7 @@ public interface IFactRepository
     Task<Fact?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Fact> UpsertAsync(Fact fact, CancellationToken ct = default);
     Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default);
-    Task<List<Fact>> SearchSimilarFactsAsync(float[] queryEmbedding, int limit = 10);
+    Task<List<Fact>> SearchSimilarFactsAsync(string model, float[] queryEmbedding, int limit = 10, CancellationToken ct = default);
     Task<List<Fact>> GetWithoutEmbeddingAsync(string model, int limit, CancellationToken ct = default);
     Task<long> CountWithoutEmbeddingAsync(string model, CancellationToken ct = default);
     Task SupersedeFactAsync(Guid oldFactId, Fact newFact, CancellationToken ct = default);
@@ -163,7 +163,7 @@ public interface IEmbeddingRepository
 {
     Task UpsertAsync(TextEmbedding embedding, CancellationToken ct = default);
     Task<TextEmbedding?> GetByOwnerAsync(string ownerType, string ownerId, string? model = null, CancellationToken ct = default);
-    Task<List<TextEmbedding>> FindNearestAsync(string ownerType, float[] vector, int limit = 10, CancellationToken ct = default);
+    Task<List<TextEmbedding>> FindNearestAsync(string ownerType, string model, float[] vector, int limit = 10, CancellationToken ct = default);
 }
 
 public interface IMaintenanceRepository

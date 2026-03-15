@@ -512,7 +512,7 @@ public class ExpensivePassResolver
 
             var maxFacts = Math.Max(5, _settings.ExpensiveContextMaxFacts);
             var maxChars = Math.Max(1000, _settings.ExpensiveContextMaxChars);
-            var nearest = await _embeddingRepository.FindNearestAsync(FactEmbeddingOwnerType, queryVector, maxFacts, ct);
+            var nearest = await _embeddingRepository.FindNearestAsync(FactEmbeddingOwnerType, _embeddingSettings.Model, queryVector, maxFacts, ct);
             if (nearest.Count == 0)
             {
                 return new List<string>();
