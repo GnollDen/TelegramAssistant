@@ -56,6 +56,7 @@ services:
       Telegram__PhoneNumber: ${TG_PHONE}
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
+      BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-0}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
