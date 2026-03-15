@@ -41,6 +41,7 @@ try
             services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
             services.Configure<VoiceParalinguisticsSettings>(config.GetSection(VoiceParalinguisticsSettings.Section));
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
+            services.Configure<BackfillSettings>(config.GetSection(BackfillSettings.Section));
             services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
             services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
             services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
@@ -68,6 +69,24 @@ try
                     .Where(id => id > 0)
                     .Distinct()
                     .ToList();
+            });
+
+            services.PostConfigure<BackfillSettings>(s =>
+            {
+                var parsed = s.ChatIds
+                    .Where(id => id > 0)
+                    .ToList();
+
+                var raw = config.GetSection(BackfillSettings.Section).GetValue<string>("ChatIds");
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    parsed.AddRange(raw
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(value => long.TryParse(value.Trim(), out var id) ? id : 0)
+                        .Where(id => id > 0));
+                }
+
+                s.ChatIds = parsed.Distinct().ToList();
             });
 
             services.AddSingleton<IConnectionMultiplexer>(_ =>
@@ -108,6 +127,7 @@ try
             services.AddSingleton<IFactRepository, FactRepository>();
             services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
             services.AddSingleton<ISummaryRepository, SummaryRepository>();
+            services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -138,22 +158,26 @@ try
             services.AddHttpClient<Neo4jSyncWorkerService>();
             services.AddSingleton<ExtractionSchemaValidator>();
             services.AddSingleton<MessageContentBuilder>();
+            services.AddSingleton<AnalysisContextBuilder>();
             services.AddSingleton<ExtractionApplier>();
             services.AddSingleton<ExpensivePassResolver>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
 
             services.AddHostedService<TelegramListenerService>();
+            services.AddHostedService<HistoryBackfillService>();
             services.AddHostedService<BatchWorkerService>();
             services.AddHostedService<ArchiveImportWorkerService>();
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
             services.AddHostedService<EntityEmbeddingWorkerService>();
+            services.AddHostedService<FactEmbeddingBackfillWorkerService>();
             services.AddHostedService<Neo4jSyncWorkerService>();
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
             services.AddHostedService<FactReviewCommandWorkerService>();
+            services.AddHostedService<DialogSummaryWorkerService>();
             services.AddHostedService<Stage5MetricsWorkerService>();
             services.AddHostedService<MaintenanceWorkerService>();
         });

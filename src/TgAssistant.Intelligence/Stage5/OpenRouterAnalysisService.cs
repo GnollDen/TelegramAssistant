@@ -1,10 +1,12 @@
 using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.OpenRouter;
 
 namespace TgAssistant.Intelligence.Stage5;
@@ -34,21 +36,102 @@ public class OpenRouterAnalysisService
     public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
     {
         var user = MessageContentBuilder.BuildCheapBatchPrompt(batch);
-        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000), 0.0f);
+        var req = BuildRequest(
+            model,
+            systemPrompt,
+            user,
+            NormalizeMaxTokens(_analysis.CheapMaxTokens, 300, 8000),
+            0.0f,
+            phase: "cheap");
         var json = await SendAndExtractJsonAsync(req, "cheap", ct);
         return ParseBatch(json);
     }
 
-    public async Task<ExtractionItem?> ResolveExpensiveAsync(string model, string systemPrompt, ExtractionItem candidate, List<string> currentFacts, string messageText, CancellationToken ct)
+    public async Task<bool> ProbeCheapAvailabilityAsync(CancellationToken ct)
     {
-        var user = JsonSerializer.Serialize(new { message_text = messageText, candidate, current_facts = currentFacts }, JsonOptions);
-        var req = BuildRequest(model, systemPrompt, user, NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000), 0.0f);
+        var model = string.IsNullOrWhiteSpace(_analysis.CheapModel)
+            ? "openai/gpt-4o-mini"
+            : _analysis.CheapModel.Trim();
+        var req = BuildRequest(
+            model,
+            "Return only valid JSON object: {\"items\":[]}",
+            "ping",
+            32,
+            0.0f,
+            phase: "cheap");
+
+        try
+        {
+            var json = await SendAndExtractJsonAsync(req, "cheap_probe", ct);
+            return !string.IsNullOrWhiteSpace(json);
+        }
+        catch (OpenRouterBalanceException)
+        {
+            return false;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
+    public async Task<ExtractionItem?> ResolveExpensiveAsync(
+        string model,
+        string systemPrompt,
+        ExtractionItem candidate,
+        List<string> currentFacts,
+        string messageText,
+        AnalysisMessageContext? context,
+        CancellationToken ct)
+    {
+        var user = JsonSerializer.Serialize(
+            new
+            {
+                message_text = messageText,
+                context = new
+                {
+                    local_burst = context?.LocalBurst ?? [],
+                    session_start = context?.SessionStart ?? [],
+                    historical = context?.HistoricalSummaries ?? []
+                },
+                candidate,
+                current_facts = currentFacts
+            },
+            JsonOptions);
+        var req = BuildRequest(
+            model,
+            systemPrompt,
+            user,
+            NormalizeMaxTokens(_analysis.ExpensiveMaxTokens, 500, 12000),
+            0.0f,
+            phase: "expensive");
         var json = await SendAndExtractJsonAsync(req, "expensive", ct);
         var parsed = ParseBatch(json);
         return parsed.Items.FirstOrDefault();
     }
 
-    private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature)
+    public async Task<string> SummarizeDialogAsync(
+        string model,
+        string systemPrompt,
+        long chatId,
+        string scope,
+        DateTime periodStart,
+        DateTime periodEnd,
+        List<Message> messages,
+        CancellationToken ct)
+    {
+        var user = MessageContentBuilder.BuildSummaryPrompt(chatId, scope, periodStart, periodEnd, messages);
+        var req = BuildRequest(
+            model,
+            systemPrompt,
+            user,
+            NormalizeMaxTokens(_analysis.SummaryMaxTokens, 256, 8000),
+            0.0f,
+            phase: "summary");
+        return await SendAndExtractJsonAsync(req, "summary", ct);
+    }
+
+    private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature, string phase)
     {
         return new OpenRouterRequest
         {
@@ -59,8 +142,39 @@ public class OpenRouterAnalysisService
                 new OpenRouterMessage { Role = "user", Content = userPrompt }
             ],
             ResponseFormat = new OpenRouterResponseFormat { Type = "json_object" },
+            Provider = BuildProviderPreferences(phase),
             MaxTokens = maxTokens,
             Temperature = temperature
+        };
+    }
+
+    private OpenRouterProviderPreferences? BuildProviderPreferences(string phase)
+    {
+        if (!string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(_analysis.CheapProviderOrder))
+        {
+            return null;
+        }
+
+        var order = _analysis.CheapProviderOrder
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (order.Count == 0)
+        {
+            return null;
+        }
+
+        return new OpenRouterProviderPreferences
+        {
+            Order = order,
+            AllowFallbacks = _analysis.CheapProviderAllowFallbacks
         };
     }
 
@@ -70,6 +184,11 @@ public class OpenRouterAnalysisService
         var body = await res.Content.ReadAsStringAsync(ct);
         if (!res.IsSuccessStatusCode)
         {
+            if (IsBalanceOrQuotaIssue(res.StatusCode, body))
+            {
+                throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
+            }
+
             throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
         }
 
@@ -78,11 +197,35 @@ public class OpenRouterAnalysisService
         var content = parsed?.Choices?.FirstOrDefault()?.Message?.Content;
         if (string.IsNullOrWhiteSpace(content))
         {
-            return "{\"items\":[]}";
+            return phase == "summary" ? "{\"summary\":\"\"}" : "{\"items\":[]}";
         }
 
         _logger.LogDebug("Analysis model response ({Model}) len={Len}", request.Model, content.Length);
         return content;
+    }
+
+    private static bool IsBalanceOrQuotaIssue(HttpStatusCode statusCode, string body)
+    {
+        if (statusCode == HttpStatusCode.PaymentRequired)
+        {
+            return true;
+        }
+
+        if (statusCode is not (HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest))
+        {
+            return false;
+        }
+
+        var text = body?.ToLowerInvariant() ?? string.Empty;
+        return text.Contains("insufficient", StringComparison.Ordinal)
+               || text.Contains("credit", StringComparison.Ordinal)
+               || text.Contains("quota", StringComparison.Ordinal)
+               || text.Contains("balance", StringComparison.Ordinal)
+               || text.Contains("billing", StringComparison.Ordinal)
+               || text.Contains("payment", StringComparison.Ordinal)
+               || text.Contains("funds", StringComparison.Ordinal)
+               || text.Contains("exhausted", StringComparison.Ordinal)
+               || text.Contains("limit reached", StringComparison.Ordinal);
     }
 
     private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)

@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -14,8 +13,6 @@ namespace TgAssistant.Processing.Archive;
 public class ArchiveImportWorkerService : BackgroundService
 {
     private const string ExportPlaceholderMarker = "(File exceeds maximum size.";
-    private const int JsonReadBufferSize = 64 * 1024;
-
     private readonly ArchiveImportSettings _settings;
     private readonly MediaSettings _mediaSettings;
     private readonly IMessageRepository _messageRepository;
@@ -233,153 +230,46 @@ public class ArchiveImportWorkerService : BackgroundService
         CancellationToken ct)
     {
         await using var stream = File.OpenRead(archiveJsonPath);
-        var buffer = ArrayPool<byte>.Shared.Rent(JsonReadBufferSize);
-        var state = new JsonReaderState(new JsonReaderOptions
+        using var document = await JsonDocument.ParseAsync(stream, new JsonDocumentOptions
         {
             AllowTrailingCommas = true,
             CommentHandling = JsonCommentHandling.Skip
-        });
+        }, ct);
 
-        var bufferedBytes = 0;
-        var isFinalBlock = false;
-        var inMessagesArray = false;
-        var messagesArrayDepth = -1;
-        var messageIndex = -1;
-        var chatName = "Unknown chat";
+        var root = document.RootElement;
+        var chatName = root.TryGetProperty("name", out var nameNode) && nameNode.ValueKind == JsonValueKind.String
+            ? nameNode.GetString() ?? "Unknown chat"
+            : "Unknown chat";
         var chatId = 0L;
-
-        try
+        if (root.TryGetProperty("id", out var idNode))
         {
-            while (!isFinalBlock)
+            if (idNode.ValueKind == JsonValueKind.Number && idNode.TryGetInt64(out var idAsNumber))
             {
-                if (bufferedBytes == buffer.Length)
-                {
-                    var larger = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
-                    Buffer.BlockCopy(buffer, 0, larger, 0, bufferedBytes);
-                    ArrayPool<byte>.Shared.Return(buffer);
-                    buffer = larger;
-                }
-
-                var bytesRead = await stream.ReadAsync(buffer.AsMemory(bufferedBytes), ct);
-                isFinalBlock = bytesRead == 0;
-
-                var dataLength = bufferedBytes + bytesRead;
-                var reader = new Utf8JsonReader(
-                    new ReadOnlySpan<byte>(buffer, 0, dataLength),
-                    isFinalBlock,
-                    state);
-                var parsedBatch = new List<ArchiveMessageRecord>();
-
-                while (reader.Read())
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    if (inMessagesArray)
-                    {
-                        if (reader.TokenType == JsonTokenType.EndArray && reader.CurrentDepth == messagesArrayDepth)
-                        {
-                            inMessagesArray = false;
-                            continue;
-                        }
-
-                        if (reader.CurrentDepth == messagesArrayDepth + 1)
-                        {
-                            messageIndex++;
-                            using var valueDoc = JsonDocument.ParseValue(ref reader);
-                            if (valueDoc.RootElement.ValueKind == JsonValueKind.Object
-                                && TryParseMessageRecord(valueDoc.RootElement, messageIndex, chatId, out var item))
-                            {
-                                parsedBatch.Add(item);
-                            }
-                        }
-
-                        continue;
-                    }
-
-                    if (reader.TokenType != JsonTokenType.PropertyName)
-                    {
-                        continue;
-                    }
-
-                    var propertyName = reader.GetString();
-                    if (string.Equals(propertyName, "name", StringComparison.Ordinal))
-                    {
-                        if (!reader.Read())
-                        {
-                            break;
-                        }
-
-                        if (reader.TokenType == JsonTokenType.String)
-                        {
-                            chatName = reader.GetString() ?? "Unknown chat";
-                        }
-                        else if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
-                        {
-                            using var _ = JsonDocument.ParseValue(ref reader);
-                        }
-                    }
-                    else if (string.Equals(propertyName, "id", StringComparison.Ordinal))
-                    {
-                        if (!reader.Read())
-                        {
-                            break;
-                        }
-
-                        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var idAsNumber))
-                        {
-                            chatId = idAsNumber;
-                        }
-                        else if (reader.TokenType == JsonTokenType.String)
-                        {
-                            var raw = reader.GetString();
-                            if (long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idAsString))
-                            {
-                                chatId = idAsString;
-                            }
-                        }
-                        else if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
-                        {
-                            using var _ = JsonDocument.ParseValue(ref reader);
-                        }
-                    }
-                    else if (string.Equals(propertyName, "messages", StringComparison.Ordinal))
-                    {
-                        if (!reader.Read())
-                        {
-                            break;
-                        }
-
-                        if (reader.TokenType == JsonTokenType.StartArray)
-                        {
-                            inMessagesArray = true;
-                            messagesArrayDepth = reader.CurrentDepth;
-                        }
-                        else if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
-                        {
-                            using var _ = JsonDocument.ParseValue(ref reader);
-                        }
-                    }
-                }
-
-                var consumed = (int)reader.BytesConsumed;
-                var remaining = dataLength - consumed;
-                if (remaining > 0)
-                {
-                    Buffer.BlockCopy(buffer, consumed, buffer, 0, remaining);
-                }
-
-                bufferedBytes = remaining;
-                state = reader.CurrentState;
-
-                foreach (var item in parsedBatch)
-                {
-                    await onMessage(item, ct);
-                }
+                chatId = idAsNumber;
+            }
+            else if (idNode.ValueKind == JsonValueKind.String
+                     && long.TryParse(idNode.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var idAsString))
+            {
+                chatId = idAsString;
             }
         }
-        finally
+
+        if (!root.TryGetProperty("messages", out var messagesNode) || messagesNode.ValueKind != JsonValueKind.Array)
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            return (chatName, chatId);
+        }
+
+        var messageIndex = -1;
+        foreach (var node in messagesNode.EnumerateArray())
+        {
+            ct.ThrowIfCancellationRequested();
+            messageIndex++;
+
+            if (node.ValueKind == JsonValueKind.Object
+                && TryParseMessageRecord(node, messageIndex, chatId, out var item))
+            {
+                await onMessage(item, ct);
+            }
         }
 
         return (chatName, chatId);

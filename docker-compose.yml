@@ -37,6 +37,10 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost,api.nuget.org,nuget.org,globalcdn.nuget.org}
     container_name: tga-app
     restart: unless-stopped
     depends_on:
@@ -82,17 +86,26 @@ services:
       ArchiveImport__RequestsPerMinute: ${ARCHIVE_IMPORT_RPM:-300}
       ArchiveImport__PollIntervalSeconds: ${ARCHIVE_IMPORT_POLL_INTERVAL_SECONDS:-5}
       ArchiveImport__MaxMediaFileSizeMb: ${ARCHIVE_IMPORT_MAX_MEDIA_SIZE_MB:-50}
+      Backfill__Enabled: ${BACKFILL_ENABLED:-false}
+      Backfill__SinceDate: ${BACKFILL_SINCE_DATE:-2026-03-07}
+      Backfill__ChatIds: ${BACKFILL_CHAT_IDS:-}
       Analysis__Enabled: ${ANALYSIS_ENABLED:-false}
-      Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-deepseek/deepseek-chat}
+      Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-deepseek/deepseek-v3.2}
       Analysis__CheapModelAbEnabled: ${ANALYSIS_CHEAP_MODEL_AB_ENABLED:-false}
       Analysis__CheapBaselineModel: ${ANALYSIS_CHEAP_BASELINE_MODEL:-openai/gpt-4o-mini}
-      Analysis__CheapCandidateModel: ${ANALYSIS_CHEAP_CANDIDATE_MODEL:-deepseek/deepseek-chat}
+      Analysis__CheapCandidateModel: ${ANALYSIS_CHEAP_CANDIDATE_MODEL:-deepseek/deepseek-v3.2}
       Analysis__CheapAbCandidatePercent: ${ANALYSIS_CHEAP_AB_CANDIDATE_PERCENT:-50}
       Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-anthropic/claude-3.5-sonnet}
       Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o}
       Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-8}
+      Analysis__CheapBatchWorkers: ${ANALYSIS_CHEAP_BATCH_WORKERS:-1}
+      Analysis__CheapLlmParallelism: ${ANALYSIS_CHEAP_LLM_PARALLELISM:-4}
+      Analysis__CheapMaxTokens: ${ANALYSIS_CHEAP_MAX_TOKENS:-2000}
+      Analysis__CheapProviderOrder: ${ANALYSIS_CHEAP_PROVIDER_ORDER:-}
+      Analysis__CheapProviderAllowFallbacks: ${ANALYSIS_CHEAP_PROVIDER_ALLOW_FALLBACKS:-true}
       Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-5}
       Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
+      Analysis__ExpensiveDailyBudgetUsd: ${ANALYSIS_EXPENSIVE_DAILY_BUDGET_USD:-0.15}
       Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}
       Analysis__ExpensiveCooldownMinutes: ${ANALYSIS_EXPENSIVE_COOLDOWN_MINUTES:-10}
       Analysis__ExpensiveContextMaxFacts: ${ANALYSIS_EXPENSIVE_CONTEXT_MAX_FACTS:-60}
@@ -102,6 +115,21 @@ services:
       Analysis__MinSensitiveFactConfidence: ${ANALYSIS_MIN_SENSITIVE_FACT_CONFIDENCE:-0.75}
       Analysis__MinRelationshipConfidence: ${ANALYSIS_MIN_RELATIONSHIP_CONFIDENCE:-0.6}
       Analysis__TemporalFactSupersedeTtlHours: ${ANALYSIS_TEMPORAL_FACT_SUPERSEDE_TTL_HOURS:-12}
+      Analysis__LocalBurstContextMessages: ${ANALYSIS_LOCAL_BURST_CONTEXT_MESSAGES:-6}
+      Analysis__LocalBurstContextWindowMinutes: ${ANALYSIS_LOCAL_BURST_CONTEXT_WINDOW_MINUTES:-120}
+      Analysis__SessionContextLookbackMessages: ${ANALYSIS_SESSION_CONTEXT_LOOKBACK_MESSAGES:-80}
+      Analysis__SessionContextGapMinutes: ${ANALYSIS_SESSION_CONTEXT_GAP_MINUTES:-180}
+      Analysis__SessionStartContextMessages: ${ANALYSIS_SESSION_START_CONTEXT_MESSAGES:-4}
+      Analysis__HistoricalSummaryContextItems: ${ANALYSIS_HISTORICAL_SUMMARY_CONTEXT_ITEMS:-6}
+      Analysis__SummaryEnabled: ${ANALYSIS_SUMMARY_ENABLED:-true}
+      Analysis__SummaryModel: ${ANALYSIS_SUMMARY_MODEL:-openai/gpt-4o-mini}
+      Analysis__SummaryPollIntervalSeconds: ${ANALYSIS_SUMMARY_POLL_INTERVAL_SECONDS:-30}
+      Analysis__SummaryBatchSize: ${ANALYSIS_SUMMARY_BATCH_SIZE:-100}
+      Analysis__SummaryDayMaxMessages: ${ANALYSIS_SUMMARY_DAY_MAX_MESSAGES:-500}
+      Analysis__SummarySessionMaxMessages: ${ANALYSIS_SUMMARY_SESSION_MAX_MESSAGES:-120}
+      Analysis__SummarySessionGapMinutes: ${ANALYSIS_SUMMARY_SESSION_GAP_MINUTES:-180}
+      Analysis__SummaryMinMessages: ${ANALYSIS_SUMMARY_MIN_MESSAGES:-4}
+      Analysis__SummaryMaxTokens: ${ANALYSIS_SUMMARY_MAX_TOKENS:-800}
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}
@@ -112,6 +140,7 @@ services:
       Monitoring__Enabled: ${MONITORING_ENABLED:-true}
       Monitoring__PollIntervalSeconds: ${MONITORING_POLL_INTERVAL_SECONDS:-60}
       Maintenance__Enabled: ${MAINTENANCE_ENABLED:-true}
+      Maintenance__FactDecayEnabled: ${MAINTENANCE_FACT_DECAY_ENABLED:-true}
       Maintenance__PollIntervalMinutes: ${MAINTENANCE_POLL_INTERVAL_MINUTES:-60}
       Maintenance__ExtractionErrorsRetentionDays: ${MAINTENANCE_EXTRACTION_ERRORS_RETENTION_DAYS:-14}
       Maintenance__Stage5MetricsRetentionDays: ${MAINTENANCE_STAGE5_METRICS_RETENTION_DAYS:-30}
@@ -131,6 +160,7 @@ services:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data
       - /opt/tgassistant/logs:/app/logs
+      - /home/codex/projects/TelegramAssistant/archive:/data/archive
     network_mode: "host"
 
   postgres-exporter:

@@ -18,6 +18,25 @@ public class MaintenanceRepository : IMaintenanceRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var result = new MaintenanceCleanupResult();
 
+        if (request.FactDecayEnabled)
+        {
+            var instantCutoff = DateTime.UtcNow.AddHours(-24);
+            var fastCutoff = DateTime.UtcNow.AddDays(-30);
+            var slowCutoff = DateTime.UtcNow.AddDays(-730);
+            result.FactsExpired = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE facts
+                   SET is_current = FALSE,
+                       valid_until = NOW(),
+                       updated_at = NOW()
+                 WHERE is_current = TRUE
+                   AND (
+                        (decay_class = 'instant' AND updated_at < {instantCutoff})
+                     OR (decay_class = 'fast' AND updated_at < {fastCutoff})
+                     OR (decay_class = 'slow' AND updated_at < {slowCutoff})
+                   )
+                """, ct);
+        }
+
         var factReviewPendingCutoff = DateTime.UtcNow.AddDays(-Math.Max(1, request.FactReviewPendingTimeoutDays));
         result.FactReviewCommandsTimedOut = await db.Database.ExecuteSqlInterpolatedAsync($"""
             UPDATE fact_review_commands
