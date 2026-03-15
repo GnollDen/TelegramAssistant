@@ -8,6 +8,8 @@ public interface IMessageRepository
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
@@ -16,6 +18,7 @@ public interface IMessageRepository
         IReadOnlyCollection<long> telegramMessageIds,
         CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
+    Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
     Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default);
@@ -85,6 +88,8 @@ public interface IFactRepository
     Task<Fact?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Fact> UpsertAsync(Fact fact, CancellationToken ct = default);
     Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default);
+    Task<List<Fact>> GetWithoutEmbeddingAsync(string model, int limit, CancellationToken ct = default);
+    Task<long> CountWithoutEmbeddingAsync(string model, CancellationToken ct = default);
     Task SupersedeFactAsync(Guid oldFactId, Fact newFact, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default);
 }
@@ -93,6 +98,12 @@ public interface ISummaryRepository
 {
     Task SaveAsync(DailySummary summary, CancellationToken ct = default);
     Task<List<DailySummary>> GetByEntityAsync(Guid entityId, DateOnly from, DateOnly to, CancellationToken ct = default);
+}
+
+public interface IChatDialogSummaryRepository
+{
+    Task UpsertAsync(ChatDialogSummary summary, CancellationToken ct = default);
+    Task<List<ChatDialogSummary>> GetRecentByChatAsync(long chatId, int limit, CancellationToken ct = default);
 }
 
 public interface IPromptTemplateRepository
@@ -127,6 +138,7 @@ public interface IIntelligenceRepository
         IReadOnlyCollection<IntelligenceObservation> observations,
         IReadOnlyCollection<IntelligenceClaim> claims,
         CancellationToken ct = default);
+    Task<List<IntelligenceClaim>> GetClaimsByMessageAsync(long messageId, CancellationToken ct = default);
 }
 
 public interface IExtractionErrorRepository
@@ -247,6 +259,7 @@ public class MaintenanceCleanupRequest
     public int MergeDecisionsRetentionDays { get; set; }
     public int FactReviewCommandsRetentionDays { get; set; }
     public int FactReviewPendingTimeoutDays { get; set; }
+    public bool FactDecayEnabled { get; set; } = true;
 }
 
 public class MaintenanceCleanupResult
@@ -256,6 +269,7 @@ public class MaintenanceCleanupResult
     public int MergeDecisionsDeleted { get; set; }
     public int FactReviewCommandsDeleted { get; set; }
     public int FactReviewCommandsTimedOut { get; set; }
+    public int FactsExpired { get; set; }
 }
 
 public class FactReviewCommand

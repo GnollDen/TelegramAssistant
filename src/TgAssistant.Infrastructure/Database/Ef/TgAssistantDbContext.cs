@@ -20,6 +20,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbRelationship> Relationships => Set<DbRelationship>();
     public DbSet<DbCommunicationEvent> CommunicationEvents => Set<DbCommunicationEvent>();
     public DbSet<DbDailySummary> DailySummaries => Set<DbDailySummary>();
+    public DbSet<DbChatDialogSummary> ChatDialogSummaries => Set<DbChatDialogSummary>();
     public DbSet<DbPromptTemplate> PromptTemplates => Set<DbPromptTemplate>();
     public DbSet<DbAnalysisState> AnalysisStates => Set<DbAnalysisState>();
     public DbSet<DbMessageExtraction> MessageExtractions => Set<DbMessageExtraction>();
@@ -110,8 +111,10 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.ValidFrom).HasColumnName("valid_from");
             e.Property(x => x.ValidUntil).HasColumnName("valid_until");
             e.Property(x => x.IsCurrent).HasColumnName("is_current");
+            e.Property(x => x.DecayClass).HasColumnName("decay_class");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.DecayClass, x.IsCurrent });
         });
 
         modelBuilder.Entity<DbEntityAlias>(e =>
@@ -242,6 +245,25 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.MessageCount).HasColumnName("message_count");
             e.Property(x => x.MediaCount).HasColumnName("media_count");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        modelBuilder.Entity<DbChatDialogSummary>(e =>
+        {
+            e.ToTable("chat_dialog_summaries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.SummaryType).HasColumnName("summary_type");
+            e.Property(x => x.PeriodStart).HasColumnName("period_start");
+            e.Property(x => x.PeriodEnd).HasColumnName("period_end");
+            e.Property(x => x.StartMessageId).HasColumnName("start_message_id");
+            e.Property(x => x.EndMessageId).HasColumnName("end_message_id");
+            e.Property(x => x.MessageCount).HasColumnName("message_count");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ChatId, x.SummaryType, x.PeriodStart, x.PeriodEnd }).IsUnique();
+            e.HasIndex(x => new { x.ChatId, x.UpdatedAt });
         });
 
         modelBuilder.Entity<DbPromptTemplate>(e =>

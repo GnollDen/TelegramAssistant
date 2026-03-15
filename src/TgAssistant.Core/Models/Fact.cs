@@ -13,6 +13,7 @@ public class Fact
     public DateTime? ValidFrom { get; set; }
     public DateTime? ValidUntil { get; set; }
     public bool IsCurrent { get; set; } = true;
+    public string DecayClass { get; set; } = "slow";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

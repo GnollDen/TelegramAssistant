@@ -5,8 +5,15 @@ public class OpenRouterRequest
     public string Model { get; set; } = string.Empty;
     public List<OpenRouterMessage> Messages { get; set; } = new();
     public OpenRouterResponseFormat? ResponseFormat { get; set; }
+    public OpenRouterProviderPreferences? Provider { get; set; }
     public int? MaxTokens { get; set; }
     public float? Temperature { get; set; }
+}
+
+public class OpenRouterProviderPreferences
+{
+    public List<string>? Order { get; set; }
+    public bool? AllowFallbacks { get; set; }
 }
 
 public class OpenRouterMessage

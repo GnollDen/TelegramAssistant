@@ -9,6 +9,7 @@ obj/
 appsettings.Development.json
 appsettings.Production.json
 data/telegram.session
+/archive
 logs/
 /data/media/
 .DS_Store

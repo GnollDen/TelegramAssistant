@@ -15,7 +15,7 @@ public class MessageContentBuilder
     /// <summary>
     /// Builds LLM-ready message content with metadata and optional reply context.
     /// </summary>
-    public static string BuildMessageText(Message message, Message? replyTo)
+    public static string BuildMessageText(Message message, Message? replyTo, AnalysisMessageContext? context = null)
     {
         var parts = new List<string>();
         parts.Add(
@@ -42,6 +42,44 @@ public class MessageContentBuilder
         if (!string.IsNullOrWhiteSpace(message.MediaTranscription)) parts.Add($"[media_transcription] {message.MediaTranscription}");
         if (!string.IsNullOrWhiteSpace(message.MediaDescription)) parts.Add($"[media_description] {message.MediaDescription}");
         if (!string.IsNullOrWhiteSpace(message.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {message.MediaParalinguisticsJson}");
+        var contextBlock = BuildContextBlock(context);
+        if (!string.IsNullOrWhiteSpace(contextBlock))
+        {
+            parts.Add(contextBlock);
+        }
+
+        return string.Join("\n", parts);
+    }
+
+    /// <summary>
+    /// Builds explicit three-layer context block for extraction prompts.
+    /// </summary>
+    public static string BuildContextBlock(AnalysisMessageContext? context)
+    {
+        if (context == null)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        if (context.LocalBurst.Count > 0)
+        {
+            parts.Add("[local_burst_context]");
+            parts.AddRange(context.LocalBurst);
+        }
+
+        if (context.SessionStart.Count > 0)
+        {
+            parts.Add("[session_start_context]");
+            parts.AddRange(context.SessionStart);
+        }
+
+        if (context.HistoricalSummaries.Count > 0)
+        {
+            parts.Add("[historical_context]");
+            parts.AddRange(context.HistoricalSummaries);
+        }
+
         return string.Join("\n", parts);
     }
 
@@ -57,6 +95,30 @@ public class MessageContentBuilder
             sb.AppendLine($"<message id=\"{msg.MessageId}\" sender_name=\"{msg.SenderName}\" ts=\"{msg.Timestamp:O}\">");
             sb.AppendLine(msg.Text);
             sb.AppendLine("</message>");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds prompt input for dialogue summarization.
+    /// </summary>
+    public static string BuildSummaryPrompt(long chatId, string scope, DateTime periodStart, DateTime periodEnd, List<Message> messages)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[summary_meta] chat_id={chatId} scope={scope} period_start={periodStart:O} period_end={periodEnd:O} message_count={messages.Count}");
+        sb.AppendLine("Messages:");
+        foreach (var message in messages.OrderBy(x => x.Id))
+        {
+            var sender = string.IsNullOrWhiteSpace(message.SenderName) ? $"user:{message.SenderId}" : message.SenderName.Trim();
+            var text = BuildSemanticContent(message);
+            var compact = TruncateForContext(text, 280);
+            if (string.IsNullOrWhiteSpace(compact))
+            {
+                continue;
+            }
+
+            sb.AppendLine($"- [{message.Timestamp:yyyy-MM-dd HH:mm}] {sender}: {compact}");
         }
 
         return sb.ToString();

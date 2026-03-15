@@ -34,6 +34,7 @@ public class FactRepository : IFactRepository
                     ValidFrom = fact.ValidFrom ?? DateTime.UtcNow,
                     ValidUntil = fact.ValidUntil,
                     IsCurrent = fact.IsCurrent,
+                    DecayClass = NormalizeDecayClass(fact.DecayClass),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -45,6 +46,7 @@ public class FactRepository : IFactRepository
             existing.Confidence = Math.Max(existing.Confidence, fact.Confidence);
             existing.Status = (short)fact.Status;
             existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
+            existing.DecayClass = NormalizeDecayClass(fact.DecayClass);
             existing.UpdatedAt = DateTime.UtcNow;
 
             await db.SaveChangesAsync(ct);
@@ -67,6 +69,51 @@ public class FactRepository : IFactRepository
         {
             var rows = await db.Facts.AsNoTracking().Where(x => x.EntityId == entityId && x.IsCurrent).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
+    public async Task<List<Fact>> GetWithoutEmbeddingAsync(string model, int limit, CancellationToken ct = default)
+    {
+        var normalizedModel = (model ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedModel))
+        {
+            return new List<Fact>();
+        }
+
+        var safeLimit = Math.Max(1, limit);
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await db.Facts
+                .AsNoTracking()
+                .Where(f => !db.TextEmbeddings.Any(e =>
+                    e.OwnerType == "fact" &&
+                    e.OwnerId == f.Id.ToString() &&
+                    e.Model == normalizedModel))
+                .OrderBy(f => f.CreatedAt)
+                .ThenBy(f => f.Id)
+                .Take(safeLimit)
+                .ToListAsync(ct);
+
+            return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
+    public async Task<long> CountWithoutEmbeddingAsync(string model, CancellationToken ct = default)
+    {
+        var normalizedModel = (model ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedModel))
+        {
+            return 0;
+        }
+
+        return await WithDbContextAsync(async db =>
+        {
+            return await db.Facts
+                .AsNoTracking()
+                .LongCountAsync(f => !db.TextEmbeddings.Any(e =>
+                    e.OwnerType == "fact" &&
+                    e.OwnerId == f.Id.ToString() &&
+                    e.Model == normalizedModel), ct);
         }, ct);
     }
 
@@ -94,6 +141,7 @@ public class FactRepository : IFactRepository
                 SourceMessageId = newFact.SourceMessageId,
                 ValidFrom = newFact.ValidFrom ?? DateTime.UtcNow,
                 IsCurrent = true,
+                DecayClass = NormalizeDecayClass(newFact.DecayClass),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
@@ -158,8 +206,16 @@ public class FactRepository : IFactRepository
             ValidFrom = row.ValidFrom,
             ValidUntil = row.ValidUntil,
             IsCurrent = row.IsCurrent,
+            DecayClass = row.DecayClass,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
+    }
+
+    private static string NormalizeDecayClass(string? decayClass)
+    {
+        return string.IsNullOrWhiteSpace(decayClass)
+            ? "slow"
+            : decayClass.Trim().ToLowerInvariant();
     }
 }

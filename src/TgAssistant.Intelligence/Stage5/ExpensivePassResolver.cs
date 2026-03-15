@@ -23,6 +23,7 @@ public class ExpensivePassResolver
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly ExtractionApplier _extractionApplier;
     private readonly MessageContentBuilder _messageContentBuilder;
+    private readonly AnalysisContextBuilder _contextBuilder;
     private readonly ILogger<ExpensivePassResolver> _logger;
     private readonly Dictionary<string, DateTimeOffset> _expensiveBlockedUntilByModel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _expensiveFailureStreakByModel = new(StringComparer.OrdinalIgnoreCase);
@@ -41,6 +42,7 @@ public class ExpensivePassResolver
         ITextEmbeddingGenerator embeddingGenerator,
         ExtractionApplier extractionApplier,
         MessageContentBuilder messageContentBuilder,
+        AnalysisContextBuilder contextBuilder,
         ILogger<ExpensivePassResolver> logger)
     {
         _settings = settings.Value;
@@ -56,6 +58,7 @@ public class ExpensivePassResolver
         _embeddingGenerator = embeddingGenerator;
         _extractionApplier = extractionApplier;
         _messageContentBuilder = messageContentBuilder;
+        _contextBuilder = contextBuilder;
         _logger = logger;
     }
 
@@ -107,13 +110,20 @@ public class ExpensivePassResolver
 
             var currentFacts = await GetCurrentFactStringsAsync(candidate, ct);
             var replyMessage = await _messageContentBuilder.LoadReplyMessageAsync(sourceMessage, ct);
+            AnalysisMessageContext? context = null;
+            if (sourceMessage != null)
+            {
+                var built = await _contextBuilder.BuildBatchContextsAsync([sourceMessage], ct);
+                context = built.GetValueOrDefault(sourceMessage.Id);
+            }
+
             var messageText = sourceMessage == null
                 ? string.Empty
-                : MessageContentBuilder.BuildMessageText(sourceMessage, replyMessage);
+                : MessageContentBuilder.BuildMessageText(sourceMessage, replyMessage, context);
 
             try
             {
-                var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, messageText, expensivePrompt, ct);
+                var resolved = await ResolveWithFallbackAsync(candidate, currentFacts, messageText, context, expensivePrompt, ct);
                 var effective = ExtractionRefiner.FinalizeResolvedExtraction(resolved ?? candidate);
                 effective = ExtractionRefiner.RefineExtractionForMessage(effective, sourceMessage, _settings);
                 effective.MessageId = row.MessageId;
@@ -195,6 +205,7 @@ public class ExpensivePassResolver
         ExtractionItem candidate,
         List<string> currentFacts,
         string messageText,
+        AnalysisMessageContext? context,
         string systemPrompt,
         CancellationToken ct)
     {
@@ -219,6 +230,7 @@ public class ExpensivePassResolver
                     candidate,
                     currentFacts,
                     messageText,
+                    context,
                     ct);
                 RegisterModelSuccess(model);
                 return resolved;

@@ -133,6 +133,7 @@ public class DbFact
     public DateTime? ValidFrom { get; set; }
     public DateTime? ValidUntil { get; set; }
     public bool IsCurrent { get; set; }
+    public string DecayClass { get; set; } = "slow";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -161,6 +162,21 @@ public class DbDailySummary
     public int MessageCount { get; set; }
     public int MediaCount { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public class DbChatDialogSummary
+{
+    public Guid Id { get; set; }
+    public long ChatId { get; set; }
+    public short SummaryType { get; set; }
+    public DateTime PeriodStart { get; set; }
+    public DateTime PeriodEnd { get; set; }
+    public long StartMessageId { get; set; }
+    public long EndMessageId { get; set; }
+    public int MessageCount { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }
 
 public class DbPromptTemplate
