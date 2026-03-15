@@ -13,6 +13,13 @@ public static class ExtractionRefiner
     private static readonly Regex AnyDigitRegex = new(@"\d", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex TimeTokenRegex = new(@"\b\d{1,2}(:\d{2})?\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex NumberTokenRegex = new(@"\b\d+\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Dictionary<string, string> CanonicalKeyMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["текущее_место"] = "текущее_местоположение",
+        ["текущее_местонахождение"] = "текущее_местоположение",
+        ["свободное_время_ограничения"] = "свободное_время",
+        ["shared_location_link"] = "shared_location"
+    };
 
     /// <summary>
     /// Normalizes generic actor placeholders using message sender context.
@@ -130,7 +137,7 @@ public static class ExtractionRefiner
                 EntityName = c.EntityName.Trim(),
                 ClaimType = string.IsNullOrWhiteSpace(c.ClaimType) ? "fact" : c.ClaimType.Trim(),
                 Category = string.IsNullOrWhiteSpace(c.Category) ? "general" : c.Category.Trim(),
-                Key = c.Key.Trim(),
+                Key = NormalizeCanonicalKey(c.Key),
                 Value = NormalizeClaimValue(c),
                 Evidence = string.IsNullOrWhiteSpace(c.Evidence) ? null : c.Evidence.Trim(),
                 Confidence = Clamp01(c.Confidence)
@@ -144,7 +151,7 @@ public static class ExtractionRefiner
             {
                 EntityName = f.EntityName.Trim(),
                 Category = string.IsNullOrWhiteSpace(f.Category) ? "general" : f.Category.Trim(),
-                Key = f.Key.Trim(),
+                Key = NormalizeCanonicalKey(f.Key),
                 Value = NormalizePlainValue(f.Value),
                 Confidence = Clamp01(f.Confidence)
             })
@@ -255,9 +262,9 @@ public static class ExtractionRefiner
         }
 
         var lowSignalEscalation = ShouldEscalateLowSignalExtraction(message, extracted);
-        if (lowSignalEscalation)
+        if (lowSignalEscalation && !extracted.RequiresExpensive)
         {
-            return true;
+            return false;
         }
 
         var hasLowConfidenceStructuredSignal =
@@ -813,6 +820,17 @@ public static class ExtractionRefiner
         }
 
         return key.Trim().Replace('_', ' ').Replace('-', ' ');
+    }
+
+    private static string NormalizeCanonicalKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return string.Empty;
+        }
+
+        var trimmedKey = key.Trim();
+        return CanonicalKeyMap.TryGetValue(trimmedKey, out var canonical) ? canonical : trimmedKey;
     }
 
     private static bool ShouldEscalateLowSignalExtraction(Message message, ExtractionItem extracted)

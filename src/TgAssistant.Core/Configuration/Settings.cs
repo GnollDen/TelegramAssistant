@@ -99,18 +99,30 @@ public class ArchiveImportSettings
     public int MaxMediaFileSizeMb { get; set; } = 50;
 }
 
+public class BackfillSettings
+{
+    public const string Section = "Backfill";
+    public bool Enabled { get; set; }
+    public string SinceDate { get; set; } = "2026-03-07";
+    public List<long> ChatIds { get; set; } = new();
+}
+
 public class AnalysisSettings
 {
     public const string Section = "Analysis";
     public bool Enabled { get; set; } = false;
-    public string CheapModel { get; set; } = "deepseek/deepseek-chat";
+    public string CheapModel { get; set; } = "deepseek/deepseek-v3.2";
     public bool CheapModelAbEnabled { get; set; } = false;
     public string CheapBaselineModel { get; set; } = "openai/gpt-4o-mini";
-    public string CheapCandidateModel { get; set; } = "deepseek/deepseek-chat";
+    public string CheapCandidateModel { get; set; } = "deepseek/deepseek-v3.2";
     public int CheapAbCandidatePercent { get; set; } = 50;
     public string ExpensiveModel { get; set; } = "anthropic/claude-3.5-sonnet";
     public string ExpensiveFallbackModel { get; set; } = "openai/gpt-4o";
     public int BatchSize { get; set; } = 8;
+    public int CheapBatchWorkers { get; set; } = 1;
+    public int CheapLlmParallelism { get; set; } = 4;
+    public string CheapProviderOrder { get; set; } = string.Empty;
+    public bool CheapProviderAllowFallbacks { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 10;
     public int MaxExpensivePerBatch { get; set; } = 10;
     public int FactReviewBatchSize { get; set; } = 100;
@@ -132,6 +144,21 @@ public class AnalysisSettings
     public float AutoConfirmFactConfidence { get; set; } = 0.95f;
     public float MinRelationshipConfidence { get; set; } = 0.6f;
     public int TemporalFactSupersedeTtlHours { get; set; } = 12;
+    public int LocalBurstContextMessages { get; set; } = 6;
+    public int LocalBurstContextWindowMinutes { get; set; } = 120;
+    public int SessionContextLookbackMessages { get; set; } = 80;
+    public int SessionContextGapMinutes { get; set; } = 180;
+    public int SessionStartContextMessages { get; set; } = 4;
+    public int HistoricalSummaryContextItems { get; set; } = 6;
+    public bool SummaryEnabled { get; set; } = true;
+    public string SummaryModel { get; set; } = "openai/gpt-4o-mini";
+    public int SummaryPollIntervalSeconds { get; set; } = 30;
+    public int SummaryBatchSize { get; set; } = 100;
+    public int SummaryDayMaxMessages { get; set; } = 500;
+    public int SummarySessionMaxMessages { get; set; } = 120;
+    public int SummarySessionGapMinutes { get; set; } = 180;
+    public int SummaryMinMessages { get; set; } = 4;
+    public int SummaryMaxTokens { get; set; } = 800;
 }
 
 public class MergeSettings
@@ -160,6 +187,7 @@ public class MaintenanceSettings
 {
     public const string Section = "Maintenance";
     public bool Enabled { get; set; } = true;
+    public bool FactDecayEnabled { get; set; } = true;
     public int PollIntervalMinutes { get; set; } = 60;
     public int ExtractionErrorsRetentionDays { get; set; } = 14;
     public int Stage5MetricsRetentionDays { get; set; } = 30;

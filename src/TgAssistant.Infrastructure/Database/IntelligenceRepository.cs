@@ -33,6 +33,18 @@ public class IntelligenceRepository : IIntelligenceRepository
         await tx.CommitAsync(ct);
     }
 
+    public async Task<List<IntelligenceClaim>> GetClaimsByMessageAsync(long messageId, CancellationToken ct = default)
+    {
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            return await GetClaimsByMessageInternalAsync(ambientDb, messageId, ct);
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await GetClaimsByMessageInternalAsync(db, messageId, ct);
+    }
+
     private static async Task ReplaceInternalAsync(
         TgAssistantDbContext db,
         long messageId,
@@ -82,5 +94,38 @@ public class IntelligenceRepository : IIntelligenceRepository
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<List<IntelligenceClaim>> GetClaimsByMessageInternalAsync(
+        TgAssistantDbContext db,
+        long messageId,
+        CancellationToken ct)
+    {
+        var rows = await db.IntelligenceClaims
+            .AsNoTracking()
+            .Where(x => x.MessageId == messageId)
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
+    private static IntelligenceClaim ToDomain(DbIntelligenceClaim row)
+    {
+        return new IntelligenceClaim
+        {
+            Id = row.Id,
+            MessageId = row.MessageId,
+            EntityId = row.EntityId,
+            EntityName = row.EntityName,
+            ClaimType = row.ClaimType,
+            Category = row.Category,
+            Key = row.Key,
+            Value = row.Value,
+            Evidence = row.Evidence,
+            Status = (ConfidenceStatus)row.Status,
+            Confidence = row.Confidence,
+            CreatedAt = row.CreatedAt
+        };
     }
 }

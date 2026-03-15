@@ -1,0 +1,212 @@
+Stage5 extraction algorithm (as-is snapshot)
+Timestamp (UTC): 2026-03-14
+
+Current runtime parameters (container env)
+- Analysis__Enabled=true
+- Analysis__BatchSize=24
+- Analysis__PollIntervalSeconds=5
+- Analysis__CheapModelAbEnabled=true
+- Analysis__CheapBaselineModel=openai/gpt-4o-mini
+- Analysis__CheapCandidateModel=deepseek/deepseek-chat
+- Analysis__CheapAbCandidatePercent=50
+- Analysis__ExpensiveModel=anthropic/claude-3.5-sonnet
+- Analysis__ExpensiveFallbackModel=openai/gpt-4o
+- Analysis__MaxExpensivePerBatch=10
+- Analysis__ExpensiveDailyBudgetUsd=0.15
+- Analysis__SummaryEnabled=true
+- Analysis__SummaryModel=openai/gpt-4o-mini
+
+------------------------------------------------------------
+1) Main loop order (AnalysisWorkerService)
+------------------------------------------------------------
+Each iteration executes in this order:
+1. Process expensive backlog first.
+2. Process messages marked needs_reanalysis.
+3. Process new messages by stage5 watermark (analysis_state key stage5:watermark).
+
+If no new messages:
+- sleep PollIntervalSeconds.
+
+After successful cheap batch:
+- watermark = max(message.id in batch).
+
+------------------------------------------------------------
+2) Input eligibility for cheap pass
+------------------------------------------------------------
+Messages are selected only if:
+- id > watermark
+- processing_status = Processed
+- media is ready:
+  - media_type == None OR
+  - media_description is not null OR
+  - media_transcription is not null
+
+Sort/order:
+- by id ascending
+- take BatchSize
+
+------------------------------------------------------------
+3) Context building for each message (AnalysisContextBuilder)
+------------------------------------------------------------
+For each message in cheap batch:
+1. local_burst_context
+   - previous messages in same chat within LocalBurstContextWindowMinutes
+   - take last LocalBurstContextMessages
+2. session_start_context
+   - look back up to SessionContextLookbackMessages
+   - split by gap SessionContextGapMinutes
+   - include first SessionStartContextMessages from current session
+3. historical_context
+   - read recent chat_dialog_summaries
+   - include last HistoricalSummaryContextItems before current message timestamp
+
+Additionally:
+- reply_context is loaded by reply_to_message_id in same chat/source.
+
+------------------------------------------------------------
+4) Prompt payload assembly (cheap pass)
+------------------------------------------------------------
+Per message payload contains:
+- [meta] (message ids, chat/sender ids, sender_name, ts, reply_to)
+- [reply_context] when found
+- current message text/media fields:
+  - text
+  - media_transcription
+  - media_description
+  - voice_paralinguistics (if present)
+- [local_burst_context]
+- [session_start_context]
+- [historical_context]
+
+Then messages are packed as:
+- <message id="..." sender_name="..." ts="..."> ... </message>
+
+------------------------------------------------------------
+5) Cheap model routing and LLM calls
+------------------------------------------------------------
+Routing:
+- if CheapModelAbEnabled=false: all -> CheapModel
+- if true:
+  - bucket = abs(message_id % 100)
+  - if bucket < CheapAbCandidatePercent -> candidate model
+  - else -> baseline model
+
+Execution:
+- grouped by selected model
+- chunked into MaxCheapLlmBatchSize=10
+- one OpenRouter call per chunk
+- response format required: json_object
+- parsed through schema validator to ExtractionBatchResult
+
+Failures:
+- chunk failure is logged (stage5_cheap_batch_model)
+- pipeline continues (message may end with empty extraction)
+
+------------------------------------------------------------
+6) Post-processing after cheap response
+------------------------------------------------------------
+For each message:
+1. if no extraction returned: start with empty ExtractionItem
+2. NormalizeExtractionForMessage:
+   - replace generic subject tokens (sender/me/i/etc.) with sender name
+3. SanitizeExtraction:
+   - trim, clamp confidence 0..1, drop malformed rows
+4. RefineExtractionForMessage:
+   - fallback promotions for:
+     - location from address/map-like lines
+     - contact share pattern (name + @handle)
+     - work assessment signals
+   - prune low-value/noise signals
+   - trim entities not referenced by claims/facts/relations/events/observations
+5. ValidateExtractionForMessage:
+   - strict shape/length/count constraints
+   - on failure -> extraction replaced by empty and logged (stage5_validation)
+6. Decide needs_expensive = ShouldRunExpensivePass(...)
+7. Upsert cheap_json into message_extractions
+8. if needs_expensive=false -> apply extraction immediately to domain tables
+
+------------------------------------------------------------
+7) Expensive pass resolver
+------------------------------------------------------------
+Backlog source:
+- message_extractions where needs_expensive=true
+- retry time reached (expensive_next_retry_at is null or <= now)
+- ordered by updated_at
+- limited by MaxExpensivePerBatch
+
+Guardrails:
+- stop if daily expensive budget reached (phase=expensive costs over last 24h)
+- stop if all expensive models in backoff/blocked state
+
+For each backlog row:
+1. deserialize cheap_json candidate
+2. recompute ShouldRunExpensivePass; if false -> finalize cheap candidate and resolve backlog row
+3. build expensive input:
+   - message_text (same payload format)
+   - context.local_burst/session_start/historical
+   - candidate
+   - current_facts context (embedding nearest facts if enabled, else recency-based facts)
+4. try models in order:
+   - ExpensiveModel
+   - ExpensiveFallbackModel (if different)
+   with fallback/backoff on timeout/403/402/etc.
+5. validate and refine final extraction
+6. apply to domain tables and resolve row (needs_expensive=false)
+
+On failures:
+- provider denied -> fallback to finalized cheap candidate and resolve
+- transient failure -> exponential retry scheduling
+- retries exhausted -> fallback to finalized cheap candidate and resolve
+
+------------------------------------------------------------
+8) Applying extraction to DB (ExtractionApplier)
+------------------------------------------------------------
+Transactional boundary: one DB transaction per message.
+
+Writes:
+1. Entities (upsert) with sender actor_key binding when entity == sender.
+2. Facts:
+   - confidence thresholds:
+     - sensitive categories -> MinSensitiveFactConfidence
+     - others -> MinFactConfidence
+   - conflict strategy:
+     - health/finance/relationship/legal -> parallel
+     - availability/schedule -> supersede only after TemporalFactSupersedeTtlHours, else parallel
+     - default -> supersede
+   - status:
+     - Tentative for sensitive or low confidence
+     - Confirmed if confidence >= AutoConfirmFactConfidence
+     - otherwise Inferred
+   - tentative facts enqueue auto review commands
+3. Relationships:
+   - only if confidence >= MinRelationshipConfidence
+4. Events -> communication_events
+5. Intelligence projections:
+   - intelligence_observations
+   - intelligence_claims
+   replace per message atomically
+
+Generic placeholder entities (sender/me/i/etc.) are skipped.
+
+------------------------------------------------------------
+9) Summary worker (separate, but affects extraction context)
+------------------------------------------------------------
+DialogSummaryWorkerService runs in parallel:
+- watermark key: stage5:summary_watermark
+- consumes processed messages in batches
+- generates:
+  - day summaries
+  - session summaries (split by SummarySessionGapMinutes)
+- stores into chat_dialog_summaries via upsert
+
+Summary payload is plain normalized message log:
+- summary_meta + message lines [timestamp] sender: semantic text
+
+These summaries are then used as historical_context in cheap/expensive extraction.
+
+------------------------------------------------------------
+10) Observed practical behavior
+------------------------------------------------------------
+- Expensive pass may be mostly disabled in practice by ExpensiveDailyBudgetUsd cap.
+- In that case quality depends almost entirely on cheap pass + deterministic refinement.
+- Summary worker can consume significant token budget if left enabled during large backfills.

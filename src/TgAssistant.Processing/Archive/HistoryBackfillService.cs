@@ -1,0 +1,559 @@
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
+using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
+using TL;
+using WTelegram;
+using TlMessage = TL.Message;
+
+namespace TgAssistant.Processing.Archive;
+
+/// <summary>
+/// One-shot backfill service that imports chat history from Telegram into the realtime queue.
+/// </summary>
+public class HistoryBackfillService : BackgroundService
+{
+    private const int HistoryBatchSize = 100;
+
+    private readonly BackfillSettings _settings;
+    private readonly TelegramSettings _telegramSettings;
+    private readonly MediaSettings _mediaSettings;
+    private readonly IMessageQueue _messageQueue;
+    private readonly IMessageRepository _messageRepository;
+    private readonly ILogger<HistoryBackfillService> _logger;
+
+    public HistoryBackfillService(
+        IOptions<BackfillSettings> settings,
+        IOptions<TelegramSettings> telegramSettings,
+        IOptions<MediaSettings> mediaSettings,
+        IMessageQueue messageQueue,
+        IMessageRepository messageRepository,
+        ILogger<HistoryBackfillService> logger)
+    {
+        _settings = settings.Value;
+        _telegramSettings = telegramSettings.Value;
+        _mediaSettings = mediaSettings.Value;
+        _messageQueue = messageQueue;
+        _messageRepository = messageRepository;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!_settings.Enabled)
+        {
+            _logger.LogInformation("History backfill is disabled");
+            return;
+        }
+
+        if (!TryParseSinceDate(_settings.SinceDate, out var sinceUtc))
+        {
+            _logger.LogWarning(
+                "Backfill since date '{SinceDate}' is invalid. Falling back to 2026-03-07",
+                _settings.SinceDate);
+            sinceUtc = new DateTime(2026, 3, 7, 0, 0, 0, DateTimeKind.Utc);
+        }
+
+        var targetChatIds = ResolveTargetChatIds();
+        if (targetChatIds.Count == 0)
+        {
+            _logger.LogWarning("History backfill enabled, but no target chats resolved");
+            return;
+        }
+
+        _logger.LogInformation(
+            "Starting history backfill from {SinceDate} for {ChatCount} chats: {ChatIds}",
+            sinceUtc,
+            targetChatIds.Count,
+            string.Join(", ", targetChatIds));
+
+        using var client = new Client(ConfigProvider);
+        var user = await client.LoginUserIfNeeded();
+        _logger.LogInformation("Backfill client logged in as {Name} (ID: {Id})", user.first_name, user.id);
+
+        var peerMap = await ResolvePeerMapAsync(client, targetChatIds, stoppingToken);
+
+        foreach (var chatId in targetChatIds)
+        {
+            if (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (!peerMap.TryGetValue(chatId, out var inputPeer))
+            {
+                _logger.LogWarning("Backfill skipped chat {ChatId}: cannot resolve InputPeer", chatId);
+                continue;
+            }
+
+            try
+            {
+                await BackfillChatAsync(client, chatId, inputPeer, sinceUtc, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("History backfill cancelled while processing chat {ChatId}", chatId);
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "History backfill failed for chat {ChatId}", chatId);
+            }
+        }
+
+        _logger.LogInformation(
+            "History backfill complete. Set Backfill__Enabled=false to disable one-shot backfill on next start");
+    }
+
+    private async Task<Dictionary<long, InputPeer>> ResolvePeerMapAsync(
+        Client client,
+        IReadOnlyCollection<long> targetChatIds,
+        CancellationToken ct)
+    {
+        var resolved = new Dictionary<long, InputPeer>();
+        var targetSet = targetChatIds.ToHashSet();
+        var dialogs = await client.Messages_GetAllDialogs();
+
+        foreach (var dialog in dialogs.Dialogs)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chatId = GetPeerId(dialog.Peer);
+            if (chatId <= 0 || !targetSet.Contains(chatId) || resolved.ContainsKey(chatId))
+            {
+                continue;
+            }
+
+            var userOrChat = dialogs.UserOrChat(dialog.Peer);
+            if (!TryToInputPeer(userOrChat, out var inputPeer))
+            {
+                _logger.LogWarning("Cannot convert dialog peer to InputPeer for chat {ChatId}", chatId);
+                continue;
+            }
+
+            resolved[chatId] = inputPeer;
+        }
+
+        return resolved;
+    }
+
+    private async Task BackfillChatAsync(
+        Client client,
+        long chatId,
+        InputPeer inputPeer,
+        DateTime sinceUtc,
+        CancellationToken ct)
+    {
+        var offsetId = 0;
+        var fetched = 0;
+        var enqueued = 0;
+        var skippedExisting = 0;
+        var skippedOld = 0;
+        var seenInRun = new HashSet<long>();
+
+        _logger.LogInformation("Backfill started for chat {ChatId}", chatId);
+
+        while (!ct.IsCancellationRequested)
+        {
+            var history = await client.Messages_GetHistory(
+                inputPeer,
+                offsetId,
+                DateTime.UtcNow,
+                0,
+                HistoryBatchSize,
+                0,
+                0,
+                0);
+
+            var pageMessages = history.Messages
+                .OfType<TlMessage>()
+                .Where(x => x.id > 0)
+                .ToList();
+
+            if (pageMessages.Count == 0)
+            {
+                break;
+            }
+
+            fetched += pageMessages.Count;
+            var oldestDateInPage = pageMessages.Min(x => EnsureUtc(x.date));
+            var inRange = pageMessages
+                .Where(x => EnsureUtc(x.date) >= sinceUtc)
+                .ToList();
+
+            skippedOld += pageMessages.Count - inRange.Count;
+
+            if (inRange.Count > 0)
+            {
+                var candidateIds = inRange
+                    .Select(x => (long)x.id)
+                    .Where(id => !seenInRun.Contains(id))
+                    .Distinct()
+                    .ToList();
+
+                var existing = await _messageRepository.GetByTelegramMessageIdsAsync(
+                    chatId,
+                    MessageSource.Realtime,
+                    candidateIds,
+                    ct);
+
+                foreach (var message in inRange
+                             .OrderBy(x => EnsureUtc(x.date))
+                             .ThenBy(x => x.id))
+                {
+                    var messageId = (long)message.id;
+                    if (!seenInRun.Add(messageId))
+                    {
+                        continue;
+                    }
+
+                    if (existing.ContainsKey(messageId))
+                    {
+                        skippedExisting++;
+                        continue;
+                    }
+
+                    var raw = await BuildRawMessageAsync(client, chatId, history, message, ct);
+                    await _messageQueue.EnqueueAsync(raw, ct);
+                    enqueued++;
+                }
+            }
+
+            var minMessageId = pageMessages.Min(x => x.id);
+            if (minMessageId <= 1)
+            {
+                break;
+            }
+
+            offsetId = minMessageId - 1;
+
+            if (oldestDateInPage < sinceUtc)
+            {
+                break;
+            }
+        }
+
+        _logger.LogInformation(
+            "Backfill finished for chat {ChatId}: fetched={Fetched}, enqueued={Enqueued}, skipped_existing={SkippedExisting}, skipped_old={SkippedOld}",
+            chatId,
+            fetched,
+            enqueued,
+            skippedExisting,
+            skippedOld);
+    }
+
+    private async Task<RawTelegramMessage> BuildRawMessageAsync(
+        Client client,
+        long chatId,
+        Messages_MessagesBase history,
+        TlMessage message,
+        CancellationToken ct)
+    {
+        var senderId = ResolveSenderId(message);
+        var senderName = ResolveSenderName(history, message.from_id);
+        var mediaType = DetectMediaType(message);
+        var mediaPath = mediaType == MediaType.None
+            ? null
+            : await DownloadMediaAsync(client, chatId, message, mediaType, ct);
+
+        return new RawTelegramMessage
+        {
+            MessageId = message.id,
+            ChatId = chatId,
+            SenderId = senderId,
+            SenderName = senderName,
+            Timestamp = EnsureUtc(message.date),
+            Text = message.message,
+            MediaType = mediaType,
+            MediaPath = mediaPath,
+            ReplyToMessageId = message.reply_to is MessageReplyHeader reply ? reply.reply_to_msg_id : null,
+            EditTimestamp = message.edit_date,
+            ReactionsJson = SerializeReactions(message),
+            ForwardJson = SerializeForward(message)
+        };
+    }
+
+    private async Task<string?> DownloadMediaAsync(
+        Client client,
+        long chatId,
+        TlMessage message,
+        MediaType mediaType,
+        CancellationToken ct)
+    {
+        try
+        {
+            var date = EnsureUtc(message.date).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var dir = Path.Combine(_mediaSettings.StoragePath, chatId.ToString(CultureInfo.InvariantCulture), date);
+            Directory.CreateDirectory(dir);
+
+            var ext = ResolveMediaExtension(mediaType);
+            var filePath = Path.Combine(dir, $"{message.id}{ext}");
+
+            if (File.Exists(filePath) && new FileInfo(filePath).Length > 0)
+            {
+                return filePath;
+            }
+
+            await using var fs = File.Create(filePath);
+            if (message.media is MessageMediaPhoto { photo: Photo photo })
+            {
+                await client.DownloadFileAsync(photo, fs);
+            }
+            else if (message.media is MessageMediaDocument { document: Document doc })
+            {
+                await client.DownloadFileAsync(doc, fs);
+            }
+            else
+            {
+                return null;
+            }
+
+            return filePath;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Backfill media download failed for chat {ChatId}, message {MessageId}", chatId, message.id);
+            return null;
+        }
+    }
+
+    private static string ResolveMediaExtension(MediaType mediaType)
+    {
+        return mediaType switch
+        {
+            MediaType.Voice => ".ogg",
+            MediaType.Photo => ".jpg",
+            MediaType.Video => ".mp4",
+            MediaType.VideoNote => ".mp4",
+            MediaType.Sticker => ".webp",
+            MediaType.Animation => ".gif",
+            _ => ".bin"
+        };
+    }
+
+    private static MediaType DetectMediaType(TlMessage message)
+    {
+        return message.media switch
+        {
+            MessageMediaPhoto => MediaType.Photo,
+            MessageMediaDocument { document: Document doc } => DetectDocumentType(doc),
+            _ => MediaType.None
+        };
+    }
+
+    private static MediaType DetectDocumentType(Document doc)
+    {
+        foreach (var attr in doc.attributes)
+        {
+            switch (attr)
+            {
+                case DocumentAttributeSticker:
+                    return MediaType.Sticker;
+                case DocumentAttributeAnimated:
+                    return MediaType.Animation;
+                case DocumentAttributeVideo dav when dav.flags.HasFlag(DocumentAttributeVideo.Flags.round_message):
+                    return MediaType.VideoNote;
+                case DocumentAttributeVideo:
+                    return MediaType.Video;
+                case DocumentAttributeAudio daa when daa.flags.HasFlag(DocumentAttributeAudio.Flags.voice):
+                    return MediaType.Voice;
+                case DocumentAttributeAudio:
+                    return MediaType.Voice;
+            }
+        }
+
+        return doc.mime_type switch
+        {
+            var m when m?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true => MediaType.Voice,
+            var m when m?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true => MediaType.Video,
+            var m when m?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true => MediaType.Photo,
+            _ => MediaType.Document
+        };
+    }
+
+    private static long ResolveSenderId(TlMessage message)
+    {
+        return message.from_id switch
+        {
+            PeerUser peerUser => peerUser.user_id,
+            PeerChat peerChat => peerChat.chat_id,
+            PeerChannel peerChannel => peerChannel.channel_id,
+            _ => 0
+        };
+    }
+
+    private static string ResolveSenderName(Messages_MessagesBase history, Peer? fromPeer)
+    {
+        if (fromPeer == null)
+        {
+            return string.Empty;
+        }
+
+        var userOrChat = history.UserOrChat(fromPeer);
+        return userOrChat switch
+        {
+            User user => $"{user.first_name} {user.last_name}".Trim(),
+            ChatBase chat => chat.Title ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static string? SerializeReactions(TlMessage message)
+    {
+        if (message.reactions?.results == null)
+        {
+            return null;
+        }
+
+        var reactions = message.reactions.results
+            .Select(r => new { emoji = r.reaction is ReactionEmoji re ? re.emoticon : "custom", count = r.count })
+            .ToList();
+
+        return reactions.Count == 0 ? null : JsonSerializer.Serialize(reactions);
+    }
+
+    private static string? SerializeForward(TlMessage message)
+    {
+        if (message.fwd_from == null)
+        {
+            return null;
+        }
+
+        var payload = new
+        {
+            from_id = message.fwd_from.from_id switch
+            {
+                PeerUser pu => pu.user_id,
+                PeerChannel pc => pc.channel_id,
+                PeerChat ch => ch.chat_id,
+                _ => 0L
+            },
+            from_name = message.fwd_from.from_name,
+            date = message.fwd_from.date
+        };
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static long GetPeerId(Peer peer)
+    {
+        return peer switch
+        {
+            PeerUser u => u.user_id,
+            PeerChat c => c.chat_id,
+            PeerChannel c => c.channel_id,
+            _ => 0
+        };
+    }
+
+    private static DateTime EnsureUtc(DateTime value)
+    {
+        if (value.Kind == DateTimeKind.Utc)
+        {
+            return value;
+        }
+
+        if (value.Kind == DateTimeKind.Local)
+        {
+            return value.ToUniversalTime();
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    }
+
+    private static bool TryToInputPeer(object? userOrChat, out InputPeer inputPeer)
+    {
+        switch (userOrChat)
+        {
+            case User user when user.flags.HasFlag(User.Flags.self):
+                inputPeer = new InputPeerSelf();
+                return true;
+            case User user when user.flags.HasFlag(User.Flags.has_access_hash):
+                inputPeer = new InputPeerUser(user.id, user.access_hash);
+                return true;
+            case Chat chat:
+                inputPeer = new InputPeerChat(chat.id);
+                return true;
+            case ChatForbidden chatForbidden:
+                inputPeer = new InputPeerChat(chatForbidden.id);
+                return true;
+            case Channel channel when channel.flags.HasFlag(Channel.Flags.has_access_hash):
+                inputPeer = new InputPeerChannel(channel.id, channel.access_hash);
+                return true;
+            case ChannelForbidden channelForbidden:
+                inputPeer = new InputPeerChannel(channelForbidden.id, channelForbidden.access_hash);
+                return true;
+            default:
+                inputPeer = null!;
+                return false;
+        }
+    }
+
+    private IReadOnlyList<long> ResolveTargetChatIds()
+    {
+        var fromBackfill = _settings.ChatIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+
+        if (fromBackfill.Count > 0)
+        {
+            return fromBackfill;
+        }
+
+        return _telegramSettings.MonitoredChatIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
+    }
+
+    private static bool TryParseSinceDate(string raw, out DateTime sinceUtc)
+    {
+        if (DateTime.TryParseExact(
+                raw,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            sinceUtc = DateTime.SpecifyKind(parsed.Date, DateTimeKind.Utc);
+            return true;
+        }
+
+        if (DateTime.TryParse(
+                raw,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out parsed))
+        {
+            sinceUtc = DateTime.SpecifyKind(parsed.Date, DateTimeKind.Utc);
+            return true;
+        }
+
+        sinceUtc = default;
+        return false;
+    }
+
+    private string? ConfigProvider(string what)
+    {
+        return what switch
+        {
+            "api_id" => _telegramSettings.ApiId.ToString(CultureInfo.InvariantCulture),
+            "api_hash" => _telegramSettings.ApiHash,
+            "phone_number" => _telegramSettings.PhoneNumber,
+            "verification_code" => GetVerificationCode(),
+            "session_pathname" => "data/telegram.session",
+            _ => null
+        };
+    }
+
+    private static string GetVerificationCode()
+    {
+        Console.Write("Enter Telegram verification code: ");
+        return Console.ReadLine() ?? string.Empty;
+    }
+}

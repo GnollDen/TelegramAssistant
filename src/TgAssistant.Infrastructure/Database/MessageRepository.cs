@@ -163,6 +163,44 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ChatId == chatId
+                        && x.Id < beforeMessageId
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
+            .OrderByDescending(x => x.Id)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        rows.Reverse();
+        return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ChatId == chatId
+                        && x.Timestamp >= fromUtc
+                        && x.Timestamp <= toUtc
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
+            .OrderBy(x => x.Id)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
     public async Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -228,6 +266,24 @@ public class MessageRepository : IMessageRepository
         {
             row.ProcessingStatus = (short)ProcessingStatus.Processed;
             row.ProcessedAt = DateTime.UtcNow;
+            row.NeedsReanalysis = true;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
+    {
+        var ids = messageIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages.Where(x => ids.Contains(x.Id)).ToListAsync(ct);
+        foreach (var row in rows)
+        {
             row.NeedsReanalysis = true;
         }
 

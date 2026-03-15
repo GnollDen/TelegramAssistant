@@ -13,6 +13,12 @@ docker compose build app
 docker compose up -d
 ```
 
+## Faster builds on VPN
+- `deploy/Dockerfile` is optimized for NuGet cache reuse (project files are copied before source code).
+- BuildKit cache stores downloaded packages between builds (`/root/.nuget/packages` cache mount).
+- `docker-compose.yml` forwards `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` build args; keep `api.nuget.org,nuget.org,globalcdn.nuget.org` in `NO_PROXY`.
+- If build is still slow, keep Docker build cache intact and avoid `docker builder prune -a`.
+
 ## Archive import (Stage 4)
 1. Put Telegram Desktop export JSON in `ArchiveImport:SourcePath`.
 2. Set `ArchiveImport:Enabled=true`.

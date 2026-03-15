@@ -31,8 +31,9 @@ public class MaintenanceWorkerService : BackgroundService
         }
 
         _logger.LogInformation(
-            "Maintenance worker started. poll={Poll}m err_retention={Err}d metrics_retention={Metrics}d merge_retention={Merge}d fact_review_retention={FactReview}d fact_review_pending_timeout={FactReviewPendingTimeout}d",
+            "Maintenance worker started. poll={Poll}m fact_decay={FactDecay} err_retention={Err}d metrics_retention={Metrics}d merge_retention={Merge}d fact_review_retention={FactReview}d fact_review_pending_timeout={FactReviewPendingTimeout}d",
             _settings.PollIntervalMinutes,
+            _settings.FactDecayEnabled,
             _settings.ExtractionErrorsRetentionDays,
             _settings.Stage5MetricsRetentionDays,
             _settings.MergeDecisionsRetentionDays,
@@ -49,17 +50,20 @@ public class MaintenanceWorkerService : BackgroundService
                     Stage5MetricsRetentionDays = _settings.Stage5MetricsRetentionDays,
                     MergeDecisionsRetentionDays = _settings.MergeDecisionsRetentionDays,
                     FactReviewCommandsRetentionDays = _settings.FactReviewCommandsRetentionDays,
-                    FactReviewPendingTimeoutDays = _settings.FactReviewPendingTimeoutDays
+                    FactReviewPendingTimeoutDays = _settings.FactReviewPendingTimeoutDays,
+                    FactDecayEnabled = _settings.FactDecayEnabled
                 }, stoppingToken);
 
-                if (result.ExtractionErrorsDeleted > 0
+                if (result.FactsExpired > 0
+                    || result.ExtractionErrorsDeleted > 0
                     || result.Stage5MetricsDeleted > 0
                     || result.MergeDecisionsDeleted > 0
                     || result.FactReviewCommandsDeleted > 0
                     || result.FactReviewCommandsTimedOut > 0)
                 {
                     _logger.LogInformation(
-                        "Maintenance cleanup done: extraction_errors={Err}, metrics={Metrics}, merge_decisions={Merge}, fact_review_commands_deleted={FactReviewDeleted}, fact_review_commands_timed_out={FactReviewTimedOut}",
+                        "Maintenance cleanup done: facts_expired={FactsExpired}, extraction_errors={Err}, metrics={Metrics}, merge_decisions={Merge}, fact_review_commands_deleted={FactReviewDeleted}, fact_review_commands_timed_out={FactReviewTimedOut}",
+                        result.FactsExpired,
                         result.ExtractionErrorsDeleted,
                         result.Stage5MetricsDeleted,
                         result.MergeDecisionsDeleted,

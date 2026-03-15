@@ -36,9 +36,7 @@ public class AnalysisUsageRepository : IAnalysisUsageRepository
         var sum = await db.AnalysisUsageEvents
             .AsNoTracking()
             .Where(x => x.Phase == normalizedPhase && x.CreatedAt >= sinceUtc)
-            .Select(x => x.CostUsd)
-            .DefaultIfEmpty(0m)
-            .SumAsync(ct);
-        return sum;
+            .SumAsync(x => (decimal?)x.CostUsd, ct);
+        return sum ?? 0m;
     }
 }
