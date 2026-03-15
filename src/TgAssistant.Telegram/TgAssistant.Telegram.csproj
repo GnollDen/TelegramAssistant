@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TgAssistant.Core\TgAssistant.Core.csproj" />
+    <ProjectReference Include="..\TgAssistant.Intelligence\TgAssistant.Intelligence.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="WTelegramClient" Version="4.4.2" />
