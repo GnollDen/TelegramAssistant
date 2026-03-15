@@ -185,6 +185,80 @@ public class EntityRepository : IEntityRepository
         return row == null ? null : ToDomain(row);
     }
 
+    public async Task<Entity?> FindBestByNameAsync(string name, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var exact = await FindByNameOrAliasAsync(name, ct);
+        if (exact != null)
+        {
+            return exact;
+        }
+
+        var normalized = name.Trim();
+        var normalizedLower = normalized.ToLowerInvariant();
+        var likePattern = $"%{normalized}%";
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Entities
+            .AsNoTracking()
+            .Where(x =>
+                EF.Functions.ILike(x.Name, likePattern) ||
+                db.EntityAliases.Any(a => a.EntityId == x.Id && EF.Functions.ILike(a.Alias, likePattern)))
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(120)
+            .ToListAsync(ct);
+
+        if (rows.Count == 0)
+        {
+            rows = await db.Entities
+                .AsNoTracking()
+                .Where(x => x.Aliases.Any(a => a.ToLower().Contains(normalizedLower)))
+                .OrderByDescending(x => x.UpdatedAt)
+                .Take(120)
+                .ToListAsync(ct);
+        }
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var entityIds = rows.Select(x => x.Id).ToList();
+        var aliasRows = await db.EntityAliases
+            .AsNoTracking()
+            .Where(x => entityIds.Contains(x.EntityId))
+            .Select(x => new { x.EntityId, x.AliasNorm })
+            .ToListAsync(ct);
+
+        var aliasLookup = aliasRows
+            .GroupBy(x => x.EntityId)
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlyCollection<string>)x
+                    .Select(v => v.AliasNorm)
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .ToArray());
+
+        var best = rows
+            .Select(row => new
+            {
+                Row = row,
+                Rank = CalculateEntityNameMatchRank(
+                    row,
+                    aliasLookup.GetValueOrDefault(row.Id) ?? Array.Empty<string>(),
+                    normalizedLower)
+            })
+            .OrderBy(x => x.Rank)
+            .ThenByDescending(x => x.Row.UpdatedAt)
+            .FirstOrDefault();
+
+        return best == null ? null : ToDomain(best.Row);
+    }
+
     public async Task<List<Entity>> GetAllAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -295,6 +369,48 @@ public class EntityRepository : IEntityRepository
         db.Entities.Remove(source);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+    }
+
+    private static int CalculateEntityNameMatchRank(
+        DbEntity row,
+        IReadOnlyCollection<string> aliasNorms,
+        string queryNorm)
+    {
+        var nameNorm = row.Name.Trim().ToLowerInvariant();
+        if (nameNorm == queryNorm)
+        {
+            return 0;
+        }
+
+        if (row.Aliases.Any(a => string.Equals(a.Trim(), queryNorm, StringComparison.OrdinalIgnoreCase)) ||
+            aliasNorms.Contains(queryNorm, StringComparer.OrdinalIgnoreCase))
+        {
+            return 1;
+        }
+
+        if (nameNorm.StartsWith(queryNorm, StringComparison.Ordinal))
+        {
+            return 2;
+        }
+
+        if (row.Aliases.Any(a => a.Trim().StartsWith(queryNorm, StringComparison.OrdinalIgnoreCase)) ||
+            aliasNorms.Any(a => a.StartsWith(queryNorm, StringComparison.Ordinal)))
+        {
+            return 3;
+        }
+
+        if (nameNorm.Contains(queryNorm, StringComparison.Ordinal))
+        {
+            return 4;
+        }
+
+        if (row.Aliases.Any(a => a.Trim().Contains(queryNorm, StringComparison.OrdinalIgnoreCase)) ||
+            aliasNorms.Any(a => a.Contains(queryNorm, StringComparison.Ordinal)))
+        {
+            return 5;
+        }
+
+        return 6;
     }
 
     private static Entity ToDomain(DbEntity row)

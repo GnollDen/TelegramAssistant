@@ -57,6 +57,14 @@ services:
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
       BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-0}
+      ContinuousRefinement__Enabled: ${CONTINUOUS_REFINEMENT_ENABLED:-false}
+      ContinuousRefinement__PollIntervalSeconds: ${CONTINUOUS_REFINEMENT_POLL_INTERVAL_SECONDS:-300}
+      ContinuousRefinement__BatchSize: ${CONTINUOUS_REFINEMENT_BATCH_SIZE:-10}
+      ContinuousRefinement__MinMessageLength: ${CONTINUOUS_REFINEMENT_MIN_MESSAGE_LENGTH:-280}
+      ContinuousRefinement__StaleAfterHours: ${CONTINUOUS_REFINEMENT_STALE_AFTER_HOURS:-168}
+      ContinuousRefinement__MinDelaySeconds: ${CONTINUOUS_REFINEMENT_MIN_DELAY_SECONDS:-60}
+      ContinuousRefinement__MaxDelaySeconds: ${CONTINUOUS_REFINEMENT_MAX_DELAY_SECONDS:-120}
+      ContinuousRefinement__LowConfidenceThreshold: ${CONTINUOUS_REFINEMENT_LOW_CONFIDENCE_THRESHOLD:-0.7}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}

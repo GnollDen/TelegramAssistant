@@ -153,6 +153,27 @@ public class OpenRouterAnalysisService
         return await SendAndExtractTextAsync(req, "chat", ct);
     }
 
+    public async Task<OpenRouterResponseMessage> CompleteChatWithToolsAsync(
+        string model,
+        List<OpenRouterMessage> messages,
+        List<OpenRouterTool>? tools,
+        int maxTokens,
+        CancellationToken ct)
+    {
+        var req = new OpenRouterRequest
+        {
+            Model = model,
+            Messages = messages,
+            Tools = tools?.Count > 0 ? tools : null,
+            ToolChoice = tools?.Count > 0 ? "auto" : null,
+            MaxTokens = NormalizeMaxTokens(maxTokens, 64, 4000),
+            Temperature = 0.2f
+        };
+
+        var response = await SendAsync(req, "chat", ct);
+        return response?.Choices?.FirstOrDefault()?.Message ?? new OpenRouterResponseMessage();
+    }
+
     private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature, string phase)
     {
         return new OpenRouterRequest
@@ -202,21 +223,8 @@ public class OpenRouterAnalysisService
 
     private async Task<string> SendAndExtractJsonAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
-        var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
-        var body = await res.Content.ReadAsStringAsync(ct);
-        if (!res.IsSuccessStatusCode)
-        {
-            if (IsBalanceOrQuotaIssue(res.StatusCode, body))
-            {
-                throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
-            }
-
-            throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
-        }
-
-        var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
-        await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
-        var content = parsed?.Choices?.FirstOrDefault()?.Message?.Content;
+        var parsed = await SendAsync(request, phase, ct);
+        var content = ExtractMessageContent(parsed?.Choices?.FirstOrDefault()?.Message?.Content);
         if (string.IsNullOrWhiteSpace(content))
         {
             return phase == "summary" ? "{\"summary\":\"\"}" : "{\"items\":[]}";
@@ -227,6 +235,19 @@ public class OpenRouterAnalysisService
     }
 
     private async Task<string> SendAndExtractTextAsync(OpenRouterRequest request, string phase, CancellationToken ct)
+    {
+        var parsed = await SendAsync(request, phase, ct);
+        var content = ExtractMessageContent(parsed?.Choices?.FirstOrDefault()?.Message?.Content);
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return string.Empty;
+        }
+
+        _logger.LogDebug("Text completion response ({Model}) len={Len}", request.Model, content.Length);
+        return content.Trim();
+    }
+
+    private async Task<OpenRouterResponse?> SendAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
         var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
         var body = await res.Content.ReadAsStringAsync(ct);
@@ -242,14 +263,68 @@ public class OpenRouterAnalysisService
 
         var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
         await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
-        var content = parsed?.Choices?.FirstOrDefault()?.Message?.Content;
-        if (string.IsNullOrWhiteSpace(content))
+        return parsed;
+    }
+
+    private static string ExtractMessageContent(object? content)
+    {
+        if (content == null)
         {
             return string.Empty;
         }
 
-        _logger.LogDebug("Text completion response ({Model}) len={Len}", request.Model, content.Length);
-        return content.Trim();
+        if (content is string text)
+        {
+            return text;
+        }
+
+        if (content is JsonElement element)
+        {
+            return ExtractMessageContentFromJsonElement(element);
+        }
+
+        return content.ToString() ?? string.Empty;
+    }
+
+    private static string ExtractMessageContentFromJsonElement(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            return element.GetString() ?? string.Empty;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            var parts = element.EnumerateArray()
+                .Select(part =>
+                {
+                    if (part.ValueKind == JsonValueKind.String)
+                    {
+                        return part.GetString() ?? string.Empty;
+                    }
+
+                    if (part.ValueKind == JsonValueKind.Object &&
+                        part.TryGetProperty("text", out var textNode) &&
+                        textNode.ValueKind == JsonValueKind.String)
+                    {
+                        return textNode.GetString() ?? string.Empty;
+                    }
+
+                    return string.Empty;
+                })
+                .Where(part => !string.IsNullOrWhiteSpace(part));
+
+            return string.Join('\n', parts);
+        }
+
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("text", out var textProperty) &&
+            textProperty.ValueKind == JsonValueKind.String)
+        {
+            return textProperty.GetString() ?? string.Empty;
+        }
+
+        return element.ToString();
     }
 
     private static bool IsBalanceOrQuotaIssue(HttpStatusCode statusCode, string body)
