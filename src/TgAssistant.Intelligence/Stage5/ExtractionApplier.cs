@@ -199,6 +199,23 @@ public class ExtractionApplier
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>
+    /// Replaces only intelligence rows (observations/claims) for one message atomically.
+    /// Intended for low-cost refinement passes that should not re-project facts/events.
+    /// </summary>
+    public async Task ApplyIntelligenceOnlyAsync(long messageId, ExtractionItem extraction, Message? sourceMessage, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        using var dbScope = AmbientDbContextScope.Enter(db);
+
+        var senderName = sourceMessage?.SenderName?.Trim();
+        var entityByName = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        await PersistIntelligenceAsync(messageId, extraction, sourceMessage, senderName, entityByName, ct);
+
+        await tx.CommitAsync(ct);
+    }
+
     private async Task PersistIntelligenceAsync(
         long messageId,
         ExtractionItem extraction,

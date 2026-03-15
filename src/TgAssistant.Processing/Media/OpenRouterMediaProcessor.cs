@@ -299,12 +299,59 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
 
         var result = JsonSerializer.Deserialize<OpenRouterResponse>(responseJson, JsonOptions);
-        var text = result?.Choices?.FirstOrDefault()?.Message?.Content ?? "";
+        var text = NormalizeMessageContent(result?.Choices?.FirstOrDefault()?.Message?.Content);
 
         _logger.LogDebug("OpenRouter response ({Model}): {Text}",
             request.Model, text.Length > 100 ? text[..100] + "..." : text);
 
         return text;
+    }
+
+    private static string NormalizeMessageContent(object? content)
+    {
+        if (content == null)
+        {
+            return string.Empty;
+        }
+
+        if (content is string text)
+        {
+            return text;
+        }
+
+        if (content is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                return element.GetString() ?? string.Empty;
+            }
+
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                var parts = element.EnumerateArray()
+                    .Select(part =>
+                    {
+                        if (part.ValueKind == JsonValueKind.String)
+                        {
+                            return part.GetString() ?? string.Empty;
+                        }
+
+                        if (part.ValueKind == JsonValueKind.Object &&
+                            part.TryGetProperty("text", out var textNode) &&
+                            textNode.ValueKind == JsonValueKind.String)
+                        {
+                            return textNode.GetString() ?? string.Empty;
+                        }
+
+                        return string.Empty;
+                    })
+                    .Where(part => !string.IsNullOrWhiteSpace(part));
+
+                return string.Join('\n', parts);
+            }
+        }
+
+        return content.ToString() ?? string.Empty;
     }
 
     private string BuildPhotoPrompt(string filePath)

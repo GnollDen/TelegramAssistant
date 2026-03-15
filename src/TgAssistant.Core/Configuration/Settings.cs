@@ -222,3 +222,16 @@ public class BotChatSettings
     public const string Section = "BotChat";
     public long OwnerId { get; set; }
 }
+
+public class ContinuousRefinementSettings
+{
+    public const string Section = "ContinuousRefinement";
+    public bool Enabled { get; set; } = false;
+    public int PollIntervalSeconds { get; set; } = 300;
+    public int BatchSize { get; set; } = 10;
+    public int MinMessageLength { get; set; } = 280;
+    public int StaleAfterHours { get; set; } = 168;
+    public int MinDelaySeconds { get; set; } = 60;
+    public int MaxDelaySeconds { get; set; } = 120;
+    public float LowConfidenceThreshold { get; set; } = 0.7f;
+}
