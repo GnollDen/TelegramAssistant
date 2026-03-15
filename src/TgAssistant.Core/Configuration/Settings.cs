@@ -216,3 +216,9 @@ public class EmbeddingSettings
     public int PollIntervalSeconds { get; set; } = 30;
     public int BatchSize { get; set; } = 100;
 }
+
+public class BotChatSettings
+{
+    public const string Section = "BotChat";
+    public long OwnerId { get; set; }
+}
