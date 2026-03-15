@@ -131,6 +131,28 @@ public class OpenRouterAnalysisService
         return await SendAndExtractJsonAsync(req, "summary", ct);
     }
 
+    public async Task<string> CompleteTextAsync(
+        string model,
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens,
+        CancellationToken ct)
+    {
+        var req = new OpenRouterRequest
+        {
+            Model = model,
+            Messages =
+            [
+                new OpenRouterMessage { Role = "system", Content = systemPrompt },
+                new OpenRouterMessage { Role = "user", Content = userPrompt }
+            ],
+            MaxTokens = NormalizeMaxTokens(maxTokens, 64, 4000),
+            Temperature = 0.2f
+        };
+
+        return await SendAndExtractTextAsync(req, "chat", ct);
+    }
+
     private OpenRouterRequest BuildRequest(string model, string systemPrompt, string userPrompt, int maxTokens, float temperature, string phase)
     {
         return new OpenRouterRequest
@@ -202,6 +224,32 @@ public class OpenRouterAnalysisService
 
         _logger.LogDebug("Analysis model response ({Model}) len={Len}", request.Model, content.Length);
         return content;
+    }
+
+    private async Task<string> SendAndExtractTextAsync(OpenRouterRequest request, string phase, CancellationToken ct)
+    {
+        var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            if (IsBalanceOrQuotaIssue(res.StatusCode, body))
+            {
+                throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
+            }
+
+            throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
+        }
+
+        var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
+        await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
+        var content = parsed?.Choices?.FirstOrDefault()?.Message?.Content;
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return string.Empty;
+        }
+
+        _logger.LogDebug("Text completion response ({Model}) len={Len}", request.Model, content.Length);
+        return content.Trim();
     }
 
     private static bool IsBalanceOrQuotaIssue(HttpStatusCode statusCode, string body)

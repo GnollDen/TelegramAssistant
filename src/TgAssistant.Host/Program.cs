@@ -8,6 +8,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Intelligence.Stage5;
+using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
@@ -48,6 +49,7 @@ try
             services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
             services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
             services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
+            services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -161,6 +163,7 @@ try
             services.AddSingleton<AnalysisContextBuilder>();
             services.AddSingleton<ExtractionApplier>();
             services.AddSingleton<ExpensivePassResolver>();
+            services.AddSingleton<IBotChatService, BotChatService>();
 
             services.AddSingleton<TelegramDesktopArchiveParser>();
 

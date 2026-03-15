@@ -1,4 +1,6 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -8,6 +10,56 @@ namespace TgAssistant.Infrastructure.Database;
 public class FactRepository : IFactRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private const string SearchSimilarFactsCosineSql = """
+        SELECT
+            f.id,
+            f.entity_id,
+            f.category,
+            f.key,
+            f.value,
+            f.status,
+            f.confidence,
+            f.source_message_id,
+            f.valid_from,
+            f.valid_until,
+            f.is_current,
+            f.decay_class,
+            f.created_at,
+            f.updated_at
+        FROM facts f
+        JOIN text_embeddings e
+          ON e.owner_type = 'fact'
+         AND e.owner_id = f.id::text
+        WHERE f.is_current = TRUE
+          AND e.vector IS NOT NULL
+        ORDER BY (('[' || array_to_string(e.vector, ',') || ']')::vector <=> @query_vector::vector) ASC
+        LIMIT @limit;
+        """;
+    private const string SearchSimilarFactsDistanceSql = """
+        SELECT
+            f.id,
+            f.entity_id,
+            f.category,
+            f.key,
+            f.value,
+            f.status,
+            f.confidence,
+            f.source_message_id,
+            f.valid_from,
+            f.valid_until,
+            f.is_current,
+            f.decay_class,
+            f.created_at,
+            f.updated_at
+        FROM facts f
+        JOIN text_embeddings e
+          ON e.owner_type = 'fact'
+         AND e.owner_id = f.id::text
+        WHERE f.is_current = TRUE
+          AND e.vector IS NOT NULL
+        ORDER BY (('[' || array_to_string(e.vector, ',') || ']')::vector <-> @query_vector::vector) ASC
+        LIMIT @limit;
+        """;
 
     public FactRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
     {
@@ -70,6 +122,34 @@ public class FactRepository : IFactRepository
             var rows = await db.Facts.AsNoTracking().Where(x => x.EntityId == entityId && x.IsCurrent).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
         }, ct);
+    }
+
+    public async Task<List<Fact>> SearchSimilarFactsAsync(float[] queryEmbedding, int limit = 10)
+    {
+        if (queryEmbedding.Length == 0)
+        {
+            return new List<Fact>();
+        }
+
+        var safeLimit = Math.Max(1, limit);
+        var queryVector = $"[{string.Join(",", queryEmbedding.Select(x => x.ToString(CultureInfo.InvariantCulture)))}]";
+        var ct = CancellationToken.None;
+
+        try
+        {
+            return await ExecuteSimilarFactsQueryAsync(SearchSimilarFactsCosineSql, queryVector, safeLimit, ct);
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42883" or "42704" or "0A000")
+        {
+            try
+            {
+                return await ExecuteSimilarFactsQueryAsync(SearchSimilarFactsDistanceSql, queryVector, safeLimit, ct);
+            }
+            catch (PostgresException fallbackEx) when (fallbackEx.SqlState is "42883" or "42704" or "0A000")
+            {
+                return await SearchSimilarFactsFallbackAsync(queryEmbedding, safeLimit, ct);
+            }
+        }
     }
 
     public async Task<List<Fact>> GetWithoutEmbeddingAsync(string model, int limit, CancellationToken ct = default)
@@ -162,6 +242,55 @@ public class FactRepository : IFactRepository
         }, ct);
     }
 
+    private async Task<List<Fact>> ExecuteSimilarFactsQueryAsync(string sql, string queryVector, int limit, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync(ct);
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("query_vector", queryVector);
+        cmd.Parameters.AddWithValue("limit", limit);
+
+        var result = new List<Fact>(limit);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            result.Add(ReadFact(reader));
+        }
+
+        return result;
+    }
+
+    private async Task<List<Fact>> SearchSimilarFactsFallbackAsync(float[] queryEmbedding, int limit, CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var sampleSize = Math.Max(limit * 30, 300);
+        var candidates = await db.Facts
+            .AsNoTracking()
+            .Where(f => f.IsCurrent)
+            .Join(
+                db.TextEmbeddings.AsNoTracking().Where(e => e.OwnerType == "fact"),
+                f => f.Id.ToString(),
+                e => e.OwnerId,
+                (f, e) => new { Fact = f, e.Vector })
+            .OrderByDescending(x => x.Fact.UpdatedAt)
+            .Take(sampleSize)
+            .ToListAsync(ct);
+
+        return candidates
+            .Select(x => new { x.Fact, Score = Cosine(queryEmbedding, x.Vector) })
+            .Where(x => x.Score >= 0)
+            .OrderByDescending(x => x.Score)
+            .Take(limit)
+            .Select(x => ToDomain(x.Fact))
+            .ToList();
+    }
+
     private async Task<TResult> WithDbContextAsync<TResult>(
         Func<TgAssistantDbContext, Task<TResult>> action,
         CancellationToken ct)
@@ -210,6 +339,52 @@ public class FactRepository : IFactRepository
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
+    }
+
+    private static Fact ReadFact(NpgsqlDataReader reader)
+    {
+        return new Fact
+        {
+            Id = reader.GetGuid(0),
+            EntityId = reader.GetGuid(1),
+            Category = reader.GetString(2),
+            Key = reader.GetString(3),
+            Value = reader.GetString(4),
+            Status = (ConfidenceStatus)reader.GetInt16(5),
+            Confidence = reader.GetFloat(6),
+            SourceMessageId = reader.IsDBNull(7) ? null : reader.GetInt64(7),
+            ValidFrom = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
+            ValidUntil = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
+            IsCurrent = reader.GetBoolean(10),
+            DecayClass = reader.GetString(11),
+            CreatedAt = reader.GetDateTime(12),
+            UpdatedAt = reader.GetDateTime(13)
+        };
+    }
+
+    private static float Cosine(float[] a, float[] b)
+    {
+        if (a.Length == 0 || b.Length == 0 || a.Length != b.Length)
+        {
+            return -1f;
+        }
+
+        double dot = 0;
+        double normA = 0;
+        double normB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        if (normA <= 0 || normB <= 0)
+        {
+            return -1f;
+        }
+
+        return (float)(dot / (Math.Sqrt(normA) * Math.Sqrt(normB)));
     }
 
     private static string NormalizeDecayClass(string? decayClass)
