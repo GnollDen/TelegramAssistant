@@ -43,6 +43,7 @@ public interface IEntityRepository
     Task<Entity?> FindByActorKeyAsync(string actorKey, CancellationToken ct = default);
     Task<Entity?> FindByTelegramIdAsync(long telegramUserId, CancellationToken ct = default);
     Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default);
+    Task<Dictionary<string, Entity>> FindByNamesOrAliasesAsync(IReadOnlyCollection<string> names, CancellationToken ct = default);
     Task<Entity?> FindBestByNameAsync(string name, CancellationToken ct = default);
     Task MergeIntoAsync(Guid targetEntityId, Guid sourceEntityId, CancellationToken ct = default);
     Task<List<Entity>> GetAllAsync(CancellationToken ct = default);

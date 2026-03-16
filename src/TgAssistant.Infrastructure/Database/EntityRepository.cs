@@ -185,6 +185,82 @@ public class EntityRepository : IEntityRepository
         return row == null ? null : ToDomain(row);
     }
 
+    public async Task<Dictionary<string, Entity>> FindByNamesOrAliasesAsync(IReadOnlyCollection<string> names, CancellationToken ct = default)
+    {
+        if (names.Count == 0)
+        {
+            return new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var normalizedNames = names
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedNames.Length == 0)
+        {
+            return new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Entities
+            .AsNoTracking()
+            .Where(x =>
+                normalizedNames.Contains(x.Name.ToLower()) ||
+                x.Aliases.Any(alias => normalizedNames.Contains(alias.ToLower())) ||
+                db.EntityAliases.Any(alias => alias.EntityId == x.Id && normalizedNames.Contains(alias.AliasNorm)))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var orderedEntities = rows
+            .GroupBy(x => x.Id)
+            .Select(x => ToDomain(x.First()))
+            .ToList();
+        var entitiesById = orderedEntities.ToDictionary(x => x.Id);
+
+        var entityIds = entitiesById.Keys.ToArray();
+        var aliasRows = entityIds.Length == 0
+            ? []
+            : await db.EntityAliases
+                .AsNoTracking()
+                .Where(x => entityIds.Contains(x.EntityId))
+                .Select(x => new { x.EntityId, x.AliasNorm })
+                .ToListAsync(ct);
+
+        var aliasLookup = aliasRows
+            .GroupBy(x => x.EntityId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(v => v.AliasNorm).Where(v => !string.IsNullOrWhiteSpace(v)).ToArray(),
+                EqualityComparer<Guid>.Default);
+
+        var result = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawName in names)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+            {
+                continue;
+            }
+
+            var normalized = rawName.Trim().ToLowerInvariant();
+            var trimmedName = rawName.Trim();
+            var entity = orderedEntities.FirstOrDefault(candidate =>
+                             string.Equals(candidate.Name.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase))
+                         ?? orderedEntities.FirstOrDefault(candidate =>
+                             candidate.Aliases.Any(alias => string.Equals(alias.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase)))
+                         ?? orderedEntities.FirstOrDefault(candidate =>
+                             aliasLookup.GetValueOrDefault(candidate.Id, []).Contains(normalized, StringComparer.Ordinal));
+
+            if (entity != null)
+            {
+                result[trimmedName] = entity;
+            }
+        }
+
+        return result;
+    }
+
     public async Task<Entity?> FindBestByNameAsync(string name, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))

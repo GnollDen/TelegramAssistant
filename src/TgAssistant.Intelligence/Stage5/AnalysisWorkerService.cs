@@ -13,8 +13,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public partial class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v7";
-    private const string ExpensivePromptId = "stage5_expensive_reason_v2";
+    private const string CheapPromptId = "stage5_cheap_extract_v8";
+    private const string ExpensivePromptId = "stage5_expensive_reason_v3";
     private const int MaxCheapLlmBatchSize = 10;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
@@ -465,8 +465,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v6", DefaultCheapPrompt, ct);
-        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v2", DefaultExpensivePrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v8", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v3", DefaultExpensivePrompt, ct);
     }
 
     private async Task EnsurePromptAsync(string id, string name, string systemPrompt, CancellationToken ct)

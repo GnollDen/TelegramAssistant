@@ -43,6 +43,11 @@ Type guidance:
 - claim.claim_type should usually be one of: fact, intent, preference, relationship, state, need
 - category should be broad and reusable: availability, schedule, travel, transportation, work, finance, health, relationship, communication, activity, purchase, location, contact, education, family, project, other
 - do not create near-duplicate labels just because wording differs
+- CANONICALIZATION: entity names must be canonical and trimmed
+- person/organization/place/pet/event names must not have leading/trailing spaces or duplicate internal spaces
+- use Title Case or the normal native-script canonical form for entity names; do not emit lowercase-only person names unless the message itself clearly uses a stylized handle
+- categories, claim_type, relationship types, event types, profile traits, and observation types must be lowercase snake_case only
+- keys must be canonical: trimmed, lowercase snake_case, and reused consistently; never invent spelling variants, mixed-case forms, trailing spaces, or synonymous duplicates
 
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
@@ -64,6 +69,7 @@ Rules:
 - bad fact example: category=system_status, key=error_report, value=502
 - KEY NAMING: for Russian chats, fact keys and claim keys must be snake_case Russian (e.g., свободное_время, место_работы, принимает_лекарства), not English keys like free_time/work_status/medication_usage
 - keys that describe work situations should be in Russian when chat is Russian: отгулы, больничный, реорганизация, instead of days_off_status, sick_leave_status
+- before returning, normalize every string enum-like field: trim whitespace, collapse duplicates, and ensure canonical casing
 - Use ONLY canonical keys and categories below:
   availability (свободное_время, занятость),
   location (текущее_местоположение, shared_location, домашний_адрес, рабочий_адрес),
@@ -132,6 +138,7 @@ Rules:
 - use context arrays only to resolve references/pronouns and temporal continuity; do not invent facts absent from current message
 - improve the cheap candidate only when the current message contains grounded, useful information
 - keep labels reusable and normalized
+- enforce canonical output formatting: entity names trimmed and canonicalized, categories/relationship types/event types/traits lowercase snake_case, keys trimmed lowercase snake_case with no variants
 - do not hallucinate missing context
 - if the message is vague, low-value, or too context-dependent to extract safely, return empty arrays and requires_expensive=false
 - if the message is clearly important but still ambiguous after careful reading, keep requires_expensive=true and set reason
