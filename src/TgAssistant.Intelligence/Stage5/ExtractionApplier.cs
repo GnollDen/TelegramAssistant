@@ -59,6 +59,8 @@ public class ExtractionApplier
         var explicitRelationshipEntityTypes = BuildExplicitRelationshipEntityTypeMap(extraction);
         var existingRelationshipEntityByName = new Dictionary<string, Entity?>(StringComparer.OrdinalIgnoreCase);
 
+        await PrewarmEntitiesAsync(extraction, entityByName, existingRelationshipEntityByName, ct);
+
         foreach (var entity in extraction.Entities.Where(e => !string.IsNullOrWhiteSpace(e.Name)))
         {
             if (IsGenericEntityToken(entity.Name))
@@ -211,6 +213,8 @@ public class ExtractionApplier
 
         var senderName = sourceMessage?.SenderName?.Trim();
         var entityByName = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase);
+        var existingRelationshipEntityByName = new Dictionary<string, Entity?>(StringComparer.OrdinalIgnoreCase);
+        await PrewarmEntitiesAsync(extraction, entityByName, existingRelationshipEntityByName, ct);
         await PersistIntelligenceAsync(messageId, extraction, sourceMessage, senderName, entityByName, ct);
 
         await tx.CommitAsync(ct);
@@ -302,7 +306,9 @@ public class ExtractionApplier
         CancellationToken ct)
     {
         var normalized = entityName.Trim();
-        if (entityByName.TryGetValue(normalized, out var cached))
+        var isSender = IsSenderEntityName(normalized, sourceMessage, senderName);
+        if (entityByName.TryGetValue(normalized, out var cached)
+            && (!isSender || !string.IsNullOrWhiteSpace(cached.ActorKey)))
         {
             return cached;
         }
@@ -311,6 +317,38 @@ public class ExtractionApplier
         entityByName[normalized] = entity;
         entityByName[entity.Name] = entity;
         return entity;
+    }
+
+    private static bool IsSenderEntityName(string observedName, Message? sourceMessage, string? senderName)
+    {
+        return sourceMessage is not null
+            && !string.IsNullOrWhiteSpace(senderName)
+            && string.Equals(observedName, senderName.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task PrewarmEntitiesAsync(
+        ExtractionItem extraction,
+        Dictionary<string, Entity> entityByName,
+        Dictionary<string, Entity?> existingRelationshipEntityByName,
+        CancellationToken ct)
+    {
+        var names = CollectReferencedEntityNames(extraction);
+        if (names.Count == 0)
+        {
+            return;
+        }
+
+        var existingEntitiesByRequestedName = await _entityRepository.FindByNamesOrAliasesAsync(names, ct);
+        foreach (var pair in existingEntitiesByRequestedName)
+        {
+            var requestedName = pair.Key;
+            var entity = pair.Value;
+
+            entityByName[requestedName] = entity;
+            entityByName[entity.Name] = entity;
+            existingRelationshipEntityByName[requestedName] = entity;
+            existingRelationshipEntityByName[entity.Name] = entity;
+        }
     }
 
     private async Task<List<Fact>> GetCurrentFactsCachedAsync(
@@ -787,6 +825,71 @@ public class ExtractionApplier
         return map;
     }
 
+    private static HashSet<string> CollectReferencedEntityNames(ExtractionItem extraction)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        static void AddName(HashSet<string> buffer, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var normalized = value.Trim();
+            if (normalized.Length == 0 || IsGenericEntityToken(normalized))
+            {
+                return;
+            }
+
+            buffer.Add(normalized);
+        }
+
+        foreach (var entity in extraction.Entities)
+        {
+            AddName(names, entity.Name);
+        }
+
+        foreach (var fact in extraction.Facts)
+        {
+            AddName(names, fact.EntityName);
+        }
+
+        foreach (var claim in SelectIntelligenceClaims(extraction))
+        {
+            AddName(names, claim.EntityName);
+            if (string.Equals(claim.ClaimType?.Trim(), "relationship", StringComparison.OrdinalIgnoreCase))
+            {
+                AddName(names, claim.Value);
+            }
+        }
+
+        foreach (var observation in SelectIntelligenceObservations(extraction))
+        {
+            AddName(names, observation.SubjectName);
+            AddName(names, observation.ObjectName);
+        }
+
+        foreach (var relation in extraction.Relationships)
+        {
+            AddName(names, relation.FromEntityName);
+            AddName(names, relation.ToEntityName);
+        }
+
+        foreach (var evt in extraction.Events)
+        {
+            AddName(names, evt.SubjectName);
+            AddName(names, evt.ObjectName);
+        }
+
+        foreach (var profileSignal in extraction.ProfileSignals)
+        {
+            AddName(names, profileSignal.SubjectName);
+        }
+
+        return names;
+    }
+
     private async Task<Entity?> ResolveRelationshipEntityAsync(
         string entityName,
         IReadOnlyDictionary<string, EntityType> explicitRelationshipEntityTypes,
@@ -964,9 +1067,7 @@ public class ExtractionApplier
         CancellationToken ct)
     {
         var observedName = name.Trim();
-        var isSender = sourceMessage is not null
-            && !string.IsNullOrWhiteSpace(senderName)
-            && string.Equals(observedName, senderName, StringComparison.OrdinalIgnoreCase);
+        var isSender = IsSenderEntityName(observedName, sourceMessage, senderName);
 
         if (isSender)
         {

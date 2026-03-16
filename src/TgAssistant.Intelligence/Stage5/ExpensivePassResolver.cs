@@ -10,12 +10,14 @@ namespace TgAssistant.Intelligence.Stage5;
 public class ExpensivePassResolver
 {
     private const string FactEmbeddingOwnerType = "fact";
+    private const string ExpensiveBackoffStateKey = "stage5:expensive_backoff_until";
     private readonly AnalysisSettings _settings;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly IMessageExtractionRepository _extractionRepository;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly IAnalysisUsageRepository _analysisUsageRepository;
+    private readonly IAnalysisStateRepository _analysisStateRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly IEntityRepository _entityRepository;
     private readonly IFactRepository _factRepository;
@@ -27,6 +29,7 @@ public class ExpensivePassResolver
     private readonly ILogger<ExpensivePassResolver> _logger;
     private readonly Dictionary<string, DateTimeOffset> _expensiveBlockedUntilByModel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _expensiveFailureStreakByModel = new(StringComparer.OrdinalIgnoreCase);
+    private bool _expensiveBackoffStateLoaded;
 
     public ExpensivePassResolver(
         IOptions<AnalysisSettings> settings,
@@ -35,6 +38,7 @@ public class ExpensivePassResolver
         IMessageExtractionRepository extractionRepository,
         IExtractionErrorRepository extractionErrorRepository,
         IAnalysisUsageRepository analysisUsageRepository,
+        IAnalysisStateRepository analysisStateRepository,
         IMessageRepository messageRepository,
         IEntityRepository entityRepository,
         IFactRepository factRepository,
@@ -51,6 +55,7 @@ public class ExpensivePassResolver
         _extractionRepository = extractionRepository;
         _extractionErrorRepository = extractionErrorRepository;
         _analysisUsageRepository = analysisUsageRepository;
+        _analysisStateRepository = analysisStateRepository;
         _messageRepository = messageRepository;
         _entityRepository = entityRepository;
         _factRepository = factRepository;
@@ -67,6 +72,8 @@ public class ExpensivePassResolver
     /// </summary>
     public async Task<int> ProcessExpensiveBacklogAsync(Func<CancellationToken, Task<string>> getPromptAsync, CancellationToken ct)
     {
+        await EnsureExpensiveBackoffStateLoadedAsync(ct);
+
         if (_settings.MaxExpensivePerBatch <= 0)
         {
             return 0;
@@ -232,14 +239,14 @@ public class ExpensivePassResolver
                     messageText,
                     context,
                     ct);
-                RegisterModelSuccess(model);
+                await RegisterModelSuccessAsync(model, ct);
                 return resolved;
             }
             catch (Exception ex) when (ShouldFallback(ex) || IsProviderDenied(ex))
             {
                 var denied = IsProviderDenied(ex);
                 ex.Data["expensive_model"] = model;
-                RegisterModelFailure(model, denied);
+                await RegisterModelFailureAsync(model, denied, ct);
                 lastTransient = ex;
                 _logger.LogWarning(
                     ex,
@@ -270,7 +277,10 @@ public class ExpensivePassResolver
             var msg = hre.Message;
             return msg.Contains(" 403", StringComparison.OrdinalIgnoreCase)
                    || msg.Contains(" 402", StringComparison.OrdinalIgnoreCase)
+                   || msg.Contains(" 429", StringComparison.OrdinalIgnoreCase)
+                   || msg.Contains("\"code\":429", StringComparison.OrdinalIgnoreCase)
                    || msg.Contains("forbidden", StringComparison.OrdinalIgnoreCase)
+                   || msg.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
                    || msg.Contains("timeout", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -288,7 +298,7 @@ public class ExpensivePassResolver
                 || hre.Message.Contains("more credits", StringComparison.OrdinalIgnoreCase));
     }
 
-    private void RegisterModelFailure(string model, bool denied)
+    private async Task RegisterModelFailureAsync(string model, bool denied, CancellationToken ct)
     {
         var key = NormalizeModelKey(model);
         var current = _expensiveFailureStreakByModel.TryGetValue(key, out var streak) ? streak : 0;
@@ -299,13 +309,15 @@ public class ExpensivePassResolver
         var deniedCooldown = TimeSpan.FromMinutes(Math.Max(1, _settings.ExpensiveCooldownMinutes));
         var effective = denied ? Max(backoff, deniedCooldown) : backoff;
         _expensiveBlockedUntilByModel[key] = DateTimeOffset.UtcNow.Add(effective);
+        await PersistExpensiveBackoffStateAsync(ct);
     }
 
-    private void RegisterModelSuccess(string model)
+    private async Task RegisterModelSuccessAsync(string model, CancellationToken ct)
     {
         var key = NormalizeModelKey(model);
         _expensiveFailureStreakByModel.Remove(key);
         _expensiveBlockedUntilByModel.Remove(key);
+        await PersistExpensiveBackoffStateAsync(ct);
     }
 
     private TimeSpan ComputeExpensiveBackoff(int streak)
@@ -374,6 +386,45 @@ public class ExpensivePassResolver
     }
 
     private static string NormalizeModelKey(string model) => model.Trim();
+
+    private async Task EnsureExpensiveBackoffStateLoadedAsync(CancellationToken ct)
+    {
+        if (_expensiveBackoffStateLoaded)
+        {
+            return;
+        }
+
+        var storedUnixSeconds = await _analysisStateRepository.GetWatermarkAsync(ExpensiveBackoffStateKey, ct);
+        _expensiveBackoffStateLoaded = true;
+        if (storedUnixSeconds <= 0)
+        {
+            return;
+        }
+
+        var storedUntil = DateTimeOffset.FromUnixTimeSeconds(storedUnixSeconds);
+        if (storedUntil <= DateTimeOffset.UtcNow)
+        {
+            return;
+        }
+
+        foreach (var model in GetDistinctExpensiveModels())
+        {
+            _expensiveBlockedUntilByModel[NormalizeModelKey(model)] = storedUntil;
+        }
+
+        _logger.LogInformation(
+            "Loaded persisted Stage5 expensive backoff. blocked_until={BlockedUntil}",
+            storedUntil);
+    }
+
+    private async Task PersistExpensiveBackoffStateAsync(CancellationToken ct)
+    {
+        var maxBlockedUntil = _expensiveBlockedUntilByModel.Count == 0
+            ? 0
+            : _expensiveBlockedUntilByModel.Values.Max(value => value.ToUnixTimeSeconds());
+
+        await _analysisStateRepository.SetWatermarkAsync(ExpensiveBackoffStateKey, maxBlockedUntil, ct);
+    }
 
     private static string BuildExpensiveErrorPayload(Exception ex)
     {
