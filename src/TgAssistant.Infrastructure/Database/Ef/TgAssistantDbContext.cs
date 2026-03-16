@@ -21,6 +21,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbCommunicationEvent> CommunicationEvents => Set<DbCommunicationEvent>();
     public DbSet<DbDailySummary> DailySummaries => Set<DbDailySummary>();
     public DbSet<DbChatDialogSummary> ChatDialogSummaries => Set<DbChatDialogSummary>();
+    public DbSet<DbChatSession> ChatSessions => Set<DbChatSession>();
     public DbSet<DbPromptTemplate> PromptTemplates => Set<DbPromptTemplate>();
     public DbSet<DbAnalysisState> AnalysisStates => Set<DbAnalysisState>();
     public DbSet<DbMessageExtraction> MessageExtractions => Set<DbMessageExtraction>();
@@ -264,6 +265,22 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.ChatId, x.SummaryType, x.PeriodStart, x.PeriodEnd }).IsUnique();
             e.HasIndex(x => new { x.ChatId, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbChatSession>(e =>
+        {
+            e.ToTable("chat_sessions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.SessionIndex).HasColumnName("session_index");
+            e.Property(x => x.StartDate).HasColumnName("start_date");
+            e.Property(x => x.EndDate).HasColumnName("end_date");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ChatId, x.SessionIndex }).IsUnique();
+            e.HasIndex(x => new { x.ChatId, x.EndDate });
         });
 
         modelBuilder.Entity<DbPromptTemplate>(e =>

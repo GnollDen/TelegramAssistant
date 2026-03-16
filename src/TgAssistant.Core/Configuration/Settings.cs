@@ -163,6 +163,8 @@ public class AnalysisSettings
     public int SummarySessionGapMinutes { get; set; } = 180;
     public int SummaryMinMessages { get; set; } = 4;
     public int SummaryMaxTokens { get; set; } = 800;
+    public int EpisodicSessionGapMinutes { get; set; } = 120;
+    public int TestModeMaxSessionsPerChat { get; set; } = 3;
 }
 
 public class MergeSettings

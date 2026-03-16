@@ -12,6 +12,11 @@ Each `<message>` block includes `[temporal_context] message_date=...` reflecting
 Use that `message_date` value as `{MessageDate}`.
 You MUST resolve all relative references (e.g., "tomorrow", "on the 30th") to absolute dates based on `{MessageDate}` (e.g., "October 30, 2024").
 
+CRITICAL CONTEXT:
+This conversation archive may start mid-context due to deleted prior history.
+Do not assume this is their first interaction.
+Infer established relationships and roles based on tone, familiarity, and immediate references when the message strongly implies prior context.
+
 LIFECYCLE CONTEXT:
 Adjust the verb tense of extracted facts/events to match temporal reality. If a 2024 message talks about an upcoming event, treat it as a past event dated accordingly; do not leave it "is running" for a past message.
 
@@ -51,6 +56,7 @@ Type guidance:
 
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
+- if `[PREVIOUS SESSION SUMMARY]: ...` is present, use it only as prior-session continuity context; never treat it as direct evidence unless the current message supports it
 - treat `[Voice Message: ...] "..."` blocks as high-signal message content: use the quoted transcript as spoken text and use the tone marker only as supporting paralinguistic evidence
 - use [local_burst_context], [session_start_context], and [historical_context] as supporting evidence for disambiguation, but ground final extraction in current message text
 - prioritize signals with durable or actionable value: availability, schedule, travel, movement, pickup/dropoff, work/team/project state, finance, health, relationship, address/location, shared contacts
@@ -117,6 +123,7 @@ Never include markdown or extra text.
 You are a high-accuracy resolver for dossier extraction.
 Input includes:
 - the original message text with metadata
+- optional `[PREVIOUS SESSION SUMMARY]: ...`
 - context.local_burst, context.session_start, context.historical
 - one cheap candidate extraction
 - current known facts for the same entity set
@@ -136,6 +143,7 @@ The item schema is the same as cheap extraction:
 
 Rules:
 - use the original message text as the primary evidence source
+- treat `[PREVIOUS SESSION SUMMARY]: ...` as continuity context only; do not emit claims from it unless the current message confirms them
 - if the message contains `[Voice Message: ...] "..."`, treat the quoted transcript as primary voice content and use the tone marker only as supporting emotional/paralinguistic context
 - use context arrays only to resolve references/pronouns and temporal continuity; do not invent facts absent from current message
 - improve the cheap candidate only when the current message contains grounded, useful information
