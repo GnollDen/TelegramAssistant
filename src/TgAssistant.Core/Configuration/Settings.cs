@@ -171,10 +171,23 @@ public class AnalysisSettings
     public int SummaryHistoricalHintsMaxCharsPerItem { get; set; } = 320;
     public float SummaryHistoricalHintsMinSimilarity { get; set; } = 0.72f;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
-    public bool SessionSlicerEnabled { get; set; } = false;
-    public int SessionSlicerPollIntervalSeconds { get; set; } = 30;
-    public int SessionSlicerBatchSize { get; set; } = 5000;
     public int TestModeMaxSessionsPerChat { get; set; } = 23;
+    public bool SessionFirstMode { get; set; } = true;
+    public int SessionChunkSize { get; set; } = 40;
+    public int SessionAnalysisBatchSize { get; set; } = 20;
+    public int SessionAnalysisMinIdleMinutes { get; set; } = 15;
+    public int SessionChunkTargetChars { get; set; } = 6000;
+    public int SessionChunkMaxChars { get; set; } = 9000;
+    public int SessionChunkMinMessages { get; set; } = 12;
+    public int SessionChunkHardMaxMessages { get; set; } = 80;
+    public int SessionChunkPauseGapMinutes { get; set; } = 25;
+}
+
+public class AggregationSettings
+{
+    public const string Section = "Aggregation";
+    public int MinIdleAgeHours { get; set; } = 6;
+    public int ArchiveThresholdHours { get; set; } = 24;
 }
 
 public class MergeSettings

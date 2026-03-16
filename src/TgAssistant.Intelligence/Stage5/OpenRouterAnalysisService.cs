@@ -33,9 +33,16 @@ public class OpenRouterAnalysisService
         _logger = logger;
     }
 
-    public async Task<ExtractionBatchResult> ExtractCheapAsync(string model, string systemPrompt, List<AnalysisInputMessage> batch, CancellationToken ct)
+    public async Task<ExtractionBatchResult> ExtractCheapAsync(
+        string model,
+        string systemPrompt,
+        List<AnalysisInputMessage> batch,
+        CancellationToken ct,
+        string? chunkSummaryPrev = null,
+        string? replySliceContext = null,
+        string? ragContext = null)
     {
-        var user = MessageContentBuilder.BuildCheapBatchPrompt(batch);
+        var user = MessageContentBuilder.BuildCheapBatchPrompt(batch, chunkSummaryPrev, replySliceContext, ragContext);
         var req = BuildRequest(
             model,
             systemPrompt,

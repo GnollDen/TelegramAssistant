@@ -10,6 +10,7 @@ public interface IMessageRepository
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetByIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetChatWindowAroundAsync(long chatId, long centerMessageId, int beforeCount, int afterCount, CancellationToken ct = default);
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
@@ -118,6 +119,7 @@ public interface ISummaryRepository
 public interface IChatDialogSummaryRepository
 {
     Task UpsertAsync(ChatDialogSummary summary, CancellationToken ct = default);
+    Task UpsertAndFinalizeSessionsAsync(ChatDialogSummary summary, IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
     Task<ChatDialogSummary?> GetByScopeAsync(
         long chatId,
         ChatDialogSummaryType summaryType,
@@ -132,6 +134,10 @@ public interface IChatSessionRepository
     Task UpsertAsync(ChatSession session, CancellationToken ct = default);
     Task<Dictionary<long, List<ChatSession>>> GetByChatsAsync(IReadOnlyCollection<long> chatIds, CancellationToken ct = default);
     Task<Dictionary<long, List<ChatSession>>> GetByPeriodAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
+    Task<List<ChatSession>> GetPendingAnalysisSessionsAsync(DateTime staleBeforeUtc, int limit, CancellationToken ct = default);
+    Task<Dictionary<long, List<ChatSession>>> GetPendingAggregationCandidatesAsync(DateTime staleBeforeUtc, CancellationToken ct = default);
+    Task MarkAnalyzedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
+    Task MarkFinalizedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
 }
 
 public interface IPromptTemplateRepository

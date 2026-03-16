@@ -151,8 +151,7 @@ public class ExtractionSchemaValidator
 
             if (!IsStringOrMissing(entity, "name") ||
                 !IsStringOrMissing(entity, "type") ||
-                !IsNumberOrMissing(entity, "confidence") ||
-                !IsNumberRequired(entity, "trust_factor") ||
+                !IsTrustOrConfidenceProvided(entity) ||
                 !IsBoolOrMissing(entity, "needs_clarification"))
             {
                 error = $"item_{index}_entity_{i}_invalid_fields";
@@ -230,7 +229,7 @@ public class ExtractionSchemaValidator
                 !IsStringOrMissing(claim, "key") ||
                 !IsStringOrMissing(claim, "value") ||
                 !IsStringOrMissing(claim, "evidence") ||
-                !IsNumberOrMissing(claim, "confidence"))
+                !IsNumberRequired(claim, "confidence"))
             {
                 error = $"item_{index}_claim_{i}_invalid_fields";
                 return false;
@@ -267,8 +266,7 @@ public class ExtractionSchemaValidator
                 !IsStringOrMissing(fact, "category") ||
                 !IsStringOrMissing(fact, "key") ||
                 !IsStringOrMissing(fact, "value") ||
-                !IsNumberOrMissing(fact, "confidence") ||
-                !IsNumberRequired(fact, "trust_factor") ||
+                !IsTrustOrConfidenceProvided(fact) ||
                 !IsBoolOrMissing(fact, "needs_clarification"))
             {
                 error = $"item_{index}_fact_{i}_invalid_fields";
@@ -408,6 +406,11 @@ public class ExtractionSchemaValidator
     {
         return obj.TryGetProperty(propName, out var value) &&
                value.ValueKind == JsonValueKind.Number;
+    }
+
+    private static bool IsTrustOrConfidenceProvided(JsonElement obj)
+    {
+        return IsNumberRequired(obj, "trust_factor") || IsNumberRequired(obj, "confidence");
     }
 
     private static bool IsBoolOrMissing(JsonElement obj, string propName)

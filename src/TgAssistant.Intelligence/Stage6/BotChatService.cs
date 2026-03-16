@@ -18,6 +18,7 @@ public class BotChatService : IBotChatService
     private const int MaxToolResultChars = 8000;
     private const int DefaultDossierLimit = 40;
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
+    private readonly IMessageRepository _messageRepository;
     private readonly IEntityRepository _entityRepository;
     private readonly IFactRepository _factRepository;
     private readonly IRelationshipRepository _relationshipRepository;
@@ -29,6 +30,7 @@ public class BotChatService : IBotChatService
 
     public BotChatService(
         ITextEmbeddingGenerator embeddingGenerator,
+        IMessageRepository messageRepository,
         IEntityRepository entityRepository,
         IFactRepository factRepository,
         IRelationshipRepository relationshipRepository,
@@ -39,6 +41,7 @@ public class BotChatService : IBotChatService
         ILogger<BotChatService> logger)
     {
         _embeddingGenerator = embeddingGenerator;
+        _messageRepository = messageRepository;
         _entityRepository = entityRepository;
         _factRepository = factRepository;
         _relationshipRepository = relationshipRepository;
@@ -324,6 +327,11 @@ public class BotChatService : IBotChatService
             DateTime.UnixEpoch,
             DateTime.UtcNow.AddDays(1),
             ct);
+        var sourceContextByMessageId = await BuildContextSummaryBySourceMessageIdAsync(
+            facts.Where(x => x.SourceMessageId.HasValue).Select(x => x.SourceMessageId!.Value)
+                .Concat(relationships.Where(x => x.SourceMessageId.HasValue).Select(x => x.SourceMessageId!.Value))
+                .Concat(events.Select(x => x.MessageId)),
+            ct);
         var payload = new
         {
             ok = true,
@@ -357,6 +365,9 @@ public class BotChatService : IBotChatService
                     confidence = x.Confidence,
                     status = x.Status.ToString(),
                     source_message_id = x.SourceMessageId,
+                    source_context = x.SourceMessageId.HasValue
+                        ? sourceContextByMessageId.GetValueOrDefault(x.SourceMessageId.Value)
+                        : null,
                     valid_from = x.ValidFrom,
                     valid_until = x.ValidUntil,
                     updated_at = x.UpdatedAt
@@ -376,6 +387,9 @@ public class BotChatService : IBotChatService
                     status = x.Status.ToString(),
                     context_text = x.ContextText,
                     source_message_id = x.SourceMessageId,
+                    source_context = x.SourceMessageId.HasValue
+                        ? sourceContextByMessageId.GetValueOrDefault(x.SourceMessageId.Value)
+                        : null,
                     updated_at = x.UpdatedAt
                 };
             })
@@ -390,6 +404,7 @@ public class BotChatService : IBotChatService
                     summary = x.Summary,
                     confidence = x.Confidence,
                     source_message_id = x.MessageId,
+                    source_context = sourceContextByMessageId.GetValueOrDefault(x.MessageId),
                     created_at = x.CreatedAt
                 })
                 .ToList()
@@ -420,6 +435,9 @@ public class BotChatService : IBotChatService
         }
 
         var relationships = await _relationshipRepository.GetByEntityWithNamesAsync(entity.Id, ct);
+        var sourceContextByMessageId = await BuildContextSummaryBySourceMessageIdAsync(
+            relationships.Where(x => x.SourceMessageId.HasValue).Select(x => x.SourceMessageId!.Value),
+            ct);
         var payload = new
         {
             ok = true,
@@ -442,6 +460,9 @@ public class BotChatService : IBotChatService
                     confidence = x.Confidence,
                     status = x.Status.ToString(),
                     source_message_id = x.SourceMessageId,
+                    source_context = x.SourceMessageId.HasValue
+                        ? sourceContextByMessageId.GetValueOrDefault(x.SourceMessageId.Value)
+                        : null,
                     updated_at = x.UpdatedAt
                 };
             }).ToList()
@@ -517,6 +538,70 @@ public class BotChatService : IBotChatService
     }
 
     private record DossierToolArgs(string EntityName, int Limit, string? CategoryFilter);
+
+    private async Task<Dictionary<long, string>> BuildContextSummaryBySourceMessageIdAsync(
+        IEnumerable<long> sourceMessageIds,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<long, string>();
+        var distinctIds = sourceMessageIds
+            .Where(x => x > 0)
+            .Distinct()
+            .Take(48)
+            .ToArray();
+        if (distinctIds.Length == 0)
+        {
+            return result;
+        }
+
+        foreach (var sourceMessageId in distinctIds)
+        {
+            var source = await _messageRepository.GetByIdAsync(sourceMessageId, ct);
+            if (source == null)
+            {
+                continue;
+            }
+
+            var window = await _messageRepository.GetChatWindowAroundAsync(source.ChatId, sourceMessageId, 5, 5, ct);
+            if (window.Count == 0)
+            {
+                continue;
+            }
+
+            var lines = window
+                .OrderBy(x => x.Timestamp)
+                .ThenBy(x => x.Id)
+                .Select(message =>
+                {
+                    var sender = string.IsNullOrWhiteSpace(message.SenderName)
+                        ? $"user:{message.SenderId}"
+                        : message.SenderName.Trim();
+                    var text = MessageContentBuilder.TruncateForContext(
+                        MessageContentBuilder.BuildSemanticContent(message),
+                        120);
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        return null;
+                    }
+
+                    var marker = message.Id == sourceMessageId ? "*" : "-";
+                    return $"{marker}[{message.Timestamp:MM-dd HH:mm}] {sender}: {text}";
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Take(11)
+                .ToList();
+            if (lines.Count == 0)
+            {
+                continue;
+            }
+
+            result[sourceMessageId] = MessageContentBuilder.TruncateForContext(
+                string.Join(" | ", lines),
+                1200);
+        }
+
+        return result;
+    }
 
     private static bool TryReadStringArg(JsonElement root, string field, out string value)
     {
