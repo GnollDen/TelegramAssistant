@@ -9,6 +9,7 @@ public class MessageContentBuilder
 {
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex SlashCommandRegex = new(@"^[\/!][\w@][\w@\-.]*(?:\s+\S+){0,2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex SlashCommandTokenRegex = new(@"^[\/!][\w@][\w@\-.]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex UrlOnlyRegex = new(@"^(?:(?:https?:\/\/)|(?:www\.))\S+$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly IMessageRepository _messageRepository;
@@ -205,6 +206,42 @@ public class MessageContentBuilder
         }
 
         return string.IsNullOrWhiteSpace(BuildSemanticContent(message));
+    }
+
+    public static bool IsTrashOnlySession(IReadOnlyCollection<Message> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return true;
+        }
+
+        foreach (var message in messages)
+        {
+            var semantic = CollapseWhitespace(BuildSemanticContent(message));
+            if (string.IsNullOrWhiteSpace(semantic))
+            {
+                continue;
+            }
+
+            if (semantic.Equals("[DELETED]", StringComparison.OrdinalIgnoreCase) ||
+                ServicePlaceholderRegex.IsMatch(semantic) ||
+                SlashCommandRegex.IsMatch(semantic) ||
+                UrlOnlyRegex.IsMatch(semantic))
+            {
+                continue;
+            }
+
+            var tokens = semantic
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (tokens.Length > 0 && tokens.All(token => SlashCommandTokenRegex.IsMatch(token) || UrlOnlyRegex.IsMatch(token)))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

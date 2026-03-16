@@ -80,4 +80,39 @@ public class ChatSessionRepository : IChatSessionRepository
 
         return result;
     }
+
+    public async Task<Dictionary<long, List<ChatSession>>> GetByPeriodAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, List<ChatSession>>();
+        if (toUtc < fromUtc)
+        {
+            return result;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .AsNoTracking()
+            .Where(x => x.EndDate >= fromUtc && x.EndDate <= toUtc)
+            .OrderBy(x => x.ChatId)
+            .ThenBy(x => x.EndDate)
+            .ThenBy(x => x.SessionIndex)
+            .ToListAsync(ct);
+
+        foreach (var group in rows.GroupBy(x => x.ChatId))
+        {
+            result[group.Key] = group.Select(x => new ChatSession
+            {
+                Id = x.Id,
+                ChatId = x.ChatId,
+                SessionIndex = x.SessionIndex,
+                StartDate = x.StartDate,
+                EndDate = x.EndDate,
+                Summary = x.Summary,
+                CreatedAt = x.CreatedAt,
+                UpdatedAt = x.UpdatedAt
+            }).ToList();
+        }
+
+        return result;
+    }
 }
