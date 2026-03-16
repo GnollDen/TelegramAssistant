@@ -115,6 +115,12 @@ public class BotChatService : IBotChatService
         foreach (var toolCall in toolCalls)
         {
             string toolResult;
+            var toolName = toolCall.Function.Name;
+            var toolArgs = toolCall.Function.Arguments ?? "{}";
+            _logger.LogInformation(
+                "Executing tool {ToolName} with args: {Args}",
+                toolName,
+                toolArgs);
             try
             {
                 toolResult = await ExecuteToolCallAsync(toolCall, CancellationToken.None);
@@ -124,18 +130,22 @@ public class BotChatService : IBotChatService
                 _logger.LogWarning(
                     ex,
                     "Tool execution failed. Tool={ToolName}",
-                    toolCall.Function.Name);
+                    toolName);
                 toolResult = BuildToolErrorResult(
                     "tool_execution_failed",
                     "Tool execution failed.",
-                    toolCall.Function.Name);
+                    toolName);
             }
 
             toolResult = EnsureToolResultSize(toolResult);
+            _logger.LogInformation(
+                "Tool {ToolName} finished. args: {Args}",
+                toolName,
+                toolArgs);
             messages.Add(new OpenRouterMessage
             {
                 Role = "tool",
-                Name = toolCall.Function.Name,
+                Name = toolName,
                 ToolCallId = toolCall.Id,
                 Content = toolResult
             });
@@ -257,7 +267,17 @@ public class BotChatService : IBotChatService
 
     private async Task<string> BuildEntityDossierResultAsync(string entityName, CancellationToken ct)
     {
-        var entity = await _entityRepository.FindBestByNameAsync(entityName, ct);
+        var entity = await _entityRepository.FindByNameOrAliasAsync(entityName, ct);
+        if (entity == null)
+        {
+            var yoToYeName = NormalizeYoToYe(entityName);
+            if (!string.Equals(entityName, yoToYeName, StringComparison.Ordinal))
+            {
+                entity = await _entityRepository.FindByNameOrAliasAsync(yoToYeName, ct);
+            }
+        }
+
+        entity ??= await _entityRepository.FindBestByNameAsync(entityName, ct);
         if (entity == null)
         {
             return JsonSerializer.Serialize(new
@@ -265,7 +285,7 @@ public class BotChatService : IBotChatService
                 ok = true,
                 found = false,
                 entity_name = entityName,
-                message = "Entity not found."
+                message = "Entity not found. Ask the user for a different spelling."
             }, JsonOptions);
         }
 
@@ -301,6 +321,13 @@ public class BotChatService : IBotChatService
         };
 
         return JsonSerializer.Serialize(payload, JsonOptions);
+    }
+
+    private static string NormalizeYoToYe(string value)
+    {
+        return value
+            .Replace('ё', 'е')
+            .Replace('Ё', 'Е');
     }
 
     private async Task<string> BuildRelationshipsResultAsync(string entityName, CancellationToken ct)
@@ -491,7 +518,7 @@ public class BotChatService : IBotChatService
         public static string BuildSystemPrompt(IReadOnlyCollection<Fact> facts)
         {
             var factsBlock = BuildFactsBlock(facts);
-            return $"You are an AI personal assistant for Rinat. Use provided context facts and tool results to answer accurately. If a requested entity is not found, say that clearly and suggest the closest known context. Be concise and direct. Context:\n{factsBlock}";
+            return $"You are an AI personal assistant for Rinat. Use provided context facts and tool results to answer accurately. If the user asks for a dossier, profile, or full information about a person, you MUST call the get_entity_dossier tool. Do not try to answer from memory or context alone. If a requested entity is not found, say that clearly and suggest the closest known context. Be concise and direct. Context:\n{factsBlock}";
         }
 
         private static string BuildFactsBlock(IReadOnlyCollection<Fact> facts)
