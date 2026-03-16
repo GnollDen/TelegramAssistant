@@ -281,11 +281,16 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.SessionIndex).HasColumnName("session_index");
             e.Property(x => x.StartDate).HasColumnName("start_date");
             e.Property(x => x.EndDate).HasColumnName("end_date");
+            e.Property(x => x.LastMessageAt).HasColumnName("last_message_at");
             e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.IsFinalized).HasColumnName("is_finalized");
+            e.Property(x => x.IsAnalyzed).HasColumnName("is_analyzed");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.ChatId, x.SessionIndex }).IsUnique();
             e.HasIndex(x => new { x.ChatId, x.EndDate });
+            e.HasIndex(x => new { x.IsFinalized, x.LastMessageAt });
+            e.HasIndex(x => new { x.IsAnalyzed, x.IsFinalized, x.LastMessageAt });
         });
 
         modelBuilder.Entity<DbPromptTemplate>(e =>

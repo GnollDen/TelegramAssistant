@@ -57,6 +57,9 @@ Type guidance:
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
 - if `[PREVIOUS SESSION SUMMARY]: ...` is present, use it only as prior-session continuity context; never treat it as direct evidence unless the current message supports it
+- if `[CHUNK_SUMMARY_PREV]` is present, use it only to preserve within-session continuity between chunks; never emit facts from it unless the current `<message>` confirms them
+- if `[REPLY_SLICE_CONTEXT]` is present, use it to resolve references to replied older threads; treat it as supporting context only and never emit facts unless the current `<message>` confirms them
+- if `[RAG_CONTEXT]` is present, use it as low-priority historical hint for ambiguous references across older sessions; never emit facts from it unless the current `<message>` confirms them
 - if `[EXTERNAL_REPLY_CONTEXT]` is present, use it to understand which older question, statement, or thread the user is replying to; do not treat it as a new topic when the current message is clearly a reaction to older context
 - treat `[Voice Message: ...] "..."` blocks as high-signal message content: use the quoted transcript as spoken text and use the tone marker only as supporting paralinguistic evidence
 - use [local_burst_context], [session_start_context], and [historical_context] as supporting evidence for disambiguation, but ground final extraction in current message text

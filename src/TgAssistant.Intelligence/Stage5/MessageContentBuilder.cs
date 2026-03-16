@@ -110,10 +110,35 @@ public class MessageContentBuilder
     /// <summary>
     /// Builds cheap-pass batch prompt for OpenRouter extraction.
     /// </summary>
-    public static string BuildCheapBatchPrompt(List<AnalysisInputMessage> batch)
+    public static string BuildCheapBatchPrompt(
+        List<AnalysisInputMessage> batch,
+        string? chunkSummaryPrev = null,
+        string? replySliceContext = null,
+        string? ragContext = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("Analyze these chat messages and return one extraction item per message.");
+        if (!string.IsNullOrWhiteSpace(chunkSummaryPrev))
+        {
+            sb.AppendLine("[CHUNK_SUMMARY_PREV]");
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(chunkSummaryPrev), 900));
+            sb.AppendLine("[/CHUNK_SUMMARY_PREV]");
+        }
+
+        if (!string.IsNullOrWhiteSpace(replySliceContext))
+        {
+            sb.AppendLine("[REPLY_SLICE_CONTEXT]");
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(replySliceContext), 1400));
+            sb.AppendLine("[/REPLY_SLICE_CONTEXT]");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ragContext))
+        {
+            sb.AppendLine("[RAG_CONTEXT]");
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(ragContext), 1200));
+            sb.AppendLine("[/RAG_CONTEXT]");
+        }
+
         foreach (var msg in batch)
         {
             sb.AppendLine($"<message id=\"{msg.MessageId}\" sender_name=\"{msg.SenderName}\" ts=\"{msg.Timestamp:O}\">");

@@ -203,6 +203,65 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Message>> GetChatWindowAroundAsync(
+        long chatId,
+        long centerMessageId,
+        int beforeCount,
+        int afterCount,
+        CancellationToken ct = default)
+    {
+        var safeBefore = Math.Max(0, beforeCount);
+        var safeAfter = Math.Max(0, afterCount);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var center = await db.Messages
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == centerMessageId && x.ChatId == chatId, ct);
+        if (center == null)
+        {
+            return [];
+        }
+
+        var before = safeBefore == 0
+            ? new List<DbMessage>()
+            : await db.Messages
+                .AsNoTracking()
+                .Where(x => x.ChatId == chatId
+                            && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                            && (x.Timestamp < center.Timestamp
+                                || (x.Timestamp == center.Timestamp && x.Id < center.Id))
+                            && (x.MediaType == (short)MediaType.None
+                                || x.MediaDescription != null
+                                || x.MediaTranscription != null))
+                .OrderByDescending(x => x.Timestamp)
+                .ThenByDescending(x => x.Id)
+                .Take(safeBefore)
+                .ToListAsync(ct);
+
+        var after = safeAfter == 0
+            ? new List<DbMessage>()
+            : await db.Messages
+                .AsNoTracking()
+                .Where(x => x.ChatId == chatId
+                            && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                            && (x.Timestamp > center.Timestamp
+                                || (x.Timestamp == center.Timestamp && x.Id > center.Id))
+                            && (x.MediaType == (short)MediaType.None
+                                || x.MediaDescription != null
+                                || x.MediaTranscription != null))
+                .OrderBy(x => x.Timestamp)
+                .ThenBy(x => x.Id)
+                .Take(safeAfter)
+                .ToListAsync(ct);
+
+        before.Reverse();
+        return before
+            .Concat([center])
+            .Concat(after)
+            .Select(ToDomain)
+            .ToList();
+    }
+
     public async Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

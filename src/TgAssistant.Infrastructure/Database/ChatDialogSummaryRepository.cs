@@ -20,7 +20,36 @@ public class ChatDialogSummaryRepository : IChatDialogSummaryRepository
     public async Task UpsertAsync(ChatDialogSummary summary, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await UpsertInternalAsync(db, summary, ct);
+        await db.SaveChangesAsync(ct);
+    }
 
+    public async Task UpsertAndFinalizeSessionsAsync(ChatDialogSummary summary, IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        await UpsertInternalAsync(db, summary, ct);
+
+        if (sessionIds.Count > 0)
+        {
+            var rows = await db.ChatSessions
+                .Where(x => sessionIds.Contains(x.Id))
+                .ToListAsync(ct);
+            var now = DateTime.UtcNow;
+            foreach (var row in rows)
+            {
+                row.IsFinalized = true;
+                row.UpdatedAt = now;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
+    private static async Task UpsertInternalAsync(TgAssistantDbContext db, ChatDialogSummary summary, CancellationToken ct)
+    {
         var row = await db.ChatDialogSummaries.FirstOrDefaultAsync(
             x => x.ChatId == summary.ChatId
                  && x.SummaryType == (short)summary.SummaryType
@@ -55,8 +84,6 @@ public class ChatDialogSummaryRepository : IChatDialogSummaryRepository
             row.IsFinalized = summary.IsFinalized;
             row.UpdatedAt = DateTime.UtcNow;
         }
-
-        await db.SaveChangesAsync(ct);
     }
 
     public async Task<ChatDialogSummary?> GetByScopeAsync(
