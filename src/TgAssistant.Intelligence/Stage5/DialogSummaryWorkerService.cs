@@ -17,6 +17,7 @@ public class DialogSummaryWorkerService : BackgroundService
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly AnalysisSettings _settings;
+    private readonly AggregationSettings _aggregationSettings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMessageExtractionRepository _messageExtractionRepository;
     private readonly IChatDialogSummaryRepository _summaryRepository;
@@ -29,6 +30,7 @@ public class DialogSummaryWorkerService : BackgroundService
 
     public DialogSummaryWorkerService(
         IOptions<AnalysisSettings> settings,
+        IOptions<AggregationSettings> aggregationSettings,
         IMessageRepository messageRepository,
         IMessageExtractionRepository messageExtractionRepository,
         IChatDialogSummaryRepository summaryRepository,
@@ -40,6 +42,7 @@ public class DialogSummaryWorkerService : BackgroundService
         ILogger<DialogSummaryWorkerService> logger)
     {
         _settings = settings.Value;
+        _aggregationSettings = aggregationSettings.Value;
         _messageRepository = messageRepository;
         _messageExtractionRepository = messageExtractionRepository;
         _summaryRepository = summaryRepository;
@@ -205,7 +208,7 @@ public class DialogSummaryWorkerService : BackgroundService
             var sessions = SplitByGap(chatMessages, TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicSessionGapMinutes)))
                 .Take(sessionLimit)
                 .ToList();
-            var existingByIndex = existingSessionsByChat.GetValueOrDefault(chatId)?
+                var existingByIndex = existingSessionsByChat.GetValueOrDefault(chatId)?
                 .ToDictionary(x => x.SessionIndex) ?? new Dictionary<int, ChatSession>();
             var touchedIds = touchedIdsByChat.GetValueOrDefault(chatId) ?? [];
 
@@ -218,6 +221,10 @@ public class DialogSummaryWorkerService : BackgroundService
                 }
 
                 var existing = existingByIndex.GetValueOrDefault(i);
+                if (existing?.IsFinalized == true)
+                {
+                    continue;
+                }
                 var sessionStart = session.First().Timestamp;
                 var sessionEnd = session.Last().Timestamp;
                 var boundsUnchanged = existing != null && existing.StartDate == sessionStart && existing.EndDate == sessionEnd;
@@ -311,7 +318,9 @@ public class DialogSummaryWorkerService : BackgroundService
                     SessionIndex = i,
                     StartDate = sessionStart,
                     EndDate = sessionEnd,
-                    Summary = summaryText
+                    LastMessageAt = sessionEnd,
+                    Summary = summaryText,
+                    IsFinalized = ShouldAutoFinalizeArchiveSession(sessionEnd)
                 }, ct);
 
                 await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(chatId, i, summaryText, ct);
@@ -612,6 +621,12 @@ public class DialogSummaryWorkerService : BackgroundService
         var elapsed = DateTime.UtcNow - lastMessageTimestampUtc;
         idleRemaining = HotSessionIdleTimeout - elapsed;
         return elapsed >= HotSessionIdleTimeout;
+    }
+
+    private bool ShouldAutoFinalizeArchiveSession(DateTime sessionEndUtc)
+    {
+        var archiveThresholdHours = Math.Max(1, _aggregationSettings.ArchiveThresholdHours);
+        return DateTime.UtcNow - sessionEndUtc >= TimeSpan.FromHours(archiveThresholdHours);
     }
 
     private const string SummaryPrompt = """

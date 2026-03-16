@@ -57,14 +57,6 @@ services:
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
       BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-0}
-      ContinuousRefinement__Enabled: ${CONTINUOUS_REFINEMENT_ENABLED:-false}
-      ContinuousRefinement__PollIntervalSeconds: ${CONTINUOUS_REFINEMENT_POLL_INTERVAL_SECONDS:-300}
-      ContinuousRefinement__BatchSize: ${CONTINUOUS_REFINEMENT_BATCH_SIZE:-10}
-      ContinuousRefinement__MinMessageLength: ${CONTINUOUS_REFINEMENT_MIN_MESSAGE_LENGTH:-280}
-      ContinuousRefinement__StaleAfterHours: ${CONTINUOUS_REFINEMENT_STALE_AFTER_HOURS:-168}
-      ContinuousRefinement__MinDelaySeconds: ${CONTINUOUS_REFINEMENT_MIN_DELAY_SECONDS:-60}
-      ContinuousRefinement__MaxDelaySeconds: ${CONTINUOUS_REFINEMENT_MAX_DELAY_SECONDS:-120}
-      ContinuousRefinement__LowConfidenceThreshold: ${CONTINUOUS_REFINEMENT_LOW_CONFIDENCE_THRESHOLD:-0.7}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}
@@ -151,10 +143,18 @@ services:
       Analysis__SummaryHistoricalHintsMaxCharsPerItem: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MAX_CHARS_PER_ITEM:-320}
       Analysis__SummaryHistoricalHintsMinSimilarity: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MIN_SIMILARITY:-0.72}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
-      Analysis__SessionSlicerEnabled: ${ANALYSIS_SESSION_SLICER_ENABLED:-false}
-      Analysis__SessionSlicerPollIntervalSeconds: ${ANALYSIS_SESSION_SLICER_POLL_INTERVAL_SECONDS:-30}
-      Analysis__SessionSlicerBatchSize: ${ANALYSIS_SESSION_SLICER_BATCH_SIZE:-5000}
-      Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-23}
+      Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-100}
+      Analysis__SessionFirstMode: ${ANALYSIS_SESSION_FIRST_MODE:-true}
+      Analysis__SessionChunkSize: ${ANALYSIS_SESSION_CHUNK_SIZE:-40}
+      Analysis__SessionAnalysisBatchSize: ${ANALYSIS_SESSION_ANALYSIS_BATCH_SIZE:-20}
+      Analysis__SessionAnalysisMinIdleMinutes: ${ANALYSIS_SESSION_ANALYSIS_MIN_IDLE_MINUTES:-15}
+      Analysis__SessionChunkTargetChars: ${ANALYSIS_SESSION_CHUNK_TARGET_CHARS:-6000}
+      Analysis__SessionChunkMaxChars: ${ANALYSIS_SESSION_CHUNK_MAX_CHARS:-9000}
+      Analysis__SessionChunkMinMessages: ${ANALYSIS_SESSION_CHUNK_MIN_MESSAGES:-12}
+      Analysis__SessionChunkHardMaxMessages: ${ANALYSIS_SESSION_CHUNK_HARD_MAX_MESSAGES:-80}
+      Analysis__SessionChunkPauseGapMinutes: ${ANALYSIS_SESSION_CHUNK_PAUSE_GAP_MINUTES:-25}
+      Aggregation__MinIdleAgeHours: ${AGGREGATION_MIN_IDLE_AGE_HOURS:-6}
+      Aggregation__ArchiveThresholdHours: ${AGGREGATION_ARCHIVE_THRESHOLD_HOURS:-24}
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}

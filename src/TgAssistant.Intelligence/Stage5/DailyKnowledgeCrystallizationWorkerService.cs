@@ -12,16 +12,17 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
 {
-    private const string LastFinalizedDayKey = "stage5:cold_path:last_finalized_day";
+    private const string DailyAggregatePromptId = "stage5_daily_aggregate_v1";
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
-    private static readonly TimeOnly RunTimeLocal = new(3, 0);
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly AnalysisSettings _settings;
+    private readonly AggregationSettings _aggregationSettings;
+    private readonly IMessageRepository _messageRepository;
     private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IIntelligenceRepository _intelligenceRepository;
     private readonly IChatDialogSummaryRepository _summaryRepository;
-    private readonly IAnalysisStateRepository _stateRepository;
+    private readonly IPromptTemplateRepository _promptRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
@@ -29,20 +30,24 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
 
     public DailyKnowledgeCrystallizationWorkerService(
         IOptions<AnalysisSettings> settings,
+        IOptions<AggregationSettings> aggregationSettings,
+        IMessageRepository messageRepository,
         IChatSessionRepository chatSessionRepository,
         IIntelligenceRepository intelligenceRepository,
         IChatDialogSummaryRepository summaryRepository,
-        IAnalysisStateRepository stateRepository,
+        IPromptTemplateRepository promptRepository,
         OpenRouterAnalysisService analysisService,
         SummaryHistoricalRetrievalService historicalRetrievalService,
         IExtractionErrorRepository extractionErrorRepository,
         ILogger<DailyKnowledgeCrystallizationWorkerService> logger)
     {
         _settings = settings.Value;
+        _aggregationSettings = aggregationSettings.Value;
+        _messageRepository = messageRepository;
         _chatSessionRepository = chatSessionRepository;
         _intelligenceRepository = intelligenceRepository;
         _summaryRepository = summaryRepository;
-        _stateRepository = stateRepository;
+        _promptRepository = promptRepository;
         _analysisService = analysisService;
         _historicalRetrievalService = historicalRetrievalService;
         _extractionErrorRepository = extractionErrorRepository;
@@ -57,18 +62,18 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Stage5 cold-path worker started. local_run_time={RunTime}", RunTimeLocal);
+        _logger.LogInformation(
+            "Stage5 cold-path worker started. min_idle_h={MinIdleHours}, archive_threshold_h={ArchiveThresholdHours}",
+            Math.Max(1, _aggregationSettings.MinIdleAgeHours),
+            Math.Max(1, _aggregationSettings.ArchiveThresholdHours));
+        await EnsureDefaultPromptAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.Local);
-                var nextRunLocal = ResolveNextRunLocal(nowLocal);
-                _logger.LogInformation("Stage5 cold-path next run scheduled at local={NextRunLocal}", nextRunLocal);
-                await DelayUntilAsync(nextRunLocal, stoppingToken);
-
                 await RunDailyCrystallizationAsync(stoppingToken);
+                await Task.Delay(PollInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -89,28 +94,13 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
 
     private async Task RunDailyCrystallizationAsync(CancellationToken ct)
     {
-        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.Local);
-        var targetDayLocal = DateOnly.FromDateTime(nowLocal.Date).AddDays(-1);
-        var lastFinalizedDayNumber = await _stateRepository.GetWatermarkAsync(LastFinalizedDayKey, ct);
-        if (targetDayLocal.DayNumber <= lastFinalizedDayNumber)
-        {
-            _logger.LogInformation(
-                "Stage5 cold-path skip. day already finalized or not ready: target_day={TargetDay}, last_finalized_day_number={LastFinalizedDayNumber}",
-                targetDayLocal,
-                lastFinalizedDayNumber);
-            return;
-        }
-
-        var (dayStartUtc, dayEndUtc) = ResolveUtcBoundsForLocalDay(targetDayLocal);
-        var sessionsByChat = await _chatSessionRepository.GetByPeriodAsync(dayStartUtc, dayEndUtc, ct);
+        var staleBeforeUtc = DateTime.UtcNow.AddHours(-Math.Max(1, _aggregationSettings.MinIdleAgeHours));
+        var sessionsByChat = await _chatSessionRepository.GetPendingAggregationCandidatesAsync(staleBeforeUtc, ct);
         if (sessionsByChat.Count == 0)
         {
             _logger.LogInformation(
-                "Stage5 cold-path no sessions found for day. target_day={TargetDay}, utc_start={UtcStart}, utc_end={UtcEnd}",
-                targetDayLocal,
-                dayStartUtc,
-                dayEndUtc);
-            await _stateRepository.SetWatermarkAsync(LastFinalizedDayKey, targetDayLocal.DayNumber, ct);
+                "Stage5 cold-path no pending sessions. stale_before_utc={StaleBeforeUtc}",
+                staleBeforeUtc);
             return;
         }
 
@@ -118,80 +108,90 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         {
             try
             {
-                var sessionSummaries = sessions
-                    .Where(x => !string.IsNullOrWhiteSpace(x.Summary))
-                    .OrderBy(x => x.StartDate)
+                var sessionsByLocalDay = sessions
+                    .Where(x => !x.IsFinalized && !string.IsNullOrWhiteSpace(x.Summary))
+                    .GroupBy(x => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(x.LastMessageAt, TimeZoneInfo.Local)))
                     .ToList();
-                if (sessionSummaries.Count == 0)
+                if (sessionsByLocalDay.Count == 0)
                 {
-                    _logger.LogInformation(
-                        "Stage5 cold-path skip chat with empty session summaries. chat_id={ChatId}, day={TargetDay}",
-                        chatId,
-                        targetDayLocal);
                     continue;
                 }
 
-                var existingDaySummary = await _summaryRepository.GetByScopeAsync(
-                    chatId,
-                    ChatDialogSummaryType.Day,
-                    dayStartUtc,
-                    dayEndUtc,
-                    ct);
-                if (existingDaySummary?.IsFinalized == true)
+                foreach (var dayGroup in sessionsByLocalDay)
                 {
+                    var targetDayLocal = dayGroup.Key;
+                    var (dayStartUtc, dayEndUtc) = ResolveUtcBoundsForLocalDay(targetDayLocal);
+                    var sessionSummaries = dayGroup
+                        .OrderBy(x => x.StartDate)
+                        .ToList();
+                    if (sessionSummaries.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var existingDaySummary = await _summaryRepository.GetByScopeAsync(
+                        chatId,
+                        ChatDialogSummaryType.Day,
+                        dayStartUtc,
+                        dayEndUtc,
+                        ct);
+                    if (existingDaySummary?.IsFinalized == true)
+                    {
+                        continue;
+                    }
+
+                    var claims = await _intelligenceRepository.GetClaimsByChatAndPeriodAsync(
+                        chatId,
+                        dayStartUtc,
+                        dayEndUtc,
+                        limit: 120,
+                        ct: ct);
+
+                    var finalSummary = await BuildFinalDailySummaryAsync(chatId, targetDayLocal, sessionSummaries, claims, ct);
+                    if (string.IsNullOrWhiteSpace(finalSummary))
+                    {
+                        finalSummary = BuildFallbackFinalSummary(sessionSummaries, claims);
+                    }
+
+                    if (!ContainsCyrillic(finalSummary))
+                    {
+                        _logger.LogWarning(
+                            "Stage5 cold-path final daily summary has no Cyrillic symbols. chat_id={ChatId}, day={TargetDay}",
+                            chatId,
+                            targetDayLocal);
+                    }
+
+                    var startMessageId = existingDaySummary?.StartMessageId
+                                         ?? await ResolveBoundaryMessageIdAsync(chatId, dayStartUtc, preferMin: true, ct);
+                    var endMessageId = existingDaySummary?.EndMessageId
+                                       ?? await ResolveBoundaryMessageIdAsync(chatId, dayEndUtc, preferMin: false, ct);
+
+                    await _summaryRepository.UpsertAndFinalizeSessionsAsync(new ChatDialogSummary
+                    {
+                        ChatId = chatId,
+                        SummaryType = ChatDialogSummaryType.Day,
+                        PeriodStart = dayStartUtc,
+                        PeriodEnd = dayEndUtc,
+                        StartMessageId = startMessageId,
+                        EndMessageId = endMessageId,
+                        MessageCount = sessionSummaries.Count,
+                        Summary = finalSummary,
+                        IsFinalized = true
+                    }, sessionSummaries.Select(x => x.Id).ToArray(), ct);
+
+                    await _historicalRetrievalService.UpsertDailyFinalSummaryEmbeddingAsync(
+                        chatId,
+                        targetDayLocal,
+                        finalSummary,
+                        ct);
+
                     _logger.LogInformation(
-                        "Stage5 cold-path skip finalized day summary. chat_id={ChatId}, day={TargetDay}",
+                        "Stage5 cold-path finalized day summary. chat_id={ChatId}, day={TargetDay}, sessions={SessionCount}, claims={ClaimCount}",
                         chatId,
-                        targetDayLocal);
-                    continue;
+                        targetDayLocal,
+                        sessionSummaries.Count,
+                        claims.Count);
                 }
-
-                var claims = await _intelligenceRepository.GetClaimsByChatAndPeriodAsync(
-                    chatId,
-                    dayStartUtc,
-                    dayEndUtc,
-                    limit: 120,
-                    ct: ct);
-
-                var finalSummary = await BuildFinalDailySummaryAsync(chatId, targetDayLocal, sessionSummaries, claims, ct);
-                if (string.IsNullOrWhiteSpace(finalSummary))
-                {
-                    finalSummary = BuildFallbackFinalSummary(sessionSummaries, claims);
-                }
-
-                if (!ContainsCyrillic(finalSummary))
-                {
-                    _logger.LogWarning(
-                        "Stage5 cold-path final daily summary has no Cyrillic symbols. chat_id={ChatId}, day={TargetDay}",
-                        chatId,
-                        targetDayLocal);
-                }
-
-                await _summaryRepository.UpsertAsync(new ChatDialogSummary
-                {
-                    ChatId = chatId,
-                    SummaryType = ChatDialogSummaryType.Day,
-                    PeriodStart = dayStartUtc,
-                    PeriodEnd = dayEndUtc,
-                    StartMessageId = existingDaySummary?.StartMessageId ?? 0,
-                    EndMessageId = existingDaySummary?.EndMessageId ?? 0,
-                    MessageCount = sessionSummaries.Count,
-                    Summary = finalSummary,
-                    IsFinalized = true
-                }, ct);
-
-                await _historicalRetrievalService.UpsertDailyFinalSummaryEmbeddingAsync(
-                    chatId,
-                    targetDayLocal,
-                    finalSummary,
-                    ct);
-
-                _logger.LogInformation(
-                    "Stage5 cold-path finalized day summary. chat_id={ChatId}, day={TargetDay}, sessions={SessionCount}, claims={ClaimCount}",
-                    chatId,
-                    targetDayLocal,
-                    sessionSummaries.Count,
-                    claims.Count);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -201,18 +201,15 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
             {
                 _logger.LogWarning(
                     ex,
-                    "Stage5 cold-path chat finalization failed. chat_id={ChatId}, day={TargetDay}",
-                    chatId,
-                    targetDayLocal);
+                    "Stage5 cold-path chat finalization failed. chat_id={ChatId}",
+                    chatId);
                 await _extractionErrorRepository.LogAsync(
                     stage: "stage5_cold_path_chat",
                     reason: ex.Message,
-                    payload: $"chat_id={chatId};day={targetDayLocal:yyyy-MM-dd}",
+                    payload: $"chat_id={chatId}",
                     ct: ct);
             }
         }
-
-        await _stateRepository.SetWatermarkAsync(LastFinalizedDayKey, targetDayLocal.DayNumber, ct);
     }
 
     private async Task<string> BuildFinalDailySummaryAsync(
@@ -225,13 +222,14 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         var model = string.IsNullOrWhiteSpace(_settings.SummaryModel)
             ? _settings.ExpensiveModel
             : _settings.SummaryModel;
+        var promptTemplate = await GetPromptAsync(DailyAggregatePromptId, FinalSummarySystemPrompt, ct);
         var userPrompt = BuildFinalizationPrompt(chatId, day, sessions, claims);
 
         try
         {
             var raw = await _analysisService.CompleteTextAsync(
                 model,
-                FinalSummarySystemPrompt,
+                promptTemplate.SystemPrompt,
                 userPrompt,
                 Math.Max(300, _settings.SummaryMaxTokens),
                 ct);
@@ -351,6 +349,49 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         return !string.IsNullOrWhiteSpace(value) && CyrillicRegex.IsMatch(value);
     }
 
+    private async Task EnsureDefaultPromptAsync(CancellationToken ct)
+    {
+        var existing = await _promptRepository.GetByIdAsync(DailyAggregatePromptId, ct);
+        if (existing != null)
+        {
+            return;
+        }
+
+        await _promptRepository.UpsertAsync(new PromptTemplate
+        {
+            Id = DailyAggregatePromptId,
+            Name = "Stage5 Daily Aggregate v1",
+            Description = "Cold path final daily crystallization prompt",
+            SystemPrompt = FinalSummarySystemPrompt
+        }, ct);
+    }
+
+    private async Task<PromptTemplate> GetPromptAsync(string id, string fallback, CancellationToken ct)
+    {
+        var prompt = await _promptRepository.GetByIdAsync(id, ct);
+        return prompt ?? new PromptTemplate
+        {
+            Id = id,
+            Name = id,
+            SystemPrompt = fallback
+        };
+    }
+
+    private async Task<long> ResolveBoundaryMessageIdAsync(long chatId, DateTime pivotUtc, bool preferMin, CancellationToken ct)
+    {
+        var fromUtc = pivotUtc.AddHours(-12);
+        var toUtc = pivotUtc.AddHours(12);
+        var messages = await _messageRepository.GetByChatAndPeriodAsync(chatId, fromUtc, toUtc, 4000, ct);
+        if (messages.Count == 0)
+        {
+            return 0;
+        }
+
+        return preferMin
+            ? messages.Min(x => x.Id)
+            : messages.Max(x => x.Id);
+    }
+
     private static (DateTime startUtc, DateTime endUtc) ResolveUtcBoundsForLocalDay(DateOnly localDay)
     {
         var dayStartLocal = localDay.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
@@ -360,30 +401,6 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         var nextDayStartUtc = TimeZoneInfo.ConvertTimeToUtc(nextDayStartLocal, TimeZoneInfo.Local);
         var dayEndUtc = nextDayStartUtc.AddTicks(-1);
         return (dayStartUtc, dayEndUtc);
-    }
-
-    private static DateTime ResolveNextRunLocal(DateTime nowLocal)
-    {
-        var todayRun = nowLocal.Date.Add(RunTimeLocal.ToTimeSpan());
-        return nowLocal < todayRun
-            ? todayRun
-            : todayRun.AddDays(1);
-    }
-
-    private static async Task DelayUntilAsync(DateTime targetLocalTime, CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.Local);
-            var remaining = targetLocalTime - nowLocal;
-            if (remaining <= TimeSpan.Zero)
-            {
-                return;
-            }
-
-            var delay = remaining < PollInterval ? remaining : PollInterval;
-            await Task.Delay(delay, ct);
-        }
     }
 
     private const string FinalSummarySystemPrompt = """

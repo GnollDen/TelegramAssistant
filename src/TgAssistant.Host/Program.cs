@@ -45,6 +45,7 @@ try
             services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
             services.Configure<BackfillSettings>(config.GetSection(BackfillSettings.Section));
             services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
+            services.Configure<AggregationSettings>(config.GetSection(AggregationSettings.Section));
             services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
             services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
             services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));

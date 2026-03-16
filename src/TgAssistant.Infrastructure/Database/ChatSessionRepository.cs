@@ -31,16 +31,26 @@ public class ChatSessionRepository : IChatSessionRepository
                 SessionIndex = session.SessionIndex,
                 StartDate = session.StartDate,
                 EndDate = session.EndDate,
+                LastMessageAt = session.LastMessageAt == default ? session.EndDate : session.LastMessageAt,
                 Summary = session.Summary,
+                IsFinalized = session.IsFinalized,
+                IsAnalyzed = session.IsAnalyzed,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
         }
         else
         {
+            var boundariesChanged = row.StartDate != session.StartDate
+                                    || row.EndDate != session.EndDate
+                                    || row.LastMessageAt != (session.LastMessageAt == default ? session.EndDate : session.LastMessageAt);
+            var summaryChanged = !string.Equals(row.Summary ?? string.Empty, session.Summary ?? string.Empty, StringComparison.Ordinal);
             row.StartDate = session.StartDate;
             row.EndDate = session.EndDate;
-            row.Summary = session.Summary;
+            row.LastMessageAt = session.LastMessageAt == default ? session.EndDate : session.LastMessageAt;
+            row.Summary = session.Summary ?? string.Empty;
+            row.IsFinalized = row.IsFinalized || session.IsFinalized;
+            row.IsAnalyzed = session.IsAnalyzed || (row.IsAnalyzed && !boundariesChanged && !summaryChanged);
             row.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -72,10 +82,13 @@ public class ChatSessionRepository : IChatSessionRepository
                 SessionIndex = x.SessionIndex,
                 StartDate = x.StartDate,
                 EndDate = x.EndDate,
-                Summary = x.Summary,
-                CreatedAt = x.CreatedAt,
-                UpdatedAt = x.UpdatedAt
-            }).ToList();
+                    LastMessageAt = x.LastMessageAt,
+                    Summary = x.Summary,
+                    IsFinalized = x.IsFinalized,
+                    IsAnalyzed = x.IsAnalyzed,
+                    CreatedAt = x.CreatedAt,
+                    UpdatedAt = x.UpdatedAt
+                }).ToList();
         }
 
         return result;
@@ -107,12 +120,130 @@ public class ChatSessionRepository : IChatSessionRepository
                 SessionIndex = x.SessionIndex,
                 StartDate = x.StartDate,
                 EndDate = x.EndDate,
-                Summary = x.Summary,
-                CreatedAt = x.CreatedAt,
-                UpdatedAt = x.UpdatedAt
-            }).ToList();
+                    LastMessageAt = x.LastMessageAt,
+                    Summary = x.Summary,
+                    IsFinalized = x.IsFinalized,
+                    IsAnalyzed = x.IsAnalyzed,
+                    CreatedAt = x.CreatedAt,
+                    UpdatedAt = x.UpdatedAt
+                }).ToList();
         }
 
         return result;
+    }
+
+    public async Task<List<ChatSession>> GetPendingAnalysisSessionsAsync(DateTime staleBeforeUtc, int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .AsNoTracking()
+            .Where(x => !x.IsAnalyzed
+                        && !x.IsFinalized
+                        && x.LastMessageAt <= staleBeforeUtc)
+            .OrderBy(x => x.LastMessageAt)
+            .ThenBy(x => x.ChatId)
+            .ThenBy(x => x.SessionIndex)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        return rows.Select(x => new ChatSession
+        {
+            Id = x.Id,
+            ChatId = x.ChatId,
+            SessionIndex = x.SessionIndex,
+            StartDate = x.StartDate,
+            EndDate = x.EndDate,
+            LastMessageAt = x.LastMessageAt,
+            Summary = x.Summary,
+            IsFinalized = x.IsFinalized,
+            IsAnalyzed = x.IsAnalyzed,
+            CreatedAt = x.CreatedAt,
+            UpdatedAt = x.UpdatedAt
+        }).ToList();
+    }
+
+    public async Task<Dictionary<long, List<ChatSession>>> GetPendingAggregationCandidatesAsync(DateTime staleBeforeUtc, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .AsNoTracking()
+            .Where(x => !x.IsFinalized
+                        && !string.IsNullOrWhiteSpace(x.Summary)
+                        && x.LastMessageAt <= staleBeforeUtc)
+            .OrderBy(x => x.ChatId)
+            .ThenBy(x => x.LastMessageAt)
+            .ThenBy(x => x.SessionIndex)
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.ChatId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(row => new ChatSession
+                {
+                    Id = row.Id,
+                    ChatId = row.ChatId,
+                    SessionIndex = row.SessionIndex,
+                    StartDate = row.StartDate,
+                    EndDate = row.EndDate,
+                    LastMessageAt = row.LastMessageAt,
+                    Summary = row.Summary,
+                    IsFinalized = row.IsFinalized,
+                    IsAnalyzed = row.IsAnalyzed,
+                    CreatedAt = row.CreatedAt,
+                    UpdatedAt = row.UpdatedAt
+                }).ToList());
+    }
+
+    public async Task MarkAnalyzedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default)
+    {
+        if (sessionIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .Where(x => sessionIds.Contains(x.Id))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.IsAnalyzed = true;
+            row.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task MarkFinalizedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default)
+    {
+        if (sessionIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .Where(x => sessionIds.Contains(x.Id))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.IsFinalized = true;
+            row.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 }

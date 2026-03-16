@@ -42,6 +42,12 @@ public static class ExtractionValidator
                 error = "invalid_entity_name";
                 return false;
             }
+
+            if (!HasTrustOrConfidence(entity.TrustFactor, entity.Confidence))
+            {
+                error = "entity_missing_trust_or_confidence";
+                return false;
+            }
         }
 
         foreach (var observation in item.Observations)
@@ -69,6 +75,12 @@ public static class ExtractionValidator
                 error = "invalid_claim_payload";
                 return false;
             }
+
+            if (!IsValid01(claim.Confidence))
+            {
+                error = "claim_invalid_confidence";
+                return false;
+            }
         }
 
         foreach (var fact in item.Facts)
@@ -79,6 +91,12 @@ public static class ExtractionValidator
                 !IsReasonableText(fact.Value, 500))
             {
                 error = "invalid_fact_payload";
+                return false;
+            }
+
+            if (!HasTrustOrConfidence(fact.TrustFactor, fact.Confidence))
+            {
+                error = "fact_missing_trust_or_confidence";
                 return false;
             }
         }
@@ -140,5 +158,15 @@ public static class ExtractionValidator
         }
 
         return text.All(ch => !char.IsControl(ch));
+    }
+
+    private static bool HasTrustOrConfidence(float trustFactor, float confidence)
+    {
+        return IsValid01(trustFactor) || IsValid01(confidence);
+    }
+
+    private static bool IsValid01(float value)
+    {
+        return value > 0f && value <= 1f;
     }
 }
