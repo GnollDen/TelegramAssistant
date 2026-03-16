@@ -179,6 +179,18 @@ public class DbChatDialogSummary
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbChatSession
+{
+    public Guid Id { get; set; }
+    public long ChatId { get; set; }
+    public int SessionIndex { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbPromptTemplate
 {
     public string Id { get; set; } = string.Empty;

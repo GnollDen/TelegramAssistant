@@ -10,6 +10,7 @@ public interface IMessageRepository
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
@@ -117,6 +118,12 @@ public interface IChatDialogSummaryRepository
 {
     Task UpsertAsync(ChatDialogSummary summary, CancellationToken ct = default);
     Task<List<ChatDialogSummary>> GetRecentByChatAsync(long chatId, int limit, CancellationToken ct = default);
+}
+
+public interface IChatSessionRepository
+{
+    Task UpsertAsync(ChatSession session, CancellationToken ct = default);
+    Task<Dictionary<long, List<ChatSession>>> GetByChatsAsync(IReadOnlyCollection<long> chatIds, CancellationToken ct = default);
 }
 
 public interface IPromptTemplateRepository

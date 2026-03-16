@@ -13,8 +13,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public partial class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v8";
-    private const string ExpensivePromptId = "stage5_expensive_reason_v3";
+    private const string CheapPromptId = "stage5_cheap_extract_v9";
+    private const string ExpensivePromptId = "stage5_expensive_reason_v4";
     private const int MaxCheapLlmBatchSize = 10;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
@@ -27,6 +27,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IPromptTemplateRepository _promptRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly ExpensivePassResolver _expensivePassResolver;
     private readonly ExtractionApplier _extractionApplier;
@@ -41,6 +42,7 @@ public partial class AnalysisWorkerService : BackgroundService
         IExtractionErrorRepository extractionErrorRepository,
         IAnalysisStateRepository stateRepository,
         IPromptTemplateRepository promptRepository,
+        IChatSessionRepository chatSessionRepository,
         OpenRouterAnalysisService analysisService,
         ExpensivePassResolver expensivePassResolver,
         ExtractionApplier extractionApplier,
@@ -54,6 +56,7 @@ public partial class AnalysisWorkerService : BackgroundService
         _extractionErrorRepository = extractionErrorRepository;
         _stateRepository = stateRepository;
         _promptRepository = promptRepository;
+        _chatSessionRepository = chatSessionRepository;
         _analysisService = analysisService;
         _expensivePassResolver = expensivePassResolver;
         _extractionApplier = extractionApplier;
@@ -153,8 +156,38 @@ public partial class AnalysisWorkerService : BackgroundService
             return new CheapPassResult(new HashSet<long>(), false);
         }
 
+        var episodicGuard = await ApplyEpisodicMemoryGuardAsync(messages, ct);
+        if (episodicGuard.BlockedPendingSummaryMessageIds.Count > 0)
+        {
+            await _messageRepository.MarkNeedsReanalysisAsync(episodicGuard.BlockedPendingSummaryMessageIds, ct);
+            _logger.LogInformation(
+                "Stage5 episodic guard deferred messages pending session summaries: count={Count}",
+                episodicGuard.BlockedPendingSummaryMessageIds.Count);
+        }
+
+        if (episodicGuard.SkippedBySessionLimitMessageIds.Count > 0)
+        {
+            _logger.LogInformation(
+                "Stage5 episodic guard skipped messages beyond session limit: count={Count}, max_sessions_per_chat={MaxSessions}",
+                episodicGuard.SkippedBySessionLimitMessageIds.Count,
+                GetEpisodicSessionLimit());
+        }
+
+        messages = episodicGuard.AllowedMessages;
+        if (messages.Count == 0)
+        {
+            return new CheapPassResult(
+                episodicGuard.BlockedPendingSummaryMessageIds.ToHashSet(),
+                false);
+        }
+
         var failedMessageIds = new ConcurrentDictionary<long, byte>();
         var balanceIssueDetected = 0;
+        foreach (var blockedId in episodicGuard.BlockedPendingSummaryMessageIds)
+        {
+            failedMessageIds.TryAdd(blockedId, 0);
+        }
+
         var batchSize = Math.Max(1, _settings.BatchSize);
         var batches = messages
             .Chunk(batchSize)
@@ -465,8 +498,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v8", DefaultCheapPrompt, ct);
-        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v3", DefaultExpensivePrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v9", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v4", DefaultExpensivePrompt, ct);
     }
 
     private async Task EnsurePromptAsync(string id, string name, string systemPrompt, CancellationToken ct)
@@ -535,6 +568,51 @@ public partial class AnalysisWorkerService : BackgroundService
     {
         return Math.Clamp(_settings.CheapLlmParallelism, 1, 16);
     }
+
+    private async Task<EpisodicGuardResult> ApplyEpisodicMemoryGuardAsync(List<Message> messages, CancellationToken ct)
+    {
+        var limit = GetEpisodicSessionLimit();
+        if (limit <= 0 || messages.Count == 0)
+        {
+            return new EpisodicGuardResult(messages, [], []);
+        }
+
+        var sessionsByChat = await _chatSessionRepository.GetByChatsAsync(messages.Select(x => x.ChatId).Distinct().ToArray(), ct);
+        var allowed = new List<Message>(messages.Count);
+        var blockedPendingSummary = new List<long>();
+        var skippedBySessionLimit = new List<long>();
+
+        foreach (var message in messages)
+        {
+            var sessions = sessionsByChat.GetValueOrDefault(message.ChatId) ?? [];
+            if (sessions.Count == 0)
+            {
+                blockedPendingSummary.Add(message.Id);
+                continue;
+            }
+
+            var matchingSession = sessions.FirstOrDefault(session =>
+                session.StartDate <= message.Timestamp && message.Timestamp <= session.EndDate);
+
+            if (matchingSession != null)
+            {
+                allowed.Add(message);
+                continue;
+            }
+
+            if (sessions.Count >= limit && message.Timestamp > sessions[limit - 1].EndDate)
+            {
+                skippedBySessionLimit.Add(message.Id);
+                continue;
+            }
+
+            blockedPendingSummary.Add(message.Id);
+        }
+
+        return new EpisodicGuardResult(allowed, blockedPendingSummary, skippedBySessionLimit);
+    }
+
+    private int GetEpisodicSessionLimit() => Math.Max(0, _settings.TestModeMaxSessionsPerChat);
 
     private async Task<HashSet<long>> TryProcessChunkOneByOneAsync(
         CheapChunkRequest request,
@@ -658,4 +736,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private sealed record CheapPassResult(HashSet<long> FailedMessageIds, bool BalanceIssueDetected);
     private sealed record CheapChunkRequest(string Model, List<AnalysisInputMessage> Messages);
+    private sealed record EpisodicGuardResult(
+        List<Message> AllowedMessages,
+        List<long> BlockedPendingSummaryMessageIds,
+        List<long> SkippedBySessionLimitMessageIds);
 }

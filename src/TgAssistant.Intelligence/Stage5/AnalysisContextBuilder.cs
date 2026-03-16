@@ -10,15 +10,18 @@ public class AnalysisContextBuilder
     private readonly AnalysisSettings _settings;
     private readonly IMessageRepository _messageRepository;
     private readonly IChatDialogSummaryRepository _summaryRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
 
     public AnalysisContextBuilder(
         IOptions<AnalysisSettings> settings,
         IMessageRepository messageRepository,
-        IChatDialogSummaryRepository summaryRepository)
+        IChatDialogSummaryRepository summaryRepository,
+        IChatSessionRepository chatSessionRepository)
     {
         _settings = settings.Value;
         _messageRepository = messageRepository;
         _summaryRepository = summaryRepository;
+        _chatSessionRepository = chatSessionRepository;
     }
 
     /// <summary>
@@ -33,6 +36,7 @@ public class AnalysisContextBuilder
         }
 
         var historicalByChat = new Dictionary<long, List<ChatDialogSummary>>();
+        var sessionsByChat = await _chatSessionRepository.GetByChatsAsync(messages.Select(x => x.ChatId).Distinct().ToArray(), ct);
         var historyLimit = Math.Max(1, _settings.HistoricalSummaryContextItems * 2);
         foreach (var chatId in messages.Select(x => x.ChatId).Distinct())
         {
@@ -52,6 +56,9 @@ public class AnalysisContextBuilder
                 SessionStart = BuildSessionStart(previous, message),
                 HistoricalSummaries = BuildHistoricalSummaries(
                     historicalByChat.GetValueOrDefault(message.ChatId) ?? [],
+                    message.Timestamp),
+                PreviousSessionSummary = BuildPreviousSessionSummary(
+                    sessionsByChat.GetValueOrDefault(message.ChatId) ?? [],
                     message.Timestamp)
             };
 
@@ -123,5 +130,32 @@ public class AnalysisContextBuilder
         var label = summary.SummaryType == ChatDialogSummaryType.Day ? "day" : "session";
         var compact = MessageContentBuilder.TruncateForContext(summary.Summary, 360);
         return $"[{label} {summary.PeriodStart:yyyy-MM-dd HH:mm}-{summary.PeriodEnd:yyyy-MM-dd HH:mm}] {compact}";
+    }
+
+    private static string? BuildPreviousSessionSummary(List<ChatSession> sessions, DateTime currentTs)
+    {
+        if (sessions.Count == 0)
+        {
+            return null;
+        }
+
+        var currentSession = sessions.FirstOrDefault(session => session.StartDate <= currentTs && currentTs <= session.EndDate);
+        if (currentSession == null)
+        {
+            currentSession = sessions
+                .Where(session => session.StartDate <= currentTs)
+                .OrderByDescending(session => session.SessionIndex)
+                .FirstOrDefault();
+        }
+
+        if (currentSession == null || currentSession.SessionIndex <= 1)
+        {
+            return null;
+        }
+
+        var previousSession = sessions.FirstOrDefault(session => session.SessionIndex == currentSession.SessionIndex - 1);
+        return previousSession == null
+            ? null
+            : MessageContentBuilder.CollapseWhitespace(previousSession.Summary);
     }
 }

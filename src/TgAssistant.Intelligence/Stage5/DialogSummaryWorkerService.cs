@@ -15,6 +15,7 @@ public class DialogSummaryWorkerService : BackgroundService
     private readonly AnalysisSettings _settings;
     private readonly IMessageRepository _messageRepository;
     private readonly IChatDialogSummaryRepository _summaryRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly OpenRouterAnalysisService _analysisService;
@@ -24,6 +25,7 @@ public class DialogSummaryWorkerService : BackgroundService
         IOptions<AnalysisSettings> settings,
         IMessageRepository messageRepository,
         IChatDialogSummaryRepository summaryRepository,
+        IChatSessionRepository chatSessionRepository,
         IAnalysisStateRepository stateRepository,
         IExtractionErrorRepository extractionErrorRepository,
         OpenRouterAnalysisService analysisService,
@@ -32,6 +34,7 @@ public class DialogSummaryWorkerService : BackgroundService
         _settings = settings.Value;
         _messageRepository = messageRepository;
         _summaryRepository = summaryRepository;
+        _chatSessionRepository = chatSessionRepository;
         _stateRepository = stateRepository;
         _extractionErrorRepository = extractionErrorRepository;
         _analysisService = analysisService;
@@ -63,6 +66,7 @@ public class DialogSummaryWorkerService : BackgroundService
                     continue;
                 }
 
+                await BuildEpisodicChatSessionsAsync(batch, stoppingToken);
                 await BuildDaySummariesAsync(batch, stoppingToken);
                 await BuildSessionSummariesAsync(batch, stoppingToken);
 
@@ -130,6 +134,57 @@ public class DialogSummaryWorkerService : BackgroundService
                 MessageCount = dayMessages.Count,
                 Summary = summaryText
             }, ct);
+        }
+    }
+
+    private async Task BuildEpisodicChatSessionsAsync(List<Message> touchedMessages, CancellationToken ct)
+    {
+        var sessionLimit = Math.Max(1, _settings.TestModeMaxSessionsPerChat);
+        var fetchLimit = Math.Max(500, _settings.SummaryDayMaxMessages * sessionLimit);
+
+        foreach (var chatId in touchedMessages.Select(x => x.ChatId).Distinct())
+        {
+            var chatMessages = await _messageRepository.GetProcessedByChatAsync(chatId, fetchLimit, ct);
+            if (chatMessages.Count == 0)
+            {
+                continue;
+            }
+
+            var sessions = SplitByGap(chatMessages, TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicSessionGapMinutes)))
+                .Take(sessionLimit)
+                .ToList();
+
+            for (var i = 0; i < sessions.Count; i++)
+            {
+                var session = sessions[i];
+                if (session.Count == 0)
+                {
+                    continue;
+                }
+
+                var sessionInput = session.Take(Math.Max(1, _settings.SummarySessionMaxMessages)).ToList();
+                var summaryText = await GenerateSummaryAsync(
+                    chatId,
+                    "episodic_session",
+                    session.First().Timestamp,
+                    session.Last().Timestamp,
+                    sessionInput,
+                    ct);
+
+                if (string.IsNullOrWhiteSpace(summaryText))
+                {
+                    summaryText = BuildFallbackSummary(sessionInput);
+                }
+
+                await _chatSessionRepository.UpsertAsync(new ChatSession
+                {
+                    ChatId = chatId,
+                    SessionIndex = i + 1,
+                    StartDate = session.First().Timestamp,
+                    EndDate = session.Last().Timestamp,
+                    Summary = summaryText
+                }, ct);
+            }
         }
     }
 
@@ -215,9 +270,9 @@ public class DialogSummaryWorkerService : BackgroundService
         return ExtractSummary(response);
     }
 
-    private List<List<Message>> SplitByGap(List<Message> messages)
+    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan? gapOverride = null)
     {
-        var gap = TimeSpan.FromMinutes(Math.Max(1, _settings.SummarySessionGapMinutes));
+        var gap = gapOverride ?? TimeSpan.FromMinutes(Math.Max(1, _settings.SummarySessionGapMinutes));
         var ordered = messages.OrderBy(x => x.Timestamp).ThenBy(x => x.Id).ToList();
         var result = new List<List<Message>>();
         var current = new List<Message>();
@@ -247,6 +302,31 @@ public class DialogSummaryWorkerService : BackgroundService
         }
 
         return result;
+    }
+
+    private static string BuildFallbackSummary(List<Message> messages)
+    {
+        var lines = messages
+            .OrderBy(x => x.Timestamp)
+            .Take(6)
+            .Select(message =>
+            {
+                var sender = string.IsNullOrWhiteSpace(message.SenderName)
+                    ? $"user:{message.SenderId}"
+                    : message.SenderName.Trim();
+                var text = MessageContentBuilder.TruncateForContext(
+                    MessageContentBuilder.BuildSemanticContent(message),
+                    120);
+                return string.IsNullOrWhiteSpace(text)
+                    ? null
+                    : $"[{message.Timestamp:MM-dd HH:mm}] {sender}: {text}";
+            })
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        return lines.Count == 0
+            ? "Session summary unavailable."
+            : string.Join(" | ", lines);
     }
 
     private static string ExtractSummary(string raw)
