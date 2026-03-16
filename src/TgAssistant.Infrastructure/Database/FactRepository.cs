@@ -127,6 +127,22 @@ public class FactRepository : IFactRepository
         }, ct);
     }
 
+    public async Task<List<Fact>> GetAllByEntityAsync(Guid entityId, CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await db.Facts
+                .AsNoTracking()
+                .Where(x => x.EntityId == entityId)
+                .OrderByDescending(x => x.IsCurrent)
+                .ThenByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
     public async Task<List<Fact>> SearchSimilarFactsAsync(string model, float[] queryEmbedding, int limit = 10, CancellationToken ct = default)
     {
         var normalizedModel = (model ?? string.Empty).Trim();
