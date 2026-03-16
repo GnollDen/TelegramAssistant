@@ -43,14 +43,23 @@ public class AnalysisContextBuilder
             historicalByChat[chatId] = await _summaryRepository.GetRecentByChatAsync(chatId, historyLimit, ct);
         }
 
+        var orderedMessages = messages.OrderBy(x => x.Id).ToList();
         var lookback = Math.Max(
             Math.Max(1, _settings.LocalBurstContextMessages),
             Math.Max(1, _settings.SessionContextLookbackMessages));
-        var externalReplyContextByMessageId = await BuildExternalReplyContextAsync(messages, sessionsByChat, ct);
+        var previousByMessageId = await _messageRepository.GetChatWindowsBeforeByMessageIdsAsync(
+            orderedMessages.Select(x => x.Id).ToArray(),
+            lookback,
+            ct);
+        var externalReplyContextByMessageId = await BuildExternalReplyContextAsync(
+            orderedMessages,
+            sessionsByChat,
+            previousByMessageId,
+            ct);
 
-        foreach (var message in messages.OrderBy(x => x.Id))
+        foreach (var message in orderedMessages)
         {
-            var previous = await _messageRepository.GetChatWindowBeforeAsync(message.ChatId, message.Id, lookback, ct);
+            var previous = previousByMessageId.GetValueOrDefault(message.Id) ?? [];
             var context = new AnalysisMessageContext
             {
                 LocalBurst = BuildLocalBurst(previous, message.Timestamp),
@@ -73,6 +82,7 @@ public class AnalysisContextBuilder
     private async Task<Dictionary<long, List<string>>> BuildExternalReplyContextAsync(
         List<Message> messages,
         Dictionary<long, List<ChatSession>> sessionsByChat,
+        IReadOnlyDictionary<long, List<Message>> previousByMessageId,
         CancellationToken ct)
     {
         var result = new Dictionary<long, List<string>>();
@@ -106,7 +116,7 @@ public class AnalysisContextBuilder
                     continue;
                 }
 
-                var currentSessionStart = await ResolveCurrentSessionStartAsync(message, ct);
+                var currentSessionStart = ResolveCurrentSessionStart(message, previousByMessageId);
                 if (reply.Timestamp >= currentSessionStart)
                 {
                     continue;
@@ -161,11 +171,11 @@ public class AnalysisContextBuilder
             .ToList();
     }
 
-    private async Task<DateTime> ResolveCurrentSessionStartAsync(Message message, CancellationToken ct)
+    private DateTime ResolveCurrentSessionStart(
+        Message message,
+        IReadOnlyDictionary<long, List<Message>> previousByMessageId)
     {
-        var lookback = Math.Max(1, _settings.SessionContextLookbackMessages);
-        var previous = await _messageRepository.GetChatWindowBeforeAsync(message.ChatId, message.Id, lookback, ct);
-        var combined = previous.ToList();
+        var combined = (previousByMessageId.GetValueOrDefault(message.Id) ?? []).ToList();
         combined.Add(message);
         return combined[FindSessionStartIndex(combined)].Timestamp;
     }

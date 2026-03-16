@@ -41,4 +41,39 @@ public class AnalysisStateRepository : IAnalysisStateRepository
 
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task ResetWatermarksIfExistAsync(IReadOnlyCollection<string> keys, CancellationToken ct = default)
+    {
+        if (keys.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var safeKeys = keys
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (safeKeys.Length == 0)
+        {
+            return;
+        }
+
+        var rows = await db.AnalysisStates
+            .Where(x => safeKeys.Contains(x.Key) && x.Value != 0)
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.Value = 0;
+            row.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
 }

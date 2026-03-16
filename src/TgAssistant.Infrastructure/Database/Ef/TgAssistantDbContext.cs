@@ -323,12 +323,16 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CheapJson).HasColumnName("cheap_json").HasColumnType("jsonb");
             e.Property(x => x.ExpensiveJson).HasColumnName("expensive_json").HasColumnType("jsonb");
             e.Property(x => x.NeedsExpensive).HasColumnName("needs_expensive");
+            e.Property(x => x.IsQuarantined).HasColumnName("is_quarantined");
+            e.Property(x => x.QuarantineReason).HasColumnName("quarantine_reason");
+            e.Property(x => x.QuarantinedAt).HasColumnName("quarantined_at");
             e.Property(x => x.ExpensiveRetryCount).HasColumnName("expensive_retry_count");
             e.Property(x => x.ExpensiveNextRetryAt).HasColumnName("expensive_next_retry_at");
             e.Property(x => x.ExpensiveLastError).HasColumnName("expensive_last_error");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => x.MessageId).IsUnique();
+            e.HasIndex(x => x.IsQuarantined);
         });
 
         modelBuilder.Entity<DbIntelligenceObservation>(e =>

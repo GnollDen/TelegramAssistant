@@ -660,3 +660,57 @@ A7 → A11 → B10
 
 Each task is independent enough to be a single commit/PR.
 A1 is the largest task; everything else is focused and self-contained.
+
+---
+
+## Operational Log (2026-03-16)
+
+### Confirmed decisions
+
+1. Session limit behavior (archive-first) is accepted for now:
+   - First process archive scope, then background/live flow.
+   - No immediate change requested.
+
+2. Add Quarantine / Dead Letter Queue for repeated skip:
+   - If a message is skipped more than 3 consecutive times (tracked via `analysis_state`),
+     mark it with a dedicated DB status and exclude from further processing.
+   - Watermark must continue moving forward after quarantine.
+   - Priority: `P0`.
+
+3. Cheap/expensive spending limits:
+   - Runtime budget limits are controlled on OpenRouter side.
+   - No local budget implementation requested right now.
+
+4. DB verification completed (snapshot at 2026-03-16 19:24 UTC):
+   - `messages`: 72445
+   - duplicate `messages.id`: 0
+   - `chat_sessions`: 0
+   - `analysis_usage_events`: 0
+   - `analysis_state` keys `stage5:%`: 0
+   - `chat_sessions.is_analyzed` column missing in current DB schema.
+
+### High-priority follow-ups (accepted, deferred by decision)
+
+1. BulkFetch in `AnalysisContextBuilder`:
+   - Fetch reply/context data for the full batch via set-based queries (`where id in (...)`).
+   - Status: `Planned (P1)`.
+
+2. Prompt/cost optimization strategy:
+   - Do not shrink prompts now.
+   - After next test run, increase effective batch throughput first, then reassess.
+   - Status: `Deferred until next run`.
+
+3. Additional optimization/risk fixes:
+   - Revisit after A/B test results.
+   - Status: `Deferred until A/B`.
+
+### Legacy code disposal (new requirement)
+
+Session-first processing is now the canonical path. Legacy message-watermark flow must be retired.
+
+- New task: decommission old non-session analysis path in `AnalysisWorkerService`.
+- Scope:
+  - Remove legacy branch that processes by `stage5:watermark` message cursor.
+  - Keep only session-based trigger (`chat_sessions` queue and session checkpoints).
+  - Clean up obsolete state keys and code branches.
+- Status: `Planned (P0 after Quarantine/DLQ)`.
