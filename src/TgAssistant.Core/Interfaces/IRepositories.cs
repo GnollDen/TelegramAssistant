@@ -90,6 +90,7 @@ public interface IFactRepository
     Task<Fact?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Fact> UpsertAsync(Fact fact, CancellationToken ct = default);
     Task<List<Fact>> GetCurrentByEntityAsync(Guid entityId, CancellationToken ct = default);
+    Task<DossierFactPage> GetDossierFactsPageAsync(Guid entityId, int limit, string? categoryFilter, CancellationToken ct = default);
     Task<List<Fact>> GetAllByEntityAsync(Guid entityId, CancellationToken ct = default);
     Task<List<Fact>> SearchSimilarFactsAsync(string model, float[] queryEmbedding, int limit = 10, CancellationToken ct = default);
     Task<List<Fact>> GetWithoutEmbeddingAsync(string model, int limit, CancellationToken ct = default);
