@@ -376,6 +376,41 @@ public class MessageRepository : IMessageRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateVoiceProcessingResultAsync(
+        long messageId,
+        string? transcription,
+        string? paralinguisticsJson,
+        bool needsReanalysis,
+        bool clearMediaPath,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.Messages.FirstOrDefaultAsync(x => x.Id == messageId, ct);
+        if (row == null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(transcription))
+        {
+            row.MediaTranscription = transcription.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(paralinguisticsJson))
+        {
+            row.MediaParalinguisticsJson = paralinguisticsJson.Trim();
+        }
+
+        if (clearMediaPath)
+        {
+            row.MediaPath = null;
+        }
+
+        row.NeedsReanalysis = needsReanalysis;
+        row.ProcessedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     private static Message ToDomain(DbMessage row)
     {
         return new Message

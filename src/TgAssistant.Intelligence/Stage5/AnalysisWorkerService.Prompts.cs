@@ -51,6 +51,7 @@ Type guidance:
 
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
+- treat `[Voice Message: ...] "..."` blocks as high-signal message content: use the quoted transcript as spoken text and use the tone marker only as supporting paralinguistic evidence
 - use [local_burst_context], [session_start_context], and [historical_context] as supporting evidence for disambiguation, but ground final extraction in current message text
 - prioritize signals with durable or actionable value: availability, schedule, travel, movement, pickup/dropoff, work/team/project state, finance, health, relationship, address/location, shared contacts
 - keep empty for pure noise and low-value chat filler: emoji-only, sticker-only, laughter-only, generic agreements, vague acknowledgements, rhetorical filler, low-value reactions, generic tech gripes with no lasting relevance
@@ -135,6 +136,7 @@ The item schema is the same as cheap extraction:
 
 Rules:
 - use the original message text as the primary evidence source
+- if the message contains `[Voice Message: ...] "..."`, treat the quoted transcript as primary voice content and use the tone marker only as supporting emotional/paralinguistic context
 - use context arrays only to resolve references/pronouns and temporal continuity; do not invent facts absent from current message
 - improve the cheap candidate only when the current message contains grounded, useful information
 - keep labels reusable and normalized

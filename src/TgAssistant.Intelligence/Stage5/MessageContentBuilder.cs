@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -39,9 +40,15 @@ public class MessageContentBuilder
         }
 
         if (!string.IsNullOrWhiteSpace(message.Text)) parts.Add(message.Text);
+        var voiceMessageMarker = BuildVoiceMessageMarker(message);
+        if (!string.IsNullOrWhiteSpace(voiceMessageMarker))
+        {
+            parts.Add(voiceMessageMarker);
+        }
+
         if (!string.IsNullOrWhiteSpace(message.MediaTranscription)) parts.Add($"[media_transcription] {message.MediaTranscription}");
         if (!string.IsNullOrWhiteSpace(message.MediaDescription)) parts.Add($"[media_description] {message.MediaDescription}");
-        if (!string.IsNullOrWhiteSpace(message.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {message.MediaParalinguisticsJson}");
+        if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {message.MediaParalinguisticsJson}");
         var contextBlock = BuildContextBlock(context);
         if (!string.IsNullOrWhiteSpace(contextBlock))
         {
@@ -130,10 +137,16 @@ public class MessageContentBuilder
     /// </summary>
     public static string BuildSemanticContent(Message message)
     {
-        var parts = new List<string>(3);
+        var parts = new List<string>(4);
         if (!string.IsNullOrWhiteSpace(message.Text))
         {
             parts.Add(message.Text);
+        }
+
+        var voiceMessageMarker = BuildVoiceMessageMarker(message);
+        if (!string.IsNullOrWhiteSpace(voiceMessageMarker))
+        {
+            parts.Add(voiceMessageMarker);
         }
 
         if (!string.IsNullOrWhiteSpace(message.MediaTranscription))
@@ -147,6 +160,91 @@ public class MessageContentBuilder
         }
 
         return string.Join(' ', parts).Trim();
+    }
+
+    private static string BuildVoiceMessageMarker(Message message)
+    {
+        if (!IsVoiceLikeMediaType(message.MediaType))
+        {
+            return string.Empty;
+        }
+
+        var transcription = TruncateForContext(message.MediaTranscription, 600);
+        var tone = TryGetVoiceToneLabel(message.MediaParalinguisticsJson);
+        if (string.IsNullOrWhiteSpace(transcription) && string.IsNullOrWhiteSpace(tone))
+        {
+            return string.Empty;
+        }
+
+        var prefix = string.IsNullOrWhiteSpace(tone)
+            ? "[Voice Message]"
+            : $"[Voice Message: {tone}]";
+
+        return string.IsNullOrWhiteSpace(transcription)
+            ? prefix
+            : $"{prefix} \"{transcription}\"";
+    }
+
+    private static bool IsVoiceLikeMediaType(MediaType mediaType)
+    {
+        return mediaType is MediaType.Voice or MediaType.VideoNote or MediaType.Video;
+    }
+
+    private static string TryGetVoiceToneLabel(string? jsonPayload)
+    {
+        if (string.IsNullOrWhiteSpace(jsonPayload))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonPayload);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("status", out var statusNode)
+                && statusNode.ValueKind == JsonValueKind.String
+                && string.Equals(statusNode.GetString(), "failed", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            if (root.TryGetProperty("primary_emotion", out var primaryEmotionNode)
+                && primaryEmotionNode.ValueKind == JsonValueKind.String)
+            {
+                var primaryEmotion = primaryEmotionNode.GetString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(primaryEmotion))
+                {
+                    return $"{primaryEmotion} tone";
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static bool HasUsableVoiceParalinguistics(string? jsonPayload)
+    {
+        if (string.IsNullOrWhiteSpace(jsonPayload))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(jsonPayload);
+            return !(doc.RootElement.TryGetProperty("status", out var statusNode)
+                     && statusNode.ValueKind == JsonValueKind.String
+                     && string.Equals(statusNode.GetString(), "failed", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
