@@ -151,7 +151,9 @@ public class ExtractionSchemaValidator
 
             if (!IsStringOrMissing(entity, "name") ||
                 !IsStringOrMissing(entity, "type") ||
-                !IsNumberOrMissing(entity, "confidence"))
+                !IsNumberOrMissing(entity, "confidence") ||
+                !IsNumberRequired(entity, "trust_factor") ||
+                !IsBoolOrMissing(entity, "needs_clarification"))
             {
                 error = $"item_{index}_entity_{i}_invalid_fields";
                 return false;
@@ -265,7 +267,9 @@ public class ExtractionSchemaValidator
                 !IsStringOrMissing(fact, "category") ||
                 !IsStringOrMissing(fact, "key") ||
                 !IsStringOrMissing(fact, "value") ||
-                !IsNumberOrMissing(fact, "confidence"))
+                !IsNumberOrMissing(fact, "confidence") ||
+                !IsNumberRequired(fact, "trust_factor") ||
+                !IsBoolOrMissing(fact, "needs_clarification"))
             {
                 error = $"item_{index}_fact_{i}_invalid_fields";
                 return false;
@@ -397,6 +401,20 @@ public class ExtractionSchemaValidator
     {
         return !obj.TryGetProperty(propName, out var value) ||
                value.ValueKind == JsonValueKind.Number ||
+               value.ValueKind == JsonValueKind.Null;
+    }
+
+    private static bool IsNumberRequired(JsonElement obj, string propName)
+    {
+        return obj.TryGetProperty(propName, out var value) &&
+               value.ValueKind == JsonValueKind.Number;
+    }
+
+    private static bool IsBoolOrMissing(JsonElement obj, string propName)
+    {
+        return !obj.TryGetProperty(propName, out var value) ||
+               value.ValueKind == JsonValueKind.True ||
+               value.ValueKind == JsonValueKind.False ||
                value.ValueKind == JsonValueKind.Null;
     }
 

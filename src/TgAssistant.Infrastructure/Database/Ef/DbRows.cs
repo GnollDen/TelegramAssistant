@@ -53,6 +53,8 @@ public class DbEntity
     public long? TelegramUserId { get; set; }
     public string? TelegramUsername { get; set; }
     public JsonDocument Metadata { get; set; } = JsonDocument.Parse("{}");
+    public bool IsUserConfirmed { get; set; }
+    public float TrustFactor { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -134,6 +136,8 @@ public class DbFact
     public DateTime? ValidUntil { get; set; }
     public bool IsCurrent { get; set; }
     public string DecayClass { get; set; } = "slow";
+    public bool IsUserConfirmed { get; set; }
+    public float TrustFactor { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

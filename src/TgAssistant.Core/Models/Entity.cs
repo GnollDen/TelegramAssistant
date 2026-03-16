@@ -10,6 +10,8 @@ public class Entity
     public long? TelegramUserId { get; set; }
     public string? TelegramUsername { get; set; }
     public Dictionary<string, string> Metadata { get; set; } = new();
+    public bool IsUserConfirmed { get; set; }
+    public float TrustFactor { get; set; } = 1.0f;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
