@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using NpgsqlTypes;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -45,6 +46,7 @@ public class MessageExtractionRepository : IMessageExtractionRepository
             WHERE ic.message_id = me.message_id
         ) ic ON TRUE
         WHERE m.processing_status = @processed_status
+          AND COALESCE(me.is_quarantined, FALSE) = FALSE
           AND me.id > @after_extraction_id
           AND (
               char_length(COALESCE(m.text, '')) +
@@ -134,6 +136,86 @@ public class MessageExtractionRepository : IMessageExtractionRepository
             """, ct);
     }
 
+    public async Task QuarantineMessagesAsync(IReadOnlyCollection<long> messageIds, string reason, CancellationToken ct = default)
+    {
+        if (messageIds.Count == 0)
+        {
+            return;
+        }
+
+        var ids = messageIds
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        var safeReason = string.IsNullOrWhiteSpace(reason) ? "manual_quarantine" : reason.Trim();
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync(ct);
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO message_extractions (
+                message_id,
+                cheap_json,
+                needs_expensive,
+                is_quarantined,
+                quarantine_reason,
+                quarantined_at,
+                created_at,
+                updated_at
+            )
+            SELECT
+                src.message_id,
+                '{}'::jsonb,
+                FALSE,
+                TRUE,
+                @reason,
+                NOW(),
+                NOW(),
+                NOW()
+            FROM unnest(@message_ids::bigint[]) AS src(message_id)
+            ON CONFLICT (message_id)
+            DO UPDATE SET
+                is_quarantined = TRUE,
+                quarantine_reason = EXCLUDED.quarantine_reason,
+                quarantined_at = EXCLUDED.quarantined_at,
+                needs_expensive = FALSE,
+                expensive_next_retry_at = NULL,
+                updated_at = NOW();
+            """;
+        cmd.Parameters.Add(new NpgsqlParameter("message_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint)
+        {
+            Value = ids
+        });
+        cmd.Parameters.AddWithValue("reason", safeReason);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<HashSet<long>> GetQuarantinedMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
+    {
+        if (messageIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.MessageExtractions
+            .AsNoTracking()
+            .Where(x => x.IsQuarantined && messageIds.Contains(x.MessageId))
+            .Select(x => x.MessageId)
+            .ToListAsync(ct);
+        return rows.ToHashSet();
+    }
+
     public async Task<Dictionary<long, string>> GetCheapJsonByMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
     {
         if (messageIds.Count == 0)
@@ -144,7 +226,7 @@ public class MessageExtractionRepository : IMessageExtractionRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.MessageExtractions
             .AsNoTracking()
-            .Where(x => messageIds.Contains(x.MessageId))
+            .Where(x => !x.IsQuarantined && messageIds.Contains(x.MessageId))
             .ToDictionaryAsync(x => x.MessageId, x => x.CheapJson, ct);
     }
 
@@ -155,7 +237,7 @@ public class MessageExtractionRepository : IMessageExtractionRepository
         var noneMediaType = (short)MediaType.None;
         return await db.MessageExtractions
             .AsNoTracking()
-            .Where(x => x.MessageId > afterMessageId)
+            .Where(x => x.MessageId > afterMessageId && !x.IsQuarantined)
             .Join(
                 db.Messages.AsNoTracking().Where(m =>
                     m.ProcessingStatus == processedStatus &&
@@ -173,7 +255,9 @@ public class MessageExtractionRepository : IMessageExtractionRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.MessageExtractions.AsNoTracking()
-            .Where(x => x.NeedsExpensive && (x.ExpensiveNextRetryAt == null || x.ExpensiveNextRetryAt <= DateTime.UtcNow))
+            .Where(x => x.NeedsExpensive
+                        && !x.IsQuarantined
+                        && (x.ExpensiveNextRetryAt == null || x.ExpensiveNextRetryAt <= DateTime.UtcNow))
             .OrderBy(x => x.UpdatedAt)
             .Take(limit)
             .ToListAsync(ct);

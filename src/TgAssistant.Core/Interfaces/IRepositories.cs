@@ -10,6 +10,10 @@ public interface IMessageRepository
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetByIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default);
+    Task<Dictionary<long, List<Message>>> GetChatWindowsBeforeByMessageIdsAsync(
+        IReadOnlyCollection<long> messageIds,
+        int limit,
+        CancellationToken ct = default);
     Task<List<Message>> GetChatWindowAroundAsync(long chatId, long centerMessageId, int beforeCount, int afterCount, CancellationToken ct = default);
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
@@ -150,11 +154,14 @@ public interface IAnalysisStateRepository
 {
     Task<long> GetWatermarkAsync(string key, CancellationToken ct = default);
     Task SetWatermarkAsync(string key, long value, CancellationToken ct = default);
+    Task ResetWatermarksIfExistAsync(IReadOnlyCollection<string> keys, CancellationToken ct = default);
 }
 
 public interface IMessageExtractionRepository
 {
     Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
+    Task QuarantineMessagesAsync(IReadOnlyCollection<long> messageIds, string reason, CancellationToken ct = default);
+    Task<HashSet<long>> GetQuarantinedMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<Dictionary<long, string>> GetCheapJsonByMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<List<long>> GetSummaryReadyMessageIdsAfterIdAsync(long afterMessageId, int limit, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
