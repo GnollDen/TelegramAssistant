@@ -118,9 +118,18 @@ public class OpenRouterAnalysisService
         DateTime periodStart,
         DateTime periodEnd,
         List<Message> messages,
+        IReadOnlyCollection<SummaryHistoricalHint>? historicalHints,
+        IReadOnlyDictionary<long, string>? cheapJsonByMessageId,
         CancellationToken ct)
     {
-        var user = MessageContentBuilder.BuildSummaryPrompt(chatId, scope, periodStart, periodEnd, messages);
+        var user = MessageContentBuilder.BuildSummaryPrompt(
+            chatId,
+            scope,
+            periodStart,
+            periodEnd,
+            messages,
+            historicalHints,
+            cheapJsonByMessageId);
         var req = BuildRequest(
             model,
             systemPrompt,

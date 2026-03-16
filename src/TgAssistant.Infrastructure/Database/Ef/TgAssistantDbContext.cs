@@ -92,6 +92,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.TelegramUserId).HasColumnName("telegram_user_id");
             e.Property(x => x.TelegramUsername).HasColumnName("telegram_username");
             e.Property(x => x.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+            e.Property(x => x.IsUserConfirmed).HasColumnName("is_user_confirmed");
+            e.Property(x => x.TrustFactor).HasColumnName("trust_factor");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => x.ActorKey).IsUnique();
@@ -113,6 +115,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.ValidUntil).HasColumnName("valid_until");
             e.Property(x => x.IsCurrent).HasColumnName("is_current");
             e.Property(x => x.DecayClass).HasColumnName("decay_class");
+            e.Property(x => x.IsUserConfirmed).HasColumnName("is_user_confirmed");
+            e.Property(x => x.TrustFactor).HasColumnName("trust_factor");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.DecayClass, x.IsCurrent });

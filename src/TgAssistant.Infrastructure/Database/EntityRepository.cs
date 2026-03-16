@@ -61,6 +61,8 @@ public class EntityRepository : IEntityRepository
                 TelegramUserId = entity.TelegramUserId,
                 TelegramUsername = entity.TelegramUsername,
                 Metadata = JsonDocument.Parse("{}"),
+                IsUserConfirmed = entity.IsUserConfirmed,
+                TrustFactor = entity.TrustFactor,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -96,11 +98,15 @@ public class EntityRepository : IEntityRepository
             row.ActorKey = string.IsNullOrWhiteSpace(row.ActorKey) ? entity.ActorKey?.Trim() : row.ActorKey;
             row.TelegramUserId = entity.TelegramUserId ?? row.TelegramUserId;
             row.TelegramUsername = entity.TelegramUsername ?? row.TelegramUsername;
+            row.IsUserConfirmed = row.IsUserConfirmed || entity.IsUserConfirmed;
+            row.TrustFactor = Math.Max(row.TrustFactor, entity.TrustFactor);
             row.UpdatedAt = DateTime.UtcNow;
         }
 
         await db.SaveChangesAsync(ct);
         entity.Id = row.Id;
+        entity.IsUserConfirmed = row.IsUserConfirmed;
+        entity.TrustFactor = row.TrustFactor;
         entity.CreatedAt = row.CreatedAt;
         entity.UpdatedAt = row.UpdatedAt;
         return entity;
@@ -500,6 +506,11 @@ public class EntityRepository : IEntityRepository
             ActorKey = row.ActorKey,
             TelegramUserId = row.TelegramUserId,
             TelegramUsername = row.TelegramUsername,
+            Metadata = row.Metadata.RootElement.ValueKind == JsonValueKind.Object
+                ? row.Metadata.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.ToString())
+                : new Dictionary<string, string>(),
+            IsUserConfirmed = row.IsUserConfirmed,
+            TrustFactor = row.TrustFactor,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };

@@ -13,8 +13,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public partial class AnalysisWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:watermark";
-    private const string CheapPromptId = "stage5_cheap_extract_v9";
-    private const string ExpensivePromptId = "stage5_expensive_reason_v4";
+    private const string CheapPromptId = "stage5_cheap_extract_v10";
+    private const string ExpensivePromptId = "stage5_expensive_reason_v5";
     private const int MaxCheapLlmBatchSize = 10;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
@@ -498,8 +498,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v9", DefaultCheapPrompt, ct);
-        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v4", DefaultExpensivePrompt, ct);
+        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v10", DefaultCheapPrompt, ct);
+        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v5", DefaultExpensivePrompt, ct);
     }
 
     private async Task EnsurePromptAsync(string id, string name, string systemPrompt, CancellationToken ct)
@@ -585,24 +585,24 @@ public partial class AnalysisWorkerService : BackgroundService
         foreach (var message in messages)
         {
             var sessions = sessionsByChat.GetValueOrDefault(message.ChatId) ?? [];
-            if (sessions.Count == 0)
+            var targetSessionIndex = ResolveTargetSessionIndex(sessions, message.Timestamp);
+            if (targetSessionIndex >= limit)
             {
-                blockedPendingSummary.Add(message.Id);
+                skippedBySessionLimit.Add(message.Id);
                 continue;
             }
 
-            var matchingSession = sessions.FirstOrDefault(session =>
-                session.StartDate <= message.Timestamp && message.Timestamp <= session.EndDate);
-
-            if (matchingSession != null)
+            if (targetSessionIndex == 0)
             {
                 allowed.Add(message);
                 continue;
             }
 
-            if (sessions.Count >= limit && message.Timestamp > sessions[limit - 1].EndDate)
+            if (sessions.Any(session =>
+                    session.SessionIndex == targetSessionIndex - 1 &&
+                    !string.IsNullOrWhiteSpace(session.Summary)))
             {
-                skippedBySessionLimit.Add(message.Id);
+                allowed.Add(message);
                 continue;
             }
 
@@ -610,6 +610,32 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         return new EpisodicGuardResult(allowed, blockedPendingSummary, skippedBySessionLimit);
+    }
+
+    private static int ResolveTargetSessionIndex(List<ChatSession> sessions, DateTime messageTimestamp)
+    {
+        if (sessions.Count == 0)
+        {
+            return 0;
+        }
+
+        var matchingSession = sessions.FirstOrDefault(session =>
+            session.StartDate <= messageTimestamp && messageTimestamp <= session.EndDate);
+        if (matchingSession != null)
+        {
+            return matchingSession.SessionIndex;
+        }
+
+        var previousSession = sessions
+            .Where(session => session.EndDate < messageTimestamp)
+            .OrderByDescending(session => session.SessionIndex)
+            .FirstOrDefault();
+        if (previousSession != null)
+        {
+            return previousSession.SessionIndex + 1;
+        }
+
+        return 0;
     }
 
     private int GetEpisodicSessionLimit() => Math.Max(0, _settings.TestModeMaxSessionsPerChat);
@@ -727,6 +753,12 @@ public partial class AnalysisWorkerService : BackgroundService
              || ServicePlaceholderRegex.IsMatch(text)))
         {
             reason = "service_placeholder";
+            return true;
+        }
+
+        if (MessageContentBuilder.IsServiceOrTechnicalNoise(message))
+        {
+            reason = "technical_noise";
             return true;
         }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -6,6 +7,10 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class MessageContentBuilder
 {
+    private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex SlashCommandRegex = new(@"^[\/!][\w@][\w@\-.]*(?:\s+\S+){0,2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex UrlOnlyRegex = new(@"^(?:(?:https?:\/\/)|(?:www\.))\S+$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
     private readonly IMessageRepository _messageRepository;
 
     public MessageContentBuilder(IMessageRepository messageRepository)
@@ -86,6 +91,12 @@ public class MessageContentBuilder
             parts.AddRange(context.SessionStart);
         }
 
+        if (context.ExternalReplyContext.Count > 0)
+        {
+            parts.Add("[EXTERNAL_REPLY_CONTEXT]");
+            parts.AddRange(context.ExternalReplyContext);
+        }
+
         if (context.HistoricalSummaries.Count > 0)
         {
             parts.Add("[historical_context]");
@@ -115,22 +126,49 @@ public class MessageContentBuilder
     /// <summary>
     /// Builds prompt input for dialogue summarization.
     /// </summary>
-    public static string BuildSummaryPrompt(long chatId, string scope, DateTime periodStart, DateTime periodEnd, List<Message> messages)
+    public static string BuildSummaryPrompt(
+        long chatId,
+        string scope,
+        DateTime periodStart,
+        DateTime periodEnd,
+        List<Message> messages,
+        IReadOnlyCollection<SummaryHistoricalHint>? historicalHints = null,
+        IReadOnlyDictionary<long, string>? cheapJsonByMessageId = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"[summary_meta] chat_id={chatId} scope={scope} period_start={periodStart:O} period_end={periodEnd:O} message_count={messages.Count}");
+        if (historicalHints != null)
+        {
+            sb.AppendLine("[HISTORICAL_CONTEXT_HINTS]");
+            if (historicalHints.Count == 0)
+            {
+                sb.AppendLine("none");
+            }
+            else
+            {
+                foreach (var hint in historicalHints)
+                {
+                    var compact = TruncateForContext(CollapseWhitespace(hint.Summary), 320);
+                    sb.AppendLine($"- session_index={hint.SessionIndex} similarity={hint.Similarity:0.00} summary=\"{compact}\"");
+                }
+            }
+
+            sb.AppendLine("[/HISTORICAL_CONTEXT_HINTS]");
+        }
+
         sb.AppendLine("Messages:");
         foreach (var message in messages.OrderBy(x => x.Id))
         {
             var sender = string.IsNullOrWhiteSpace(message.SenderName) ? $"user:{message.SenderId}" : message.SenderName.Trim();
-            var text = BuildSemanticContent(message);
+            var cheapJson = cheapJsonByMessageId?.GetValueOrDefault(message.Id);
+            var text = BuildSemanticContent(message, cheapJson);
             var compact = TruncateForContext(text, 280);
             if (string.IsNullOrWhiteSpace(compact))
             {
                 continue;
             }
 
-            sb.AppendLine($"- [{message.Timestamp:yyyy-MM-dd HH:mm}] {sender}: {compact}");
+            sb.AppendLine($"- [{message.Timestamp:yyyy-MM-dd HH:mm}] {sender}: Контекст сообщений (на русском): {compact}");
         }
 
         return sb.ToString();
@@ -141,7 +179,40 @@ public class MessageContentBuilder
     /// </summary>
     public static string BuildSemanticContent(Message message)
     {
-        var parts = new List<string>(4);
+        return BuildSemanticContent(message, null);
+    }
+
+    public static bool IsServiceOrTechnicalNoise(Message message)
+    {
+        var text = CollapseWhitespace(message.Text ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            if (text.Equals("[DELETED]", StringComparison.OrdinalIgnoreCase) ||
+                ServicePlaceholderRegex.IsMatch(text))
+            {
+                return true;
+            }
+
+            if (SlashCommandRegex.IsMatch(text))
+            {
+                return true;
+            }
+
+            if (UrlOnlyRegex.IsMatch(text))
+            {
+                return true;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(BuildSemanticContent(message));
+    }
+
+    /// <summary>
+    /// Builds semantic content with optional extraction context from cheap_json.
+    /// </summary>
+    public static string BuildSemanticContent(Message message, string? cheapJson)
+    {
+        var parts = new List<string>(5);
         if (!string.IsNullOrWhiteSpace(message.Text))
         {
             parts.Add(message.Text);
@@ -163,7 +234,101 @@ public class MessageContentBuilder
             parts.Add(message.MediaDescription);
         }
 
+        var extractionSnippet = BuildExtractionContextSnippet(cheapJson);
+        if (!string.IsNullOrWhiteSpace(extractionSnippet))
+        {
+            parts.Add(extractionSnippet);
+        }
+
         return string.Join(' ', parts).Trim();
+    }
+
+    private static string BuildExtractionContextSnippet(string? cheapJson)
+    {
+        if (string.IsNullOrWhiteSpace(cheapJson))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(cheapJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return string.Empty;
+            }
+
+            var lines = new List<string>(4);
+            lines.AddRange(CollectExtractionLines(root, "claims", 2, "claim"));
+            lines.AddRange(CollectExtractionLines(root, "facts", 2, "fact"));
+            if (lines.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return "[cheap_extraction] " + string.Join(" | ", lines);
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static IEnumerable<string> CollectExtractionLines(JsonElement root, string arrayName, int limit, string label)
+    {
+        if (!root.TryGetProperty(arrayName, out var arr) || arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() == 0)
+        {
+            return [];
+        }
+
+        var result = new List<string>(limit);
+        foreach (var node in arr.EnumerateArray().Take(limit))
+        {
+            if (node.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var entity = GetString(node, "entity_name");
+            var category = GetString(node, "category");
+            var key = GetString(node, "key");
+            var value = GetString(node, "value");
+            var trustFactor = ResolveTrustFactor(node);
+            if (string.IsNullOrWhiteSpace(entity) && string.IsNullOrWhiteSpace(key) && string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            result.Add($"{label}:{entity}|{category}:{key}={value} (trust={trustFactor:0.00})");
+        }
+
+        return result;
+    }
+
+    private static float ResolveTrustFactor(JsonElement node)
+    {
+        if (node.TryGetProperty("trust_factor", out var trustNode) && trustNode.ValueKind == JsonValueKind.Number)
+        {
+            return Math.Clamp((float)trustNode.GetDouble(), 0f, 1f);
+        }
+
+        if (node.TryGetProperty("confidence", out var confNode) && confNode.ValueKind == JsonValueKind.Number)
+        {
+            return Math.Clamp((float)confNode.GetDouble(), 0f, 1f);
+        }
+
+        return 0f;
+    }
+
+    private static string GetString(JsonElement node, string fieldName)
+    {
+        if (!node.TryGetProperty(fieldName, out var field) || field.ValueKind != JsonValueKind.String)
+        {
+            return string.Empty;
+        }
+
+        return field.GetString()?.Trim() ?? string.Empty;
     }
 
     private static string BuildVoiceMessageMarker(Message message)

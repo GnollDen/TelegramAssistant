@@ -164,6 +164,7 @@ try
             services.AddSingleton<ExtractionSchemaValidator>();
             services.AddSingleton<MessageContentBuilder>();
             services.AddSingleton<AnalysisContextBuilder>();
+            services.AddSingleton<SummaryHistoricalRetrievalService>();
             services.AddSingleton<ExtractionApplier>();
             services.AddSingleton<ExpensivePassResolver>();
             services.AddSingleton<IBotChatService, BotChatService>();
@@ -188,6 +189,7 @@ try
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
             services.AddHostedService<FactReviewCommandWorkerService>();
+            services.AddHostedService<ChatSessionSlicerWorkerService>();
             services.AddHostedService<DialogSummaryWorkerService>();
             services.AddHostedService<Stage5MetricsWorkerService>();
             services.AddHostedService<MaintenanceWorkerService>();

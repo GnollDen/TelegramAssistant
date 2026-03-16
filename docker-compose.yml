@@ -143,8 +143,18 @@ services:
       Analysis__SummarySessionGapMinutes: ${ANALYSIS_SUMMARY_SESSION_GAP_MINUTES:-180}
       Analysis__SummaryMinMessages: ${ANALYSIS_SUMMARY_MIN_MESSAGES:-4}
       Analysis__SummaryMaxTokens: ${ANALYSIS_SUMMARY_MAX_TOKENS:-800}
+      Analysis__SummaryHistoricalHintsEnabled: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_ENABLED:-true}
+      Analysis__SummaryHistoricalHintsTopK: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_TOP_K:-3}
+      Analysis__SummaryHistoricalHintsCandidatePool: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_CANDIDATE_POOL:-12}
+      Analysis__SummaryHistoricalHintsTimeoutMs: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_TIMEOUT_MS:-2000}
+      Analysis__SummaryHistoricalHintsQueryMaxChars: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_QUERY_MAX_CHARS:-2000}
+      Analysis__SummaryHistoricalHintsMaxCharsPerItem: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MAX_CHARS_PER_ITEM:-320}
+      Analysis__SummaryHistoricalHintsMinSimilarity: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MIN_SIMILARITY:-0.72}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
-      Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-3}
+      Analysis__SessionSlicerEnabled: ${ANALYSIS_SESSION_SLICER_ENABLED:-false}
+      Analysis__SessionSlicerPollIntervalSeconds: ${ANALYSIS_SESSION_SLICER_POLL_INTERVAL_SECONDS:-30}
+      Analysis__SessionSlicerBatchSize: ${ANALYSIS_SESSION_SLICER_BATCH_SIZE:-5000}
+      Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-23}
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}

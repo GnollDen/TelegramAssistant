@@ -1,8 +1,8 @@
 # Stage5 Product Backlog (Post-MVP)
 
 ## Status
-- Stage 5 backlog is **closed** for current scope.
-- All planned P0/P1/P2 engineering items were implemented in code and wired into runtime config.
+- Stage 5 backlog moved from implementation to **stabilization mode** (v10).
+- Core P0/P1/P2 implementation is in production, but runtime tuning (cost/noise/language quality) is still active.
 
 ## Done (P0/P1/P2)
 - Identity correctness:

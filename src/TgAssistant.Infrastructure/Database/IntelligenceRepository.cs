@@ -45,6 +45,23 @@ public class IntelligenceRepository : IIntelligenceRepository
         return await GetClaimsByMessageInternalAsync(db, messageId, ct);
     }
 
+    public async Task<List<IntelligenceClaim>> GetClaimsByMessagesAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
+    {
+        if (messageIds.Count == 0)
+        {
+            return [];
+        }
+
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            return await GetClaimsByMessagesInternalAsync(ambientDb, messageIds, ct);
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await GetClaimsByMessagesInternalAsync(db, messageIds, ct);
+    }
+
     private static async Task ReplaceInternalAsync(
         TgAssistantDbContext db,
         long messageId,
@@ -105,6 +122,22 @@ public class IntelligenceRepository : IIntelligenceRepository
             .AsNoTracking()
             .Where(x => x.MessageId == messageId)
             .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
+    private static async Task<List<IntelligenceClaim>> GetClaimsByMessagesInternalAsync(
+        TgAssistantDbContext db,
+        IReadOnlyCollection<long> messageIds,
+        CancellationToken ct)
+    {
+        var rows = await db.IntelligenceClaims
+            .AsNoTracking()
+            .Where(x => messageIds.Contains(x.MessageId))
+            .OrderByDescending(x => x.Confidence)
+            .ThenBy(x => x.MessageId)
+            .ThenBy(x => x.Id)
             .ToListAsync(ct);
 
         return rows.Select(ToDomain).ToList();

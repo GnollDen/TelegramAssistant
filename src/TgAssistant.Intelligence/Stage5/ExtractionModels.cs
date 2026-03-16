@@ -32,6 +32,8 @@ public class ExtractionEntity
     public string Name { get; set; } = string.Empty;
     public string Type { get; set; } = "Person";
     public float Confidence { get; set; } = 0.8f;
+    public float TrustFactor { get; set; }
+    public bool NeedsClarification { get; set; }
 }
 
 public class ExtractionObservation
@@ -62,6 +64,8 @@ public class ExtractionFact
     public string Key { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
     public float Confidence { get; set; } = 0.8f;
+    public float TrustFactor { get; set; }
+    public bool NeedsClarification { get; set; }
 }
 
 public class ExtractionRelationship

@@ -91,6 +91,8 @@ public class FactRepository : IFactRepository
                     ValidUntil = fact.ValidUntil,
                     IsCurrent = fact.IsCurrent,
                     DecayClass = NormalizeDecayClass(fact.DecayClass),
+                    IsUserConfirmed = fact.IsUserConfirmed,
+                    TrustFactor = fact.TrustFactor,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -103,6 +105,8 @@ public class FactRepository : IFactRepository
             existing.Status = (short)fact.Status;
             existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
             existing.DecayClass = NormalizeDecayClass(fact.DecayClass);
+            existing.IsUserConfirmed = existing.IsUserConfirmed || fact.IsUserConfirmed;
+            existing.TrustFactor = Math.Max(existing.TrustFactor, fact.TrustFactor);
             existing.UpdatedAt = DateTime.UtcNow;
 
             await db.SaveChangesAsync(ct);
@@ -261,8 +265,11 @@ public class FactRepository : IFactRepository
                 Confidence = newFact.Confidence,
                 SourceMessageId = newFact.SourceMessageId,
                 ValidFrom = newFact.ValidFrom ?? DateTime.UtcNow,
+                ValidUntil = newFact.ValidUntil,
                 IsCurrent = true,
                 DecayClass = NormalizeDecayClass(newFact.DecayClass),
+                IsUserConfirmed = newFact.IsUserConfirmed,
+                TrustFactor = newFact.TrustFactor,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
@@ -388,6 +395,8 @@ public class FactRepository : IFactRepository
             ValidUntil = row.ValidUntil,
             IsCurrent = row.IsCurrent,
             DecayClass = row.DecayClass,
+            IsUserConfirmed = row.IsUserConfirmed,
+            TrustFactor = row.TrustFactor,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
@@ -409,6 +418,8 @@ public class FactRepository : IFactRepository
             ValidUntil = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
             IsCurrent = reader.GetBoolean(10),
             DecayClass = reader.GetString(11),
+            IsUserConfirmed = false,
+            TrustFactor = 1.0f,
             CreatedAt = reader.GetDateTime(12),
             UpdatedAt = reader.GetDateTime(13)
         };

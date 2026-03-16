@@ -14,6 +14,8 @@ Stage 5 (intelligence/dossier building) is implemented and running.
 This backlog covers two tracks: **fixing known issues** in Stage 5 and
 **building an MCP server** for universal LLM access to the data.
 
+> Status note (2026-03-16): часть пунктов Track A уже реализована в текущем коде (включая декомпозицию Stage5-сервисов и v10-эволюцию summary/extraction). Перед выполнением задач ниже обязательно сверять фактическое состояние классов в `src/TgAssistant.Intelligence/Stage5/`.
+
 ---
 
 ## Track A — Stage 5 fixes (priority order)

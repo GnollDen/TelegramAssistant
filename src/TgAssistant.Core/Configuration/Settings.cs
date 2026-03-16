@@ -163,8 +163,18 @@ public class AnalysisSettings
     public int SummarySessionGapMinutes { get; set; } = 180;
     public int SummaryMinMessages { get; set; } = 4;
     public int SummaryMaxTokens { get; set; } = 800;
+    public bool SummaryHistoricalHintsEnabled { get; set; } = true;
+    public int SummaryHistoricalHintsTopK { get; set; } = 3;
+    public int SummaryHistoricalHintsCandidatePool { get; set; } = 12;
+    public int SummaryHistoricalHintsTimeoutMs { get; set; } = 2000;
+    public int SummaryHistoricalHintsQueryMaxChars { get; set; } = 2000;
+    public int SummaryHistoricalHintsMaxCharsPerItem { get; set; } = 320;
+    public float SummaryHistoricalHintsMinSimilarity { get; set; } = 0.72f;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
-    public int TestModeMaxSessionsPerChat { get; set; } = 3;
+    public bool SessionSlicerEnabled { get; set; } = false;
+    public int SessionSlicerPollIntervalSeconds { get; set; } = 30;
+    public int SessionSlicerBatchSize { get; set; } = 5000;
+    public int TestModeMaxSessionsPerChat { get; set; } = 23;
 }
 
 public class MergeSettings

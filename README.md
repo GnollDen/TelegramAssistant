@@ -5,7 +5,21 @@
 [Telegram MTProto push] -> [Redis Stream] -> [Batch Worker] -> [PostgreSQL]
                                                  |
                                           [OpenRouter Media]
+                                                 |
+                                         [Stage5 Analysis v10]
+                                        /         |          \
+                                [Cheap/Expensive] |      [Summaries]
+                                                   |
+                                            [Stage6 Bot/RAG]
 ```
+
+## Current worker topology (Stage5/Stage6)
+- Core ingestion: `TelegramListenerService` → `BatchWorkerService` → `ArchiveImportWorkerService`
+- Media enrichment: `ArchiveMediaProcessorService`, `VoiceParalinguisticsWorkerService`
+- Stage5 extraction: `AnalysisWorkerService` + `ExpensivePassResolver`
+- Stage5 summaries: `DialogSummaryWorkerService` (+ historical retrieval embeddings)
+- Stage6 refinement: `ContinuousRefinementWorkerService` (disabled by default)
+- Stage6 chat/dossier runtime: `TelegramBotHostedService` + retrieval/embedding workers
 
 ## Build & Run locally
 ```bash
@@ -43,9 +57,9 @@ When threshold is exceeded, only the first `PhotoBurstKeepCount` photos are sent
 - [x] 1: Telegram Listener -> Redis
 - [x] 2: Batch Worker -> PostgreSQL
 - [x] 3: Media processing
-- [~] 4: Archive import (in progress)
-- [ ] 5: Claude dossier building
-- [ ] 6: Telegram Bot chat mode
+- [x] 4: Archive import
+- [x] 5: Dossier/Intelligence pipeline (Stage5 v10)
+- [x] 6: Telegram Bot chat mode + RAG
 - [ ] 7: Cron notifications
 - [ ] 8: Web UI
 - [ ] 9: Inline mode
