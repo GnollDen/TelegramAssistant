@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,8 @@ public class DialogSummaryWorkerService : BackgroundService
 {
     private const string WatermarkKey = "stage5:summary_watermark";
     private const string ExtractionCompletionWatermarkKey = "stage5:summary_extraction_watermark";
+    private static readonly TimeSpan HotSessionIdleTimeout = TimeSpan.FromMinutes(15);
+    private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly AnalysisSettings _settings;
     private readonly IMessageRepository _messageRepository;
@@ -83,11 +86,24 @@ public class DialogSummaryWorkerService : BackgroundService
                 }
 
                 var summarizableBatch = FilterSummarizableMessages(batch);
+                var deferredByHotSession = false;
                 if (summarizableBatch.Count > 0)
                 {
-                    await BuildEpisodicChatSessionsAsync(summarizableBatch, stoppingToken);
+                    deferredByHotSession = await BuildEpisodicChatSessionsAsync(summarizableBatch, stoppingToken) || deferredByHotSession;
                     await BuildDaySummariesAsync(summarizableBatch, stoppingToken);
-                    await BuildSessionSummariesAsync(summarizableBatch, stoppingToken);
+                    deferredByHotSession = await BuildSessionSummariesAsync(summarizableBatch, stoppingToken) || deferredByHotSession;
+                }
+
+                if (deferredByHotSession)
+                {
+                    _logger.LogInformation(
+                        "Stage5 summary pass postponed: hot sessions detected, watermarks unchanged. touched_messages={TouchedCount}, summarizable_messages={SummarizableCount}, current_extraction_watermark={ExtractionWatermark}, current_watermark={Watermark}",
+                        batch.Count,
+                        summarizableBatch.Count,
+                        extractionWatermark,
+                        await _stateRepository.GetWatermarkAsync(WatermarkKey, stoppingToken));
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
+                    continue;
                 }
 
                 var nextExtractionWatermark = readyMessageIds.Max();
@@ -153,7 +169,7 @@ public class DialogSummaryWorkerService : BackgroundService
                 continue;
             }
 
-            await _summaryRepository.UpsertAsync(new ChatDialogSummary
+            await UpsertDialogSummaryIfChangedAsync(new ChatDialogSummary
             {
                 ChatId = scope.Key.ChatId,
                 SummaryType = ChatDialogSummaryType.Day,
@@ -167,8 +183,9 @@ public class DialogSummaryWorkerService : BackgroundService
         }
     }
 
-    private async Task BuildEpisodicChatSessionsAsync(List<Message> touchedMessages, CancellationToken ct)
+    private async Task<bool> BuildEpisodicChatSessionsAsync(List<Message> touchedMessages, CancellationToken ct)
     {
+        var deferredByHotSession = false;
         var sessionLimit = Math.Max(1, _settings.TestModeMaxSessionsPerChat);
         var fetchLimit = Math.Max(500, _settings.SummaryDayMaxMessages * sessionLimit);
         var touchedChatIds = touchedMessages.Select(x => x.ChatId).Distinct().ToArray();
@@ -208,6 +225,29 @@ public class DialogSummaryWorkerService : BackgroundService
                 var hasTouchedMessage = session.Any(x => touchedIds.Contains(x.Id));
                 if (!hasTouchedMessage && boundsUnchanged && hasExistingSummary)
                 {
+                    continue;
+                }
+
+                if (!IsSessionCooledDown(sessionEnd, out var remaining))
+                {
+                    deferredByHotSession = true;
+                    _logger.LogInformation(
+                        "Stage5 summary skipped hot session: chat_id={ChatId}, session_index={SessionIndex}, last_message_utc={LastMessageUtc}, idle_required_min={IdleMinutes}, idle_remaining={Remaining}",
+                        chatId,
+                        i,
+                        sessionEnd,
+                        HotSessionIdleTimeout.TotalMinutes,
+                        remaining);
+                    continue;
+                }
+
+                if (MessageContentBuilder.IsTrashOnlySession(session))
+                {
+                    _logger.LogInformation(
+                        "Stage5 summary skipped trash-only session: chat_id={ChatId}, session_index={SessionIndex}, messages={MessageCount}",
+                        chatId,
+                        i,
+                        session.Count);
                     continue;
                 }
 
@@ -253,12 +293,15 @@ public class DialogSummaryWorkerService : BackgroundService
                 }
 
                 if (existing != null &&
-                    boundsUnchanged &&
                     string.Equals(
                         MessageContentBuilder.CollapseWhitespace(existing.Summary),
                         MessageContentBuilder.CollapseWhitespace(summaryText),
                         StringComparison.Ordinal))
                 {
+                    _logger.LogInformation(
+                        "Stage5 summary idempotent skip (session unchanged): chat_id={ChatId}, session_index={SessionIndex}",
+                        chatId,
+                        i);
                     continue;
                 }
 
@@ -274,10 +317,13 @@ public class DialogSummaryWorkerService : BackgroundService
                 await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(chatId, i, summaryText, ct);
             }
         }
+
+        return deferredByHotSession;
     }
 
-    private async Task BuildSessionSummariesAsync(List<Message> touchedMessages, CancellationToken ct)
+    private async Task<bool> BuildSessionSummariesAsync(List<Message> touchedMessages, CancellationToken ct)
     {
+        var deferredByHotSession = false;
         var byChatAndDay = touchedMessages
             .GroupBy(x => new { x.ChatId, Day = DateOnly.FromDateTime(x.Timestamp) })
             .ToList();
@@ -311,6 +357,28 @@ public class DialogSummaryWorkerService : BackgroundService
                     continue;
                 }
 
+                var sessionEnd = session.Last().Timestamp;
+                if (!IsSessionCooledDown(sessionEnd, out var remaining))
+                {
+                    deferredByHotSession = true;
+                    _logger.LogInformation(
+                        "Stage5 summary skipped hot day-session: chat_id={ChatId}, last_message_utc={LastMessageUtc}, idle_required_min={IdleMinutes}, idle_remaining={Remaining}",
+                        scope.Key.ChatId,
+                        sessionEnd,
+                        HotSessionIdleTimeout.TotalMinutes,
+                        remaining);
+                    continue;
+                }
+
+                if (MessageContentBuilder.IsTrashOnlySession(session))
+                {
+                    _logger.LogInformation(
+                        "Stage5 summary skipped trash-only day-session: chat_id={ChatId}, messages={MessageCount}",
+                        scope.Key.ChatId,
+                        session.Count);
+                    continue;
+                }
+
                 var sessionInput = session.Take(Math.Max(_settings.SummaryMinMessages, _settings.SummarySessionMaxMessages)).ToList();
                 var summaryText = await GenerateSummaryAsync(
                     scope.Key.ChatId,
@@ -325,7 +393,7 @@ public class DialogSummaryWorkerService : BackgroundService
                     continue;
                 }
 
-                await _summaryRepository.UpsertAsync(new ChatDialogSummary
+                await UpsertDialogSummaryIfChangedAsync(new ChatDialogSummary
                 {
                     ChatId = scope.Key.ChatId,
                     SummaryType = ChatDialogSummaryType.Session,
@@ -338,6 +406,8 @@ public class DialogSummaryWorkerService : BackgroundService
                 }, ct);
             }
         }
+
+        return deferredByHotSession;
     }
 
     private async Task<string> GenerateSummaryAsync(
@@ -366,7 +436,18 @@ public class DialogSummaryWorkerService : BackgroundService
                 historicalHints,
                 cheapJsonByMessageId,
                 ct);
-            return ExtractSummary(response);
+            var summary = ExtractSummary(response);
+            if (IsLikelyRussianSession(messages) && !ContainsCyrillic(summary))
+            {
+                _logger.LogWarning(
+                    "Stage5 summary response has no Cyrillic symbols for likely Russian chat. chat_id={ChatId}, scope={Scope}, period_start={PeriodStart}, period_end={PeriodEnd}",
+                    chatId,
+                    scope,
+                    periodStart,
+                    periodEnd);
+            }
+
+            return summary;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -476,6 +557,61 @@ public class DialogSummaryWorkerService : BackgroundService
         }
 
         return MessageContentBuilder.CollapseWhitespace(raw);
+    }
+
+    private async Task UpsertDialogSummaryIfChangedAsync(ChatDialogSummary candidate, CancellationToken ct)
+    {
+        var existing = await _summaryRepository.GetByScopeAsync(
+            candidate.ChatId,
+            candidate.SummaryType,
+            candidate.PeriodStart,
+            candidate.PeriodEnd,
+            ct);
+        if (existing != null &&
+            existing.IsFinalized)
+        {
+            _logger.LogInformation(
+                "Stage5 summary skip finalized scope: chat_id={ChatId}, type={SummaryType}, period_start={PeriodStart}, period_end={PeriodEnd}",
+                candidate.ChatId,
+                candidate.SummaryType,
+                candidate.PeriodStart,
+                candidate.PeriodEnd);
+            return;
+        }
+
+        if (existing != null &&
+            string.Equals(
+                MessageContentBuilder.CollapseWhitespace(existing.Summary),
+                MessageContentBuilder.CollapseWhitespace(candidate.Summary),
+                StringComparison.Ordinal))
+        {
+            _logger.LogInformation(
+                "Stage5 summary idempotent skip (dialog summary unchanged): chat_id={ChatId}, type={SummaryType}, period_start={PeriodStart}, period_end={PeriodEnd}",
+                candidate.ChatId,
+                candidate.SummaryType,
+                candidate.PeriodStart,
+                candidate.PeriodEnd);
+            return;
+        }
+
+        await _summaryRepository.UpsertAsync(candidate, ct);
+    }
+
+    private static bool ContainsCyrillic(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && CyrillicRegex.IsMatch(value);
+    }
+
+    private static bool IsLikelyRussianSession(IReadOnlyCollection<Message> messages)
+    {
+        return messages.Any(message => ContainsCyrillic(MessageContentBuilder.BuildSemanticContent(message)));
+    }
+
+    private static bool IsSessionCooledDown(DateTime lastMessageTimestampUtc, out TimeSpan idleRemaining)
+    {
+        var elapsed = DateTime.UtcNow - lastMessageTimestampUtc;
+        idleRemaining = HotSessionIdleTimeout - elapsed;
+        return elapsed >= HotSessionIdleTimeout;
     }
 
     private const string SummaryPrompt = """

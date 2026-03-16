@@ -179,6 +179,7 @@ public class DbChatDialogSummary
     public long EndMessageId { get; set; }
     public int MessageCount { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public bool IsFinalized { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

@@ -12,6 +12,7 @@ namespace TgAssistant.Intelligence.Stage6;
 /// <summary>
 /// Slowly reprocesses previously extracted messages to improve quality with the latest cheap prompt.
 /// </summary>
+[Obsolete("Deprecated by Stage 5 v10 Hybrid manifesto. Keep disabled and do not register in DI.")]
 public class ContinuousRefinementWorkerService : BackgroundService
 {
     private const string CheapPromptId = "stage5_cheap_extract_v7";

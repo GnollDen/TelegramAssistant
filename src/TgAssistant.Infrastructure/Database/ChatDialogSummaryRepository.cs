@@ -41,6 +41,7 @@ public class ChatDialogSummaryRepository : IChatDialogSummaryRepository
                 EndMessageId = summary.EndMessageId,
                 MessageCount = summary.MessageCount,
                 Summary = summary.Summary,
+                IsFinalized = summary.IsFinalized,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
@@ -51,10 +52,50 @@ public class ChatDialogSummaryRepository : IChatDialogSummaryRepository
             row.EndMessageId = summary.EndMessageId;
             row.MessageCount = summary.MessageCount;
             row.Summary = summary.Summary;
+            row.IsFinalized = summary.IsFinalized;
             row.UpdatedAt = DateTime.UtcNow;
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<ChatDialogSummary?> GetByScopeAsync(
+        long chatId,
+        ChatDialogSummaryType summaryType,
+        DateTime periodStart,
+        DateTime periodEnd,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        var row = await db.ChatDialogSummaries
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.ChatId == chatId
+                     && x.SummaryType == (short)summaryType
+                     && x.PeriodStart == periodStart
+                     && x.PeriodEnd == periodEnd,
+                ct);
+        if (row == null)
+        {
+            return null;
+        }
+
+        return new ChatDialogSummary
+        {
+            Id = row.Id,
+            ChatId = row.ChatId,
+            SummaryType = (ChatDialogSummaryType)row.SummaryType,
+            PeriodStart = row.PeriodStart,
+            PeriodEnd = row.PeriodEnd,
+            StartMessageId = row.StartMessageId,
+            EndMessageId = row.EndMessageId,
+            MessageCount = row.MessageCount,
+            Summary = row.Summary,
+            IsFinalized = row.IsFinalized,
+            CreatedAt = row.CreatedAt,
+            UpdatedAt = row.UpdatedAt
+        };
     }
 
     /// <summary>
@@ -81,6 +122,7 @@ public class ChatDialogSummaryRepository : IChatDialogSummaryRepository
             EndMessageId = x.EndMessageId,
             MessageCount = x.MessageCount,
             Summary = x.Summary,
+            IsFinalized = x.IsFinalized,
             CreatedAt = x.CreatedAt,
             UpdatedAt = x.UpdatedAt
         }).ToList();

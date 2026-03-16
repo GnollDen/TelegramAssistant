@@ -62,6 +62,29 @@ public class IntelligenceRepository : IIntelligenceRepository
         return await GetClaimsByMessagesInternalAsync(db, messageIds, ct);
     }
 
+    public async Task<List<IntelligenceClaim>> GetClaimsByChatAndPeriodAsync(
+        long chatId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var safeLimit = Math.Max(1, limit);
+        if (toUtc < fromUtc)
+        {
+            return [];
+        }
+
+        var ambientDb = AmbientDbContextScope.Current;
+        if (ambientDb is not null)
+        {
+            return await GetClaimsByChatAndPeriodInternalAsync(ambientDb, chatId, fromUtc, toUtc, safeLimit, ct);
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await GetClaimsByChatAndPeriodInternalAsync(db, chatId, fromUtc, toUtc, safeLimit, ct);
+    }
+
     private static async Task ReplaceInternalAsync(
         TgAssistantDbContext db,
         long messageId,
@@ -160,5 +183,31 @@ public class IntelligenceRepository : IIntelligenceRepository
             Confidence = row.Confidence,
             CreatedAt = row.CreatedAt
         };
+    }
+
+    private static async Task<List<IntelligenceClaim>> GetClaimsByChatAndPeriodInternalAsync(
+        TgAssistantDbContext db,
+        long chatId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int limit,
+        CancellationToken ct)
+    {
+        var rows = await db.IntelligenceClaims
+            .AsNoTracking()
+            .Join(
+                db.Messages.AsNoTracking(),
+                claim => claim.MessageId,
+                message => message.Id,
+                (claim, message) => new { claim, message.ChatId, message.Timestamp })
+            .Where(x => x.ChatId == chatId && x.Timestamp >= fromUtc && x.Timestamp <= toUtc)
+            .OrderByDescending(x => x.claim.Confidence)
+            .ThenByDescending(x => x.claim.MessageId)
+            .ThenByDescending(x => x.claim.Id)
+            .Take(limit)
+            .Select(x => x.claim)
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
     }
 }

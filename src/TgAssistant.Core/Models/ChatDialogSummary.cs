@@ -17,6 +17,7 @@ public class ChatDialogSummary
     public long EndMessageId { get; set; }
     public int MessageCount { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public bool IsFinalized { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

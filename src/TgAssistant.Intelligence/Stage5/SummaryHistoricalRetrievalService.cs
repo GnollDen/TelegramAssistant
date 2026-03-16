@@ -9,6 +9,7 @@ namespace TgAssistant.Intelligence.Stage5;
 public class SummaryHistoricalRetrievalService
 {
     private const string EmbeddingModel = "text-embedding-3-small";
+    private const string DailyFinalOwnerTypePrefix = "priority:chat_daily_final";
 
     private readonly AnalysisSettings _analysisSettings;
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
@@ -161,6 +162,56 @@ public class SummaryHistoricalRetrievalService
         }
     }
 
+    public async Task UpsertDailyFinalSummaryEmbeddingAsync(
+        long chatId,
+        DateOnly day,
+        string summary,
+        CancellationToken ct)
+    {
+        if (!_analysisSettings.SummaryHistoricalHintsEnabled || string.IsNullOrWhiteSpace(summary))
+        {
+            return;
+        }
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(Math.Max(250, _analysisSettings.SummaryHistoricalHintsTimeoutMs));
+
+            var compact = MessageContentBuilder.CollapseWhitespace(summary);
+            var vector = await _embeddingGenerator.GenerateAsync(EmbeddingModel, compact, timeoutCts.Token);
+            if (vector.Length == 0)
+            {
+                return;
+            }
+
+            await _embeddingRepository.UpsertAsync(new TextEmbedding
+            {
+                OwnerType = BuildDailyFinalOwnerType(chatId),
+                OwnerId = day.ToString("yyyy-MM-dd"),
+                SourceText = compact,
+                Model = EmbeddingModel,
+                Vector = vector,
+                CreatedAt = DateTime.UtcNow
+            }, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Stage5 daily final summary embedding upsert timed out: chat_id={ChatId}, day={Day}",
+                chatId,
+                day);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Stage5 daily final summary embedding upsert failed: chat_id={ChatId}, day={Day}",
+                chatId,
+                day);
+        }
+    }
+
     private async Task<string> BuildQueryAsync(List<Message> sessionMessages, CancellationToken ct)
     {
         var messageIds = sessionMessages.Select(x => x.Id).ToArray();
@@ -193,6 +244,7 @@ public class SummaryHistoricalRetrievalService
     }
 
     private static string BuildOwnerType(long chatId) => $"chat_session_summary:{chatId}";
+    private static string BuildDailyFinalOwnerType(long chatId) => $"{DailyFinalOwnerTypePrefix}:{chatId}";
 
     private static int? TryParseSessionIndex(string ownerId)
     {
