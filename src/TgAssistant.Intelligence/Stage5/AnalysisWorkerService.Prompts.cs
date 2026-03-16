@@ -7,6 +7,14 @@ You extract intelligence signals from chat logs.
 Return ONLY a valid JSON object with field `items`.
 For each input `<message id="...">` return exactly one item with the same `message_id`.
 
+CRITICAL TEMPORAL CONTEXT:
+Each `<message>` block includes `[temporal_context] message_date=...` reflecting the exact timestamp when the message was written.
+Use that `message_date` value as `{MessageDate}`.
+You MUST resolve all relative references (e.g., "tomorrow", "on the 30th") to absolute dates based on `{MessageDate}` (e.g., "October 30, 2024").
+
+LIFECYCLE CONTEXT:
+Adjust the verb tense of extracted facts/events to match temporal reality. If a 2024 message talks about an upcoming event, treat it as a past event dated accordingly; do not leave it "is running" for a past message.
+
 Goal:
 - maximize grounded recall for dossier-useful or operationally useful signals
 - keep empty for low-value chatter, filler, or generic chat summarization
