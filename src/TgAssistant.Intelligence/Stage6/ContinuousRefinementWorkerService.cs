@@ -111,9 +111,14 @@ Use grounded facts only and keep empty arrays for low-value chatter.
                 foreach (var candidate in candidates)
                 {
                     var startedAt = DateTime.UtcNow;
+                    var processedSuccessfully = false;
                     try
                     {
-                        await ProcessCandidateAsync(candidate, cheapPrompt.SystemPrompt, stoppingToken);
+                        processedSuccessfully = await ProcessCandidateAsync(candidate, cheapPrompt.SystemPrompt, stoppingToken);
+                        if (processedSuccessfully)
+                        {
+                            await _stateRepository.SetWatermarkAsync(CursorKey, candidate.ExtractionId, stoppingToken);
+                        }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -134,7 +139,6 @@ Use grounded facts only and keep empty arrays for low-value chatter.
                     }
                     finally
                     {
-                        await _stateRepository.SetWatermarkAsync(CursorKey, candidate.ExtractionId, stoppingToken);
                         await DelayBetweenItemsAsync(startedAt, minDelaySeconds, maxDelaySeconds, stoppingToken);
                     }
                 }
@@ -156,7 +160,7 @@ Use grounded facts only and keep empty arrays for low-value chatter.
         }
     }
 
-    private async Task ProcessCandidateAsync(
+    private async Task<bool> ProcessCandidateAsync(
         RefinementCandidate candidate,
         string cheapPrompt,
         CancellationToken ct)
@@ -197,25 +201,24 @@ Use grounded facts only and keep empty arrays for low-value chatter.
                 stage: "stage6_continuous_refine_validation",
                 reason: validationError ?? "invalid_extraction",
                 messageId: sourceMessage.Id,
-                payload: JsonSerializer.Serialize(extracted, JsonOptions),
+                payload: JsonSerializer.Serialize(extracted, ExtractionSerializationOptions.SnakeCase),
                 ct: ct);
-            extracted = new ExtractionItem { MessageId = sourceMessage.Id };
+            return false;
         }
-
-        const bool needsExpensive = false;
 
         await _messageExtractionRepository.UpsertCheapAsync(
             sourceMessage.Id,
-            JsonSerializer.Serialize(extracted, JsonOptions),
-            needsExpensive,
+            JsonSerializer.Serialize(extracted, ExtractionSerializationOptions.SnakeCase),
+            needsExpensive: false,
             ct);
 
         await _extractionApplier.ApplyIntelligenceOnlyAsync(sourceMessage.Id, extracted, sourceMessage, ct);
         _logger.LogInformation(
-            "Continuous refinement updated message_id={MessageId}, claims={ClaimsCount}, needs_expensive={NeedsExpensive}",
+            "Continuous refinement updated message_id={MessageId}, claims={ClaimsCount}",
             sourceMessage.Id,
-            extracted.Claims.Count,
-            needsExpensive);
+            extracted.Claims.Count);
+
+        return true;
     }
 
     private async Task<ResolvedPrompt> GetCheapPromptAsync(CancellationToken ct)
@@ -269,11 +272,6 @@ Use grounded facts only and keep empty arrays for low-value chatter.
 
         return "openai/gpt-4o-mini";
     }
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
 
     private sealed class ResolvedPrompt
     {

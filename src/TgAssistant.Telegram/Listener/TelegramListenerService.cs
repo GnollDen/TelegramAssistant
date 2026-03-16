@@ -120,6 +120,12 @@ public class TelegramListenerService : BackgroundService
             _ => 0L
         };
 
+        if (chatId == 0 || string.Equals(message.message, "[DELETED]", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Skipping noisy message in chat {ChatId} with text {Text}", chatId, message.message);
+            return;
+        }
+
         if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
             return;
 
@@ -182,7 +188,13 @@ public class TelegramListenerService : BackgroundService
 
     private async Task HandleDelete(int[] messageIds, long chatId)
     {
-        if (chatId != 0 && _settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
+        if (chatId == 0)
+        {
+            _logger.LogDebug("Skipping delete event for chat_id=0");
+            return;
+        }
+
+        if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
             return;
 
         foreach (var msgId in messageIds)
