@@ -24,6 +24,13 @@ public interface IMessageRepository
     Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
     Task UpdateMediaParalinguisticsAsync(long messageId, string jsonPayload, CancellationToken ct = default);
+    Task UpdateVoiceProcessingResultAsync(
+        long messageId,
+        string? transcription,
+        string? paralinguisticsJson,
+        bool needsReanalysis,
+        bool clearMediaPath,
+        CancellationToken ct = default);
 }
 
 public interface IArchiveImportRepository

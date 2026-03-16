@@ -74,6 +74,8 @@ public class VoiceParalinguisticsSettings
 {
     public const string Section = "VoiceParalinguistics";
     public bool Enabled { get; set; } = true;
+    public bool TranscriptionEnabled { get; set; } = true;
+    public bool DeleteSourceAudioAfterProcessing { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 10;
     public int BatchSize { get; set; } = 30;
     public int MaxParallel { get; set; } = 2;
@@ -81,6 +83,8 @@ public class VoiceParalinguisticsSettings
     public int MaxTokens { get; set; } = 300;
     public int RetryCount { get; set; } = 2;
     public int RetryBaseDelaySeconds { get; set; } = 2;
+    public int TransientBackoffBaseSeconds { get; set; } = 60;
+    public int TransientBackoffMaxSeconds { get; set; } = 900;
 }
 
 public class ArchiveImportSettings
