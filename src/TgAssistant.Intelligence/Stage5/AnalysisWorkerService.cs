@@ -402,16 +402,16 @@ public partial class AnalysisWorkerService : BackgroundService
                         stage: "stage5_validation",
                         reason: validationError ?? "invalid_extraction",
                         messageId: message.Id,
-                        payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};json={JsonSerializer.Serialize(extracted)}",
+                        payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};json={JsonSerializer.Serialize(extracted, ExtractionSerializationOptions.SnakeCase)}",
                         ct: ct);
 
-                    extracted = new ExtractionItem { MessageId = message.Id };
+                    continue;
                 }
 
                 var needsExpensive = IsExpensivePassEnabled() &&
                                      ExtractionRefiner.ShouldRunExpensivePass(message, extracted, _settings);
 
-                await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted), needsExpensive, ct);
+                await _extractionRepository.UpsertCheapAsync(message.Id, JsonSerializer.Serialize(extracted, ExtractionSerializationOptions.SnakeCase), needsExpensive, ct);
 
                 if (!needsExpensive)
                 {
