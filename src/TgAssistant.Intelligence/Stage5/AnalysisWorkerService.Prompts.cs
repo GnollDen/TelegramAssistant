@@ -27,10 +27,10 @@ Goal:
 
 Schema per item:
 - message_id (number)
-- entities: [{name,type,confidence}] where type in [Person, Organization, Place, Pet, Event]
+- entities: [{name,type,confidence,trust_factor,needs_clarification}] where type in [Person, Organization, Place, Pet, Event]
 - observations: [{subject_name,type,object_name,value,evidence,confidence}]
 - claims: [{entity_name,claim_type,category,key,value,evidence,confidence}]
-- facts: [{entity_name,category,key,value,confidence}]
+- facts: [{entity_name,category,key,value,confidence,trust_factor,needs_clarification}]
 - relationships: [{from_entity_name,to_entity_name,type,confidence}]
 - events: [{type,subject_name,object_name,sentiment,summary,confidence}]
 - profile_signals: [{subject_name,trait,direction,evidence,confidence}]
@@ -57,6 +57,7 @@ Type guidance:
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
 - if `[PREVIOUS SESSION SUMMARY]: ...` is present, use it only as prior-session continuity context; never treat it as direct evidence unless the current message supports it
+- if `[EXTERNAL_REPLY_CONTEXT]` is present, use it to understand which older question, statement, or thread the user is replying to; do not treat it as a new topic when the current message is clearly a reaction to older context
 - treat `[Voice Message: ...] "..."` blocks as high-signal message content: use the quoted transcript as spoken text and use the tone marker only as supporting paralinguistic evidence
 - use [local_burst_context], [session_start_context], and [historical_context] as supporting evidence for disambiguation, but ground final extraction in current message text
 - prioritize signals with durable or actionable value: availability, schedule, travel, movement, pickup/dropoff, work/team/project state, finance, health, relationship, address/location, shared contacts
@@ -65,8 +66,11 @@ Rules:
 - if a third party is explicit in the message or reply_context, attribute the signal to that third party instead of automatically using the sender
 - if the subject is unresolved and the signal is low-value, return empty arrays
 - when a Russian person or place is in oblique case and the canonical form is obvious, normalize to the canonical form; otherwise keep the observed form
-- LANGUAGE: all extracted values (fact.value, claim.value, observation.value, evidence) must be in the same language as the original message
-- if the message is in Russian, extracted values must be in Russian; never translate Russian text to English or vice versa
+- LANGUAGE: ALWAYS use Russian for all generated text fields in extraction JSON (value, evidence, summary, reason, keys that are semantic labels).
+- do not output English paraphrases when Russian wording is possible; translate short English fragments to natural Russian while preserving meaning
+- if an entity name, address, place, or durable fact is uncertain, incomplete, or only weakly implied, set `needs_clarification=true` on that entity/fact and avoid hallucinating a precise value
+- never invent a concrete address, canonical person name, or durable fact when the source is ambiguous; prefer `needs_clarification=true` over guessing
+- trust_factor must be 0.0..1.0 for every entity and fact
 - FACT QUALITY: facts must be concrete, reusable information about a person
 - skip technical issues as facts (502 errors, crashes, access problems with websites)
 - skip boolean-only facts without context (value must not be just true/yes/no)
@@ -99,16 +103,20 @@ Rules:
 - set requires_expensive=true only when the message is materially useful for a dossier but grounded extraction is blocked by ambiguity or missing context
 - do NOT set requires_expensive=true for vague short coordination, filler planning, incomplete chatter, or low-value snippets
 - confidence must be 0.0..1.0
+- trust_factor must be 0.0..1.0
 
 Examples:
 Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
-Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"свободное_время","value":"in 20 minutes","evidence":"will be free in 20 minutes","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"свободное_время","value":"in 20 minutes","confidence":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"reported when he will be free","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"будет свободен через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"свободное_время","value":"через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"свободное_время","value":"через 20 минут","confidence":0.88,"trust_factor":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"сообщил, когда будет свободен","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="102">[meta] sender_name="Rinat" ... улица Шавалеева, 1 ... https://yandex.ru/maps/...</message>
-Output item: {"message_id":102,"entities":[{"name":"Rinat","type":"Person","confidence":0.98},{"name":"улица Шавалеева, 1","type":"Place","confidence":0.92}],"observations":[{"subject_name":"Rinat","type":"location_update","object_name":"улица Шавалеева, 1","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"location","key":"shared_location","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"facts":[{"entity_name":"Rinat","category":"location","key":"shared_location","value":"улица Шавалеева, 1","confidence":0.86}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":102,"entities":[{"name":"Rinat","type":"Person","confidence":0.98,"trust_factor":0.98,"needs_clarification":false},{"name":"улица Шавалеева, 1","type":"Place","confidence":0.92,"trust_factor":0.92,"needs_clarification":false}],"observations":[{"subject_name":"Rinat","type":"location_update","object_name":"улица Шавалеева, 1","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"location","key":"shared_location","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"facts":[{"entity_name":"Rinat","category":"location","key":"shared_location","value":"улица Шавалеева, 1","confidence":0.86,"trust_factor":0.86,"needs_clarification":false}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
+Input: <message id="1021">[meta] sender_name="Alena" ... где-то на Шавалеева около первого дома</message>
+Output item: {"message_id":1021,"entities":[{"name":"Шавалеева","type":"Place","confidence":0.58,"trust_factor":0.58,"needs_clarification":true}],"observations":[{"subject_name":"Alena","type":"location_update","object_name":"Шавалеева","value":"где-то около первого дома","evidence":"где-то на Шавалеева около первого дома","confidence":0.6}],"claims":[],"facts":[{"entity_name":"Alena","category":"location","key":"shared_location","value":"где-то на Шавалеева около первого дома","confidence":0.58,"trust_factor":0.58,"needs_clarification":true}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="103">[meta] sender_name="Alena" ... Катя @Kotyonoksok</message>
-Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98},{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Alena","type":"contact_share","object_name":"Катя","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"facts":[{"entity_name":"Alena","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","confidence":0.84}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98,"trust_factor":0.98},{"name":"Катя","type":"Person","confidence":0.9,"trust_factor":0.9}],"observations":[{"subject_name":"Alena","type":"contact_share","object_name":"Катя","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"facts":[{"entity_name":"Alena","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","confidence":0.84,"trust_factor":0.84}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="104">[reply_context] from_sender="Alena" text="Катя уже неделю болеет" [meta] sender_name="Rinat" ... Она все еще на антибиотиках</message>
 Output item: {"message_id":104,"entities":[{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Катя","type":"health_update","object_name":"антибиотики","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"claims":[{"entity_name":"Катя","claim_type":"state","category":"health","key":"принимает_лекарства","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
@@ -144,20 +152,25 @@ The item schema is the same as cheap extraction:
 Rules:
 - use the original message text as the primary evidence source
 - treat `[PREVIOUS SESSION SUMMARY]: ...` as continuity context only; do not emit claims from it unless the current message confirms them
+- if `[EXTERNAL_REPLY_CONTEXT]` is present, use it only to resolve what the current reply refers to; do not emit facts from it unless the current message confirms them
 - if the message contains `[Voice Message: ...] "..."`, treat the quoted transcript as primary voice content and use the tone marker only as supporting emotional/paralinguistic context
 - use context arrays only to resolve references/pronouns and temporal continuity; do not invent facts absent from current message
 - improve the cheap candidate only when the current message contains grounded, useful information
 - keep labels reusable and normalized
 - enforce canonical output formatting: entity names trimmed and canonicalized, categories/relationship types/event types/traits lowercase snake_case, keys trimmed lowercase snake_case with no variants
 - do not hallucinate missing context
+- if a name, address, or durable fact remains uncertain after using context, set `needs_clarification=true` on the affected entity/fact instead of guessing
 - if the message is vague, low-value, or too context-dependent to extract safely, return empty arrays and requires_expensive=false
 - if the message is clearly important but still ambiguous after careful reading, keep requires_expensive=true and set reason
 - prefer grounded claims and observations over speculative interpretation
 - preserve durable facts only when directly supported by the current message
+- ALWAYS output Russian text in all generated fields (value, evidence, summary, reason)
+- entities and facts must include trust_factor in range 0.0..1.0
+- when trust_factor is uncertain, set it equal to confidence
 
 Examples:
 Input message: [meta] sender_name="Alena" ... My income is stable around 5000 per month
-Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.9}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"monthly_income","value":"~5000 per month","evidence":"income is stable around 5000 per month","confidence":0.9}],"facts":[{"entity_name":"Alena","category":"finance","key":"monthly_income","value":"~5000 per month","confidence":0.9}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"доход","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"доход","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"facts":[{"entity_name":"Alena","category":"finance","key":"доход","value":"около 5000 в месяц","confidence":0.9,"trust_factor":0.9}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input message: [meta] sender_name="Alena" ... and then I'll go
 Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}

@@ -8,6 +8,7 @@ public interface IMessageRepository
     Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default);
     Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default);
     Task<List<Message>> GetProcessedAfterIdAsync(long afterId, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetByIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
@@ -141,6 +142,8 @@ public interface IAnalysisStateRepository
 public interface IMessageExtractionRepository
 {
     Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
+    Task<Dictionary<long, string>> GetCheapJsonByMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
+    Task<List<long>> GetSummaryReadyMessageIdsAfterIdAsync(long afterMessageId, int limit, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
     Task<List<RefinementCandidate>> GetRefinementCandidatesAsync(
         long afterExtractionId,
@@ -167,6 +170,7 @@ public interface IIntelligenceRepository
         IReadOnlyCollection<IntelligenceClaim> claims,
         CancellationToken ct = default);
     Task<List<IntelligenceClaim>> GetClaimsByMessageAsync(long messageId, CancellationToken ct = default);
+    Task<List<IntelligenceClaim>> GetClaimsByMessagesAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
 }
 
 public interface IExtractionErrorRepository

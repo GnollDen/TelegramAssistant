@@ -14,6 +14,8 @@ public class Fact
     public DateTime? ValidUntil { get; set; }
     public bool IsCurrent { get; set; } = true;
     public string DecayClass { get; set; } = "slow";
+    public bool IsUserConfirmed { get; set; }
+    public float TrustFactor { get; set; } = 1.0f;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

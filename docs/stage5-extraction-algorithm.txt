@@ -1,5 +1,5 @@
 Stage5 extraction algorithm (as-is snapshot)
-Timestamp (UTC): 2026-03-14
+Timestamp (UTC): 2026-03-16
 
 Current runtime parameters (container env)
 - Analysis__Enabled=true
@@ -7,7 +7,7 @@ Current runtime parameters (container env)
 - Analysis__PollIntervalSeconds=5
 - Analysis__CheapModelAbEnabled=true
 - Analysis__CheapBaselineModel=openai/gpt-4o-mini
-- Analysis__CheapCandidateModel=deepseek/deepseek-chat
+- Analysis__CheapCandidateModel=deepseek/deepseek-v3.2
 - Analysis__CheapAbCandidatePercent=50
 - Analysis__ExpensiveModel=anthropic/claude-3.5-sonnet
 - Analysis__ExpensiveFallbackModel=openai/gpt-4o
@@ -15,6 +15,7 @@ Current runtime parameters (container env)
 - Analysis__ExpensiveDailyBudgetUsd=0.15
 - Analysis__SummaryEnabled=true
 - Analysis__SummaryModel=openai/gpt-4o-mini
+- ContinuousRefinement__Enabled=false
 
 ------------------------------------------------------------
 1) Main loop order (AnalysisWorkerService)
@@ -30,7 +31,6 @@ If no new messages:
 After successful cheap batch:
 - watermark = max(message.id in batch).
 
-------------------------------------------------------------
 2) Input eligibility for cheap pass
 ------------------------------------------------------------
 Messages are selected only if:
@@ -44,6 +44,11 @@ Messages are selected only if:
 Sort/order:
 - by id ascending
 - take BatchSize
+
+Additional skip guard (inside analysis worker):
+- empty semantic content
+- service placeholders (`[DELETED]`, `[SERVICE_*]`)
+- technical noise (command-only and url-only texts)
 
 ------------------------------------------------------------
 3) Context building for each message (AnalysisContextBuilder)
@@ -188,25 +193,31 @@ Writes:
 
 Generic placeholder entities (sender/me/i/etc.) are skipped.
 
-------------------------------------------------------------
 9) Summary worker (separate, but affects extraction context)
 ------------------------------------------------------------
 DialogSummaryWorkerService runs in parallel:
-- watermark key: stage5:summary_watermark
-- consumes processed messages in batches
+- reads `stage5:summary_extraction_watermark` and selects ready message IDs from `message_extractions`
+- keeps `stage5:summary_watermark` as operational progress marker
+- consumes only processed + summarizable messages in batches
 - generates:
   - day summaries
   - session summaries (split by SummarySessionGapMinutes)
+  - episodic chat sessions (split by EpisodicSessionGapMinutes)
 - stores into chat_dialog_summaries via upsert
 
-Summary payload is plain normalized message log:
-- summary_meta + message lines [timestamp] sender: semantic text
+Summary input builder:
+- includes message semantic text + compact cheap_json context (claims/facts + trust_factor/confidence mapping)
+- adds explicit Russian language context marker
+- enforces Russian-only output in summary system prompt
+
+Summary payload format:
+- summary_meta + message lines [timestamp] sender: semantic text + extraction context
 
 These summaries are then used as historical_context in cheap/expensive extraction.
 
-------------------------------------------------------------
 10) Observed practical behavior
 ------------------------------------------------------------
 - Expensive pass may be mostly disabled in practice by ExpensiveDailyBudgetUsd cap.
 - In that case quality depends almost entirely on cheap pass + deterministic refinement.
-- Summary worker can consume significant token budget if left enabled during large backfills.
+- Summary worker can consume significant token budget during large backfills; monitor summary watermarks and keep technical-noise filtering enabled.
+- Continuous refinement should remain disabled by default for v10 unless running a targeted quality campaign.

@@ -163,6 +163,27 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Message>> GetByIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
+    {
+        if (messageIds.Count == 0)
+        {
+            return [];
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => messageIds.Contains(x.Id)
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
     public async Task<List<Message>> GetChatWindowBeforeAsync(long chatId, long beforeMessageId, int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

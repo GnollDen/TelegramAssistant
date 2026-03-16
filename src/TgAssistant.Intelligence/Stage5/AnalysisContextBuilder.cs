@@ -46,6 +46,7 @@ public class AnalysisContextBuilder
         var lookback = Math.Max(
             Math.Max(1, _settings.LocalBurstContextMessages),
             Math.Max(1, _settings.SessionContextLookbackMessages));
+        var externalReplyContextByMessageId = await BuildExternalReplyContextAsync(messages, sessionsByChat, ct);
 
         foreach (var message in messages.OrderBy(x => x.Id))
         {
@@ -54,6 +55,7 @@ public class AnalysisContextBuilder
             {
                 LocalBurst = BuildLocalBurst(previous, message.Timestamp),
                 SessionStart = BuildSessionStart(previous, message),
+                ExternalReplyContext = externalReplyContextByMessageId.GetValueOrDefault(message.Id) ?? [],
                 HistoricalSummaries = BuildHistoricalSummaries(
                     historicalByChat.GetValueOrDefault(message.ChatId) ?? [],
                     message.Timestamp),
@@ -63,6 +65,70 @@ public class AnalysisContextBuilder
             };
 
             result[message.Id] = context;
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<long, List<string>>> BuildExternalReplyContextAsync(
+        List<Message> messages,
+        Dictionary<long, List<ChatSession>> sessionsByChat,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<long, List<string>>();
+        var candidates = new List<(long MessageId, DateTime MessageTimestamp, List<string> Lines)>();
+        var groups = messages
+            .Where(m => m.ReplyToMessageId.HasValue && m.ReplyToMessageId.Value > 0)
+            .GroupBy(m => new { m.ChatId, m.Source })
+            .ToList();
+
+        foreach (var group in groups)
+        {
+            var replyIds = group
+                .Select(m => m.ReplyToMessageId!.Value)
+                .Distinct()
+                .ToArray();
+            if (replyIds.Length == 0)
+            {
+                continue;
+            }
+
+            var repliesByTelegramId = await _messageRepository.GetByTelegramMessageIdsAsync(
+                group.Key.ChatId,
+                group.Key.Source,
+                replyIds,
+                ct);
+
+            foreach (var message in group.OrderBy(x => x.Id))
+            {
+                if (!repliesByTelegramId.TryGetValue(message.ReplyToMessageId!.Value, out var reply))
+                {
+                    continue;
+                }
+
+                var currentSessionStart = await ResolveCurrentSessionStartAsync(message, ct);
+                if (reply.Timestamp >= currentSessionStart)
+                {
+                    continue;
+                }
+
+                var lines = FormatExternalReplyContext(
+                    reply,
+                    ResolveSessionForTimestamp(sessionsByChat.GetValueOrDefault(message.ChatId) ?? [], reply.Timestamp));
+                if (lines.Count == 0)
+                {
+                    continue;
+                }
+
+                candidates.Add((message.Id, message.Timestamp, lines));
+            }
+        }
+
+        foreach (var candidate in candidates
+                     .OrderByDescending(x => x.MessageTimestamp)
+                     .Take(5))
+        {
+            result[candidate.MessageId] = candidate.Lines;
         }
 
         return result;
@@ -85,6 +151,27 @@ public class AnalysisContextBuilder
         var combined = previousMessages.ToList();
         combined.Add(currentMessage);
 
+        var sessionStartIndex = FindSessionStartIndex(combined);
+
+        return combined
+            .Skip(sessionStartIndex)
+            .Where(x => x.Id != currentMessage.Id)
+            .Take(Math.Max(1, _settings.SessionStartContextMessages))
+            .Select(FormatContextMessageLine)
+            .ToList();
+    }
+
+    private async Task<DateTime> ResolveCurrentSessionStartAsync(Message message, CancellationToken ct)
+    {
+        var lookback = Math.Max(1, _settings.SessionContextLookbackMessages);
+        var previous = await _messageRepository.GetChatWindowBeforeAsync(message.ChatId, message.Id, lookback, ct);
+        var combined = previous.ToList();
+        combined.Add(message);
+        return combined[FindSessionStartIndex(combined)].Timestamp;
+    }
+
+    private int FindSessionStartIndex(List<Message> combined)
+    {
         var gap = TimeSpan.FromMinutes(Math.Max(1, _settings.SessionContextGapMinutes));
         var sessionStartIndex = Math.Max(0, combined.Count - 1);
         for (var i = combined.Count - 1; i > 0; i--)
@@ -99,12 +186,7 @@ public class AnalysisContextBuilder
             sessionStartIndex = i - 1;
         }
 
-        return combined
-            .Skip(sessionStartIndex)
-            .Where(x => x.Id != currentMessage.Id)
-            .Take(Math.Max(1, _settings.SessionStartContextMessages))
-            .Select(FormatContextMessageLine)
-            .ToList();
+        return sessionStartIndex;
     }
 
     private List<string> BuildHistoricalSummaries(List<ChatDialogSummary> summaries, DateTime currentTs)
@@ -148,7 +230,7 @@ public class AnalysisContextBuilder
                 .FirstOrDefault();
         }
 
-        if (currentSession == null || currentSession.SessionIndex <= 1)
+        if (currentSession == null || currentSession.SessionIndex <= 0)
         {
             return null;
         }
@@ -157,5 +239,35 @@ public class AnalysisContextBuilder
         return previousSession == null
             ? null
             : MessageContentBuilder.CollapseWhitespace(previousSession.Summary);
+    }
+
+    private static ChatSession? ResolveSessionForTimestamp(List<ChatSession> sessions, DateTime timestamp)
+    {
+        return sessions.FirstOrDefault(session =>
+            session.StartDate <= timestamp && timestamp <= session.EndDate);
+    }
+
+    private static List<string> FormatExternalReplyContext(Message reply, ChatSession? session)
+    {
+        var lines = new List<string>
+        {
+            $"[reply_message] ts={reply.Timestamp:O} sender=\"{(reply.SenderName ?? string.Empty).Trim()}\" text=\"{MessageContentBuilder.TruncateForContext(MessageContentBuilder.BuildSemanticContent(reply), 220)}\""
+        };
+
+        if (session != null)
+        {
+            lines.Add(
+                $"[reply_session] session_index={session.SessionIndex} period={session.StartDate:O}..{session.EndDate:O}");
+
+            var summary = MessageContentBuilder.TruncateForContext(
+                MessageContentBuilder.CollapseWhitespace(session.Summary),
+                320);
+            if (!string.IsNullOrWhiteSpace(summary))
+            {
+                lines.Add($"[reply_session_summary] {summary}");
+            }
+        }
+
+        return lines;
     }
 }

@@ -112,7 +112,9 @@ public static class ExtractionRefiner
             {
                 Name = e.Name.Trim(),
                 Type = string.IsNullOrWhiteSpace(e.Type) ? "Person" : e.Type.Trim(),
-                Confidence = Clamp01(e.Confidence)
+                Confidence = Clamp01(e.Confidence),
+                TrustFactor = ResolveTrustFactor(e.TrustFactor, e.Confidence),
+                NeedsClarification = e.NeedsClarification
             })
             .ToList();
 
@@ -153,7 +155,9 @@ public static class ExtractionRefiner
                 Category = string.IsNullOrWhiteSpace(f.Category) ? "general" : f.Category.Trim(),
                 Key = NormalizeCanonicalKey(f.Key),
                 Value = NormalizePlainValue(f.Value),
-                Confidence = Clamp01(f.Confidence)
+                Confidence = Clamp01(f.Confidence),
+                TrustFactor = ResolveTrustFactor(f.TrustFactor, f.Confidence),
+                NeedsClarification = f.NeedsClarification
             })
             .Where(f => f.EntityName.Length > 0 && f.Key.Length > 0 && f.Value.Length > 0)
             .ToList();
@@ -789,6 +793,16 @@ public static class ExtractionRefiner
     }
 
     private static float Clamp01(float value) => Math.Max(0f, Math.Min(1f, value));
+
+    private static float ResolveTrustFactor(float trustFactor, float confidence)
+    {
+        if (trustFactor > 0f)
+        {
+            return Clamp01(trustFactor);
+        }
+
+        return Clamp01(confidence);
+    }
 
     private static string NormalizeClaimValue(ExtractionClaim claim)
     {

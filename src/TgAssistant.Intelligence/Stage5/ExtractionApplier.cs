@@ -61,7 +61,7 @@ public class ExtractionApplier
 
         await PrewarmEntitiesAsync(extraction, entityByName, existingRelationshipEntityByName, ct);
 
-        foreach (var entity in extraction.Entities.Where(e => !string.IsNullOrWhiteSpace(e.Name)))
+        foreach (var entity in extraction.Entities.Where(e => !e.NeedsClarification && !string.IsNullOrWhiteSpace(e.Name)))
         {
             if (IsGenericEntityToken(entity.Name))
             {
@@ -74,10 +74,11 @@ public class ExtractionApplier
                 ParseEntityType(entity.Type),
                 sourceMessage,
                 senderName,
+                entity.TrustFactor > 0f ? entity.TrustFactor : entity.Confidence,
                 ct);
         }
 
-        foreach (var fact in extraction.Facts.Where(f => !string.IsNullOrWhiteSpace(f.EntityName) && !string.IsNullOrWhiteSpace(f.Key)))
+        foreach (var fact in extraction.Facts.Where(f => !f.NeedsClarification && !string.IsNullOrWhiteSpace(f.EntityName) && !string.IsNullOrWhiteSpace(f.Key)))
         {
             await ApplyFactCandidateAsync(
                 messageId,
@@ -86,6 +87,7 @@ public class ExtractionApplier
                 fact.Key,
                 fact.Value,
                 fact.Confidence,
+                fact.TrustFactor,
                 sourceMessage,
                 senderName,
                 entityByName,
@@ -159,6 +161,7 @@ public class ExtractionApplier
                 EntityType.Person,
                 sourceMessage,
                 senderName,
+                null,
                 ct);
 
             eventBuffer.Add(new CommunicationEvent
@@ -246,6 +249,7 @@ public class ExtractionApplier
                 EntityType.Person,
                 sourceMessage,
                 senderName,
+                null,
                 ct);
             observationRows.Add(new IntelligenceObservation
             {
@@ -276,6 +280,7 @@ public class ExtractionApplier
                 EntityType.Person,
                 sourceMessage,
                 senderName,
+                null,
                 ct);
             var normalizedCategory = string.IsNullOrWhiteSpace(claim.Category) ? "general" : claim.Category.Trim().ToLowerInvariant();
             claimRows.Add(new IntelligenceClaim
@@ -303,6 +308,7 @@ public class ExtractionApplier
         EntityType fallbackType,
         Message? sourceMessage,
         string? senderName,
+        float? trustFactor,
         CancellationToken ct)
     {
         var normalized = entityName.Trim();
@@ -313,7 +319,7 @@ public class ExtractionApplier
             return cached;
         }
 
-        var entity = await UpsertEntityWithActorContextAsync(normalized, fallbackType, sourceMessage, senderName, ct);
+        var entity = await UpsertEntityWithActorContextAsync(normalized, fallbackType, sourceMessage, senderName, trustFactor, ct);
         entityByName[normalized] = entity;
         entityByName[entity.Name] = entity;
         return entity;
@@ -391,6 +397,7 @@ public class ExtractionApplier
                 claim.Key,
                 claim.Value,
                 claim.Confidence,
+                null,
                 sourceMessage,
                 senderName,
                 entityByName,
@@ -532,6 +539,7 @@ public class ExtractionApplier
         string key,
         string? value,
         float confidence,
+        float? trustFactor,
         Message? sourceMessage,
         string? senderName,
         Dictionary<string, Entity> entityByName,
@@ -569,6 +577,7 @@ public class ExtractionApplier
             EntityType.Person,
             sourceMessage,
             senderName,
+            null,
             ct);
 
         var projectedFactKey = ToProjectedFactKey(entity.Id, normalizedCategory, normalizedKey, normalizedValue);
@@ -590,6 +599,7 @@ public class ExtractionApplier
             Value = normalizedValue,
             Status = status,
             Confidence = confidence,
+            TrustFactor = ResolveTrustFactor(trustFactor, confidence),
             SourceMessageId = messageId,
             ValidFrom = DateTime.UtcNow,
             IsCurrent = true,
@@ -939,6 +949,7 @@ public class ExtractionApplier
             fallbackType,
             sourceMessage,
             senderName,
+            null,
             ct);
         return IsRelationshipEntityTypeAllowed(createdEntity.Type) ? createdEntity : null;
     }
@@ -1064,6 +1075,7 @@ public class ExtractionApplier
         EntityType fallbackType,
         Message? sourceMessage,
         string? senderName,
+        float? trustFactor,
         CancellationToken ct)
     {
         var observedName = name.Trim();
@@ -1071,23 +1083,35 @@ public class ExtractionApplier
 
         if (isSender)
         {
-            var senderEntity = await _entityRepository.UpsertAsync(new Entity
+            var senderEntityPayload = new Entity
             {
                 Name = senderName!,
                 Type = EntityType.Person,
                 ActorKey = BuildActorKey(sourceMessage!.ChatId, sourceMessage.SenderId),
                 TelegramUserId = sourceMessage.SenderId > 0 ? sourceMessage.SenderId : null
-            }, ct);
+            };
+            if (trustFactor.HasValue)
+            {
+                senderEntityPayload.TrustFactor = ResolveTrustFactor(trustFactor, null);
+            }
+
+            var senderEntity = await _entityRepository.UpsertAsync(senderEntityPayload, ct);
 
             await ObserveAliasAsync(senderEntity, observedName, sourceMessage.Id, ct);
             return senderEntity;
         }
 
-        var entity = await _entityRepository.UpsertAsync(new Entity
+        var entityPayload = new Entity
         {
             Name = observedName,
             Type = fallbackType
-        }, ct);
+        };
+        if (trustFactor.HasValue)
+        {
+            entityPayload.TrustFactor = ResolveTrustFactor(trustFactor, null);
+        }
+
+        var entity = await _entityRepository.UpsertAsync(entityPayload, ct);
 
         var sourceMessageId = sourceMessage?.Id;
         await ObserveAliasAsync(entity, observedName, sourceMessageId, ct);
@@ -1118,6 +1142,21 @@ public class ExtractionApplier
             category.Trim().ToLowerInvariant(),
             key.Trim().ToLowerInvariant(),
             value.Trim().ToLowerInvariant());
+    }
+
+    private static float ResolveTrustFactor(float? trustFactor, float? confidence)
+    {
+        if (trustFactor.HasValue && trustFactor.Value > 0f)
+        {
+            return Math.Clamp(trustFactor.Value, 0f, 1f);
+        }
+
+        if (confidence.HasValue && confidence.Value >= 0f)
+        {
+            return Math.Clamp(confidence.Value, 0f, 1f);
+        }
+
+        return 0f;
     }
 
     private readonly record struct ProjectedFactKey(Guid EntityId, string Category, string Key, string Value);
