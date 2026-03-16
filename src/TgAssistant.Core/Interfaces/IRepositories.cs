@@ -118,6 +118,12 @@ public interface ISummaryRepository
 public interface IChatDialogSummaryRepository
 {
     Task UpsertAsync(ChatDialogSummary summary, CancellationToken ct = default);
+    Task<ChatDialogSummary?> GetByScopeAsync(
+        long chatId,
+        ChatDialogSummaryType summaryType,
+        DateTime periodStart,
+        DateTime periodEnd,
+        CancellationToken ct = default);
     Task<List<ChatDialogSummary>> GetRecentByChatAsync(long chatId, int limit, CancellationToken ct = default);
 }
 
@@ -125,6 +131,7 @@ public interface IChatSessionRepository
 {
     Task UpsertAsync(ChatSession session, CancellationToken ct = default);
     Task<Dictionary<long, List<ChatSession>>> GetByChatsAsync(IReadOnlyCollection<long> chatIds, CancellationToken ct = default);
+    Task<Dictionary<long, List<ChatSession>>> GetByPeriodAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
 }
 
 public interface IPromptTemplateRepository
@@ -171,6 +178,12 @@ public interface IIntelligenceRepository
         CancellationToken ct = default);
     Task<List<IntelligenceClaim>> GetClaimsByMessageAsync(long messageId, CancellationToken ct = default);
     Task<List<IntelligenceClaim>> GetClaimsByMessagesAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
+    Task<List<IntelligenceClaim>> GetClaimsByChatAndPeriodAsync(
+        long chatId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int limit,
+        CancellationToken ct = default);
 }
 
 public interface IExtractionErrorRepository

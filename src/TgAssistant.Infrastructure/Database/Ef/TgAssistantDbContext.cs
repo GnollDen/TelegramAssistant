@@ -265,6 +265,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.EndMessageId).HasColumnName("end_message_id");
             e.Property(x => x.MessageCount).HasColumnName("message_count");
             e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.IsFinalized).HasColumnName("is_finalized");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.ChatId, x.SummaryType, x.PeriodStart, x.PeriodEnd }).IsUnique();
