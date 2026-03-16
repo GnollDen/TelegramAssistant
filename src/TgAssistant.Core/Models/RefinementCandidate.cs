@@ -8,4 +8,5 @@ public class RefinementCandidate
     public DateTime ExtractionUpdatedAt { get; set; }
     public int ExistingClaimsCount { get; set; }
     public Message Message { get; set; } = new();
+    public bool NeedsExpensive { get; set; }
 }

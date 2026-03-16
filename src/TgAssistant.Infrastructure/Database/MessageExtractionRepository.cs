@@ -31,6 +31,7 @@ public class MessageExtractionRepository : IMessageExtractionRepository
             m.edit_timestamp,
             m.reactions_json,
             m.forward_json,
+            me.needs_expensive,
             m.source,
             m.processing_status,
             m.processed_at,
@@ -200,6 +201,7 @@ public class MessageExtractionRepository : IMessageExtractionRepository
                 CheapJson = reader.GetString(2),
                 ExtractionUpdatedAt = reader.GetDateTime(3),
                 ExistingClaimsCount = reader.GetInt32(4),
+                NeedsExpensive = reader.GetBoolean(20),
                 Message = new Message
                 {
                     Id = messageId,
@@ -218,11 +220,11 @@ public class MessageExtractionRepository : IMessageExtractionRepository
                     EditTimestamp = reader.IsDBNull(17) ? null : reader.GetDateTime(17),
                     ReactionsJson = reader.IsDBNull(18) ? null : reader.GetString(18),
                     ForwardJson = reader.IsDBNull(19) ? null : reader.GetString(19),
-                    Source = (MessageSource)reader.GetInt16(20),
-                    ProcessingStatus = (ProcessingStatus)reader.GetInt16(21),
-                    ProcessedAt = reader.IsDBNull(22) ? null : reader.GetDateTime(22),
-                    NeedsReanalysis = reader.GetBoolean(23),
-                    CreatedAt = reader.GetDateTime(24)
+                    Source = (MessageSource)reader.GetInt16(21),
+                    ProcessingStatus = (ProcessingStatus)reader.GetInt16(22),
+                    ProcessedAt = reader.IsDBNull(23) ? null : reader.GetDateTime(23),
+                    NeedsReanalysis = reader.GetBoolean(24),
+                    CreatedAt = reader.GetDateTime(25)
                 }
             });
         }

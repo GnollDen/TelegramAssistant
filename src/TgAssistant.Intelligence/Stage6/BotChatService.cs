@@ -562,10 +562,7 @@ public class BotChatService : IBotChatService
         }, JsonOptions);
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
+    private static readonly JsonSerializerOptions JsonOptions = ExtractionSerializationOptions.SnakeCase;
 
     private static class BotChatPromptBuilder
     {
