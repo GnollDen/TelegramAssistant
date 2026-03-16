@@ -20,6 +20,7 @@ public class BotChatService : IBotChatService
     private readonly IEntityRepository _entityRepository;
     private readonly IFactRepository _factRepository;
     private readonly IRelationshipRepository _relationshipRepository;
+    private readonly ICommunicationEventRepository _communicationEventRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly AnalysisSettings _analysisSettings;
@@ -30,6 +31,7 @@ public class BotChatService : IBotChatService
         IEntityRepository entityRepository,
         IFactRepository factRepository,
         IRelationshipRepository relationshipRepository,
+        ICommunicationEventRepository communicationEventRepository,
         OpenRouterAnalysisService analysisService,
         IOptions<EmbeddingSettings> embeddingSettings,
         IOptions<AnalysisSettings> analysisSettings,
@@ -39,6 +41,7 @@ public class BotChatService : IBotChatService
         _entityRepository = entityRepository;
         _factRepository = factRepository;
         _relationshipRepository = relationshipRepository;
+        _communicationEventRepository = communicationEventRepository;
         _analysisService = analysisService;
         _embeddingSettings = embeddingSettings.Value;
         _analysisSettings = analysisSettings.Value;
@@ -137,6 +140,10 @@ public class BotChatService : IBotChatService
                     toolName);
             }
 
+            _logger.LogInformation(
+                "Tool {ToolName} returned {Length} characters of JSON data",
+                toolName,
+                toolResult.Length);
             toolResult = EnsureToolResultSize(toolResult);
             _logger.LogInformation(
                 "Tool {ToolName} finished. args: {Args}",
@@ -150,6 +157,12 @@ public class BotChatService : IBotChatService
                 Content = toolResult
             });
         }
+
+        messages.Add(new OpenRouterMessage
+        {
+            Role = "system",
+            Content = BotChatPromptBuilder.BuildPostToolInstruction()
+        });
 
         var secondResponse = await _analysisService.CompleteChatWithToolsAsync(
             model,
@@ -289,7 +302,13 @@ public class BotChatService : IBotChatService
             }, JsonOptions);
         }
 
-        var facts = await _factRepository.GetCurrentByEntityAsync(entity.Id, ct);
+        var facts = await _factRepository.GetAllByEntityAsync(entity.Id, ct);
+        var relationships = await _relationshipRepository.GetByEntityWithNamesAsync(entity.Id, ct);
+        var events = await _communicationEventRepository.GetByEntityAsync(
+            entity.Id,
+            DateTime.UnixEpoch,
+            DateTime.UtcNow.AddDays(1),
+            ct);
         var payload = new
         {
             ok = true,
@@ -305,17 +324,52 @@ public class BotChatService : IBotChatService
                 telegram_username = entity.TelegramUsername
             },
             facts = facts
-                .OrderByDescending(x => x.Confidence)
+                .OrderByDescending(x => x.IsCurrent)
+                .ThenByDescending(x => x.Confidence)
                 .ThenByDescending(x => x.UpdatedAt)
                 .Select(x => new
                 {
                     category = x.Category,
                     key = x.Key,
                     value = x.Value,
+                    is_current = x.IsCurrent,
                     confidence = x.Confidence,
                     status = x.Status.ToString(),
                     source_message_id = x.SourceMessageId,
+                    valid_from = x.ValidFrom,
+                    valid_until = x.ValidUntil,
                     updated_at = x.UpdatedAt
+                })
+                .ToList(),
+            relationships = relationships.Select(x =>
+            {
+                var outgoing = x.FromEntityId == entity.Id;
+                return new
+                {
+                    relationship_id = x.RelationshipId,
+                    type = x.Type,
+                    direction = outgoing ? "outgoing" : "incoming",
+                    related_entity_id = outgoing ? x.ToEntityId : x.FromEntityId,
+                    related_entity_name = outgoing ? x.ToEntityName : x.FromEntityName,
+                    confidence = x.Confidence,
+                    status = x.Status.ToString(),
+                    context_text = x.ContextText,
+                    source_message_id = x.SourceMessageId,
+                    updated_at = x.UpdatedAt
+                };
+            })
+                .ToList(),
+            events = events
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new
+                {
+                    event_type = x.EventType,
+                    object_name = x.ObjectName,
+                    sentiment = x.Sentiment,
+                    summary = x.Summary,
+                    confidence = x.Confidence,
+                    source_message_id = x.MessageId,
+                    created_at = x.CreatedAt
                 })
                 .ToList()
         };
@@ -519,6 +573,11 @@ public class BotChatService : IBotChatService
         {
             var factsBlock = BuildFactsBlock(facts);
             return $"You are an AI personal assistant for Rinat. Use provided context facts and tool results to answer accurately. If the user asks for a dossier, profile, or full information about a person, you MUST call the get_entity_dossier tool. Do not try to answer from memory or context alone. If a requested entity is not found, say that clearly and suggest the closest known context. Be concise and direct. Context:\n{factsBlock}";
+        }
+
+        public static string BuildPostToolInstruction()
+        {
+            return "You just received the raw dossier from the database tool. You MUST list ALL facts, events, and relationships found in the tool result. Do not omit, truncate, or overly summarize them. Present a complete and detailed profile.";
         }
 
         private static string BuildFactsBlock(IReadOnlyCollection<Fact> facts)
