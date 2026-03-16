@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -124,6 +125,33 @@ public class FactRepository : IFactRepository
         {
             var rows = await db.Facts.AsNoTracking().Where(x => x.EntityId == entityId && x.IsCurrent).ToListAsync(ct);
             return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
+    public async Task<DossierFactPage> GetDossierFactsPageAsync(Guid entityId, int limit, string? categoryFilter, CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var query = db.Facts.AsNoTracking().Where(x => x.EntityId == entityId);
+            if (!string.IsNullOrWhiteSpace(categoryFilter))
+            {
+                var normalized = categoryFilter.Trim();
+                query = query.Where(x => x.Category.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var total = await query.CountAsync(ct);
+            var rows = await query
+                .OrderByDescending(x => x.IsCurrent)
+                .ThenByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .Take(Math.Max(1, limit))
+                .ToListAsync(ct);
+
+            return new DossierFactPage
+            {
+                TotalCount = total,
+                Facts = rows.Select(ToDomain).ToList()
+            };
         }, ct);
     }
 

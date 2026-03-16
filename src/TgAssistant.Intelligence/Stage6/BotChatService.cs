@@ -16,6 +16,7 @@ public class BotChatService : IBotChatService
     private const int ReplyMaxTokens = 4000;
     private const int MaxToolCallsPerTurn = 3;
     private const int MaxToolResultChars = 8000;
+    private const int DefaultDossierLimit = 40;
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly IEntityRepository _entityRepository;
     private readonly IFactRepository _factRepository;
@@ -211,17 +212,30 @@ public class BotChatService : IBotChatService
                     Parameters = new Dictionary<string, object?>
                     {
                         ["type"] = "object",
-                        ["properties"] = new Dictionary<string, object?>
-                        {
-                            ["entity_name"] = new Dictionary<string, object?>
-                            {
-                                ["type"] = "string",
-                                ["description"] = "Entity name to search for."
-                            }
-                        },
-                        ["required"] = new[] { "entity_name" },
-                        ["additionalProperties"] = false
+                ["properties"] = new Dictionary<string, object?>
+                {
+                    ["entity_name"] = new Dictionary<string, object?>
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Entity name to search for."
                     }
+                    ,
+                    ["limit"] = new Dictionary<string, object?>
+                    {
+                        ["type"] = "integer",
+                        ["description"] = "Max number of facts to return.",
+                        ["minimum"] = 5,
+                        ["maximum"] = 200
+                    },
+                    ["category_filter"] = new Dictionary<string, object?>
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Optional category (e.g., Work, Health) to filter facts."
+                    }
+                },
+                ["required"] = new[] { "entity_name" },
+                ["additionalProperties"] = false
+            }
                 }
             },
             new OpenRouterTool
@@ -253,8 +267,8 @@ public class BotChatService : IBotChatService
     private async Task<string> ExecuteToolCallAsync(OpenRouterToolCall toolCall, CancellationToken ct)
     {
         var toolName = toolCall.Function.Name?.Trim();
-        var entityName = ExtractEntityName(toolCall.Function.Arguments);
-        if (string.IsNullOrWhiteSpace(entityName))
+        var dossierArgs = ParseDossierToolArgs(toolCall);
+        if (string.IsNullOrWhiteSpace(dossierArgs.EntityName))
         {
             return JsonSerializer.Serialize(new
             {
@@ -266,8 +280,8 @@ public class BotChatService : IBotChatService
 
         return toolName?.ToLowerInvariant() switch
         {
-            "get_entity_dossier" => await BuildEntityDossierResultAsync(entityName, ct),
-            "get_relationships" => await BuildRelationshipsResultAsync(entityName, ct),
+            "get_entity_dossier" => await BuildEntityDossierResultAsync(dossierArgs, ct),
+            "get_relationships" => await BuildRelationshipsResultAsync(dossierArgs.EntityName, ct),
             _ => JsonSerializer.Serialize(new
             {
                 ok = false,
@@ -278,31 +292,32 @@ public class BotChatService : IBotChatService
         };
     }
 
-    private async Task<string> BuildEntityDossierResultAsync(string entityName, CancellationToken ct)
+    private async Task<string> BuildEntityDossierResultAsync(DossierToolArgs args, CancellationToken ct)
     {
-        var entity = await _entityRepository.FindByNameOrAliasAsync(entityName, ct);
+        var entity = await _entityRepository.FindByNameOrAliasAsync(args.EntityName, ct);
         if (entity == null)
         {
-            var yoToYeName = NormalizeYoToYe(entityName);
-            if (!string.Equals(entityName, yoToYeName, StringComparison.Ordinal))
+            var yoToYeName = NormalizeYoToYe(args.EntityName);
+            if (!string.Equals(args.EntityName, yoToYeName, StringComparison.Ordinal))
             {
                 entity = await _entityRepository.FindByNameOrAliasAsync(yoToYeName, ct);
             }
         }
 
-        entity ??= await _entityRepository.FindBestByNameAsync(entityName, ct);
+        entity ??= await _entityRepository.FindBestByNameAsync(args.EntityName, ct);
         if (entity == null)
         {
             return JsonSerializer.Serialize(new
             {
                 ok = true,
                 found = false,
-                entity_name = entityName,
+                entity_name = args.EntityName,
                 message = "Entity not found. Ask the user for a different spelling."
             }, JsonOptions);
         }
 
-        var facts = await _factRepository.GetAllByEntityAsync(entity.Id, ct);
+        var factsPage = await _factRepository.GetDossierFactsPageAsync(entity.Id, args.Limit, args.CategoryFilter, ct);
+        var facts = factsPage.Facts;
         var relationships = await _relationshipRepository.GetByEntityWithNamesAsync(entity.Id, ct);
         var events = await _communicationEventRepository.GetByEntityAsync(
             entity.Id,
@@ -313,6 +328,12 @@ public class BotChatService : IBotChatService
         {
             ok = true,
             found = true,
+            meta = new
+            {
+                total_facts_in_db = factsPage.TotalCount,
+                returned_facts = facts.Count,
+                has_more = factsPage.TotalCount > facts.Count
+            },
             entity = new
             {
                 id = entity.Id,
@@ -462,6 +483,41 @@ public class BotChatService : IBotChatService
         }
     }
 
+    private static DossierToolArgs ParseDossierToolArgs(OpenRouterToolCall toolCall)
+    {
+        var entityName = ExtractEntityName(toolCall.Function.Arguments);
+        var limit = DefaultDossierLimit;
+        string? categoryFilter = null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(toolCall.Function.Arguments ?? "{}");
+            if (doc.RootElement.TryGetProperty("limit", out var limitNode) &&
+                limitNode.ValueKind == JsonValueKind.Number &&
+                limitNode.TryGetInt32(out var parsedLimit))
+            {
+                limit = Math.Clamp(parsedLimit, 5, 200);
+            }
+
+            if (doc.RootElement.TryGetProperty("category_filter", out var categoryNode) &&
+                categoryNode.ValueKind == JsonValueKind.String)
+            {
+                categoryFilter = categoryNode.GetString();
+            }
+        }
+        catch
+        {
+            // ignore malformed arguments
+        }
+
+        return new DossierToolArgs(
+            entityName,
+            limit,
+            string.IsNullOrWhiteSpace(categoryFilter) ? null : categoryFilter.Trim());
+    }
+
+    private record DossierToolArgs(string EntityName, int Limit, string? CategoryFilter);
+
     private static bool TryReadStringArg(JsonElement root, string field, out string value)
     {
         value = string.Empty;
@@ -574,7 +630,7 @@ public class BotChatService : IBotChatService
 
         public static string BuildPostToolInstruction()
         {
-            return "You just received the raw dossier from the database tool. You MUST list ALL facts, events, and relationships found in the tool result. Do not omit, truncate, or overly summarize them. Present a complete and detailed profile.";
+            return "You just received the raw dossier from the database tool. You MUST list ALL facts, events, and relationships found in the tool result. Do not omit, truncate, or overly summarize them. Present a complete and detailed profile. If `meta.has_more` is true, briefly state that more data exists and suggest narrowing the request by category or timeframe before summarizing the returned slice.";
         }
 
         private static string BuildFactsBlock(IReadOnlyCollection<Fact> facts)
