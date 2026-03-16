@@ -47,6 +47,7 @@ public class MessageContentBuilder
         {
             parts.Add(contextBlock);
         }
+        parts.Add($"[temporal_context] message_date={message.Timestamp:O}");
 
         return string.Join("\n", parts);
     }
