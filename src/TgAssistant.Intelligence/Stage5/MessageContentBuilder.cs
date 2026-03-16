@@ -49,6 +49,10 @@ public class MessageContentBuilder
         if (!string.IsNullOrWhiteSpace(message.MediaTranscription)) parts.Add($"[media_transcription] {message.MediaTranscription}");
         if (!string.IsNullOrWhiteSpace(message.MediaDescription)) parts.Add($"[media_description] {message.MediaDescription}");
         if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {message.MediaParalinguisticsJson}");
+        if (!string.IsNullOrWhiteSpace(context?.PreviousSessionSummary))
+        {
+            parts.Add($"[PREVIOUS SESSION SUMMARY]: {TruncateForContext(context.PreviousSessionSummary, 600)}");
+        }
         var contextBlock = BuildContextBlock(context);
         if (!string.IsNullOrWhiteSpace(contextBlock))
         {

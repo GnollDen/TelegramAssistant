@@ -143,6 +143,8 @@ services:
       Analysis__SummarySessionGapMinutes: ${ANALYSIS_SUMMARY_SESSION_GAP_MINUTES:-180}
       Analysis__SummaryMinMessages: ${ANALYSIS_SUMMARY_MIN_MESSAGES:-4}
       Analysis__SummaryMaxTokens: ${ANALYSIS_SUMMARY_MAX_TOKENS:-800}
+      Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
+      Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-3}
       Merge__Enabled: ${MERGE_ENABLED:-true}
       Merge__PollIntervalSeconds: ${MERGE_POLL_INTERVAL_SECONDS:-60}
       Merge__MaxCandidatesPerRun: ${MERGE_MAX_CANDIDATES_PER_RUN:-500}

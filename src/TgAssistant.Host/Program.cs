@@ -132,6 +132,7 @@ try
             services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
             services.AddSingleton<ISummaryRepository, SummaryRepository>();
             services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
+            services.AddSingleton<IChatSessionRepository, ChatSessionRepository>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();

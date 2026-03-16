@@ -201,6 +201,23 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ChatId == chatId
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && (x.MediaType == (short)MediaType.None
+                            || x.MediaDescription != null
+                            || x.MediaTranscription != null))
+            .OrderBy(x => x.Id)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
     public async Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
