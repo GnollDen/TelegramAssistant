@@ -178,7 +178,10 @@ try
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
-            services.AddHostedService<ContinuousRefinementWorkerService>();
+            if (config.GetSection(ContinuousRefinementSettings.Section).GetValue<bool>(nameof(ContinuousRefinementSettings.Enabled)))
+            {
+                services.AddHostedService<ContinuousRefinementWorkerService>();
+            }
             services.AddHostedService<EntityEmbeddingWorkerService>();
             services.AddHostedService<FactEmbeddingBackfillWorkerService>();
             services.AddHostedService<Neo4jSyncWorkerService>();
