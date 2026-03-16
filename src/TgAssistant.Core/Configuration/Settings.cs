@@ -172,7 +172,6 @@ public class AnalysisSettings
     public float SummaryHistoricalHintsMinSimilarity { get; set; } = 0.72f;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
     public int TestModeMaxSessionsPerChat { get; set; } = 23;
-    public bool SessionFirstMode { get; set; } = true;
     public int SessionChunkSize { get; set; } = 40;
     public int SessionAnalysisBatchSize { get; set; } = 20;
     public int SessionAnalysisMinIdleMinutes { get; set; } = 15;

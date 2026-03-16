@@ -144,7 +144,6 @@ services:
       Analysis__SummaryHistoricalHintsMinSimilarity: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MIN_SIMILARITY:-0.72}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
       Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-100}
-      Analysis__SessionFirstMode: ${ANALYSIS_SESSION_FIRST_MODE:-true}
       Analysis__SessionChunkSize: ${ANALYSIS_SESSION_CHUNK_SIZE:-40}
       Analysis__SessionAnalysisBatchSize: ${ANALYSIS_SESSION_ANALYSIS_BATCH_SIZE:-20}
       Analysis__SessionAnalysisMinIdleMinutes: ${ANALYSIS_SESSION_ANALYSIS_MIN_IDLE_MINUTES:-15}

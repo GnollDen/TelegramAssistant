@@ -223,6 +223,9 @@ public class DbMessageExtraction
     public string CheapJson { get; set; } = "{}";
     public string? ExpensiveJson { get; set; }
     public bool NeedsExpensive { get; set; }
+    public bool IsQuarantined { get; set; }
+    public string? QuarantineReason { get; set; }
+    public DateTime? QuarantinedAt { get; set; }
     public int ExpensiveRetryCount { get; set; }
     public DateTime? ExpensiveNextRetryAt { get; set; }
     public string? ExpensiveLastError { get; set; }

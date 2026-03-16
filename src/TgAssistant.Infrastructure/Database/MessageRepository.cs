@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using NpgsqlTypes;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -201,6 +203,154 @@ public class MessageRepository : IMessageRepository
 
         rows.Reverse();
         return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<Dictionary<long, List<Message>>> GetChatWindowsBeforeByMessageIdsAsync(
+        IReadOnlyCollection<long> messageIds,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, List<Message>>();
+        if (messageIds.Count == 0)
+        {
+            return result;
+        }
+
+        var ids = messageIds
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return result;
+        }
+
+        foreach (var id in ids)
+        {
+            result[id] = [];
+        }
+
+        var safeLimit = Math.Max(1, limit);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync(ct);
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            WITH target AS (
+                SELECT id, chat_id
+                FROM messages
+                WHERE id = ANY(@message_ids)
+            )
+            SELECT
+                t.id AS target_message_id,
+                m.id,
+                m.telegram_message_id,
+                m.chat_id,
+                m.sender_id,
+                m.sender_name,
+                m.timestamp,
+                m.text,
+                m.media_type,
+                m.media_path,
+                m.media_description,
+                m.media_transcription,
+                m.media_paralinguistics_json,
+                m.reply_to_message_id,
+                m.edit_timestamp,
+                m.reactions_json,
+                m.forward_json,
+                m.processing_status,
+                m.source,
+                m.processed_at,
+                m.needs_reanalysis,
+                m.created_at
+            FROM target t
+            JOIN LATERAL (
+                SELECT
+                    pm.id,
+                    pm.telegram_message_id,
+                    pm.chat_id,
+                    pm.sender_id,
+                    pm.sender_name,
+                    pm.timestamp,
+                    pm.text,
+                    pm.media_type,
+                    pm.media_path,
+                    pm.media_description,
+                    pm.media_transcription,
+                    pm.media_paralinguistics_json,
+                    pm.reply_to_message_id,
+                    pm.edit_timestamp,
+                    pm.reactions_json,
+                    pm.forward_json,
+                    pm.processing_status,
+                    pm.source,
+                    pm.processed_at,
+                    pm.needs_reanalysis,
+                    pm.created_at
+                FROM messages pm
+                WHERE pm.chat_id = t.chat_id
+                  AND pm.id < t.id
+                  AND pm.processing_status = @processed_status
+                  AND (
+                      pm.media_type = @none_media_type
+                      OR pm.media_description IS NOT NULL
+                      OR pm.media_transcription IS NOT NULL
+                  )
+                ORDER BY pm.id DESC
+                LIMIT @limit
+            ) m ON TRUE
+            ORDER BY target_message_id ASC, m.id ASC;
+            """;
+        cmd.Parameters.Add(new NpgsqlParameter("message_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint)
+        {
+            Value = ids
+        });
+        cmd.Parameters.AddWithValue("processed_status", (short)ProcessingStatus.Processed);
+        cmd.Parameters.AddWithValue("none_media_type", (short)MediaType.None);
+        cmd.Parameters.AddWithValue("limit", safeLimit);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var targetMessageId = reader.GetInt64(0);
+            if (!result.TryGetValue(targetMessageId, out var bucket))
+            {
+                bucket = [];
+                result[targetMessageId] = bucket;
+            }
+
+            bucket.Add(new Message
+            {
+                Id = reader.GetInt64(1),
+                TelegramMessageId = reader.GetInt64(2),
+                ChatId = reader.GetInt64(3),
+                SenderId = reader.GetInt64(4),
+                SenderName = reader.GetString(5),
+                Timestamp = reader.GetDateTime(6),
+                Text = reader.IsDBNull(7) ? null : reader.GetString(7),
+                MediaType = (MediaType)reader.GetInt16(8),
+                MediaPath = reader.IsDBNull(9) ? null : reader.GetString(9),
+                MediaDescription = reader.IsDBNull(10) ? null : reader.GetString(10),
+                MediaTranscription = reader.IsDBNull(11) ? null : reader.GetString(11),
+                MediaParalinguisticsJson = reader.IsDBNull(12) ? null : reader.GetString(12),
+                ReplyToMessageId = reader.IsDBNull(13) ? null : reader.GetInt64(13),
+                EditTimestamp = reader.IsDBNull(14) ? null : reader.GetDateTime(14),
+                ReactionsJson = reader.IsDBNull(15) ? null : reader.GetString(15),
+                ForwardJson = reader.IsDBNull(16) ? null : reader.GetString(16),
+                ProcessingStatus = (ProcessingStatus)reader.GetInt16(17),
+                Source = (MessageSource)reader.GetInt16(18),
+                ProcessedAt = reader.IsDBNull(19) ? null : reader.GetDateTime(19),
+                NeedsReanalysis = reader.GetBoolean(20),
+                CreatedAt = reader.GetDateTime(21)
+            });
+        }
+
+        return result;
     }
 
     public async Task<List<Message>> GetChatWindowAroundAsync(
