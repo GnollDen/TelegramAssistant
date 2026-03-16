@@ -12,6 +12,7 @@ namespace TgAssistant.Telegram.Bot;
 
 public class TelegramBotHostedService : BackgroundService
 {
+    private const int MaxTelegramMessageChars = 4000;
     private readonly TelegramSettings _telegramSettings;
     private readonly BotChatSettings _settings;
     private readonly IBotChatService _botChatService;
@@ -100,8 +101,12 @@ public class TelegramBotHostedService : BackgroundService
             }
 
             var reply = await _botChatService.GenerateReplyAsync(message.Text);
+            var chunks = SplitReplyToChunks(reply, MaxTelegramMessageChars);
 #pragma warning disable CS0618 // Required by current phase requirement to call SendTextMessageAsync.
-            await botClient.SendTextMessageAsync(message.Chat.Id, reply, cancellationToken: ct);
+            foreach (var chunk in chunks)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, chunk, cancellationToken: ct);
+            }
 #pragma warning restore CS0618
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -118,5 +123,58 @@ public class TelegramBotHostedService : BackgroundService
     {
         _logger.LogError(exception, "Telegram bot polling error.");
         return Task.CompletedTask;
+    }
+
+    private static List<string> SplitReplyToChunks(string reply, int maxLength)
+    {
+        var normalized = (reply ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+        {
+            return ["I cannot provide a response right now."];
+        }
+
+        if (normalized.Length <= maxLength)
+        {
+            return [normalized];
+        }
+
+        var chunks = new List<string>();
+        var remaining = normalized;
+        while (remaining.Length > maxLength)
+        {
+            var candidate = remaining[..maxLength];
+            var splitIndex = candidate.LastIndexOf("\n\n", StringComparison.Ordinal);
+            if (splitIndex < maxLength / 3)
+            {
+                splitIndex = candidate.LastIndexOf('\n');
+            }
+
+            if (splitIndex < maxLength / 3)
+            {
+                splitIndex = candidate.LastIndexOf(' ');
+            }
+
+            if (splitIndex <= 0)
+            {
+                splitIndex = maxLength;
+            }
+
+            var chunk = remaining[..splitIndex].Trim();
+            if (chunk.Length == 0)
+            {
+                chunk = remaining[..Math.Min(maxLength, remaining.Length)];
+                splitIndex = chunk.Length;
+            }
+
+            chunks.Add(chunk);
+            remaining = remaining[splitIndex..].TrimStart();
+        }
+
+        if (remaining.Length > 0)
+        {
+            chunks.Add(remaining);
+        }
+
+        return chunks;
     }
 }
