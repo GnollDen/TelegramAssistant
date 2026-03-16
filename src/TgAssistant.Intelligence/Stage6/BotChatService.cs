@@ -13,7 +13,7 @@ namespace TgAssistant.Intelligence.Stage6;
 public class BotChatService : IBotChatService
 {
     private const int DefaultFactLimit = 10;
-    private const int ReplyMaxTokens = 400;
+    private const int ReplyMaxTokens = 4000;
     private const int MaxToolCallsPerTurn = 3;
     private const int MaxToolResultChars = 8000;
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
