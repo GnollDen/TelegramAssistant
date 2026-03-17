@@ -934,7 +934,181 @@ These are read via MCP `resources/read` protocol, not tools.
 
 ---
 
+## Architecture decisions baseline (2026-03-17)
+
+These decisions are agreed and should be treated as source-of-truth for new work.
+
+1. Tentative facts use **manual review gate only** (no auto-approve queueing).
+2. MCP target is **dual transport**:
+   - `stdio` for local/Codex usage
+   - `SSE/HTTP` for remote clients (including Claude)
+3. Session-first must not hard-block on missing previous summary:
+   - use bootstrap prompt for dialog start marker
+   - include optional pre-dialog context when available
+4. Redis ingestion SLA is **at-least-once**, with mandatory PEL reclaim.
+5. `TestModeMaxSessionsPerChat` is test-only and must not shape production behavior.
+6. Summary policy:
+   - summary is generated right after slice processing
+   - summary can also be triggered by manual bot command
+   - avoid duplicate background re-generation in steady state
+
+---
+
+## Track E — Stabilization backlog from architecture review
+
+### E1. Remove auto-approve for tentative facts (P0)
+
+**Files:** `ExtractionApplier.cs`, `FactReviewCommandWorkerService.cs`, MCP/write command path.
+
+**Task:**
+- Stop enqueueing `"approve"` automatically for tentative facts.
+- Keep tentative status until explicit manual command.
+- Ensure review worker applies only explicit operator commands.
+
+**Acceptance criteria:**
+- Tentative facts never become `Confirmed` without manual action.
+- Existing approve/reject commands still work.
+
+**Validation:**
+- E2E flow: create low-confidence fact -> verify `Tentative` persists -> send manual approve -> verify `Confirmed`.
+
+---
+
+### E2. Add Redis PEL reclaim and pending observability (P0)
+
+**Files:** `src/TgAssistant.Infrastructure/Redis/RedisMessageQueue.cs`, ingestion worker metrics/logs.
+
+**Task:**
+- Add reclaim cycle for consumer group pending entries (`XPENDING` + `XAUTOCLAIM`/`XCLAIM`).
+- Run reclaim on startup and periodically.
+- Add metrics/log fields for pending count and oldest pending age.
+
+**Acceptance criteria:**
+- Messages read but not ACKed before crash are reprocessed after restart.
+- Pending queue is observable from app metrics/logs.
+
+**Validation:**
+- Integration scenario: read without ACK -> crash -> restart -> message processed exactly once semantically (idempotent DB path), ACKed in Redis.
+
+---
+
+### E3. Persist expensive backoff per model (P0)
+
+**Files:** `ExpensivePassResolver.cs`, `analysis_state` key handling.
+
+**Task:**
+- Replace global expensive backoff key with per-model keys:
+  - `stage5:expensive:blocked_until:{model}`
+  - `stage5:expensive:streak:{model}`
+- Load persisted state on startup.
+
+**Acceptance criteria:**
+- Blocking one model does not block all expensive models.
+- Restart preserves model-level backoff state.
+
+**Validation:**
+- Simulate failures on primary model; confirm fallback model still runs and state keys are isolated.
+
+---
+
+### E4. Bootstrap previous-summary fallback for session-first (P0)
+
+**Files:** `AnalysisWorkerService.cs`, summary prompt builders.
+
+**Task:**
+- Remove hard block when previous session summary is missing.
+- For first valid slice without summary chain, inject bootstrap prompt:
+  - explicit marker that dialog starts from this slice/time boundary
+  - optional pre-dialog context block if available.
+- Keep extraction continuity without dropping slice processing.
+
+**Acceptance criteria:**
+- Missing previous summary no longer deadlocks later sessions.
+- Extraction still runs for current slice with clear bootstrap context.
+
+**Validation:**
+- Seed chat sessions with empty previous summary and verify next session reaches analyzed state and produces summary.
+
+---
+
+### E5. Enforce summary ownership policy (post-slice + manual trigger) (P1)
+
+**Files:** `AnalysisWorkerService.cs`, `DialogSummaryWorkerService.cs`, bot command handlers.
+
+**Task:**
+- Keep mandatory summary generation after slice processing.
+- Add/keep manual bot command to trigger re-summary.
+- Prevent duplicate summary generation in steady state by separating:
+  - normal post-slice path (default)
+  - explicit repair/rebuild path (manual or flagged jobs).
+
+**Acceptance criteria:**
+- One normal summary generation per processed slice/session.
+- Manual command can force re-summary safely.
+
+**Validation:**
+- Compare `analysis_usage_events` summary-phase count before/after and verify reduced duplicate calls.
+
+---
+
+### E6. MCP dual-transport implementation (stdio + SSE/HTTP) (P1)
+
+**Files:** MCP server project (`mcp/` target structure or `src/TgAssistant.Mcp/` until migration), docker compose integration.
+
+**Task:**
+- Keep `stdio` transport for local toolchains (Codex).
+- Add `SSE/HTTP` transport for remote MCP clients (Claude and others).
+- Make transport selectable by env/config (`MCP_TRANSPORT=stdio|sse`).
+- Preserve existing read tools and add missing write tools per Track B plan.
+
+**Acceptance criteria:**
+- Server starts in stdio mode and sse mode with identical tool registry.
+- SSE endpoint works with auth and localhost bind policy.
+
+**Validation:**
+- `npm run build` (or equivalent MCP build), local stdio smoke call, SSE smoke call via HTTP client.
+
+---
+
+### E7. Separate test/prod session cap behavior (P1)
+
+**Files:** analysis settings + workers using `TestModeMaxSessionsPerChat`.
+
+**Task:**
+- Ensure test-mode cap is never applied implicitly in production.
+- Introduce explicit production-safe limit flag if needed, with clear default semantics.
+- Add metrics for skipped/quarantined sessions due to caps.
+
+**Acceptance criteria:**
+- Production path is not constrained by test cap defaults.
+- Any cap-induced skip is visible in telemetry.
+
+**Validation:**
+- Synthetic large-chat run confirms no unintended quarantine from test setting.
+
+---
+
+### E8. Docs and backlog alignment pass (P2)
+
+**Files:** `README.md`, `AGENTS.md`, `CODEX_BACKLOG.md`, runtime key docs.
+
+**Task:**
+- Align docs with actual topology and selected architecture decisions.
+- Document runtime state keys and summary ownership model.
+- Reconcile MCP target-state vs implementation plan.
+
+**Acceptance criteria:**
+- No contradictions between docs for Stage5 summary flow, MCP transport, and runtime keys.
+
+**Validation:**
+- Consistency checklist + grep-based verification script.
+
+---
+
 ## Execution order recommendation
+
+**Phase 0 (stabilization baseline from 2026-03-17 decisions):**
+E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8
 
 **Phase 1 (data integrity + quality):**
 A2 → A5 → A6 → A8
