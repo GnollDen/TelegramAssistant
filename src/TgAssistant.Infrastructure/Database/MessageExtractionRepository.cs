@@ -230,27 +230,6 @@ public class MessageExtractionRepository : IMessageExtractionRepository
             .ToDictionaryAsync(x => x.MessageId, x => x.CheapJson, ct);
     }
 
-    public async Task<List<long>> GetSummaryReadyMessageIdsAfterIdAsync(long afterMessageId, int limit, CancellationToken ct = default)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var processedStatus = (short)ProcessingStatus.Processed;
-        var noneMediaType = (short)MediaType.None;
-        return await db.MessageExtractions
-            .AsNoTracking()
-            .Where(x => x.MessageId > afterMessageId && !x.IsQuarantined)
-            .Join(
-                db.Messages.AsNoTracking().Where(m =>
-                    m.ProcessingStatus == processedStatus &&
-                    (m.MediaType == noneMediaType || m.MediaDescription != null || m.MediaTranscription != null)),
-                extraction => extraction.MessageId,
-                message => message.Id,
-                (extraction, _) => extraction.MessageId)
-            .Distinct()
-            .OrderBy(x => x)
-            .Take(Math.Max(1, limit))
-            .ToListAsync(ct);
-    }
-
     public async Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

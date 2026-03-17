@@ -13,6 +13,11 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class OpenRouterAnalysisService
 {
+    private const int CheapTransientRetryAttempts = 2;
+    private const int CheapTransientRetryBaseDelayMs = 600;
+    private static readonly TimeSpan CheapBalanceCooldown = TimeSpan.FromSeconds(45);
+    private DateTime _cheapBalancePauseUntilUtc = DateTime.MinValue;
+
     private readonly HttpClient _http;
     private readonly AnalysisSettings _analysis;
     private readonly ExtractionSchemaValidator _schemaValidator;
@@ -265,21 +270,106 @@ public class OpenRouterAnalysisService
 
     private async Task<OpenRouterResponse?> SendAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
-        var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
-        var body = await res.Content.ReadAsStringAsync(ct);
-        if (!res.IsSuccessStatusCode)
+        if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
         {
-            if (IsBalanceOrQuotaIssue(res.StatusCode, body))
+            var pauseUntil = _cheapBalancePauseUntilUtc;
+            if (pauseUntil > DateTime.UtcNow)
             {
-                throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
+                throw new OpenRouterBalanceException(
+                    $"OpenRouter cheap phase is in cooldown until {pauseUntil:O} due to recent balance/quota issue.",
+                    HttpStatusCode.PaymentRequired);
             }
-
-            throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
         }
 
-        var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
-        await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
-        return parsed;
+        var maxAttempts = string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase)
+            ? 1 + CheapTransientRetryAttempts
+            : 1;
+
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
+                var body = await res.Content.ReadAsStringAsync(ct);
+                if (!res.IsSuccessStatusCode)
+                {
+                    if (IsBalanceOrQuotaIssue(res.StatusCode, body))
+                    {
+                        if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _cheapBalancePauseUntilUtc = DateTime.UtcNow.Add(CheapBalanceCooldown);
+                        }
+
+                        throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
+                    }
+
+                    if (attempt < maxAttempts && IsTransientStatusCode(res.StatusCode))
+                    {
+                        await DelayBeforeRetryAsync(phase, request.Model, attempt, maxAttempts, $"status={(int)res.StatusCode}", ct);
+                        continue;
+                    }
+
+                    throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
+                }
+
+                var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
+                await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
+                return parsed;
+            }
+            catch (Exception ex) when (attempt < maxAttempts && IsTransientCheapException(phase, ex) && !ct.IsCancellationRequested)
+            {
+                lastError = ex;
+                await DelayBeforeRetryAsync(phase, request.Model, attempt, maxAttempts, ex.GetType().Name, ct);
+            }
+        }
+
+        if (lastError != null)
+        {
+            throw lastError;
+        }
+
+        return null;
+    }
+
+    private static bool IsTransientStatusCode(HttpStatusCode statusCode)
+    {
+        return statusCode == HttpStatusCode.RequestTimeout
+               || statusCode == HttpStatusCode.TooManyRequests
+               || statusCode == HttpStatusCode.BadGateway
+               || statusCode == HttpStatusCode.ServiceUnavailable
+               || statusCode == HttpStatusCode.GatewayTimeout
+               || statusCode == HttpStatusCode.InternalServerError;
+    }
+
+    private static bool IsTransientCheapException(string phase, Exception ex)
+    {
+        if (!string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (ex is OpenRouterBalanceException)
+        {
+            return false;
+        }
+
+        return ex is HttpRequestException or TaskCanceledException or TimeoutException;
+    }
+
+    private async Task DelayBeforeRetryAsync(string phase, string model, int attempt, int maxAttempts, string reason, CancellationToken ct)
+    {
+        var jitterMs = Random.Shared.Next(0, 250);
+        var delayMs = (int)(CheapTransientRetryBaseDelayMs * Math.Pow(2, attempt - 1)) + jitterMs;
+        _logger.LogWarning(
+            "OpenRouter transient failure; retrying phase={Phase}, model={Model}, attempt={Attempt}/{MaxAttempts}, reason={Reason}, delay_ms={DelayMs}",
+            phase,
+            model,
+            attempt,
+            maxAttempts,
+            reason,
+            delayMs);
+        await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct);
     }
 
     private static string ExtractMessageContent(object? content)

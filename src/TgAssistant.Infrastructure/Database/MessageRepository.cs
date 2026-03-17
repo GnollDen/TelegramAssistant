@@ -27,6 +27,19 @@ public class MessageRepository : IMessageRepository
             return 0;
         }
 
+        var invalidChatCount = items.Count(x => x.ChatId <= 0);
+        if (invalidChatCount > 0)
+        {
+            _logger.LogWarning(
+                "Dropped messages with invalid chat_id<=0 before DB save: count={Count}",
+                invalidChatCount);
+            items = items.Where(x => x.ChatId > 0).ToList();
+            if (items.Count == 0)
+            {
+                return 0;
+            }
+        }
+
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var unique = items
             .GroupBy(x => new { x.Source, x.ChatId, x.TelegramMessageId })

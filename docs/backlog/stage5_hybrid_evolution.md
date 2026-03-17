@@ -37,12 +37,14 @@
 - [x] C3. Final summary + `IsFinalized = true`.
 
 ## Инварианты v10
-- Единый мастер-watermark: `stage5:summary_watermark`.
+- Session-first queue: `chat_sessions.is_analyzed=false` + idle gate.
+- Session checkpoints: `stage5:session_chunk_checkpoint:{chatId}:{sessionIndex}`.
+- Summary checkpoints: `stage5:summary:session:{chatId}:{sessionIndex}`.
 - Поля `trust_factor` и `needs_clarification` обязательны в экстракциях/нормализации.
 - Все текстовые выходы Stage 5 в production-контуре: на русском языке.
 
 ## План после Phase A
 1. Внедрить B1 (idle-timeout) с защитой от ранней суммаризации.
 2. Внедрить B3 как precheck до LLM-вызова.
-3. Внедрить B2 и привязать к обновлению watermark без лишних вызовов.
+3. Внедрить B2 и привязать к session summary checkpoint keys без лишних вызовов.
 4. После Hot path подготовить C1-C3 отдельным инкрементом.

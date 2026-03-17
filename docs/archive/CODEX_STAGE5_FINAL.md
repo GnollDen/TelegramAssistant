@@ -1,5 +1,8 @@
 # Stage 5 Final Sprint — Codex Backlog
 
+> Archive note (2026-03-17): this document is a historical sprint artifact.
+> Current runtime source-of-truth is `README.md` + `docs/stage5-extraction-algorithm.txt`.
+
 ## Контекст
 
 Stage 5 extraction pipeline работает. 5 итераций промпта на 300 сообщениях дали:
