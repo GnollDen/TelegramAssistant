@@ -14,6 +14,12 @@ namespace TgAssistant.Processing.Media;
 
 public class OpenRouterMediaProcessor : IMediaProcessor
 {
+    private const double AudioShortMaxSeconds = 15d;
+    private const int AudioLongChunkSeconds = 75;
+    private const int AudioLongMaxChunks = 8;
+    private const string AudioTranscriptionPrompt =
+        "Transcribe this audio message exactly. If you cannot understand it, describe what you hear (noise, music, etc). Respond ONLY with the transcription, no commentary.";
+
     private static readonly Regex RefusalLikeRegex = new(
         "(can't|cannot|unable to|i\\s+am\\s+sorry|as an ai|can't actually|cannot directly|not able to|не могу|извините)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -235,37 +241,13 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
         try
         {
-            var bytes = await File.ReadAllBytesAsync(wavPath, ct);
-            var base64 = Convert.ToBase64String(bytes);
-
-            var request = new OpenRouterRequest
+            var durationSeconds = await TryGetAudioDurationSecondsAsync(wavPath, ct);
+            if (durationSeconds.HasValue && durationSeconds.Value > AudioShortMaxSeconds)
             {
-                Model = _mediaSettings.AudioModel,
-                Messages =
-                [
-                    new OpenRouterMessage
-                    {
-                        Role = "user",
-                        Content = new object[]
-                        {
-                            new { type = "input_audio", input_audio = new { data = base64, format = "wav" } },
-                            new { type = "text", text = "Transcribe this audio message exactly. If you cannot understand it, describe what you hear (noise, music, etc). Respond ONLY with the transcription, no commentary." }
-                        }
-                    }
-                ],
-                MaxTokens = 1000
-            };
+                return await ProcessLongAudioAsync(wavPath, durationSeconds.Value, ct);
+            }
 
-            var response = await SendRequestAsync(request, ct);
-            var normalized = NormalizeAudioTranscription(response);
-
-            return new MediaProcessingResult
-            {
-                Success = true,
-                Transcription = normalized.Transcription,
-                Description = normalized.Description,
-                Confidence = normalized.Confidence
-            };
+            return await ProcessShortAudioAsync(wavPath, ct);
         }
         finally
         {
@@ -478,6 +460,155 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
 
         return "media_processing_error";
+    }
+
+    private async Task<MediaProcessingResult> ProcessShortAudioAsync(string wavPath, CancellationToken ct)
+    {
+        var bytes = await File.ReadAllBytesAsync(wavPath, ct);
+        var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), ct);
+        var normalized = NormalizeAudioTranscription(response);
+
+        return new MediaProcessingResult
+        {
+            Success = true,
+            Transcription = normalized.Transcription,
+            Description = normalized.Description,
+            Confidence = normalized.Confidence
+        };
+    }
+
+    private async Task<MediaProcessingResult> ProcessLongAudioAsync(string wavPath, double durationSeconds, CancellationToken ct)
+    {
+        var chunkDir = Path.Combine(Path.GetTempPath(), $"tgassistant_audio_chunks_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(chunkDir);
+        try
+        {
+            var chunks = await SplitAudioToChunksAsync(wavPath, chunkDir, AudioLongChunkSeconds, ct);
+            if (chunks.Count == 0)
+            {
+                return new MediaProcessingResult
+                {
+                    Success = true,
+                    Transcription = string.Empty,
+                    Description = "[media_unavailable] reason=audio_chunking_empty",
+                    Confidence = 0.2f
+                };
+            }
+
+            var chunkLimit = Math.Min(chunks.Count, AudioLongMaxChunks);
+            var parts = new List<string>(chunkLimit);
+            for (var i = 0; i < chunkLimit; i++)
+            {
+                var bytes = await File.ReadAllBytesAsync(chunks[i], ct);
+                var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), ct);
+                var normalized = NormalizeAudioTranscription(response);
+                var chunkText = normalized.Transcription;
+                if (string.IsNullOrWhiteSpace(chunkText))
+                {
+                    continue;
+                }
+
+                parts.Add($"[segment {i + 1}/{chunkLimit}] {chunkText}");
+            }
+
+            if (parts.Count == 0)
+            {
+                return new MediaProcessingResult
+                {
+                    Success = true,
+                    Transcription = string.Empty,
+                    Description = "[media_unavailable] reason=audio_long_empty",
+                    Confidence = 0.2f
+                };
+            }
+
+            var truncated = chunks.Count > chunkLimit;
+            return new MediaProcessingResult
+            {
+                Success = true,
+                Transcription = string.Join("\n", parts),
+                Description = truncated
+                    ? $"[audio_long] duration_s={Math.Round(durationSeconds)}; segments={chunkLimit}; truncated=true"
+                    : $"[audio_long] duration_s={Math.Round(durationSeconds)}; segments={chunkLimit}; truncated=false",
+                Confidence = truncated ? 0.75f : 0.85f
+            };
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(chunkDir))
+                {
+                    Directory.Delete(chunkDir, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best effort cleanup.
+            }
+        }
+    }
+
+    private OpenRouterRequest BuildAudioRequest(string base64Wav)
+    {
+        return new OpenRouterRequest
+        {
+            Model = _mediaSettings.AudioModel,
+            Messages =
+            [
+                new OpenRouterMessage
+                {
+                    Role = "user",
+                    Content = new object[]
+                    {
+                        new { type = "input_audio", input_audio = new { data = base64Wav, format = "wav" } },
+                        new { type = "text", text = AudioTranscriptionPrompt }
+                    }
+                }
+            ],
+            MaxTokens = 1000
+        };
+    }
+
+    private static async Task<double?> TryGetAudioDurationSecondsAsync(string wavPath, CancellationToken ct)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "ffprobe",
+                Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{wavPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        var output = await process.StandardOutput.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+        if (process.ExitCode != 0)
+        {
+            return null;
+        }
+
+        return double.TryParse(output.Trim(), System.Globalization.CultureInfo.InvariantCulture, out var duration)
+            ? duration
+            : null;
+    }
+
+    private static async Task<List<string>> SplitAudioToChunksAsync(string wavPath, string chunkDir, int chunkSeconds, CancellationToken ct)
+    {
+        var chunkPattern = Path.Combine(chunkDir, "chunk_%03d.wav");
+        var args =
+            $"-i \"{wavPath}\" -f segment -segment_time {Math.Max(15, chunkSeconds)} -c copy \"{chunkPattern}\" -y";
+        await RunFfmpegAsync(args, ct);
+
+        return Directory
+            .EnumerateFiles(chunkDir, "chunk_*.wav", SearchOption.TopDirectoryOnly)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static (string? Transcription, string? Description, float Confidence) NormalizeAudioTranscription(string raw)
