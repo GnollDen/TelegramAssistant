@@ -306,10 +306,7 @@ public class MessageRepository : IMessageRepository
         var rows = await db.Messages
             .AsNoTracking()
             .Where(x => x.Id > afterId
-                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderBy(x => x.Id)
             .Take(limit)
             .ToListAsync(ct);
@@ -328,10 +325,7 @@ public class MessageRepository : IMessageRepository
         var rows = await db.Messages
             .AsNoTracking()
             .Where(x => messageIds.Contains(x.Id)
-                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderBy(x => x.Id)
             .ToListAsync(ct);
 
@@ -345,10 +339,7 @@ public class MessageRepository : IMessageRepository
             .AsNoTracking()
             .Where(x => x.ChatId == chatId
                         && x.Id < beforeMessageId
-                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderByDescending(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
@@ -531,10 +522,7 @@ public class MessageRepository : IMessageRepository
                 .Where(x => x.ChatId == chatId
                             && x.ProcessingStatus == (short)ProcessingStatus.Processed
                             && (x.Timestamp < center.Timestamp
-                                || (x.Timestamp == center.Timestamp && x.Id < center.Id))
-                            && (x.MediaType == (short)MediaType.None
-                                || x.MediaDescription != null
-                                || x.MediaTranscription != null))
+                                || (x.Timestamp == center.Timestamp && x.Id < center.Id)))
                 .OrderByDescending(x => x.Timestamp)
                 .ThenByDescending(x => x.Id)
                 .Take(safeBefore)
@@ -547,10 +535,7 @@ public class MessageRepository : IMessageRepository
                 .Where(x => x.ChatId == chatId
                             && x.ProcessingStatus == (short)ProcessingStatus.Processed
                             && (x.Timestamp > center.Timestamp
-                                || (x.Timestamp == center.Timestamp && x.Id > center.Id))
-                            && (x.MediaType == (short)MediaType.None
-                                || x.MediaDescription != null
-                                || x.MediaTranscription != null))
+                                || (x.Timestamp == center.Timestamp && x.Id > center.Id)))
                 .OrderBy(x => x.Timestamp)
                 .ThenBy(x => x.Id)
                 .Take(safeAfter)
@@ -572,10 +557,7 @@ public class MessageRepository : IMessageRepository
             .Where(x => x.ChatId == chatId
                         && x.Timestamp >= fromUtc
                         && x.Timestamp <= toUtc
-                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderBy(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
@@ -589,10 +571,7 @@ public class MessageRepository : IMessageRepository
         var rows = await db.Messages
             .AsNoTracking()
             .Where(x => x.ChatId == chatId
-                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderByDescending(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
@@ -606,10 +585,7 @@ public class MessageRepository : IMessageRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.Messages
             .AsNoTracking()
-            .Where(x => x.NeedsReanalysis
-                        && (x.MediaType == (short)MediaType.None
-                            || x.MediaDescription != null
-                            || x.MediaTranscription != null))
+            .Where(x => x.NeedsReanalysis)
             .OrderBy(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
