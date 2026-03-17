@@ -15,11 +15,12 @@ using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
 
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Warning()
+    .MinimumLevel.Information()
     .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
-    .MinimumLevel.Override("TgAssistant.Intelligence.Stage5.OpenRouterAnalysisService", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("TgAssistant.Intelligence.Stage5", Serilog.Events.LogEventLevel.Debug)
+    .MinimumLevel.Override("TgAssistant.Intelligence.Stage5.OpenRouterAnalysisService", Serilog.Events.LogEventLevel.Debug)
     .MinimumLevel.Override("TgAssistant.Processing.Media.OpenRouterMediaProcessor", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer", Serilog.Events.LogEventLevel.Warning)
     .WriteTo.Async(a => a.Console())
@@ -182,13 +183,15 @@ try
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
             services.AddHostedService<EditDiffAnalysisWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
+            services.AddHostedService<DialogSummaryWorkerService>();
             services.AddHostedService<EntityEmbeddingWorkerService>();
             services.AddHostedService<FactEmbeddingBackfillWorkerService>();
             services.AddHostedService<Neo4jSyncWorkerService>();
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
             services.AddHostedService<FactReviewCommandWorkerService>();
-            services.AddHostedService<DailyKnowledgeCrystallizationWorkerService>();
+            // Temporarily disabled: daily cold-path crystallization adds extra chat/embedding traffic during Stage5 runs.
+            // services.AddHostedService<DailyKnowledgeCrystallizationWorkerService>();
             services.AddHostedService<Stage5MetricsWorkerService>();
             services.AddHostedService<MaintenanceWorkerService>();
         });

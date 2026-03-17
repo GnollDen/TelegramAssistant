@@ -167,9 +167,9 @@ public class ChatSessionRepository : IChatSessionRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.ChatSessions
             .AsNoTracking()
-            .Where(x => !x.IsFinalized
-                        && !string.IsNullOrWhiteSpace(x.Summary)
-                        && x.LastMessageAt <= staleBeforeUtc)
+            .Where(x => x.IsAnalyzed
+                        && (x.LastMessageAt <= staleBeforeUtc || string.IsNullOrWhiteSpace(x.Summary)))
+            .Where(x => !x.IsFinalized || string.IsNullOrWhiteSpace(x.Summary))
             .OrderBy(x => x.ChatId)
             .ThenBy(x => x.LastMessageAt)
             .ThenBy(x => x.SessionIndex)

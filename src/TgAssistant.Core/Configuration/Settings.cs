@@ -82,7 +82,7 @@ public class VoiceParalinguisticsSettings
     public bool Enabled { get; set; } = true;
     public bool TranscriptionEnabled { get; set; } = true;
     public bool DeleteSourceAudioAfterProcessing { get; set; } = true;
-    public int PollIntervalSeconds { get; set; } = 10;
+    public int PollIntervalSeconds { get; set; } = 2;
     public int BatchSize { get; set; } = 30;
     public int MaxParallel { get; set; } = 2;
     public string Model { get; set; } = "openai/gpt-audio-mini";
@@ -121,6 +121,8 @@ public class AnalysisSettings
 {
     public const string Section = "Analysis";
     public bool Enabled { get; set; } = false;
+    public bool ArchiveOnlyMode { get; set; } = false;
+    public string ArchiveCutoffUtc { get; set; } = string.Empty;
     public string CheapModel { get; set; } = "deepseek/deepseek-v3.2";
     public bool CheapModelAbEnabled { get; set; } = false;
     public string CheapBaselineModel { get; set; } = "openai/gpt-4o-mini";
@@ -133,7 +135,7 @@ public class AnalysisSettings
     public int CheapLlmParallelism { get; set; } = 4;
     public string CheapProviderOrder { get; set; } = string.Empty;
     public bool CheapProviderAllowFallbacks { get; set; } = true;
-    public int PollIntervalSeconds { get; set; } = 10;
+    public int PollIntervalSeconds { get; set; } = 2;
     public int MaxExpensivePerBatch { get; set; } = 10;
     public int FactReviewBatchSize { get; set; } = 100;
     public int CheapMaxTokens { get; set; } = 2000;
@@ -161,6 +163,7 @@ public class AnalysisSettings
     public int SessionStartContextMessages { get; set; } = 4;
     public int HistoricalSummaryContextItems { get; set; } = 6;
     public bool SummaryEnabled { get; set; } = true;
+    public bool SummaryWorkerEnabled { get; set; } = false;
     public string SummaryModel { get; set; } = "openai/gpt-4o-mini";
     public int SummaryPollIntervalSeconds { get; set; } = 30;
     public int SummaryBatchSize { get; set; } = 100;
@@ -194,6 +197,7 @@ public class AnalysisSettings
     public int SessionChunkMinMessages { get; set; } = 12;
     public int SessionChunkHardMaxMessages { get; set; } = 80;
     public int SessionChunkPauseGapMinutes { get; set; } = 25;
+    public int SessionChunkParallelism { get; set; } = 2;
     public int CheapChunkTargetChars { get; set; } = 12000;
     public int CheapChunkMaxChars { get; set; } = 15000;
     public int CheapChunkMinMessages { get; set; } = 6;

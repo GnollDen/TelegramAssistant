@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
@@ -41,9 +42,9 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly ExpensivePassResolver _expensivePassResolver;
     private readonly ExtractionApplier _extractionApplier;
     private readonly MessageContentBuilder _messageContentBuilder;
-    private readonly AnalysisContextBuilder _contextBuilder;
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
     private readonly ILogger<AnalysisWorkerService> _logger;
+    private readonly DateTime? _archiveCutoffUtc;
 
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
@@ -57,7 +58,6 @@ public partial class AnalysisWorkerService : BackgroundService
         ExpensivePassResolver expensivePassResolver,
         ExtractionApplier extractionApplier,
         MessageContentBuilder messageContentBuilder,
-        AnalysisContextBuilder contextBuilder,
         SummaryHistoricalRetrievalService historicalRetrievalService,
         ILogger<AnalysisWorkerService> logger)
     {
@@ -72,9 +72,15 @@ public partial class AnalysisWorkerService : BackgroundService
         _expensivePassResolver = expensivePassResolver;
         _extractionApplier = extractionApplier;
         _messageContentBuilder = messageContentBuilder;
-        _contextBuilder = contextBuilder;
         _historicalRetrievalService = historicalRetrievalService;
         _logger = logger;
+        _archiveCutoffUtc = ParseArchiveCutoffUtc(_settings.ArchiveCutoffUtc);
+        if (!string.IsNullOrWhiteSpace(_settings.ArchiveCutoffUtc) && !_archiveCutoffUtc.HasValue)
+        {
+            _logger.LogWarning(
+                "Stage5 archive cutoff parse failed. value={ArchiveCutoffUtc}. Expected ISO-8601 UTC format, example: 2026-03-06T23:59:59Z",
+                _settings.ArchiveCutoffUtc);
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -87,16 +93,19 @@ public partial class AnalysisWorkerService : BackgroundService
 
         await EnsureDefaultPromptsAsync(stoppingToken);
         _logger.LogInformation(
-            "Stage5 analysis worker started. cheap_model={Cheap}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}, cheap_chunk_target_chars={CheapChunkTargetChars}, cheap_chunk_max_chars={CheapChunkMaxChars}, cheap_chunk_min_messages={CheapChunkMinMessages}, cheap_chunk_pause_gap_min={CheapChunkPauseGapMinutes}",
+            "Stage5 analysis worker started. cheap_model={Cheap}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}, session_chunk_parallelism={SessionChunkParallelism}, cheap_chunk_target_chars={CheapChunkTargetChars}, cheap_chunk_max_chars={CheapChunkMaxChars}, cheap_chunk_min_messages={CheapChunkMinMessages}, cheap_chunk_pause_gap_min={CheapChunkPauseGapMinutes}, archive_only_mode={ArchiveOnlyMode}, archive_cutoff_utc={ArchiveCutoffUtc}",
             _settings.CheapModel,
             _settings.ExpensiveModel,
             GetCheapLlmParallelism(),
             GetCheapBatchWorkers(),
             Math.Clamp(_settings.SessionChunkSize, 10, 100),
+            GetSessionChunkParallelism(),
             Math.Max(4000, _settings.CheapChunkTargetChars),
             Math.Max(Math.Max(4000, _settings.CheapChunkTargetChars), _settings.CheapChunkMaxChars),
             Math.Max(2, _settings.CheapChunkMinMessages),
-            Math.Max(1, _settings.CheapChunkPauseGapMinutes));
+            Math.Max(1, _settings.CheapChunkPauseGapMinutes),
+            _settings.ArchiveOnlyMode,
+            _archiveCutoffUtc);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -110,7 +119,9 @@ public partial class AnalysisWorkerService : BackgroundService
                     await DelayBetweenBatchesAsync(stoppingToken);
                 }
 
-                var reanalysis = await _messageRepository.GetNeedsReanalysisAsync(GetFetchLimit(), stoppingToken);
+                var reanalysis = ApplyArchiveScope(
+                    await _messageRepository.GetNeedsReanalysisAsync(GetFetchLimit(), stoppingToken),
+                    "reanalysis");
                 if (reanalysis.Count > 0)
                 {
                     var reanalysisResult = await ProcessCheapBatchesAsync(reanalysis, stoppingToken);
@@ -194,7 +205,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 session.EndDate,
                 maxSessionMessages,
                 ct);
-            sessionMessages = sessionMessages
+            sessionMessages = ApplyArchiveScope(sessionMessages, "session_first")
                 .Where(x => x.Timestamp >= session.StartDate && x.Timestamp <= session.EndDate)
                 .OrderBy(x => x.Timestamp)
                 .ThenBy(x => x.Id)
@@ -202,8 +213,11 @@ public partial class AnalysisWorkerService : BackgroundService
 
             if (sessionMessages.Count == 0)
             {
-                maxAnalyzedSessionEndMs = await MarkSessionAnalyzedAndAdvanceWatermarkAsync(session, maxAnalyzedSessionEndMs, ct);
-                analyzedSessionsCount++;
+                _logger.LogInformation(
+                    "Stage5 session-first skipped by archive scope: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}",
+                    session.Id,
+                    session.ChatId,
+                    session.SessionIndex);
                 continue;
             }
 
@@ -281,10 +295,11 @@ public partial class AnalysisWorkerService : BackgroundService
         if (string.IsNullOrWhiteSpace(previous.Summary))
         {
             _logger.LogInformation(
-                "Stage5 sequential gate fallback: previous session summary is empty, bootstrap context will be used. chat_id={ChatId}, prev_session_index={PrevSessionIndex}, session_index={SessionIndex}",
+                "Stage5 sequential gate blocked: previous session summary is empty. chat_id={ChatId}, prev_session_index={PrevSessionIndex}, session_index={SessionIndex}",
                 session.ChatId,
                 previous.SessionIndex,
                 session.SessionIndex);
+            return false;
         }
 
         return true;
@@ -294,25 +309,32 @@ public partial class AnalysisWorkerService : BackgroundService
     {
         var watermark = await _stateRepository.GetWatermarkAsync(SessionSeedWatermarkKey, ct);
         var seedBatchSize = Math.Max(GetFetchLimit() * 5, 100);
-        var messages = await _messageRepository.GetProcessedAfterIdAsync(watermark, seedBatchSize, ct);
-        if (messages.Count == 0)
+        var fetchedMessages = await _messageRepository.GetProcessedAfterIdAsync(watermark, seedBatchSize, ct);
+        if (fetchedMessages.Count == 0)
         {
             return 0;
         }
 
+        var messages = ApplyArchiveScope(fetchedMessages, "session_seed");
+        if (messages.Count == 0)
+        {
+            await _stateRepository.SetWatermarkAsync(SessionSeedWatermarkKey, fetchedMessages.Max(x => x.Id), ct);
+            return 0;
+        }
+
         await EnsureSessionSlicesForMessagesAsync(messages, ct);
-        await _stateRepository.SetWatermarkAsync(SessionSeedWatermarkKey, messages.Max(x => x.Id), ct);
+        await _stateRepository.SetWatermarkAsync(SessionSeedWatermarkKey, fetchedMessages.Max(x => x.Id), ct);
         _logger.LogInformation(
             "Stage5 session seed pass done: processed_messages={Count}, seed_watermark={Watermark}",
             messages.Count,
-            messages.Max(x => x.Id));
+            fetchedMessages.Max(x => x.Id));
         return messages.Count;
     }
 
     private async Task<CheapPassResult> ProcessSessionInChunksAsync(ChatSession session, List<Message> sessionMessages, CancellationToken ct)
     {
-        var failed = new HashSet<long>();
-        var balanceIssue = false;
+        var failedChunkMessageIds = new ConcurrentDictionary<long, byte>();
+        var balanceIssueDetected = 0;
         var chunks = BuildAdaptiveSessionChunks(sessionMessages);
         var checkpointKey = BuildSessionChunkCheckpointKey(session);
         var savedIndex = (int)Math.Max(0, await _stateRepository.GetWatermarkAsync(checkpointKey, ct));
@@ -332,39 +354,159 @@ public partial class AnalysisWorkerService : BackgroundService
         var previousSliceSummary = chatSessions
             .FirstOrDefault(x => x.SessionIndex == session.SessionIndex - 1)
             ?.Summary;
+        var sessionChunkParallelism = GetSessionChunkParallelism();
 
-        for (var i = startIndex; i < chunks.Count; i++)
+        if (sessionChunkParallelism <= 1 || (chunks.Count - startIndex) <= 1)
         {
-            var chunk = chunks[i];
-            var replySliceContext = await BuildReplySliceContextAsync(session, chunk, chatSessions, ct);
-            var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
-                session,
-                i,
-                previousSliceSummary,
-                replySliceContext);
-
-            var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, ct);
-            var result = await ProcessCheapBatchesAsync(chunk, ct, effectiveChunkSummaryPrev, replySliceContext, ragContext);
-            failed.UnionWith(result.FailedMessageIds);
-            balanceIssue = balanceIssue || result.BalanceIssueDetected;
-            if (result.FailedMessageIds.Count > 0)
+            for (var i = startIndex; i < chunks.Count; i++)
             {
-                _logger.LogWarning(
-                    "Stage5 session chunk failed and checkpoint kept: session_id={SessionId}, chunk_index={ChunkIndex}, failed_messages={FailedMessages}",
-                    session.Id,
+                var chunk = chunks[i];
+                var replySliceContext = await BuildReplySliceContextAsync(session, chunk, chatSessions, ct);
+                var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
+                    session,
                     i,
-                    result.FailedMessageIds.Count);
-                break;
+                    previousSliceSummary,
+                    replySliceContext);
+
+                var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, ct);
+                var result = await ProcessCheapBatchesAsync(
+                    chunk,
+                    ct,
+                    effectiveChunkSummaryPrev,
+                    replySliceContext,
+                    ragContext,
+                    skipSessionPreparationAndGuard: true);
+                foreach (var failedId in result.FailedMessageIds)
+                {
+                    failedChunkMessageIds.TryAdd(failedId, 0);
+                }
+
+                if (result.BalanceIssueDetected)
+                {
+                    Interlocked.Exchange(ref balanceIssueDetected, 1);
+                }
+
+                if (result.FailedMessageIds.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Stage5 session chunk failed and checkpoint kept: session_id={SessionId}, chunk_index={ChunkIndex}, failed_messages={FailedMessages}",
+                        session.Id,
+                        i,
+                        result.FailedMessageIds.Count);
+                    break;
+                }
+
+                await _stateRepository.SetWatermarkAsync(checkpointKey, i + 1, ct);
+                if (balanceIssueDetected == 1)
+                {
+                    break;
+                }
+            }
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Stage5 session chunk parallel mode: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}, start_chunk={StartChunk}, total_chunks={TotalChunks}, parallelism={Parallelism}",
+                session.Id,
+                session.ChatId,
+                session.SessionIndex,
+                startIndex,
+                chunks.Count,
+                sessionChunkParallelism);
+
+            var succeeded = new bool[chunks.Count];
+            var firstFailedChunkIndex = int.MaxValue;
+            var indices = Enumerable.Range(startIndex, chunks.Count - startIndex).ToArray();
+            await Parallel.ForEachAsync(
+                indices,
+                new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = sessionChunkParallelism,
+                    CancellationToken = ct
+                },
+                async (i, token) =>
+                {
+                    if (Volatile.Read(ref balanceIssueDetected) == 1)
+                    {
+                        return;
+                    }
+
+                    var chunk = chunks[i];
+                    var replySliceContext = await BuildReplySliceContextAsync(session, chunk, chatSessions, token);
+                    var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
+                        session,
+                        i,
+                        previousSliceSummary,
+                        replySliceContext);
+                    var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, token);
+                    var result = await ProcessCheapBatchesAsync(
+                        chunk,
+                        token,
+                        effectiveChunkSummaryPrev,
+                        replySliceContext,
+                        ragContext,
+                        skipSessionPreparationAndGuard: true);
+
+                    if (result.BalanceIssueDetected)
+                    {
+                        Interlocked.Exchange(ref balanceIssueDetected, 1);
+                    }
+
+                    if (result.FailedMessageIds.Count > 0)
+                    {
+                        foreach (var failedId in result.FailedMessageIds)
+                        {
+                            failedChunkMessageIds.TryAdd(failedId, 0);
+                        }
+
+                        var currentFirst = Volatile.Read(ref firstFailedChunkIndex);
+                        while (i < currentFirst)
+                        {
+                            var observed = Interlocked.CompareExchange(ref firstFailedChunkIndex, i, currentFirst);
+                            if (observed == currentFirst)
+                            {
+                                break;
+                            }
+
+                            currentFirst = observed;
+                        }
+
+                        _logger.LogWarning(
+                            "Stage5 session chunk failed in parallel mode: session_id={SessionId}, chunk_index={ChunkIndex}, failed_messages={FailedMessages}",
+                            session.Id,
+                            i,
+                            result.FailedMessageIds.Count);
+                        return;
+                    }
+
+                    succeeded[i] = true;
+                });
+
+            var resumeCheckpoint = startIndex;
+            for (var i = startIndex; i < chunks.Count; i++)
+            {
+                if (!succeeded[i])
+                {
+                    break;
+                }
+
+                resumeCheckpoint = i + 1;
             }
 
-            await _stateRepository.SetWatermarkAsync(checkpointKey, i + 1, ct);
-            if (balanceIssue)
+            await _stateRepository.SetWatermarkAsync(checkpointKey, resumeCheckpoint, ct);
+            if (failedChunkMessageIds.Count > 0 || balanceIssueDetected == 1)
             {
-                break;
+                _logger.LogWarning(
+                    "Stage5 session parallel checkpoint updated: session_id={SessionId}, resume_chunk={ResumeChunk}, first_failed_chunk={FirstFailedChunk}, failed_messages={FailedMessages}, balance_issue={BalanceIssue}",
+                    session.Id,
+                    resumeCheckpoint,
+                    firstFailedChunkIndex == int.MaxValue ? -1 : firstFailedChunkIndex,
+                    failedChunkMessageIds.Count,
+                    balanceIssueDetected == 1);
             }
         }
 
-        if (!balanceIssue && failed.Count == 0)
+        if (balanceIssueDetected == 0 && failedChunkMessageIds.Count == 0)
         {
             await _stateRepository.SetWatermarkAsync(checkpointKey, 0, ct);
         }
@@ -376,9 +518,9 @@ public partial class AnalysisWorkerService : BackgroundService
             session.SessionIndex,
             sessionMessages.Count,
             chunks.Count,
-            failed.Count);
+            failedChunkMessageIds.Count);
 
-        return new CheapPassResult(failed, balanceIssue);
+        return new CheapPassResult(failedChunkMessageIds.Keys.ToHashSet(), balanceIssueDetected == 1);
     }
 
     private string BuildPreviousSlicePrompt(
@@ -443,7 +585,8 @@ public partial class AnalysisWorkerService : BackgroundService
         CancellationToken ct,
         string? chunkSummaryPrev = null,
         string? replySliceContext = null,
-        string? ragContext = null)
+        string? ragContext = null,
+        bool skipSessionPreparationAndGuard = false)
     {
         var timer = Stopwatch.StartNew();
         var initialCount = messages.Count;
@@ -471,54 +614,58 @@ public partial class AnalysisWorkerService : BackgroundService
             return new CheapPassResult(new HashSet<long>(), false);
         }
 
-        await EnsureSessionSlicesForMessagesAsync(messages, ct);
-        var episodicGuard = await ApplyEpisodicMemoryGuardAsync(messages, ct);
-        var (sessionLimit, sessionLimitMode) = GetEpisodicSessionLimitInfo();
-        var skippedBySessionLimit = episodicGuard.SkippedBySessionLimitMessageIds.ToHashSet();
-        var skipResetMessageIds = messages
-            .Select(x => x.Id)
-            .Where(id => !skippedBySessionLimit.Contains(id))
-            .ToArray();
-        await ResetSessionSkipCountersAsync(skipResetMessageIds, ct);
-        var newlyQuarantined = await IncrementSkipCountersAndQuarantineAsync(
-            episodicGuard.SkippedBySessionLimitMessageIds,
-            ct);
-
-        if (episodicGuard.BlockedPendingSummaryMessageIds.Count > 0)
+        var episodicGuard = new EpisodicGuardResult(messages, [], [], []);
+        if (!skipSessionPreparationAndGuard)
         {
-            await _messageRepository.MarkNeedsReanalysisAsync(
-                episodicGuard.BlockedPendingSummaryMessageIds,
-                "stage5_blocked_pending_summary",
+            await EnsureSessionSlicesForMessagesAsync(messages, ct);
+            episodicGuard = await ApplyEpisodicMemoryGuardAsync(messages, ct);
+            var (sessionLimit, sessionLimitMode) = GetEpisodicSessionLimitInfo();
+            var skippedBySessionLimit = episodicGuard.SkippedBySessionLimitMessageIds.ToHashSet();
+            var skipResetMessageIds = messages
+                .Select(x => x.Id)
+                .Where(id => !skippedBySessionLimit.Contains(id))
+                .ToArray();
+            await ResetSessionSkipCountersAsync(skipResetMessageIds, ct);
+            var newlyQuarantined = await IncrementSkipCountersAndQuarantineAsync(
+                episodicGuard.SkippedBySessionLimitMessageIds,
                 ct);
-            _logger.LogInformation(
-                "Stage5 episodic guard deferred messages pending session summaries: count={Count}",
-                episodicGuard.BlockedPendingSummaryMessageIds.Count);
-        }
 
-        if (episodicGuard.SkippedBySessionLimitMessageIds.Count > 0)
-        {
-            _logger.LogInformation(
-                "Stage5 episodic guard skipped messages beyond session limit: count={Count}, max_sessions_per_chat={MaxSessions}, limit_mode={LimitMode}, newly_quarantined={QuarantinedCount}, quarantine_reason={QuarantineReason}",
-                episodicGuard.SkippedBySessionLimitMessageIds.Count,
-                sessionLimit,
-                sessionLimitMode,
-                newlyQuarantined.Count,
-                SessionSkipQuarantineReason);
-        }
+            if (episodicGuard.BlockedPendingSummaryMessageIds.Count > 0)
+            {
+                await _messageRepository.MarkNeedsReanalysisAsync(
+                    episodicGuard.BlockedPendingSummaryMessageIds,
+                    "stage5_blocked_pending_summary",
+                    ct);
+                _logger.LogInformation(
+                    "Stage5 episodic guard deferred messages pending session summaries: count={Count}",
+                    episodicGuard.BlockedPendingSummaryMessageIds.Count);
+            }
 
-        if (episodicGuard.SkippedNoSessionAssignmentMessageIds.Count > 0)
-        {
-            _logger.LogWarning(
-                "Stage5 session gate skipped messages without session assignment: count={Count}",
-                episodicGuard.SkippedNoSessionAssignmentMessageIds.Count);
-        }
+            if (episodicGuard.SkippedBySessionLimitMessageIds.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Stage5 episodic guard skipped messages beyond session limit: count={Count}, max_sessions_per_chat={MaxSessions}, limit_mode={LimitMode}, newly_quarantined={QuarantinedCount}, quarantine_reason={QuarantineReason}",
+                    episodicGuard.SkippedBySessionLimitMessageIds.Count,
+                    sessionLimit,
+                    sessionLimitMode,
+                    newlyQuarantined.Count,
+                    SessionSkipQuarantineReason);
+            }
 
-        messages = episodicGuard.AllowedMessages;
-        if (messages.Count == 0)
-        {
-            return new CheapPassResult(
-                episodicGuard.BlockedPendingSummaryMessageIds.ToHashSet(),
-                false);
+            if (episodicGuard.SkippedNoSessionAssignmentMessageIds.Count > 0)
+            {
+                _logger.LogWarning(
+                    "Stage5 session gate skipped messages without session assignment: count={Count}",
+                    episodicGuard.SkippedNoSessionAssignmentMessageIds.Count);
+            }
+
+            messages = episodicGuard.AllowedMessages;
+            if (messages.Count == 0)
+            {
+                return new CheapPassResult(
+                    episodicGuard.BlockedPendingSummaryMessageIds.ToHashSet(),
+                    false);
+            }
         }
 
         var failedMessageIds = new ConcurrentDictionary<long, byte>();
@@ -608,23 +755,14 @@ public partial class AnalysisWorkerService : BackgroundService
         if (analyzableMessages.Count > 0)
         {
             var replyContext = await _messageContentBuilder.LoadReplyContextAsync(analyzableMessages, ct);
-            var contexts = await _contextBuilder.BuildBatchContextsAsync(analyzableMessages, ct);
-            if (!string.IsNullOrWhiteSpace(replySliceContext))
-            {
-                foreach (var context in contexts.Values)
-                {
-                    context.ExternalReplyContext.Clear();
-                }
-            }
             var batch = analyzableMessages.Select(m => new AnalysisInputMessage
             {
                 MessageId = m.Id,
                 SenderName = m.SenderName,
                 Timestamp = m.Timestamp,
-                Text = MessageContentBuilder.BuildMessageText(
+                Text = MessageContentBuilder.BuildCheapChunkMessageText(
                     m,
-                    replyContext.GetValueOrDefault(m.Id),
-                    contexts.GetValueOrDefault(m.Id))
+                    replyContext.GetValueOrDefault(m.Id))
             }).ToList();
 
             var cheapPrompt = await GetPromptAsync(CheapPromptId, DefaultCheapPrompt, ct);
@@ -1265,8 +1403,12 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private int GetCheapLlmParallelism()
     {
-        // Balanced mode: avoid high fan-out transport errors while keeping acceptable throughput.
-        return Math.Clamp(_settings.CheapLlmParallelism, 1, 2);
+        return Math.Clamp(_settings.CheapLlmParallelism, 1, 16);
+    }
+
+    private int GetSessionChunkParallelism()
+    {
+        return Math.Clamp(_settings.SessionChunkParallelism, 1, 8);
     }
 
     private async Task<EpisodicGuardResult> ApplyEpisodicMemoryGuardAsync(List<Message> messages, CancellationToken ct)
@@ -1374,6 +1516,71 @@ public partial class AnalysisWorkerService : BackgroundService
         return (0, "disabled");
     }
 
+    private static DateTime? ParseArchiveCutoffUtc(string? rawCutoffUtc)
+    {
+        if (string.IsNullOrWhiteSpace(rawCutoffUtc))
+        {
+            return null;
+        }
+
+        if (!DateTime.TryParse(
+                rawCutoffUtc,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed))
+        {
+            return null;
+        }
+
+        return DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+    }
+
+    private List<Message> ApplyArchiveScope(List<Message> messages, string scope)
+    {
+        if (messages.Count == 0)
+        {
+            return messages;
+        }
+
+        if (!_settings.ArchiveOnlyMode && !_archiveCutoffUtc.HasValue)
+        {
+            return messages;
+        }
+
+        var filtered = messages
+            .Where(IsInArchiveScope)
+            .ToList();
+        var skipped = messages.Count - filtered.Count;
+        if (skipped > 0)
+        {
+            _logger.LogInformation(
+                "Stage5 archive scope filtered messages: scope={Scope}, input={Input}, kept={Kept}, skipped={Skipped}, archive_only_mode={ArchiveOnlyMode}, archive_cutoff_utc={ArchiveCutoffUtc}",
+                scope,
+                messages.Count,
+                filtered.Count,
+                skipped,
+                _settings.ArchiveOnlyMode,
+                _archiveCutoffUtc);
+        }
+
+        return filtered;
+    }
+
+    private bool IsInArchiveScope(Message message)
+    {
+        if (_settings.ArchiveOnlyMode && message.Source != MessageSource.Archive)
+        {
+            return false;
+        }
+
+        if (_archiveCutoffUtc.HasValue && message.Timestamp > _archiveCutoffUtc.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private int GetEpisodicSessionLimit() => GetEpisodicSessionLimitInfo().Limit;
 
     private async Task ResetSessionSkipCountersAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct)
@@ -1447,6 +1654,7 @@ public partial class AnalysisWorkerService : BackgroundService
         foreach (var chatId in chatIds)
         {
             var chatMessages = await _messageRepository.GetProcessedByChatAsync(chatId, fetchLimit, ct);
+            chatMessages = ApplyArchiveScope(chatMessages, "session_slice_build");
             if (chatMessages.Count == 0)
             {
                 continue;

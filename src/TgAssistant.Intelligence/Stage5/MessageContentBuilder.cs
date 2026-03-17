@@ -151,14 +151,74 @@ public class MessageContentBuilder
             sb.AppendLine("[/RAG_CONTEXT]");
         }
 
+        sb.AppendLine("[CHUNK_PAYLOAD]");
         foreach (var msg in batch)
         {
             sb.AppendLine($"<message id=\"{msg.MessageId}\">");
-            sb.AppendLine(ReplaceParticipantRefs(msg.Text, participantRefByName));
+            var payload = ReplaceParticipantRefs(msg.Text, participantRefByName);
+            sb.AppendLine(TruncateForContext(payload, 2200));
             sb.AppendLine("</message>");
         }
+        sb.AppendLine("[/CHUNK_PAYLOAD]");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds compact cheap-pass message payload without per-message historical/session context duplication.
+    /// </summary>
+    public static string BuildCheapChunkMessageText(Message message, Message? replyTo)
+    {
+        var parts = new List<string>();
+        parts.Add($"[meta] message_id={message.Id} sender_name=\"{(message.SenderName ?? string.Empty).Trim()}\"");
+
+        if (replyTo != null)
+        {
+            var replySender = (replyTo.SenderName ?? string.Empty).Trim();
+            var replyText = TruncateForContext(CollapseWhitespace(BuildSemanticContent(replyTo)), 180);
+            if (!string.IsNullOrWhiteSpace(replyText))
+            {
+                parts.Add($"[reply_context] from_sender=\"{replySender}\" text=\"{replyText}\"");
+            }
+        }
+
+        var text = TruncateForContext(CollapseWhitespace(message.Text ?? string.Empty), 900);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            parts.Add(text);
+        }
+
+        var voiceMessageMarker = BuildVoiceMessageMarker(message);
+        if (!string.IsNullOrWhiteSpace(voiceMessageMarker))
+        {
+            parts.Add(voiceMessageMarker);
+        }
+
+        var mediaTranscription = TruncateForContext(CollapseWhitespace(message.MediaTranscription ?? string.Empty), 500);
+        if (!string.IsNullOrWhiteSpace(mediaTranscription))
+        {
+            parts.Add($"[media_transcription] {mediaTranscription}");
+        }
+
+        var mediaDescription = TruncateForContext(CollapseWhitespace(message.MediaDescription ?? string.Empty), 320);
+        if (!string.IsNullOrWhiteSpace(mediaDescription))
+        {
+            parts.Add($"[media_description] {mediaDescription}");
+        }
+
+        if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson))
+        {
+            parts.Add($"[voice_paralinguistics] {TruncateForContext(CollapseWhitespace(message.MediaParalinguisticsJson ?? string.Empty), 240)}");
+        }
+
+        var editTrackingSnippet = BuildEditTrackingSnippet(message.ForwardJson);
+        if (!string.IsNullOrWhiteSpace(editTrackingSnippet))
+        {
+            parts.Add(editTrackingSnippet);
+        }
+
+        parts.Add($"[temporal_context] message_date={message.Timestamp:yyyy-MM-dd HH:mm}");
+        return string.Join("\n", parts);
     }
 
     private static Dictionary<string, string> BuildParticipantRefs(IReadOnlyCollection<AnalysisInputMessage> batch)

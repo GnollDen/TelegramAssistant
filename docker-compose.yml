@@ -101,6 +101,8 @@ services:
       Backfill__SinceDate: ${BACKFILL_SINCE_DATE:-2026-03-07}
       Backfill__ChatIds: ${BACKFILL_CHAT_IDS:-}
       Analysis__Enabled: ${ANALYSIS_ENABLED:-false}
+      Analysis__ArchiveOnlyMode: ${ANALYSIS_ARCHIVE_ONLY_MODE:-false}
+      Analysis__ArchiveCutoffUtc: ${ANALYSIS_ARCHIVE_CUTOFF_UTC:-}
       Analysis__CheapModel: ${ANALYSIS_CHEAP_MODEL:-deepseek/deepseek-v3.2}
       Analysis__CheapModelAbEnabled: ${ANALYSIS_CHEAP_MODEL_AB_ENABLED:-false}
       Analysis__CheapBaselineModel: ${ANALYSIS_CHEAP_BASELINE_MODEL:-openai/gpt-4o-mini}
@@ -114,7 +116,7 @@ services:
       Analysis__CheapMaxTokens: ${ANALYSIS_CHEAP_MAX_TOKENS:-2000}
       Analysis__CheapProviderOrder: ${ANALYSIS_CHEAP_PROVIDER_ORDER:-}
       Analysis__CheapProviderAllowFallbacks: ${ANALYSIS_CHEAP_PROVIDER_ALLOW_FALLBACKS:-true}
-      Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-5}
+      Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-2}
       Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
       Analysis__ExpensiveDailyBudgetUsd: ${ANALYSIS_EXPENSIVE_DAILY_BUDGET_USD:-0.15}
       Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}
@@ -133,6 +135,7 @@ services:
       Analysis__SessionStartContextMessages: ${ANALYSIS_SESSION_START_CONTEXT_MESSAGES:-4}
       Analysis__HistoricalSummaryContextItems: ${ANALYSIS_HISTORICAL_SUMMARY_CONTEXT_ITEMS:-6}
       Analysis__SummaryEnabled: ${ANALYSIS_SUMMARY_ENABLED:-true}
+      Analysis__SummaryWorkerEnabled: ${ANALYSIS_SUMMARY_WORKER_ENABLED:-false}
       Analysis__SummaryModel: ${ANALYSIS_SUMMARY_MODEL:-openai/gpt-4o-mini}
       Analysis__SummaryPollIntervalSeconds: ${ANALYSIS_SUMMARY_POLL_INTERVAL_SECONDS:-30}
       Analysis__SummaryBatchSize: ${ANALYSIS_SUMMARY_BATCH_SIZE:-100}
@@ -166,6 +169,7 @@ services:
       Analysis__SessionChunkMinMessages: ${ANALYSIS_SESSION_CHUNK_MIN_MESSAGES:-12}
       Analysis__SessionChunkHardMaxMessages: ${ANALYSIS_SESSION_CHUNK_HARD_MAX_MESSAGES:-80}
       Analysis__SessionChunkPauseGapMinutes: ${ANALYSIS_SESSION_CHUNK_PAUSE_GAP_MINUTES:-25}
+      Analysis__SessionChunkParallelism: ${ANALYSIS_SESSION_CHUNK_PARALLELISM:-2}
       Analysis__CheapChunkTargetChars: ${ANALYSIS_CHEAP_CHUNK_TARGET_CHARS:-12000}
       Analysis__CheapChunkMaxChars: ${ANALYSIS_CHEAP_CHUNK_MAX_CHARS:-15000}
       Analysis__CheapChunkMinMessages: ${ANALYSIS_CHEAP_CHUNK_MIN_MESSAGES:-6}
