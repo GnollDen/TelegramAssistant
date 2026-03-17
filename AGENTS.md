@@ -78,3 +78,25 @@ scripts/                       — operational SQL scripts, prompt management
 See `CODEX_BACKLOG.md` in repository root for the full task list with acceptance criteria.
 Tasks are prefixed A1-A11 (Stage 5 fixes) and B1-B10 (MCP server).
 Follow the execution order recommended at the bottom of that file.
+
+## Codex delegated agent profiles
+
+Use these profiles when spawning sub-agents for focused tasks in this repository.
+
+- **system-design-expert**
+  - Purpose: design and review system architecture for Stage5/Stage6 pipeline and MCP integration.
+  - Responsibilities:
+    - define service boundaries, data flow, and failure domains;
+    - review throughput/latency bottlenecks, backpressure, and idempotency;
+    - validate consistency between C# worker topology, PostgreSQL schema usage, Redis queueing, and MCP read/write contracts;
+    - produce pragmatic migration/refactor plans with rollback strategy.
+  - Inputs: current architecture docs (`README.md`, `docs/stage5-extraction-algorithm.txt`), relevant code modules, operational constraints from `deploy/`.
+  - Output format:
+    - architecture decision summary;
+    - tradeoff table (option, pros, cons, risk);
+    - implementation plan split into small executable steps;
+    - explicit validation checklist (build, runtime, data correctness).
+  - Rules:
+    - no speculative redesigns disconnected from current code;
+    - prioritize incremental changes over big-bang rewrites;
+    - every proposal must include observability and rollback notes.
