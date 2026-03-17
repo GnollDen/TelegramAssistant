@@ -781,6 +781,159 @@ These are read via MCP `resources/read` protocol, not tools.
 
 ---
 
+## Track D — AnalysisWorkerService refactor
+
+### D1. Baseline and safety harness
+
+**Task:** Capture baseline metrics and define refactor safety checks before moving logic.
+
+- Record current method map and line count for `AnalysisWorkerService`.
+- Capture one reference run snapshot: processed sessions, chunk count, cheap/summary usage counts, errors.
+- Document non-regression checklist for Stage5 runtime behavior.
+
+**Acceptance criteria:**
+- New doc `docs/reports/analysis-worker-refactor-baseline.md`.
+- Baseline includes command list and reference output values.
+
+---
+
+### D2. Extract SessionSlicePlanner service
+
+**Task:** Move session/slice planning and skip/quarantine mechanics out of `AnalysisWorkerService`.
+
+- Extract methods related to slicing and session indexing:
+  - `EnsureSessionSlicesForMessagesAsync`
+  - `SplitByGap`
+  - `ResolveTargetSessionIndex`
+  - skip-counter helpers and quarantine logic.
+- Keep persistence through existing repositories.
+
+**Acceptance criteria:**
+- `AnalysisWorkerService` no longer contains slice-building internals.
+- Behavior of session creation and quarantine counters remains unchanged.
+
+---
+
+### D3. Extract CheapPassPipeline service
+
+**Task:** Move cheap-pass orchestration and chunk execution to a dedicated service.
+
+- Extract:
+  - `ProcessCheapBatchesAsync`
+  - `ProcessCheapBatchAsync`
+  - `TryProcessChunkOneByOneAsync`
+  - cheap chunk request/model map helpers.
+- Keep current retries/fallback semantics.
+
+**Acceptance criteria:**
+- Cheap pass runs through one injected service.
+- No change in extraction write path and failure handling.
+
+---
+
+### D4. Extract SessionSummary service
+
+**Task:** Move session summary generation and post-slice summary gating into dedicated service.
+
+- Extract:
+  - `EnsureSessionSummaryAfterSliceAsync`
+  - `GenerateSessionSummaryAsync`
+  - summarizable message filtering and summary parsing helpers.
+- Preserve current “summary after each slice pass” expectation.
+
+**Acceptance criteria:**
+- Summary path is isolated and testable.
+- Existing summary model usage and storage semantics are preserved.
+
+---
+
+### D5. Extract OpenRouterRecoveryGate service
+
+**Task:** Isolate provider recovery wait and probe logic.
+
+- Extract:
+  - `WaitForOpenRouterRecoveryAsync`
+  - fallback/recovery gating helpers.
+- Keep configurable timing from `AnalysisSettings`.
+
+**Acceptance criteria:**
+- Recovery loops are removed from orchestrator class.
+- Runtime pause/resume behavior remains identical.
+
+---
+
+### D6. Shrink AnalysisWorkerService to orchestrator
+
+**Task:** Keep only top-level loop and coordination in `AnalysisWorkerService`.
+
+- Class should orchestrate: expensive backlog, reanalysis, session-first pass, seeding, delays.
+- Push implementation details to extracted services.
+
+**Acceptance criteria:**
+- `AnalysisWorkerService.cs` target size: <= 600 lines.
+- No direct business-heavy helpers left in orchestrator.
+
+---
+
+### D7. DI and wiring cleanup
+
+**Task:** Register new services and remove obsolete dependencies.
+
+- Update `Program.cs` DI registrations.
+- Ensure constructor dependency graph is minimal and coherent.
+
+**Acceptance criteria:**
+- App starts without DI resolution errors.
+- No dead dependencies in `AnalysisWorkerService` constructor.
+
+---
+
+### D8. Documentation update
+
+**Task:** Update Stage5 architecture docs for new service boundaries.
+
+- Add component map and responsibility table.
+- Include execution path: session -> chunk -> cheap -> apply -> summary.
+
+**Acceptance criteria:**
+- Docs updated under `docs/` with current class ownership map.
+
+---
+
+### D9. Build and runtime verification
+
+**Task:** Validate refactor with build + smoke run checks.
+
+- Run `dotnet build TelegramAssistant.sln`.
+- Run container/log smoke checks on Stage5 pass:
+  - session processing progress
+  - cheap calls present
+  - summary calls present
+  - no new fatal/error spikes.
+
+**Acceptance criteria:**
+- Build succeeds.
+- Smoke run confirms parity on core Stage5 signals.
+
+---
+
+### D10. Commit strategy
+
+**Task:** Deliver refactor in small, reviewable commits.
+
+- Suggested commit slices:
+  1. planner extraction
+  2. cheap pipeline extraction
+  3. summary extraction
+  4. recovery gate extraction
+  5. orchestrator cleanup + docs
+
+**Acceptance criteria:**
+- Each commit builds independently.
+- Commit messages are imperative and scoped.
+
+---
+
 ## Execution order recommendation
 
 **Phase 1 (data integrity + quality):**
@@ -797,6 +950,9 @@ A7 → A11 → B10
 
 **Phase 5 (broadcast observability):**
 C1 → C2 → C3 → C5 → C4 → C6 → C7 → C8 → C9 → C10
+
+**Phase 6 (analysis worker refactor):**
+D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → D10
 
 Each task is independent enough to be a single commit/PR.
 A1 remains the largest refactor task.
