@@ -644,6 +644,143 @@ These are read via MCP `resources/read` protocol, not tools.
 
 ---
 
+## Track C — OpenRouter Broadcast observability
+
+### C1. Broadcast trace schema and correlation keys
+
+**Task:** Define a single trace schema for all OpenRouter calls in runtime.
+
+- Fields: `phase`, `chat_id`, `session_id`, `slice_id`, `chunk_index`, `message_id`, `worker`, `pipeline_version`.
+- Document required vs optional fields and value constraints.
+- Add JSON examples for `cheap`, `summary`, `edit_diff`, `expensive`.
+
+**Acceptance criteria:**
+- New doc: `docs/observability/openrouter-broadcast.md`.
+- Examples are copy-paste ready and aligned with current Stage5 flow.
+
+---
+
+### C2. Centralized metadata injection in OpenRouter client path
+
+**Task:** Ensure all OpenRouter requests pass through one shared metadata injection path.
+
+- Add `user/session_id/trace` payload composition in the common request builder.
+- Cover all phases: `cheap`, `summary`, `edit_diff`, `expensive`, media where applicable.
+- Remove duplicated ad-hoc metadata construction.
+
+**Acceptance criteria:**
+- 100% OpenRouter calls include standardized metadata.
+- No duplicate metadata builders remain in code.
+
+---
+
+### C3. Runtime correlation with Stage5 sessions and slices
+
+**Task:** Map runtime identifiers so one slice/session can be reconstructed from traces.
+
+- Use deterministic `session_id`/`slice_id` mapping from DB/session model.
+- Include `chunk_index` for chunked cheap/summary flows.
+
+**Acceptance criteria:**
+- For any processed slice, trace stream shows cheap chunk calls and summary call in one correlated chain.
+
+---
+
+### C4. Privacy and redaction policy
+
+**Task:** Add privacy guardrails for broadcast payloads.
+
+- Do not send raw message text in trace metadata.
+- Keep only IDs and operational labels.
+- Document redaction rules and safe fields list.
+
+**Acceptance criteria:**
+- Trace metadata contains no sensitive plaintext content.
+- Policy documented in `docs/observability/openrouter-broadcast.md`.
+
+---
+
+### C5. Sampling and feature flags
+
+**Task:** Add config switches for Broadcast behavior.
+
+- New settings:
+  - `Analysis__BroadcastEnabled`
+  - `Analysis__BroadcastSampleRate`
+  - `Analysis__BroadcastForceForErrors`
+- Wire to `Settings.cs`, `appsettings.json`, `docker-compose.yml`, `.env.example`.
+
+**Acceptance criteria:**
+- Broadcast can be disabled without code changes.
+- Sampling is respected at runtime.
+- Error calls are always broadcast when force flag is enabled.
+
+---
+
+### C6. Sink integration (Webhook/Langfuse-compatible)
+
+**Task:** Export broadcast events to one external sink for troubleshooting and analytics.
+
+- Normalize events by `session_id`/`slice_id`/`phase`.
+- Store minimal latency, status, model, token/cost info.
+
+**Acceptance criteria:**
+- At least one sink receives structured events continuously.
+- Failed calls are visible with enough context to debug.
+
+---
+
+### C7. Alerts for summary gaps and failure spikes
+
+**Task:** Add practical alerts tied to known incidents.
+
+- "cheap observed but no summary within N minutes"
+- "summary error rate spike"
+- "phase-level failures above threshold"
+
+**Acceptance criteria:**
+- At least 3 active alerts with documented thresholds and owners.
+
+---
+
+### C8. Coverage report: cheap vs summary
+
+**Task:** Provide periodic report showing pipeline coverage and lag.
+
+- Metrics: cheap count, summary count, ratio, avg/max lag to summary.
+- Group by chat/session/slice window.
+
+**Acceptance criteria:**
+- One command/script generates a readable report for the last 24h.
+
+---
+
+### C9. Rollout and rollback plan
+
+**Task:** Ship broadcast incrementally with fast fallback.
+
+- Stages: dev -> canary -> production.
+- Define rollback procedure and owner.
+
+**Acceptance criteria:**
+- Runbook contains enable/disable and rollback steps.
+- Rollback is tested at least once in non-prod.
+
+---
+
+### C10. Operations runbook update
+
+**Task:** Add incident playbook for "summary missing after slices".
+
+- How to trace by `slice_id/session_id`.
+- How to detect dropped/filtered calls.
+- How to confirm recovery.
+
+**Acceptance criteria:**
+- New section in ops docs with step-by-step flow.
+
+---
+
 ## Execution order recommendation
 
 **Phase 1 (data integrity + quality):**
@@ -658,59 +795,8 @@ B1 → B2 → B3 → B4 → B5 → B6 → B7 → B8 → B9
 **Phase 4 (layer cleanup, low priority):**
 A7 → A11 → B10
 
+**Phase 5 (broadcast observability):**
+C1 → C2 → C3 → C5 → C4 → C6 → C7 → C8 → C9 → C10
+
 Each task is independent enough to be a single commit/PR.
-A1 is the largest task; everything else is focused and self-contained.
-
----
-
-## Operational Log (2026-03-16)
-
-### Confirmed decisions
-
-1. Session limit behavior (archive-first) is accepted for now:
-   - First process archive scope, then background/live flow.
-   - No immediate change requested.
-
-2. Add Quarantine / Dead Letter Queue for repeated skip:
-   - If a message is skipped more than 3 consecutive times (tracked via `analysis_state`),
-     mark it with a dedicated DB status and exclude from further processing.
-   - Watermark must continue moving forward after quarantine.
-   - Priority: `P0`.
-
-3. Cheap/expensive spending limits:
-   - Runtime budget limits are controlled on OpenRouter side.
-   - No local budget implementation requested right now.
-
-4. DB verification completed (snapshot at 2026-03-16 19:24 UTC):
-   - `messages`: 72445
-   - duplicate `messages.id`: 0
-   - `chat_sessions`: 0
-   - `analysis_usage_events`: 0
-   - `analysis_state` keys `stage5:%`: 0
-   - Historical note (updated 2026-03-17): `chat_sessions.is_analyzed` exists and is used by the session-first queue.
-
-### High-priority follow-ups (accepted, deferred by decision)
-
-1. BulkFetch in `AnalysisContextBuilder`:
-   - Fetch reply/context data for the full batch via set-based queries (`where id in (...)`).
-   - Status: `Planned (P1)`.
-
-2. Prompt/cost optimization strategy:
-   - Do not shrink prompts now.
-   - After next test run, increase effective batch throughput first, then reassess.
-   - Status: `Deferred until next run`.
-
-3. Additional optimization/risk fixes:
-   - Revisit after A/B test results.
-   - Status: `Deferred until A/B`.
-
-### Legacy code disposal (new requirement)
-
-Session-first processing is now the canonical path. Legacy message-watermark flow must be retired.
-
-- New task: decommission old non-session analysis path in `AnalysisWorkerService`.
-- Scope:
-  - Remove legacy branch that processes by `stage5:watermark` message cursor.
-  - Keep only session-based trigger (`chat_sessions` queue and session checkpoints).
-  - Clean up obsolete state keys and code branches.
-- Status: `In Progress` (legacy message-watermark path is being retired in favor of session queue/checkpoints).
+A1 remains the largest refactor task.
