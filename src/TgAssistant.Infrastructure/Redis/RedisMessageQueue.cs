@@ -37,10 +37,40 @@ public class RedisMessageQueue : IMessageQueue
 
     public async Task EnqueueAsync(RawTelegramMessage message, CancellationToken ct = default)
     {
+        if (ShouldDropAsNoise(message))
+        {
+            _logger.LogDebug(
+                "Dropped noisy realtime envelope before Redis enqueue. msg_id={MessageId}, chat_id={ChatId}, text={Text}",
+                message.MessageId,
+                message.ChatId,
+                message.Text);
+            return;
+        }
+
         var db = _redis.GetDatabase();
         var json = JsonSerializer.Serialize(message);
         var id = await db.StreamAddAsync(_settings.StreamName, new NameValueEntry[] { new("data", json) });
         _logger.LogDebug("Enqueued message {MsgId} to stream as {StreamId}", message.MessageId, id);
+    }
+
+    private static bool ShouldDropAsNoise(RawTelegramMessage message)
+    {
+        if (message.ChatId <= 0)
+        {
+            return true;
+        }
+
+        var text = message.Text?.Trim();
+        var hasText = !string.IsNullOrWhiteSpace(text);
+        var hasMedia = message.MediaType != MediaType.None || !string.IsNullOrWhiteSpace(message.MediaPath);
+        var hasReactions = !string.IsNullOrWhiteSpace(message.ReactionsJson);
+        var hasForward = !string.IsNullOrWhiteSpace(message.ForwardJson);
+        if (!hasText && !hasMedia && !hasReactions && !hasForward)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public async Task<List<RawTelegramMessage>> DequeueAsync(int maxCount, TimeSpan timeout, CancellationToken ct = default)

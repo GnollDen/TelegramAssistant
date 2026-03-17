@@ -398,6 +398,12 @@ public class MessageContentBuilder
             parts.Add(message.MediaDescription);
         }
 
+        var editTrackingSnippet = BuildEditTrackingSnippet(message.ForwardJson);
+        if (!string.IsNullOrWhiteSpace(editTrackingSnippet))
+        {
+            parts.Add(editTrackingSnippet);
+        }
+
         var extractionSnippet = BuildExtractionContextSnippet(cheapJson);
         if (!string.IsNullOrWhiteSpace(extractionSnippet))
         {
@@ -405,6 +411,62 @@ public class MessageContentBuilder
         }
 
         return string.Join(' ', parts).Trim();
+    }
+
+    private static string BuildEditTrackingSnippet(string? forwardJson)
+    {
+        if (string.IsNullOrWhiteSpace(forwardJson))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(forwardJson);
+            if (!doc.RootElement.TryGetProperty("edit_tracking", out var tracking) || tracking.ValueKind != JsonValueKind.Object)
+            {
+                return string.Empty;
+            }
+
+            var status = tracking.TryGetProperty("status", out var statusNode) && statusNode.ValueKind == JsonValueKind.String
+                ? statusNode.GetString()
+                : string.Empty;
+            if (!string.Equals(status, "done", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            var shouldAffectMemory = tracking.TryGetProperty("should_affect_memory", out var affectNode)
+                                     && affectNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                     && affectNode.GetBoolean();
+            var addedImportant = tracking.TryGetProperty("added_important", out var addedNode)
+                                 && addedNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                 && addedNode.GetBoolean();
+            var removedImportant = tracking.TryGetProperty("removed_important", out var removedNode)
+                                   && removedNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                   && removedNode.GetBoolean();
+            if (!shouldAffectMemory && !addedImportant && !removedImportant)
+            {
+                return string.Empty;
+            }
+
+            var classification = tracking.TryGetProperty("classification", out var classNode) && classNode.ValueKind == JsonValueKind.String
+                ? classNode.GetString() ?? "unknown"
+                : "unknown";
+            var summary = tracking.TryGetProperty("summary", out var summaryNode) && summaryNode.ValueKind == JsonValueKind.String
+                ? summaryNode.GetString() ?? string.Empty
+                : string.Empty;
+            if (string.IsNullOrWhiteSpace(summary))
+            {
+                summary = "Обнаружено значимое редактирование сообщения.";
+            }
+
+            return $"[edit_delta] type={classification}; summary={TruncateForContext(CollapseWhitespace(summary), 260)}";
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
     }
 
     private static string BuildExtractionContextSnippet(string? cheapJson)
