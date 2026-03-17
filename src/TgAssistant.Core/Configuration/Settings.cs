@@ -19,6 +19,12 @@ public class RedisSettings
     public string StreamName { get; set; } = "tg-messages";
     public string ConsumerGroup { get; set; } = "batch-workers";
     public string ConsumerName { get; set; } = "worker-1";
+    public bool EnablePendingReclaim { get; set; } = true;
+    public int PendingReclaimIntervalSeconds { get; set; } = 30;
+    public int PendingMinIdleSeconds { get; set; } = 60;
+    public int PendingReclaimBatchSize { get; set; } = 100;
+    public int PendingMetricsLogIntervalSeconds { get; set; } = 60;
+    public int PendingMetricsSampleSize { get; set; } = 100;
 }
 
 public class DatabaseSettings
@@ -175,6 +181,8 @@ public class AnalysisSettings
     public int EditDiffPollIntervalSeconds { get; set; } = 5;
     public int EditDiffMaxTokens { get; set; } = 320;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
+    public int EpisodicMaxSessionsPerChat { get; set; } = 0;
+    public bool EnableTestModeSessionCap { get; set; } = false;
     public int EpisodicShortSessionMergeThreshold { get; set; } = 10;
     public int EpisodicShortSessionMaxBridgeGapMinutes { get; set; } = 1440;
     public int TestModeMaxSessionsPerChat { get; set; } = 23;

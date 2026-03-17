@@ -59,6 +59,8 @@ Rules:
 - if `[PARTICIPANTS]` block is present, treat `pN` labels in sender fields as participant references and resolve them to real names from that block in your output
 - if `[PREVIOUS SESSION SUMMARY]: ...` is present, use it only as prior-session continuity context; never treat it as direct evidence unless the current message supports it
 - if `[CHUNK_SUMMARY_PREV]` is present, use it only to preserve within-session continuity between chunks; never emit facts from it unless the current `<message>` confirms them
+- if `[CHUNK_SUMMARY_PREV]` contains `DIALOG_BOOTSTRAP_MARKER`, treat it as a dialog boundary marker (session start or missing previous summary) and continue extraction without assuming hidden prior facts
+- if `[PRE_DIALOG_CONTEXT]` is present inside `[CHUNK_SUMMARY_PREV]`, use it only as optional disambiguation context for references; never emit facts from it unless the current `<message>` confirms them
 - if `[REPLY_SLICE_CONTEXT]` is present, use it to resolve references to replied older threads; treat it as supporting context only and never emit facts unless the current `<message>` confirms them
 - if `[RAG_CONTEXT]` is present, use it as low-priority historical hint for ambiguous references across older sessions; never emit facts from it unless the current `<message>` confirms them
 - if `[EXTERNAL_REPLY_CONTEXT]` is present, use it to understand which older question, statement, or thread the user is replying to; do not treat it as a new topic when the current message is clearly a reaction to older context

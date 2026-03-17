@@ -60,6 +60,7 @@ public class MessageRepository : IMessageRepository
             x => x,
             StringComparer.Ordinal);
 
+        var updatedAndMarkedForReanalysis = 0;
         foreach (var msg in unique)
         {
             var key = $"{(short)msg.Source}:{msg.ChatId}:{msg.TelegramMessageId}";
@@ -68,6 +69,7 @@ public class MessageRepository : IMessageRepository
                 if (ShouldUpdateExisting(current, msg))
                 {
                     ApplyUpdate(current, msg);
+                    updatedAndMarkedForReanalysis++;
                 }
                 continue;
             }
@@ -97,6 +99,13 @@ public class MessageRepository : IMessageRepository
         }
 
         await db.SaveChangesAsync(ct);
+        if (updatedAndMarkedForReanalysis > 0)
+        {
+            _logger.LogInformation(
+                "Marked messages for reanalysis: count={Count}, reason={ReasonCode}",
+                updatedAndMarkedForReanalysis,
+                "message_updated");
+        }
         _logger.LogDebug("Saved batch of {Count} messages", unique.Count);
         return unique.Count;
     }
@@ -584,10 +593,11 @@ public class MessageRepository : IMessageRepository
                         && (x.MediaType == (short)MediaType.None
                             || x.MediaDescription != null
                             || x.MediaTranscription != null))
-            .OrderBy(x => x.Id)
+            .OrderByDescending(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
 
+        rows.Reverse();
         return rows.Select(ToDomain).ToList();
     }
 
@@ -699,13 +709,13 @@ public class MessageRepository : IMessageRepository
         {
             row.ProcessingStatus = (short)ProcessingStatus.Processed;
             row.ProcessedAt = DateTime.UtcNow;
-            row.NeedsReanalysis = true;
+            row.NeedsReanalysis = false;
         }
 
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
+    public async Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, string reasonCode = "unspecified", CancellationToken ct = default)
     {
         var ids = messageIds.Distinct().ToList();
         if (ids.Count == 0)
@@ -721,6 +731,10 @@ public class MessageRepository : IMessageRepository
         }
 
         await db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Marked messages for reanalysis: count={Count}, reason={ReasonCode}",
+            rows.Count,
+            NormalizeReanalysisReasonCode(reasonCode));
     }
 
     public async Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default)
@@ -773,6 +787,13 @@ public class MessageRepository : IMessageRepository
         row.NeedsReanalysis = shouldAffectMemory || addedImportant || removedImportant;
         row.ProcessedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        if (row.NeedsReanalysis)
+        {
+            _logger.LogInformation(
+                "Marked message for reanalysis: message_id={MessageId}, reason={ReasonCode}",
+                messageId,
+                "edit_diff_affects_memory");
+        }
     }
 
     private static JsonObject? TryGetEditTracking(string? forwardJson)
@@ -837,6 +858,13 @@ public class MessageRepository : IMessageRepository
             row.NeedsReanalysis = true;
         }
         await db.SaveChangesAsync(ct);
+        if (status == ProcessingStatus.Processed)
+        {
+            _logger.LogInformation(
+                "Marked message for reanalysis: message_id={MessageId}, reason={ReasonCode}",
+                messageId,
+                "media_processed");
+        }
     }
 
     public async Task UpdateMediaParalinguisticsAsync(long messageId, string jsonPayload, CancellationToken ct = default)
@@ -852,6 +880,10 @@ public class MessageRepository : IMessageRepository
         row.NeedsReanalysis = true;
         row.ProcessedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        _logger.LogInformation(
+            "Marked message for reanalysis: message_id={MessageId}, reason={ReasonCode}",
+            messageId,
+            "paralinguistics_updated");
     }
 
     public async Task UpdateVoiceProcessingResultAsync(
@@ -887,6 +919,13 @@ public class MessageRepository : IMessageRepository
         row.NeedsReanalysis = needsReanalysis;
         row.ProcessedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        if (needsReanalysis)
+        {
+            _logger.LogInformation(
+                "Marked message for reanalysis: message_id={MessageId}, reason={ReasonCode}",
+                messageId,
+                "voice_processing_updated");
+        }
     }
 
     private static Message ToDomain(DbMessage row)
@@ -915,5 +954,11 @@ public class MessageRepository : IMessageRepository
             NeedsReanalysis = row.NeedsReanalysis,
             CreatedAt = row.CreatedAt
         };
+    }
+
+    private static string NormalizeReanalysisReasonCode(string? reasonCode)
+    {
+        var normalized = reasonCode?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "unspecified" : normalized;
     }
 }

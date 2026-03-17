@@ -53,130 +53,37 @@ Status: closed as "build-from-zero" item; now managed as policy/hardening tasks 
 
 Implemented MCP baseline exists:
 - `src/TgAssistant.Mcp/index.ts`
-- current mode: `stdio` transport with read tools.
+- current mode: dual transport (`stdio` + `sse`), with `sse` default in compose.
 
-Status: closed as scaffold; remaining work is productization (`M` tasks).
+Status: closed as scaffold; remaining work is productization (`P` tasks).
 
 ---
 
 ## Active backlog
 
-## P0 — Reliability and correctness (do first)
+## Closed in current cycle (2026-03-17)
 
-### P1. Remove auto-approve for tentative facts
+- `P1` Remove auto-approve for tentative facts.
+- `P2` Redis PEL reclaim + pending observability.
+- `P3` Expensive backoff persistence per model.
+- `P4` Session-first bootstrap fallback for missing previous summary.
+- `P5` Summary ownership policy (post-slice + manual trigger).
+- `P6` MCP dual transport (`stdio` + `sse`) + deploy integration.
+- `P7` Separate test/prod session cap behavior.
+- `P8` Documentation alignment pass.
+- `O1` Observability expansion:
+  - OpenRouter failure/cooldown trace logs enhanced.
+  - Stage5 cheap-pass summary telemetry added.
+  - Stage5 metrics delta logs added.
+  - Runbooks added: `docs/runbooks/stage5-openrouter.md`, `docs/runbooks/stage5-redis-ingestion.md`.
+- `R1` Targeted AnalysisWorker refactor:
+  - incremental behavior-preserving extractions completed
+  - session slicing stability fixes for uncapped mode completed
+  - reviewer pass with no blocking findings
 
-**Why:** prevents silent quality degradation.
+## Current active
 
-**Scope:**
-- stop automatic enqueue of `approve` for tentative facts
-- keep explicit manual approve/reject command flow
-
-**Files:**
-- `src/TgAssistant.Intelligence/Stage5/ExtractionApplier.cs`
-- fact review command flow (worker + MCP/bot write path)
-
-**Acceptance criteria:**
-- tentative facts never become confirmed without explicit manual action.
-
-### P2. Add Redis PEL reclaim + pending observability
-
-**Why:** avoid stream deadlock after worker crash.
-
-**Scope:**
-- reclaim pending entries (`XPENDING` + `XAUTOCLAIM`/`XCLAIM`)
-- startup + periodic reclaim
-- pending count/age metrics/logs
-
-**Files:**
-- `src/TgAssistant.Infrastructure/Redis/RedisMessageQueue.cs`
-- ingestion worker metrics/logging
-
-**Acceptance criteria:**
-- read-unacked messages are recovered after restart.
-
-### P3. Persist expensive backoff per model
-
-**Why:** isolate model failures and preserve restart behavior.
-
-**Scope:**
-- per-model keys in `analysis_state`
-- load state at startup
-
-**Acceptance criteria:**
-- one model can be blocked while another still processes expensive pass.
-
-### P4. Session-first bootstrap fallback for missing previous summary
-
-**Why:** prevent session chain deadlocks and extraction loss.
-
-**Scope:**
-- remove hard stop on missing previous summary
-- inject bootstrap prompt with boundary marker
-- optional pre-dialog context block
-
-**Files:**
-- `src/TgAssistant.Intelligence/Stage5/AnalysisWorkerService.cs`
-- summary context/prompt builder
-
-**Acceptance criteria:**
-- downstream sessions continue processing even if previous summary is empty.
-
----
-
-## P1 — Policy and platform completion
-
-### P5. Enforce summary ownership policy (post-slice + manual trigger)
-
-**Scope:**
-- keep mandatory post-slice summary generation
-- keep/add manual re-summary command
-- prevent duplicate steady-state summary generation
-
-**Files:**
-- `AnalysisWorkerService`
-- `DialogSummaryWorkerService`
-- bot command handlers
-
-### P6. MCP dual transport (`stdio` + `sse`)
-
-**Scope:**
-- env-selectable transport: `MCP_TRANSPORT=stdio|sse`
-- same tool registry in both modes
-- sse auth + localhost bind
-
-**Files:**
-- MCP project (`src/TgAssistant.Mcp` now; move to `mcp/` only if explicitly chosen)
-- deploy/docker integration
-
-### P7. Separate test/prod session cap behavior
-
-**Scope:**
-- no implicit production use of `TestModeMaxSessionsPerChat`
-- explicit prod-safe limit flag if needed
-- telemetry for skip/quarantine caused by limits
-
----
-
-## P2 — Alignment and maintainability
-
-### P8. Documentation alignment pass
-
-**Scope:**
-- align `README.md`, `AGENTS.md`, this backlog
-- document runtime keys/topology and summary ownership
-- remove contradictory docs
-
-### R1. Continue targeted AnalysisWorker refactor (incremental)
-
-**Scope:**
-- small behavior-preserving extractions only where it reduces risk
-- keep orchestration readable and DI minimal
-
-### O1. Observability expansion (after P0/P1)
-
-**Scope:**
-- OpenRouter broadcast trace enhancements
-- coverage/alerts/runbook improvements
+- no active items in this file snapshot
 
 ---
 

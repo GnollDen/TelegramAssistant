@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1.7
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY src/TgAssistant.Mcp/package.json src/TgAssistant.Mcp/package-lock.json ./
+RUN npm ci
+
+COPY src/TgAssistant.Mcp/index.ts ./index.ts
+COPY src/TgAssistant.Mcp/tsconfig.json ./tsconfig.json
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=build /app/package.json /app/package-lock.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+
+EXPOSE 3800
+CMD ["node", "dist/index.js"]

@@ -10,7 +10,8 @@ namespace TgAssistant.Intelligence.Stage5;
 public class ExpensivePassResolver
 {
     private const string FactEmbeddingOwnerType = "fact";
-    private const string ExpensiveBackoffStateKey = "stage5:expensive_backoff_until";
+    private const string ExpensiveBackoffStateLegacyKey = "stage5:expensive_backoff_until";
+    private const string ExpensiveBackoffStateKeyPrefix = "stage5:expensive_backoff_until:model:";
     private readonly AnalysisSettings _settings;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly OpenRouterAnalysisService _analysisService;
@@ -387,6 +388,12 @@ public class ExpensivePassResolver
 
     private static string NormalizeModelKey(string model) => model.Trim();
 
+    private static string BuildExpensiveBackoffStateKey(string model)
+    {
+        var normalized = NormalizeModelKey(model);
+        return $"{ExpensiveBackoffStateKeyPrefix}{normalized}";
+    }
+
     private async Task EnsureExpensiveBackoffStateLoadedAsync(CancellationToken ct)
     {
         if (_expensiveBackoffStateLoaded)
@@ -394,36 +401,72 @@ public class ExpensivePassResolver
             return;
         }
 
-        var storedUnixSeconds = await _analysisStateRepository.GetWatermarkAsync(ExpensiveBackoffStateKey, ct);
         _expensiveBackoffStateLoaded = true;
-        if (storedUnixSeconds <= 0)
+        var now = DateTimeOffset.UtcNow;
+        var loadedModels = new List<string>();
+        foreach (var model in GetDistinctExpensiveModels())
+        {
+            var stateKey = BuildExpensiveBackoffStateKey(model);
+            var unixSeconds = await _analysisStateRepository.GetWatermarkAsync(stateKey, ct);
+            if (unixSeconds <= 0)
+            {
+                continue;
+            }
+
+            var blockedUntil = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+            if (blockedUntil <= now)
+            {
+                continue;
+            }
+
+            _expensiveBlockedUntilByModel[NormalizeModelKey(model)] = blockedUntil;
+            loadedModels.Add(model);
+        }
+
+        if (loadedModels.Count > 0)
+        {
+            _logger.LogInformation(
+                "Loaded persisted Stage5 expensive model backoff: models={Models}",
+                string.Join(", ", loadedModels));
+            return;
+        }
+
+        var legacyUnixSeconds = await _analysisStateRepository.GetWatermarkAsync(ExpensiveBackoffStateLegacyKey, ct);
+        if (legacyUnixSeconds <= 0)
         {
             return;
         }
 
-        var storedUntil = DateTimeOffset.FromUnixTimeSeconds(storedUnixSeconds);
-        if (storedUntil <= DateTimeOffset.UtcNow)
+        var legacyBlockedUntil = DateTimeOffset.FromUnixTimeSeconds(legacyUnixSeconds);
+        if (legacyBlockedUntil <= now)
         {
             return;
         }
 
         foreach (var model in GetDistinctExpensiveModels())
         {
-            _expensiveBlockedUntilByModel[NormalizeModelKey(model)] = storedUntil;
+            _expensiveBlockedUntilByModel[NormalizeModelKey(model)] = legacyBlockedUntil;
         }
 
         _logger.LogInformation(
-            "Loaded persisted Stage5 expensive backoff. blocked_until={BlockedUntil}",
-            storedUntil);
+            "Loaded legacy Stage5 expensive backoff and applied to configured models. blocked_until={BlockedUntil}",
+            legacyBlockedUntil);
     }
 
     private async Task PersistExpensiveBackoffStateAsync(CancellationToken ct)
     {
-        var maxBlockedUntil = _expensiveBlockedUntilByModel.Count == 0
-            ? 0
-            : _expensiveBlockedUntilByModel.Values.Max(value => value.ToUnixTimeSeconds());
+        var now = DateTimeOffset.UtcNow;
+        foreach (var model in GetDistinctExpensiveModels())
+        {
+            var modelKey = NormalizeModelKey(model);
+            var stateKey = BuildExpensiveBackoffStateKey(model);
+            var value = _expensiveBlockedUntilByModel.TryGetValue(modelKey, out var blockedUntil) && blockedUntil > now
+                ? blockedUntil.ToUnixTimeSeconds()
+                : 0;
+            await _analysisStateRepository.SetWatermarkAsync(stateKey, value, ct);
+        }
 
-        await _analysisStateRepository.SetWatermarkAsync(ExpensiveBackoffStateKey, maxBlockedUntil, ct);
+        await _analysisStateRepository.SetWatermarkAsync(ExpensiveBackoffStateLegacyKey, 0, ct);
     }
 
     private static string BuildExpensiveErrorPayload(Exception ex)

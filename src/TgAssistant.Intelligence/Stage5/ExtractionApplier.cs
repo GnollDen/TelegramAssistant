@@ -16,7 +16,6 @@ public class ExtractionApplier
     private readonly IFactRepository _factRepository;
     private readonly ICommunicationEventRepository _communicationEventRepository;
     private readonly IRelationshipRepository _relationshipRepository;
-    private readonly IFactReviewCommandRepository _factReviewCommandRepository;
     private readonly IIntelligenceRepository _intelligenceRepository;
 
     public ExtractionApplier(
@@ -27,7 +26,6 @@ public class ExtractionApplier
         IFactRepository factRepository,
         ICommunicationEventRepository communicationEventRepository,
         IRelationshipRepository relationshipRepository,
-        IFactReviewCommandRepository factReviewCommandRepository,
         IIntelligenceRepository intelligenceRepository)
     {
         _settings = settings.Value;
@@ -37,7 +35,6 @@ public class ExtractionApplier
         _factRepository = factRepository;
         _communicationEventRepository = communicationEventRepository;
         _relationshipRepository = relationshipRepository;
-        _factReviewCommandRepository = factReviewCommandRepository;
         _intelligenceRepository = intelligenceRepository;
     }
 
@@ -624,21 +621,18 @@ public class ExtractionApplier
                 case FactConflictStrategy.Supersede:
                     await _factRepository.SupersedeFactAsync(sameKey.Id, newFact, ct);
                     currentFactsByEntityId.Remove(entity.Id);
-                    await QueueFactReviewIfNeededAsync(newFact, factThreshold, ct);
                     break;
                 case FactConflictStrategy.Parallel:
                 case FactConflictStrategy.Tentative:
-                    var parallelSaved = await _factRepository.UpsertAsync(newFact, ct);
+                    await _factRepository.UpsertAsync(newFact, ct);
                     currentFactsByEntityId.Remove(entity.Id);
-                    await QueueFactReviewIfNeededAsync(parallelSaved, factThreshold, ct);
                     break;
             }
         }
         else
         {
-            var saved = await _factRepository.UpsertAsync(newFact, ct);
+            await _factRepository.UpsertAsync(newFact, ct);
             currentFactsByEntityId.Remove(entity.Id);
-            await QueueFactReviewIfNeededAsync(saved, factThreshold, ct);
         }
 
         appliedFacts.Add(projectedFactKey);
@@ -1057,17 +1051,6 @@ public class ExtractionApplier
         }
 
         return ConfidenceStatus.Inferred;
-    }
-
-    private async Task QueueFactReviewIfNeededAsync(Fact fact, float threshold, CancellationToken ct)
-    {
-        if (fact.Status != ConfidenceStatus.Tentative)
-        {
-            return;
-        }
-
-        var reason = $"auto_review category={fact.Category} confidence={fact.Confidence:0.00} threshold={threshold:0.00}";
-        await _factReviewCommandRepository.EnqueueAsync(fact.Id, "approve", reason, ct);
     }
 
     private async Task<Entity> UpsertEntityWithActorContextAsync(

@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Net;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -16,6 +18,8 @@ public class OpenRouterAnalysisService
     private const int CheapTransientRetryAttempts = 2;
     private const int CheapTransientRetryBaseDelayMs = 600;
     private static readonly TimeSpan CheapBalanceCooldown = TimeSpan.FromSeconds(45);
+    private const string OpenRouterRequestIdHeader = "x-request-id";
+    private const int ErrorBodySnippetLimit = 260;
     private DateTime _cheapBalancePauseUntilUtc = DateTime.MinValue;
 
     private readonly HttpClient _http;
@@ -275,6 +279,12 @@ public class OpenRouterAnalysisService
             var pauseUntil = _cheapBalancePauseUntilUtc;
             if (pauseUntil > DateTime.UtcNow)
             {
+                var cooldownLeftMs = Math.Max(0, (int)(pauseUntil - DateTime.UtcNow).TotalMilliseconds);
+                _logger.LogWarning(
+                    "OpenRouter cheap phase blocked by cooldown. model={Model}, cooldown_left_ms={CooldownLeftMs}, pause_until_utc={PauseUntilUtc}",
+                    request.Model,
+                    cooldownLeftMs,
+                    pauseUntil);
                 throw new OpenRouterBalanceException(
                     $"OpenRouter cheap phase is in cooldown until {pauseUntil:O} due to recent balance/quota issue.",
                     HttpStatusCode.PaymentRequired);
@@ -290,8 +300,11 @@ public class OpenRouterAnalysisService
         {
             try
             {
+                var attemptTimer = Stopwatch.StartNew();
                 var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
                 var body = await res.Content.ReadAsStringAsync(ct);
+                attemptTimer.Stop();
+                var requestId = TryGetHeaderValue(res.Headers, OpenRouterRequestIdHeader);
                 if (!res.IsSuccessStatusCode)
                 {
                     if (IsBalanceOrQuotaIssue(res.StatusCode, body))
@@ -299,9 +312,43 @@ public class OpenRouterAnalysisService
                         if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
                         {
                             _cheapBalancePauseUntilUtc = DateTime.UtcNow.Add(CheapBalanceCooldown);
+                            _logger.LogWarning(
+                                "OpenRouter balance/quota issue detected; enabling cheap cooldown. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}, pause_until_utc={PauseUntilUtc}",
+                                phase,
+                                request.Model,
+                                (int)res.StatusCode,
+                                requestId ?? "n/a",
+                                attemptTimer.ElapsedMilliseconds,
+                                _cheapBalancePauseUntilUtc);
+                            _logger.LogDebug(
+                                "OpenRouter balance/quota body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
+                                phase,
+                                request.Model,
+                                (int)res.StatusCode,
+                                requestId ?? "n/a",
+                                TruncateForLog(body, ErrorBodySnippetLimit));
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "OpenRouter balance/quota issue detected. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
+                                phase,
+                                request.Model,
+                                (int)res.StatusCode,
+                                requestId ?? "n/a",
+                                attemptTimer.ElapsedMilliseconds);
+                            _logger.LogDebug(
+                                "OpenRouter balance/quota body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
+                                phase,
+                                request.Model,
+                                (int)res.StatusCode,
+                                requestId ?? "n/a",
+                                TruncateForLog(body, ErrorBodySnippetLimit));
                         }
 
-                        throw new OpenRouterBalanceException($"OpenRouter balance/quota issue {res.StatusCode}: {body}", res.StatusCode);
+                        throw new OpenRouterBalanceException(
+                            $"OpenRouter balance/quota issue status={(int)res.StatusCode}; request_id={requestId ?? "n/a"}",
+                            res.StatusCode);
                     }
 
                     if (attempt < maxAttempts && IsTransientStatusCode(res.StatusCode))
@@ -310,7 +357,24 @@ public class OpenRouterAnalysisService
                         continue;
                     }
 
-                    throw new HttpRequestException($"OpenRouter error {res.StatusCode}: {body}");
+                    _logger.LogWarning(
+                        "OpenRouter request failed without retry. phase={Phase}, model={Model}, attempt={Attempt}/{MaxAttempts}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
+                        phase,
+                        request.Model,
+                        attempt,
+                        maxAttempts,
+                        (int)res.StatusCode,
+                        requestId ?? "n/a",
+                        attemptTimer.ElapsedMilliseconds);
+                    _logger.LogDebug(
+                        "OpenRouter failure body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
+                        phase,
+                        request.Model,
+                        (int)res.StatusCode,
+                        requestId ?? "n/a",
+                        TruncateForLog(body, ErrorBodySnippetLimit));
+                    throw new HttpRequestException(
+                        $"OpenRouter error status={(int)res.StatusCode}; request_id={requestId ?? "n/a"}");
                 }
 
                 var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
@@ -474,6 +538,29 @@ public class OpenRouterAnalysisService
             CostUsd = usage.Cost ?? 0m,
             CreatedAt = DateTime.UtcNow
         }, ct);
+    }
+
+    private static string? TryGetHeaderValue(HttpResponseHeaders headers, string name)
+    {
+        if (!headers.TryGetValues(name, out var values))
+        {
+            return null;
+        }
+
+        return values.FirstOrDefault();
+    }
+
+    private static string TruncateForLog(string? value, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = MessageContentBuilder.CollapseWhitespace(value);
+        return normalized.Length <= maxLen
+            ? normalized
+            : normalized[..maxLen] + "...";
     }
 
     private ExtractionBatchResult ParseBatch(string json)

@@ -283,13 +283,18 @@ public class DialogSummaryWorkerService : BackgroundService
     private async Task<bool> BuildEpisodicChatSessionsAsync(List<Message> touchedMessages, CancellationToken ct)
     {
         var deferredByHotSession = false;
-        var sessionLimit = Math.Max(1, _settings.TestModeMaxSessionsPerChat);
+        var (sessionLimit, sessionLimitMode) = GetSessionBuildLimitInfo();
         var fetchLimit = Math.Max(500, _settings.SummaryDayMaxMessages * sessionLimit);
         var touchedChatIds = touchedMessages.Select(x => x.ChatId).Distinct().ToArray();
         var touchedIdsByChat = touchedMessages
             .GroupBy(x => x.ChatId)
             .ToDictionary(group => group.Key, group => group.Select(item => item.Id).ToHashSet());
         var existingSessionsByChat = await _chatSessionRepository.GetByChatsAsync(touchedChatIds, ct);
+
+        _logger.LogInformation(
+            "Stage5 summary session build limit applied: session_limit={SessionLimit}, mode={Mode}",
+            sessionLimit,
+            sessionLimitMode);
 
         foreach (var chatId in touchedChatIds)
         {
@@ -422,6 +427,23 @@ public class DialogSummaryWorkerService : BackgroundService
         }
 
         return deferredByHotSession;
+    }
+
+    private (int SessionLimit, string Mode) GetSessionBuildLimitInfo()
+    {
+        var explicitLimit = Math.Max(0, _settings.EpisodicMaxSessionsPerChat);
+        if (explicitLimit > 0)
+        {
+            return (explicitLimit, "explicit");
+        }
+
+        if (_settings.EnableTestModeSessionCap)
+        {
+            return (Math.Max(1, _settings.TestModeMaxSessionsPerChat), "test_mode");
+        }
+
+        // In production with no explicit cap, use a conservative operational ceiling.
+        return (100, "default_safe");
     }
 
     private async Task<bool> BuildSessionSummariesAsync(List<Message> touchedMessages, CancellationToken ct)
