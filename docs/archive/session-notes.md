@@ -1,6 +1,6 @@
 # Session Notes
 
-> Operational workspace log. Not a source-of-truth for architecture/state; use `README.md` and `docs/reports/stage5_v10_architecture_review_2026-03-16.md`.
+> Operational workspace log (archived). Not a source-of-truth for architecture/state; use `README.md` and `docs/stage5-extraction-algorithm.txt`.
 
 Date: 2026-03-16
 

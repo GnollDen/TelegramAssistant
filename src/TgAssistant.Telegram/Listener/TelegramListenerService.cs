@@ -120,7 +120,7 @@ public class TelegramListenerService : BackgroundService
             _ => 0L
         };
 
-        if (chatId == 0 || string.Equals(message.message, "[DELETED]", StringComparison.OrdinalIgnoreCase))
+        if (chatId <= 0 || string.Equals(message.message, "[DELETED]", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogDebug("Skipping noisy message in chat {ChatId} with text {Text}", chatId, message.message);
             return;
@@ -218,6 +218,12 @@ public class TelegramListenerService : BackgroundService
             PeerChannel ch => ch.channel_id,
             _ => 0L
         };
+
+        if (chatId <= 0)
+        {
+            _logger.LogDebug("Skipping reaction update with invalid chat_id={ChatId}", chatId);
+            return;
+        }
 
         if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
             return;

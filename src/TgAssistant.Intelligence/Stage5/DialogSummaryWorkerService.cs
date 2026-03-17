@@ -11,8 +11,7 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class DialogSummaryWorkerService : BackgroundService
 {
-    private const string WatermarkKey = "stage5:summary_watermark";
-    private const string ExtractionCompletionWatermarkKey = "stage5:summary_extraction_watermark";
+    private const string SessionSummaryCheckpointPrefix = "stage5:summary:session";
     private static readonly TimeSpan HotSessionIdleTimeout = TimeSpan.FromMinutes(15);
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -68,57 +67,147 @@ public class DialogSummaryWorkerService : BackgroundService
         {
             try
             {
-                var extractionWatermark = await _stateRepository.GetWatermarkAsync(ExtractionCompletionWatermarkKey, stoppingToken);
-                var readyMessageIds = await _messageExtractionRepository.GetSummaryReadyMessageIdsAfterIdAsync(
-                    extractionWatermark,
-                    Math.Max(1, _settings.SummaryBatchSize),
-                    stoppingToken);
-                if (readyMessageIds.Count == 0)
+                var staleBeforeUtc = DateTime.UtcNow - HotSessionIdleTimeout;
+                var candidatesByChat = await _chatSessionRepository.GetPendingAggregationCandidatesAsync(staleBeforeUtc, stoppingToken);
+                var candidates = candidatesByChat
+                    .Values
+                    .SelectMany(x => x)
+                    .OrderBy(x => x.LastMessageAt)
+                    .ThenBy(x => x.ChatId)
+                    .ThenBy(x => x.SessionIndex)
+                    .Take(Math.Max(1, _settings.SummaryBatchSize))
+                    .ToList();
+                if (candidates.Count == 0)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
                     continue;
                 }
 
-                var batch = await _messageRepository.GetByIdsAsync(readyMessageIds, stoppingToken);
-                if (batch.Count == 0)
+                var processed = 0;
+                var skipped = 0;
+                var deferredByHotSession = 0;
+                foreach (var session in candidates)
                 {
-                    var nextEmptyWatermark = readyMessageIds.Max();
-                    await _stateRepository.SetWatermarkAsync(ExtractionCompletionWatermarkKey, nextEmptyWatermark, stoppingToken);
-                    await _stateRepository.SetWatermarkAsync(WatermarkKey, nextEmptyWatermark, stoppingToken);
-                    continue;
-                }
+                    if (!IsSessionCooledDown(session.LastMessageAt, out var remaining))
+                    {
+                        deferredByHotSession++;
+                        _logger.LogInformation(
+                            "Stage5 summary skipped hot slice: chat_id={ChatId}, session_index={SessionIndex}, last_message_utc={LastMessageUtc}, idle_required_min={IdleMinutes}, idle_remaining={Remaining}",
+                            session.ChatId,
+                            session.SessionIndex,
+                            session.LastMessageAt,
+                            HotSessionIdleTimeout.TotalMinutes,
+                            remaining);
+                        continue;
+                    }
 
-                var summarizableBatch = FilterSummarizableMessages(batch);
-                var deferredByHotSession = false;
-                if (summarizableBatch.Count > 0)
-                {
-                    deferredByHotSession = await BuildEpisodicChatSessionsAsync(summarizableBatch, stoppingToken) || deferredByHotSession;
-                    await BuildDaySummariesAsync(summarizableBatch, stoppingToken);
-                    deferredByHotSession = await BuildSessionSummariesAsync(summarizableBatch, stoppingToken) || deferredByHotSession;
-                }
+                    var checkpointKey = BuildSessionSummaryCheckpointKey(session.ChatId, session.SessionIndex);
+                    var sessionEndMs = new DateTimeOffset(session.EndDate).ToUnixTimeMilliseconds();
+                    var checkpoint = await _stateRepository.GetWatermarkAsync(checkpointKey, stoppingToken);
+                    if (checkpoint >= sessionEndMs)
+                    {
+                        skipped++;
+                        continue;
+                    }
 
-                if (deferredByHotSession)
-                {
-                    _logger.LogInformation(
-                        "Stage5 summary pass postponed: hot sessions detected, watermarks unchanged. touched_messages={TouchedCount}, summarizable_messages={SummarizableCount}, current_extraction_watermark={ExtractionWatermark}, current_watermark={Watermark}",
-                        batch.Count,
-                        summarizableBatch.Count,
-                        extractionWatermark,
-                        await _stateRepository.GetWatermarkAsync(WatermarkKey, stoppingToken));
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
-                    continue;
-                }
+                    var maxSessionMessages = Math.Max(500, Math.Max(_settings.SummarySessionMaxMessages * 10, _settings.SessionChunkSize * 10));
+                    var sessionMessages = await _messageRepository.GetByChatAndPeriodAsync(
+                        session.ChatId,
+                        session.StartDate,
+                        session.EndDate,
+                        maxSessionMessages,
+                        stoppingToken);
+                    sessionMessages = sessionMessages
+                        .Where(x => x.Timestamp >= session.StartDate && x.Timestamp <= session.EndDate)
+                        .OrderBy(x => x.Timestamp)
+                        .ThenBy(x => x.Id)
+                        .ToList();
+                    if (sessionMessages.Count == 0)
+                    {
+                        await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
+                        skipped++;
+                        continue;
+                    }
 
-                var nextExtractionWatermark = readyMessageIds.Max();
-                await _stateRepository.SetWatermarkAsync(ExtractionCompletionWatermarkKey, nextExtractionWatermark, stoppingToken);
-                await _stateRepository.SetWatermarkAsync(WatermarkKey, batch.Max(x => x.Id), stoppingToken);
+                    if (MessageContentBuilder.IsTrashOnlySession(sessionMessages))
+                    {
+                        _logger.LogInformation(
+                            "Stage5 summary skipped trash-only slice: chat_id={ChatId}, session_index={SessionIndex}, messages={MessageCount}",
+                            session.ChatId,
+                            session.SessionIndex,
+                            sessionMessages.Count);
+                        await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
+                        skipped++;
+                        continue;
+                    }
+
+                    var sessionInput = FilterSummarizableMessages(sessionMessages)
+                        .Take(Math.Max(1, _settings.SummarySessionMaxMessages))
+                        .ToList();
+                    if (sessionInput.Count < _settings.SummaryMinMessages)
+                    {
+                        sessionInput = sessionMessages
+                            .Take(Math.Max(1, _settings.SummarySessionMaxMessages))
+                            .ToList();
+                    }
+
+                    string summaryText;
+                    if (sessionInput.Count < _settings.SummaryMinMessages)
+                    {
+                        summaryText = BuildFallbackSummary(sessionInput);
+                    }
+                    else
+                    {
+                        var historicalHints = await _historicalRetrievalService.GetHintsAsync(session.ChatId, session.SessionIndex, sessionInput, stoppingToken);
+                        summaryText = await GenerateSummaryAsync(
+                            session.ChatId,
+                            "episodic_slice",
+                            session.StartDate,
+                            session.EndDate,
+                            sessionInput,
+                            historicalHints,
+                            stoppingToken);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(summaryText))
+                    {
+                        summaryText = BuildFallbackSummary(sessionInput);
+                    }
+
+                    if (!string.Equals(
+                            MessageContentBuilder.CollapseWhitespace(session.Summary),
+                            MessageContentBuilder.CollapseWhitespace(summaryText),
+                            StringComparison.Ordinal))
+                    {
+                        await _chatSessionRepository.UpsertAsync(new ChatSession
+                        {
+                            Id = session.Id,
+                            ChatId = session.ChatId,
+                            SessionIndex = session.SessionIndex,
+                            StartDate = session.StartDate,
+                            EndDate = session.EndDate,
+                            LastMessageAt = session.LastMessageAt,
+                            Summary = summaryText,
+                            IsFinalized = session.IsFinalized,
+                            IsAnalyzed = session.IsAnalyzed
+                        }, stoppingToken);
+                        await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(
+                            session.ChatId,
+                            session.SessionIndex,
+                            summaryText,
+                            stoppingToken);
+                    }
+
+                    await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
+                    processed++;
+                }
 
                 _logger.LogInformation(
-                    "Stage5 summary pass done: touched_messages={TouchedCount}, summarizable_messages={SummarizableCount}, extraction_watermark={ExtractionWatermark}, watermark={Watermark}",
-                    batch.Count,
-                    summarizableBatch.Count,
-                    nextExtractionWatermark,
-                    batch.Max(x => x.Id));
+                    "Stage5 summary slice pass done: candidates={CandidateCount}, processed={ProcessedCount}, skipped={SkippedCount}, hot_deferred={HotDeferredCount}",
+                    candidates.Count,
+                    processed,
+                    skipped,
+                    deferredByHotSession);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -135,6 +224,11 @@ public class DialogSummaryWorkerService : BackgroundService
                 await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
             }
         }
+    }
+
+    private static string BuildSessionSummaryCheckpointKey(long chatId, int sessionIndex)
+    {
+        return $"{SessionSummaryCheckpointPrefix}:{chatId}:{sessionIndex}";
     }
 
     private async Task BuildDaySummariesAsync(List<Message> touchedMessages, CancellationToken ct)
@@ -479,6 +573,8 @@ public class DialogSummaryWorkerService : BackgroundService
     private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan? gapOverride = null)
     {
         var gap = gapOverride ?? TimeSpan.FromMinutes(Math.Max(1, _settings.SummarySessionGapMinutes));
+        var shortThreshold = Math.Max(1, _settings.EpisodicShortSessionMergeThreshold);
+        var maxBridgeGap = TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicShortSessionMaxBridgeGapMinutes));
         var ordered = messages.OrderBy(x => x.Timestamp).ThenBy(x => x.Id).ToList();
         var result = new List<List<Message>>();
         var current = new List<Message>();
@@ -494,8 +590,18 @@ public class DialogSummaryWorkerService : BackgroundService
             var delta = message.Timestamp - current[^1].Timestamp;
             if (delta > gap)
             {
-                result.Add(current);
-                current = new List<Message> { message };
+                var shouldSplit = current.Count >= shortThreshold || delta > maxBridgeGap;
+                if (shouldSplit)
+                {
+                    result.Add(current);
+                    current = new List<Message> { message };
+                }
+                else
+                {
+                    // Sliding window extension for short sessions:
+                    // keep collecting across this gap until next eligible boundary.
+                    current.Add(message);
+                }
                 continue;
             }
 
@@ -637,6 +743,7 @@ Requirements:
 - summarize people, commitments, plans, schedule changes, conflicts, health/work/finance/location/contact updates
 - keep only durable, behaviorally relevant context and conversation trajectory
 - mention key named entities exactly as in messages
+- if `[PARTICIPANTS]` block is present, treat `pN` labels in message lines as participant references and resolve them to real names in summary text
 - if `[HISTORICAL_CONTEXT_HINTS]` is present, use it only as supporting continuity/disambiguation context; if it conflicts with current-session messages, trust the current session
 - avoid filler, jokes, and generic chatter unless it changes intent or relationship dynamics
 - keep it factual and concise (4-8 sentences)

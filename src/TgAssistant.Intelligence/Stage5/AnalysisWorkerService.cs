@@ -20,8 +20,9 @@ public partial class AnalysisWorkerService : BackgroundService
     private const string SessionSkipQuarantineReason = "session_limit_skipped_more_than_3_times";
     private const string CheapPromptId = "stage5_cheap_extract_v10";
     private const string ExpensivePromptId = "stage5_expensive_reason_v5";
-    private const int MaxCheapLlmBatchSize = 10;
+    private const int MaxCheapLlmBatchSize = 100;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
     private static readonly TimeSpan OpenRouterRecoveryProbeTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan OpenRouterRecoveryPollInterval = TimeSpan.FromSeconds(15);
@@ -83,12 +84,16 @@ public partial class AnalysisWorkerService : BackgroundService
 
         await EnsureDefaultPromptsAsync(stoppingToken);
         _logger.LogInformation(
-            "Stage5 analysis worker started. cheap_model={Cheap}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}",
+            "Stage5 analysis worker started. cheap_model={Cheap}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}, cheap_chunk_target_chars={CheapChunkTargetChars}, cheap_chunk_max_chars={CheapChunkMaxChars}, cheap_chunk_min_messages={CheapChunkMinMessages}, cheap_chunk_pause_gap_min={CheapChunkPauseGapMinutes}",
             _settings.CheapModel,
             _settings.ExpensiveModel,
             GetCheapLlmParallelism(),
             GetCheapBatchWorkers(),
-            Math.Clamp(_settings.SessionChunkSize, 10, 100));
+            Math.Clamp(_settings.SessionChunkSize, 10, 100),
+            Math.Max(4000, _settings.CheapChunkTargetChars),
+            Math.Max(Math.Max(4000, _settings.CheapChunkTargetChars), _settings.CheapChunkMaxChars),
+            Math.Max(2, _settings.CheapChunkMinMessages),
+            Math.Max(1, _settings.CheapChunkPauseGapMinutes));
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -166,10 +171,19 @@ public partial class AnalysisWorkerService : BackgroundService
             return 0;
         }
 
-        var analyzedSessionIds = new List<Guid>(sessions.Count);
+        var analyzedSessionsCount = 0;
         var maxAnalyzedSessionEndMs = 0L;
         foreach (var session in sessions)
         {
+            if (!await CanProcessSessionSequentiallyAsync(session, ct))
+            {
+                _logger.LogInformation(
+                    "Stage5 session-first paused to preserve strict order: chat_id={ChatId}, session_index={SessionIndex}",
+                    session.ChatId,
+                    session.SessionIndex);
+                break;
+            }
+
             var maxSessionMessages = Math.Max(500, Math.Max(_settings.SummarySessionMaxMessages * 10, _settings.SessionChunkSize * 10));
             var sessionMessages = await _messageRepository.GetByChatAndPeriodAsync(
                 session.ChatId,
@@ -185,8 +199,10 @@ public partial class AnalysisWorkerService : BackgroundService
 
             if (sessionMessages.Count == 0)
             {
-                analyzedSessionIds.Add(session.Id);
                 maxAnalyzedSessionEndMs = Math.Max(maxAnalyzedSessionEndMs, new DateTimeOffset(session.EndDate).ToUnixTimeMilliseconds());
+                await _chatSessionRepository.MarkAnalyzedAsync([session.Id], ct);
+                await _stateRepository.SetWatermarkAsync(SessionWatermarkKey, maxAnalyzedSessionEndMs, ct);
+                analyzedSessionsCount++;
                 continue;
             }
 
@@ -205,24 +221,67 @@ public partial class AnalysisWorkerService : BackgroundService
                     session.ChatId,
                     session.SessionIndex,
                     chunkResult.FailedMessageIds.Count);
-                continue;
+                break;
             }
 
-            analyzedSessionIds.Add(session.Id);
+            await EnsureSessionSummaryAfterSliceAsync(session, sessionMessages, ct);
             maxAnalyzedSessionEndMs = Math.Max(maxAnalyzedSessionEndMs, new DateTimeOffset(session.EndDate).ToUnixTimeMilliseconds());
+            await _chatSessionRepository.MarkAnalyzedAsync([session.Id], ct);
+            await _stateRepository.SetWatermarkAsync(SessionWatermarkKey, maxAnalyzedSessionEndMs, ct);
+            analyzedSessionsCount++;
         }
 
-        if (analyzedSessionIds.Count > 0)
+        if (analyzedSessionsCount > 0)
         {
-            await _chatSessionRepository.MarkAnalyzedAsync(analyzedSessionIds, ct);
-            await _stateRepository.SetWatermarkAsync(SessionWatermarkKey, maxAnalyzedSessionEndMs, ct);
             _logger.LogInformation(
                 "Stage5 session-first pass done: analyzed_sessions={Count}, session_watermark_ms={WatermarkMs}",
-                analyzedSessionIds.Count,
+                analyzedSessionsCount,
                 maxAnalyzedSessionEndMs);
         }
 
-        return analyzedSessionIds.Count;
+        return analyzedSessionsCount;
+    }
+
+    private async Task<bool> CanProcessSessionSequentiallyAsync(ChatSession session, CancellationToken ct)
+    {
+        if (session.SessionIndex <= 0)
+        {
+            return true;
+        }
+
+        var byChat = await _chatSessionRepository.GetByChatsAsync([session.ChatId], ct);
+        var chatSessions = byChat.GetValueOrDefault(session.ChatId) ?? [];
+        var previous = chatSessions.FirstOrDefault(x => x.SessionIndex == session.SessionIndex - 1);
+        if (previous == null)
+        {
+            _logger.LogWarning(
+                "Stage5 sequential gate blocked: previous session is missing. chat_id={ChatId}, session_index={SessionIndex}",
+                session.ChatId,
+                session.SessionIndex);
+            return false;
+        }
+
+        if (!previous.IsAnalyzed)
+        {
+            _logger.LogInformation(
+                "Stage5 sequential gate blocked: previous session is not analyzed yet. chat_id={ChatId}, prev_session_index={PrevSessionIndex}, session_index={SessionIndex}",
+                session.ChatId,
+                previous.SessionIndex,
+                session.SessionIndex);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(previous.Summary))
+        {
+            _logger.LogInformation(
+                "Stage5 sequential gate blocked: previous session summary is empty. chat_id={ChatId}, prev_session_index={PrevSessionIndex}, session_index={SessionIndex}",
+                session.ChatId,
+                previous.SessionIndex,
+                session.SessionIndex);
+            return false;
+        }
+
+        return true;
     }
 
     private async Task<int> SeedSessionsFromProcessedBacklogAsync(CancellationToken ct)
@@ -252,10 +311,8 @@ public partial class AnalysisWorkerService : BackgroundService
         var checkpointKey = BuildSessionChunkCheckpointKey(session);
         var savedIndex = (int)Math.Max(0, await _stateRepository.GetWatermarkAsync(checkpointKey, ct));
         var startIndex = Math.Clamp(savedIndex, 0, chunks.Count);
-        string? chunkSummaryPrev = null;
         if (startIndex > 0 && chunks.Count > 0)
         {
-            chunkSummaryPrev = BuildChunkSummary(chunks[startIndex - 1], []);
             _logger.LogInformation(
                 "Stage5 session chunk resume: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}, resume_chunk={ResumeChunk}, total_chunks={TotalChunks}",
                 session.Id,
@@ -266,13 +323,32 @@ public partial class AnalysisWorkerService : BackgroundService
         }
         var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([session.ChatId], ct);
         var chatSessions = sessionsByChat.GetValueOrDefault(session.ChatId) ?? [];
+        var previousSliceSummary = chatSessions
+            .FirstOrDefault(x => x.SessionIndex == session.SessionIndex - 1)
+            ?.Summary;
 
         for (var i = startIndex; i < chunks.Count; i++)
         {
             var chunk = chunks[i];
+            var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
+                session,
+                i,
+                previousSliceSummary);
+            if (session.SessionIndex > 0 && string.IsNullOrWhiteSpace(effectiveChunkSummaryPrev))
+            {
+                failed.UnionWith(chunk.Select(x => x.Id));
+                _logger.LogWarning(
+                    "Stage5 blocked chunk due to missing previous-slice summary: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}, chunk_index={ChunkIndex}",
+                    session.Id,
+                    session.ChatId,
+                    session.SessionIndex,
+                    i);
+                break;
+            }
+
             var replySliceContext = await BuildReplySliceContextAsync(session, chunk, chatSessions, ct);
-            var ragContext = await BuildRagContextAsync(session, chunk, chunkSummaryPrev, replySliceContext, ct);
-            var result = await ProcessCheapBatchesAsync(chunk, ct, chunkSummaryPrev, replySliceContext, ragContext);
+            var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, ct);
+            var result = await ProcessCheapBatchesAsync(chunk, ct, effectiveChunkSummaryPrev, replySliceContext, ragContext);
             failed.UnionWith(result.FailedMessageIds);
             balanceIssue = balanceIssue || result.BalanceIssueDetected;
             if (result.FailedMessageIds.Count > 0)
@@ -290,8 +366,6 @@ public partial class AnalysisWorkerService : BackgroundService
             {
                 break;
             }
-
-            chunkSummaryPrev = BuildChunkSummary(chunk, result.FailedMessageIds);
         }
 
         if (!balanceIssue && failed.Count == 0)
@@ -309,6 +383,33 @@ public partial class AnalysisWorkerService : BackgroundService
             failed.Count);
 
         return new CheapPassResult(failed, balanceIssue);
+    }
+
+    private string? BuildPreviousSlicePrompt(
+        ChatSession session,
+        int chunkIndex,
+        string? previousSliceSummary)
+    {
+        // The very first slice has no previous-slice summary by design.
+        if (session.SessionIndex <= 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(previousSliceSummary))
+        {
+            return "Краткая выжимка предыдущего слайса:\n" +
+                   MessageContentBuilder.TruncateForContext(
+                       MessageContentBuilder.CollapseWhitespace(previousSliceSummary),
+                       900);
+        }
+
+        _logger.LogWarning(
+            "Stage5 previous-slice summary is missing: chat_id={ChatId}, session_index={SessionIndex}, chunk_index={ChunkIndex}",
+            session.ChatId,
+            session.SessionIndex,
+            chunkIndex);
+        return null;
     }
 
     private async Task<CheapPassResult> ProcessCheapBatchesAsync(
@@ -392,97 +493,46 @@ public partial class AnalysisWorkerService : BackgroundService
             failedMessageIds.TryAdd(blockedId, 0);
         }
 
-        var batchSize = Math.Max(1, _settings.BatchSize);
-        var batches = messages
-            .Chunk(batchSize)
-            .Select(chunk => chunk.ToList())
-            .ToList();
+        // Adaptive chunker below is now the primary request shaper.
+        // Keep a single pre-batch to avoid redundant fixed slicing before payload-aware chunking.
+        _logger.LogInformation(
+            "Stage5 slicing: session_chunk_messages={MessageCount}, pre_batch_count=1, cheap_chunk_target_chars={TargetChars}, cheap_chunk_max_chars={MaxChars}",
+            messages.Count,
+            Math.Max(4000, _settings.CheapChunkTargetChars),
+            Math.Max(Math.Max(4000, _settings.CheapChunkTargetChars), _settings.CheapChunkMaxChars));
 
-        if (batches.Count <= 1 || GetCheapBatchWorkers() <= 1)
+        try
         {
-            foreach (var batch in batches)
+            var batchResult = await ProcessCheapBatchAsync(messages, ct, chunkSummaryPrev, replySliceContext, ragContext);
+            foreach (var id in batchResult.FailedMessageIds)
             {
-                try
-                {
-                    var batchResult = await ProcessCheapBatchAsync(batch, ct, chunkSummaryPrev, replySliceContext, ragContext);
-                    foreach (var id in batchResult.FailedMessageIds)
-                    {
-                        failedMessageIds.TryAdd(id, 0);
-                    }
-
-                    if (batchResult.BalanceIssueDetected)
-                    {
-                        Interlocked.Exchange(ref balanceIssueDetected, 1);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Stage5 cheap worker batch failed: batch_size={BatchSize}",
-                        batch.Count);
-
-                    foreach (var message in batch)
-                    {
-                        failedMessageIds.TryAdd(message.Id, 0);
-                    }
-
-                    await _messageRepository.MarkNeedsReanalysisAsync(batch.Select(x => x.Id), ct);
-                    await _extractionErrorRepository.LogAsync(
-                        stage: "stage5_cheap_worker_batch",
-                        reason: ex.Message,
-                        payload: $"batch_size={batch.Count}",
-                        ct: ct);
-                }
+                failedMessageIds.TryAdd(id, 0);
             }
 
-            return new CheapPassResult(
-                failedMessageIds.Keys.ToHashSet(),
-                balanceIssueDetected == 1);
+            if (batchResult.BalanceIssueDetected)
+            {
+                Interlocked.Exchange(ref balanceIssueDetected, 1);
+            }
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Stage5 cheap worker batch failed: batch_size={BatchSize}",
+                messages.Count);
 
-        await Parallel.ForEachAsync(
-            batches,
-            new ParallelOptions
+            foreach (var message in messages)
             {
-                MaxDegreeOfParallelism = GetCheapBatchWorkers(),
-                CancellationToken = ct
-            },
-            async (batch, token) =>
-            {
-                try
-                {
-                    var batchResult = await ProcessCheapBatchAsync(batch, token, chunkSummaryPrev, replySliceContext, ragContext);
-                    foreach (var id in batchResult.FailedMessageIds)
-                    {
-                        failedMessageIds.TryAdd(id, 0);
-                    }
+                failedMessageIds.TryAdd(message.Id, 0);
+            }
 
-                    if (batchResult.BalanceIssueDetected)
-                    {
-                        Interlocked.Exchange(ref balanceIssueDetected, 1);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Stage5 cheap worker batch failed: batch_size={BatchSize}",
-                        batch.Count);
-
-                    foreach (var message in batch)
-                    {
-                        failedMessageIds.TryAdd(message.Id, 0);
-                    }
-
-                    await _messageRepository.MarkNeedsReanalysisAsync(batch.Select(x => x.Id), token);
-                    await _extractionErrorRepository.LogAsync(
-                        stage: "stage5_cheap_worker_batch",
-                        reason: ex.Message,
-                        payload: $"batch_size={batch.Count}",
-                        ct: token);
-                }
-            });
+            await _messageRepository.MarkNeedsReanalysisAsync(messages.Select(x => x.Id), ct);
+            await _extractionErrorRepository.LogAsync(
+                stage: "stage5_cheap_worker_batch",
+                reason: ex.Message,
+                payload: $"batch_size={messages.Count}",
+                ct: ct);
+        }
 
         return new CheapPassResult(
             failedMessageIds.Keys.ToHashSet(),
@@ -545,12 +595,20 @@ public partial class AnalysisWorkerService : BackgroundService
             }).ToList();
 
             var cheapPrompt = await GetPromptAsync(CheapPromptId, DefaultCheapPrompt, ct);
+            var groups = batch
+                .GroupBy(x => modelByMessageId.GetValueOrDefault(x.MessageId, _settings.CheapModel))
+                .ToList();
             var cheapChunks = batch
                 .GroupBy(x => modelByMessageId.GetValueOrDefault(x.MessageId, _settings.CheapModel))
-                .SelectMany(group => group
-                    .Chunk(MaxCheapLlmBatchSize)
-                    .Select(chunk => new CheapChunkRequest(group.Key, chunk.ToList())))
+                .SelectMany(group => BuildAdaptiveCheapChunks(group.ToList())
+                    .Select(chunk => new CheapChunkRequest(group.Key, chunk)))
                 .ToList();
+            _logger.LogInformation(
+                "Stage5 cheap chunking: incoming={Incoming}, analyzable={Analyzable}, model_groups={Groups}, cheap_chunk_requests={CheapChunks}",
+                messages.Count,
+                analyzableMessages.Count,
+                groups.Count,
+                cheapChunks.Count);
 
             await Parallel.ForEachAsync(
                 cheapChunks,
@@ -634,6 +692,15 @@ public partial class AnalysisWorkerService : BackgroundService
                 balanceIssueDetected == 1);
         }
 
+        var processedMessageIds = messages
+            .Select(x => x.Id)
+            .Where(id => !failedChunkMessageIds.ContainsKey(id))
+            .ToArray();
+        if (processedMessageIds.Length > 0)
+        {
+            await _messageRepository.MarkProcessedAsync(processedMessageIds, ct);
+        }
+
         foreach (var message in messages)
         {
             if (failedChunkMessageIds.ContainsKey(message.Id))
@@ -690,6 +757,195 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         return new CheapPassResult(failedChunkMessageIds.Keys.ToHashSet(), balanceIssueDetected == 1);
+    }
+
+    private async Task EnsureSessionSummaryAfterSliceAsync(ChatSession session, List<Message> sessionMessages, CancellationToken ct)
+    {
+        var byChat = await _chatSessionRepository.GetByChatsAsync([session.ChatId], ct);
+        var existing = byChat.GetValueOrDefault(session.ChatId)?
+            .FirstOrDefault(x => x.SessionIndex == session.SessionIndex);
+        var sessionInput = FilterSummarizableMessages(sessionMessages)
+            .Take(Math.Max(1, _settings.SummarySessionMaxMessages))
+            .ToList();
+        if (sessionInput.Count < _settings.SummaryMinMessages)
+        {
+            sessionInput = sessionMessages
+                .OrderBy(x => x.Timestamp)
+                .ThenBy(x => x.Id)
+                .Take(Math.Max(1, _settings.SummarySessionMaxMessages))
+                .ToList();
+        }
+
+        var summary = string.Empty;
+        if (_settings.SummaryEnabled && sessionInput.Count >= _settings.SummaryMinMessages)
+        {
+            var historicalHints = await _historicalRetrievalService.GetHintsAsync(
+                session.ChatId,
+                session.SessionIndex,
+                sessionInput,
+                ct);
+            summary = await GenerateSessionSummaryAsync(
+                session.ChatId,
+                session.StartDate,
+                session.EndDate,
+                sessionInput,
+                historicalHints,
+                ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            summary = BuildFastSessionSummary(sessionInput.Count > 0 ? sessionInput : sessionMessages);
+        }
+
+        var previousSummary = MessageContentBuilder.CollapseWhitespace(existing?.Summary ?? string.Empty);
+        var normalizedSummary = MessageContentBuilder.CollapseWhitespace(summary);
+        if (string.Equals(previousSummary, normalizedSummary, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _chatSessionRepository.UpsertAsync(new ChatSession
+        {
+            Id = session.Id,
+            ChatId = session.ChatId,
+            SessionIndex = session.SessionIndex,
+            StartDate = session.StartDate,
+            EndDate = session.EndDate,
+            LastMessageAt = session.EndDate,
+            Summary = summary,
+            IsFinalized = existing?.IsFinalized ?? session.IsFinalized,
+            IsAnalyzed = false
+        }, ct);
+
+        await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(
+            session.ChatId,
+            session.SessionIndex,
+            summary,
+            ct);
+    }
+
+    private static string BuildFastSessionSummary(List<Message> messages)
+    {
+        var lines = messages
+            .Where(message => !MessageContentBuilder.IsServiceOrTechnicalNoise(message))
+            .OrderBy(x => x.Timestamp)
+            .Take(6)
+            .Select(message =>
+            {
+                var sender = string.IsNullOrWhiteSpace(message.SenderName)
+                    ? $"user:{message.SenderId}"
+                    : message.SenderName.Trim();
+                var text = MessageContentBuilder.TruncateForContext(
+                    MessageContentBuilder.BuildSemanticContent(message),
+                    120);
+                return string.IsNullOrWhiteSpace(text)
+                    ? null
+                    : $"[{message.Timestamp:MM-dd HH:mm}] {sender}: {text}";
+            })
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        return lines.Count == 0
+            ? "Сводка сессии недоступна."
+            : string.Join(" | ", lines);
+    }
+
+    private async Task<string> GenerateSessionSummaryAsync(
+        long chatId,
+        DateTime periodStart,
+        DateTime periodEnd,
+        List<Message> messages,
+        IReadOnlyCollection<SummaryHistoricalHint>? historicalHints,
+        CancellationToken ct)
+    {
+        var cheapJsonByMessageId = await _extractionRepository.GetCheapJsonByMessageIdsAsync(
+            messages.Select(x => x.Id).ToArray(),
+            ct);
+
+        try
+        {
+            var response = await _analysisService.SummarizeDialogAsync(
+                string.IsNullOrWhiteSpace(_settings.SummaryModel) ? _settings.ExpensiveModel : _settings.SummaryModel,
+                SummaryPrompt,
+                chatId,
+                "episodic_slice",
+                periodStart,
+                periodEnd,
+                messages,
+                historicalHints,
+                cheapJsonByMessageId,
+                ct);
+            var summary = ExtractSummary(response);
+            if (IsLikelyRussianSession(messages) && !ContainsCyrillic(summary))
+            {
+                _logger.LogWarning(
+                    "Stage5 summary response has no Cyrillic symbols for likely Russian chat. chat_id={ChatId}, period_start={PeriodStart}, period_end={PeriodEnd}",
+                    chatId,
+                    periodStart,
+                    periodEnd);
+            }
+
+            return summary;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Stage5 summary generation failed; will fallback. chat_id={ChatId}, period_start={PeriodStart}, period_end={PeriodEnd}, message_count={MessageCount}",
+                chatId,
+                periodStart,
+                periodEnd,
+                messages.Count);
+            return string.Empty;
+        }
+    }
+
+    private static List<Message> FilterSummarizableMessages(List<Message> messages)
+    {
+        return messages
+            .Where(message => !MessageContentBuilder.IsServiceOrTechnicalNoise(message))
+            .ToList();
+    }
+
+    private static string ExtractSummary(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.TryGetProperty("summary", out var summaryElement))
+            {
+                var summary = summaryElement.GetString();
+                return string.IsNullOrWhiteSpace(summary)
+                    ? string.Empty
+                    : MessageContentBuilder.CollapseWhitespace(summary);
+            }
+        }
+        catch (JsonException)
+        {
+            // Ignore and fallback to plain-text interpretation.
+        }
+
+        return MessageContentBuilder.CollapseWhitespace(raw);
+    }
+
+    private static bool ContainsCyrillic(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && CyrillicRegex.IsMatch(value);
+    }
+
+    private static bool IsLikelyRussianSession(IReadOnlyCollection<Message> messages)
+    {
+        return messages.Any(message => ContainsCyrillic(MessageContentBuilder.BuildSemanticContent(message)));
     }
 
     private Dictionary<long, string> BuildCheapModelMap(List<Message> messages)
@@ -792,7 +1048,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private int GetCheapLlmParallelism()
     {
-        return Math.Clamp(_settings.CheapLlmParallelism, 1, 16);
+        // Balanced mode: avoid high fan-out transport errors while keeping acceptable throughput.
+        return Math.Clamp(_settings.CheapLlmParallelism, 1, 2);
     }
 
     private async Task<EpisodicGuardResult> ApplyEpisodicMemoryGuardAsync(List<Message> messages, CancellationToken ct)
@@ -946,7 +1203,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 continue;
             }
 
-            var sessions = SplitByGap(chatMessages, gap)
+            var sessions = SplitByGap(chatMessages, gap, Math.Max(1, _settings.EpisodicShortSessionMergeThreshold))
                 .Take(sessionLimit)
                 .ToList();
             var existingByIndex = existingByChat.GetValueOrDefault(chatId)?
@@ -990,8 +1247,9 @@ public partial class AnalysisWorkerService : BackgroundService
         }
     }
 
-    private static List<List<Message>> SplitByGap(List<Message> messages, TimeSpan gap)
+    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan gap, int shortThreshold)
     {
+        var maxBridgeGap = TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicShortSessionMaxBridgeGapMinutes));
         var ordered = messages.OrderBy(x => x.Timestamp).ThenBy(x => x.Id).ToList();
         var result = new List<List<Message>>();
         var current = new List<Message>();
@@ -1007,8 +1265,18 @@ public partial class AnalysisWorkerService : BackgroundService
             var delta = message.Timestamp - current[^1].Timestamp;
             if (delta > gap)
             {
-                result.Add(current);
-                current = new List<Message> { message };
+                var shouldSplit = current.Count >= shortThreshold || delta > maxBridgeGap;
+                if (shouldSplit)
+                {
+                    result.Add(current);
+                    current = new List<Message> { message };
+                }
+                else
+                {
+                    // Sliding window extension for short sessions:
+                    // skip this boundary and keep collecting until next eligible gap.
+                    current.Add(message);
+                }
                 continue;
             }
 
@@ -1096,9 +1364,85 @@ public partial class AnalysisWorkerService : BackgroundService
         return failed;
     }
 
+    private List<List<AnalysisInputMessage>> BuildAdaptiveCheapChunks(List<AnalysisInputMessage> messages)
+    {
+        var result = new List<List<AnalysisInputMessage>>();
+        if (messages.Count == 0)
+        {
+            return result;
+        }
+
+        var targetChars = Math.Max(4000, _settings.CheapChunkTargetChars);
+        var maxChars = Math.Max(targetChars, _settings.CheapChunkMaxChars);
+        var minMessages = Math.Max(2, _settings.CheapChunkMinMessages);
+        var hardMaxMessages = Math.Max(minMessages, MaxCheapLlmBatchSize);
+        var pauseGap = TimeSpan.FromMinutes(Math.Max(1, _settings.CheapChunkPauseGapMinutes));
+        var ordered = messages
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.MessageId)
+            .ToList();
+
+        var current = new List<AnalysisInputMessage>();
+        var currentChars = 0;
+        foreach (var message in ordered)
+        {
+            var messageChars = EstimateCheapMessageCostChars(message);
+            if (current.Count == 0)
+            {
+                current.Add(message);
+                currentChars = messageChars;
+                continue;
+            }
+
+            var last = current[^1];
+            var delta = message.Timestamp - last.Timestamp;
+            var nextChars = currentChars + messageChars;
+            var splitByPause = delta > pauseGap && current.Count >= minMessages;
+            var splitByBudget = nextChars > targetChars && current.Count >= minMessages;
+            var splitByHardLimits = current.Count >= hardMaxMessages || nextChars > maxChars;
+            if (splitByPause || splitByBudget || splitByHardLimits)
+            {
+                result.Add(current);
+                current = new List<AnalysisInputMessage> { message };
+                currentChars = messageChars;
+                continue;
+            }
+
+            current.Add(message);
+            currentChars = nextChars;
+        }
+
+        if (current.Count > 0)
+        {
+            result.Add(current);
+        }
+
+        if (result.Count >= 2 && result[^1].Count < minMessages)
+        {
+            var penultimate = result[^2];
+            var last = result[^1];
+            var combinedChars = penultimate.Sum(EstimateCheapMessageCostChars) + last.Sum(EstimateCheapMessageCostChars);
+            if (penultimate.Count + last.Count <= hardMaxMessages && combinedChars <= maxChars)
+            {
+                penultimate.AddRange(last);
+                result.RemoveAt(result.Count - 1);
+            }
+        }
+
+        return result;
+    }
+
+    private static int EstimateCheapMessageCostChars(AnalysisInputMessage message)
+    {
+        var textLen = MessageContentBuilder.CollapseWhitespace(message.Text ?? string.Empty).Length;
+        var boundedText = Math.Clamp(textLen, 40, 2200);
+        const int metadataOverhead = 220;
+        return metadataOverhead + boundedText;
+    }
+
     private string ResolveSingleFallbackModel(string sourceModel, Exception ex)
     {
-        if (ex is TaskCanceledException or TimeoutException)
+        if (ex is TaskCanceledException or TimeoutException or HttpRequestException)
         {
             var baseline = _settings.CheapBaselineModel?.Trim();
             if (!string.IsNullOrWhiteSpace(baseline) &&
@@ -1113,7 +1457,8 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private int GetCheapBatchWorkers()
     {
-        return Math.Clamp(_settings.CheapBatchWorkers, 1, 12);
+        // Balanced mode: keep worker fan-out moderate for throughput without aggressive network pressure.
+        return Math.Clamp(_settings.CheapBatchWorkers, 1, 4);
     }
 
     private bool IsExpensivePassEnabled()
@@ -1329,7 +1674,65 @@ public partial class AnalysisWorkerService : BackgroundService
             }
         }
 
+        const int shortChunkThreshold = 10;
+        if (chunks.Count > 1)
+        {
+            RebalanceShortSessionChunks(chunks, shortChunkThreshold, hardMaxMessages, maxChars);
+        }
+
         return chunks;
+    }
+
+    private static void RebalanceShortSessionChunks(
+        List<List<Message>> chunks,
+        int shortChunkThreshold,
+        int hardMaxMessages,
+        int maxChars)
+    {
+        var i = 0;
+        while (i < chunks.Count)
+        {
+            var current = chunks[i];
+            if (current.Count > shortChunkThreshold)
+            {
+                i++;
+                continue;
+            }
+
+            var merged = false;
+            if (i > 0)
+            {
+                var previous = chunks[i - 1];
+                var combinedCount = previous.Count + current.Count;
+                var combinedCost = previous.Sum(EstimateChunkCostChars) + current.Sum(EstimateChunkCostChars);
+                if (combinedCount <= hardMaxMessages && combinedCost <= maxChars)
+                {
+                    previous.AddRange(current);
+                    chunks.RemoveAt(i);
+                    merged = true;
+                    i = Math.Max(0, i - 1);
+                }
+            }
+
+            if (merged)
+            {
+                continue;
+            }
+
+            if (i + 1 < chunks.Count)
+            {
+                var next = chunks[i + 1];
+                var combinedCount = current.Count + next.Count;
+                var combinedCost = current.Sum(EstimateChunkCostChars) + next.Sum(EstimateChunkCostChars);
+                if (combinedCount <= hardMaxMessages && combinedCost <= maxChars)
+                {
+                    current.AddRange(next);
+                    chunks.RemoveAt(i + 1);
+                }
+            }
+
+            i++;
+        }
     }
 
     private static int EstimateChunkCostChars(Message message)

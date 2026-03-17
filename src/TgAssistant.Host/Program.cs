@@ -15,12 +15,14 @@ using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
 
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
+    .MinimumLevel.Warning()
     .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
     .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("TgAssistant.Intelligence.Stage5.OpenRouterAnalysisService", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("TgAssistant.Processing.Media.OpenRouterMediaProcessor", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer", Serilog.Events.LogEventLevel.Warning)
     .WriteTo.Async(a => a.Console())
-    .WriteTo.Async(a => a.File("logs/tgassistant-.log", rollingInterval: RollingInterval.Day))
     .CreateLogger();
 
 
@@ -185,7 +187,6 @@ try
             services.AddHostedService<EntityMergeCandidateWorkerService>();
             services.AddHostedService<EntityMergeCommandWorkerService>();
             services.AddHostedService<FactReviewCommandWorkerService>();
-            services.AddHostedService<DialogSummaryWorkerService>();
             services.AddHostedService<DailyKnowledgeCrystallizationWorkerService>();
             services.AddHostedService<Stage5MetricsWorkerService>();
             services.AddHostedService<MaintenanceWorkerService>();

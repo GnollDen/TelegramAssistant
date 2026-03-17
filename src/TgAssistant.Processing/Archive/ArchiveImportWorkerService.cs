@@ -51,6 +51,14 @@ public class ArchiveImportWorkerService : BackgroundService
         try
         {
             var scan = await ScanArchiveAsync(_settings.SourcePath, stoppingToken);
+            if (scan.ChatId <= 0)
+            {
+                _logger.LogWarning(
+                    "Archive import aborted: invalid chat_id={ChatId} in source {Path}",
+                    scan.ChatId,
+                    _settings.SourcePath);
+                return;
+            }
 
             _logger.LogInformation(
                 "Archive cost estimate: messages={Messages}, media={Media}, estimated_usd={Cost}",
@@ -252,6 +260,14 @@ public class ArchiveImportWorkerService : BackgroundService
             {
                 chatId = idAsString;
             }
+        }
+
+        if (chatId <= 0)
+        {
+            _logger.LogWarning(
+                "Archive parse returned invalid chat_id={ChatId}; messages from this file will be skipped",
+                chatId);
+            return (chatName, chatId);
         }
 
         if (!root.TryGetProperty("messages", out var messagesNode) || messagesNode.ValueKind != JsonValueKind.Array)

@@ -1,5 +1,14 @@
 # Stage5/v10 Architecture Review (TelegramAssistant)
 
+> Historical snapshot (2026-03-16). Some findings are already implemented.
+> Validate against current code before acting.
+>
+> Superseded findings (as of 2026-03-17):
+> - Session-first flow is canonical and active.
+> - Summary flow is slice-based (`chat_sessions`) with session checkpoints.
+> - Legacy summary message-watermarks are no longer runtime progress markers.
+> Runtime source-of-truth: `README.md` and `docs/stage5-extraction-algorithm.txt`.
+
 Date: 2026-03-16  
 Scope: Stage5/Stage6 processing pipeline, worker topology, legacy/zombie code, documentation drift.
 

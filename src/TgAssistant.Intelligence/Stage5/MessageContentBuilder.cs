@@ -11,6 +11,7 @@ public class MessageContentBuilder
     private static readonly Regex SlashCommandRegex = new(@"^[\/!][\w@][\w@\-.]*(?:\s+\S+){0,2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex SlashCommandTokenRegex = new(@"^[\/!][\w@][\w@\-.]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex UrlOnlyRegex = new(@"^(?:(?:https?:\/\/)|(?:www\.))\S+$", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex ParticipantMetaNameRegex = new(@"(?<prefix>(?:sender_name|from_sender|sender)="")(?<name>[^""]+)(?<suffix>"")", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly IMessageRepository _messageRepository;
 
@@ -26,7 +27,7 @@ public class MessageContentBuilder
     {
         var parts = new List<string>();
         parts.Add(
-            $"[meta] message_id={message.Id} telegram_message_id={message.TelegramMessageId} chat_id={message.ChatId} sender_id={message.SenderId} sender_name=\"{(message.SenderName ?? string.Empty).Trim()}\" ts={message.Timestamp:O} reply_to={message.ReplyToMessageId?.ToString() ?? "null"}");
+            $"[meta] message_id={message.Id} sender_name=\"{(message.SenderName ?? string.Empty).Trim()}\"");
 
         if (replyTo != null)
         {
@@ -41,7 +42,7 @@ public class MessageContentBuilder
             if (!string.IsNullOrWhiteSpace(replyText))
             {
                 parts.Add(
-                    $"[reply_context] from_sender=\"{replyTo.SenderName}\" ts={replyTo.Timestamp:O} text=\"{replyText}\"");
+                    $"[reply_context] from_sender=\"{replyTo.SenderName}\" text=\"{replyText}\"");
             }
         }
 
@@ -64,7 +65,7 @@ public class MessageContentBuilder
         {
             parts.Add(contextBlock);
         }
-        parts.Add($"[temporal_context] message_date={message.Timestamp:O}");
+        parts.Add($"[temporal_context] message_date={message.Timestamp:yyyy-MM-dd HH:mm}");
 
         return string.Join("\n", parts);
     }
@@ -117,36 +118,103 @@ public class MessageContentBuilder
         string? ragContext = null)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Analyze these chat messages and return one extraction item per message.");
+        var participantRefByName = BuildParticipantRefs(batch);
+        if (participantRefByName.Count > 0)
+        {
+            sb.AppendLine("[PARTICIPANTS]");
+            foreach (var pair in participantRefByName.OrderBy(x => x.Value, StringComparer.Ordinal))
+            {
+                sb.AppendLine($"{pair.Value}=\"{pair.Key}\"");
+            }
+
+            sb.AppendLine("[/PARTICIPANTS]");
+        }
+
         if (!string.IsNullOrWhiteSpace(chunkSummaryPrev))
         {
             sb.AppendLine("[CHUNK_SUMMARY_PREV]");
-            sb.AppendLine(TruncateForContext(CollapseWhitespace(chunkSummaryPrev), 900));
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(chunkSummaryPrev), 700));
             sb.AppendLine("[/CHUNK_SUMMARY_PREV]");
         }
 
         if (!string.IsNullOrWhiteSpace(replySliceContext))
         {
             sb.AppendLine("[REPLY_SLICE_CONTEXT]");
-            sb.AppendLine(TruncateForContext(CollapseWhitespace(replySliceContext), 1400));
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(replySliceContext), 1000));
             sb.AppendLine("[/REPLY_SLICE_CONTEXT]");
         }
 
         if (!string.IsNullOrWhiteSpace(ragContext))
         {
             sb.AppendLine("[RAG_CONTEXT]");
-            sb.AppendLine(TruncateForContext(CollapseWhitespace(ragContext), 1200));
+            sb.AppendLine(TruncateForContext(CollapseWhitespace(ragContext), 900));
             sb.AppendLine("[/RAG_CONTEXT]");
         }
 
         foreach (var msg in batch)
         {
-            sb.AppendLine($"<message id=\"{msg.MessageId}\" sender_name=\"{msg.SenderName}\" ts=\"{msg.Timestamp:O}\">");
-            sb.AppendLine(msg.Text);
+            sb.AppendLine($"<message id=\"{msg.MessageId}\">");
+            sb.AppendLine(ReplaceParticipantRefs(msg.Text, participantRefByName));
             sb.AppendLine("</message>");
         }
 
         return sb.ToString();
+    }
+
+    private static Dictionary<string, string> BuildParticipantRefs(IReadOnlyCollection<AnalysisInputMessage> batch)
+    {
+        var names = new List<string>();
+        foreach (var message in batch)
+        {
+            var senderName = (message.SenderName ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(senderName))
+            {
+                names.Add(senderName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(message.Text))
+            {
+                foreach (Match match in ParticipantMetaNameRegex.Matches(message.Text))
+                {
+                    var capturedName = match.Groups["name"].Value.Trim();
+                    if (!string.IsNullOrWhiteSpace(capturedName))
+                    {
+                        names.Add(capturedName);
+                    }
+                }
+            }
+        }
+
+        var distinctNames = names
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+        var refs = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < distinctNames.Count; i++)
+        {
+            refs[distinctNames[i]] = $"p{i + 1}";
+        }
+
+        return refs;
+    }
+
+    private static string ReplaceParticipantRefs(string text, IReadOnlyDictionary<string, string> participantRefByName)
+    {
+        if (string.IsNullOrWhiteSpace(text) || participantRefByName.Count == 0)
+        {
+            return text;
+        }
+
+        return ParticipantMetaNameRegex.Replace(text, match =>
+        {
+            var name = match.Groups["name"].Value.Trim();
+            if (!participantRefByName.TryGetValue(name, out var reference))
+            {
+                return match.Value;
+            }
+
+            return $"{match.Groups["prefix"].Value}{reference}{match.Groups["suffix"].Value}";
+        });
     }
 
     /// <summary>
@@ -163,6 +231,18 @@ public class MessageContentBuilder
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"[summary_meta] chat_id={chatId} scope={scope} period_start={periodStart:O} period_end={periodEnd:O} message_count={messages.Count}");
+        var participantRefByName = BuildParticipantRefs(messages);
+        if (participantRefByName.Count > 0)
+        {
+            sb.AppendLine("[PARTICIPANTS]");
+            foreach (var pair in participantRefByName.OrderBy(x => x.Value, StringComparer.Ordinal))
+            {
+                sb.AppendLine($"{pair.Value}=\"{pair.Key}\"");
+            }
+
+            sb.AppendLine("[/PARTICIPANTS]");
+        }
+
         if (historicalHints != null)
         {
             sb.AppendLine("[HISTORICAL_CONTEXT_HINTS]");
@@ -186,6 +266,11 @@ public class MessageContentBuilder
         foreach (var message in messages.OrderBy(x => x.Id))
         {
             var sender = string.IsNullOrWhiteSpace(message.SenderName) ? $"user:{message.SenderId}" : message.SenderName.Trim();
+            if (participantRefByName.TryGetValue(sender, out var senderRef))
+            {
+                sender = senderRef;
+            }
+
             var cheapJson = cheapJsonByMessageId?.GetValueOrDefault(message.Id);
             var text = BuildSemanticContent(message, cheapJson);
             var compact = TruncateForContext(text, 280);
@@ -198,6 +283,23 @@ public class MessageContentBuilder
         }
 
         return sb.ToString();
+    }
+
+    private static Dictionary<string, string> BuildParticipantRefs(IReadOnlyCollection<Message> messages)
+    {
+        var names = messages
+            .Select(x => (x.SenderName ?? string.Empty).Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+        var refs = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < names.Count; i++)
+        {
+            refs[names[i]] = $"p{i + 1}";
+        }
+
+        return refs;
     }
 
     /// <summary>
