@@ -55,7 +55,7 @@ public class DialogSummaryWorkerService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_settings.Enabled || !_settings.SummaryEnabled)
+        if (!_settings.Enabled || !_settings.SummaryEnabled || !_settings.SummaryWorkerEnabled)
         {
             _logger.LogInformation("Stage5 summary worker is disabled");
             return;
@@ -72,7 +72,8 @@ public class DialogSummaryWorkerService : BackgroundService
                 var candidates = candidatesByChat
                     .Values
                     .SelectMany(x => x)
-                    .OrderBy(x => x.LastMessageAt)
+                    .OrderBy(x => string.IsNullOrWhiteSpace(x.Summary) ? 0 : 1)
+                    .ThenBy(x => x.LastMessageAt)
                     .ThenBy(x => x.ChatId)
                     .ThenBy(x => x.SessionIndex)
                     .Take(Math.Max(1, _settings.SummaryBatchSize))
@@ -88,19 +89,6 @@ public class DialogSummaryWorkerService : BackgroundService
                 var deferredByHotSession = 0;
                 foreach (var session in candidates)
                 {
-                    if (!IsSessionCooledDown(session.LastMessageAt, out var remaining))
-                    {
-                        deferredByHotSession++;
-                        _logger.LogInformation(
-                            "Stage5 summary skipped hot slice: chat_id={ChatId}, session_index={SessionIndex}, last_message_utc={LastMessageUtc}, idle_required_min={IdleMinutes}, idle_remaining={Remaining}",
-                            session.ChatId,
-                            session.SessionIndex,
-                            session.LastMessageAt,
-                            HotSessionIdleTimeout.TotalMinutes,
-                            remaining);
-                        continue;
-                    }
-
                     var checkpointKey = BuildSessionSummaryCheckpointKey(session.ChatId, session.SessionIndex);
                     var sessionEndMs = new DateTimeOffset(session.EndDate).ToUnixTimeMilliseconds();
                     var checkpoint = await _stateRepository.GetWatermarkAsync(checkpointKey, stoppingToken);
@@ -126,6 +114,19 @@ public class DialogSummaryWorkerService : BackgroundService
                     {
                         await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
                         skipped++;
+                        continue;
+                    }
+
+                    if (!IsArchiveOnlySession(sessionMessages) && !IsSessionCooledDown(session.LastMessageAt, out var remaining))
+                    {
+                        deferredByHotSession++;
+                        _logger.LogInformation(
+                            "Stage5 summary skipped hot slice: chat_id={ChatId}, session_index={SessionIndex}, last_message_utc={LastMessageUtc}, idle_required_min={IdleMinutes}, idle_remaining={Remaining}",
+                            session.ChatId,
+                            session.SessionIndex,
+                            session.LastMessageAt,
+                            HotSessionIdleTimeout.TotalMinutes,
+                            remaining);
                         continue;
                     }
 
@@ -334,7 +335,7 @@ public class DialogSummaryWorkerService : BackgroundService
                     continue;
                 }
 
-                if (!IsSessionCooledDown(sessionEnd, out var remaining))
+                if (!IsArchiveOnlySession(session) && !IsSessionCooledDown(sessionEnd, out var remaining))
                 {
                     deferredByHotSession = true;
                     _logger.LogInformation(
@@ -419,7 +420,8 @@ public class DialogSummaryWorkerService : BackgroundService
                     EndDate = sessionEnd,
                     LastMessageAt = sessionEnd,
                     Summary = summaryText,
-                    IsFinalized = ShouldAutoFinalizeArchiveSession(sessionEnd)
+                    IsFinalized = ShouldAutoFinalizeArchiveSession(sessionEnd),
+                    IsAnalyzed = true
                 }, ct);
 
                 await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(chatId, i, summaryText, ct);
@@ -483,7 +485,7 @@ public class DialogSummaryWorkerService : BackgroundService
                 }
 
                 var sessionEnd = session.Last().Timestamp;
-                if (!IsSessionCooledDown(sessionEnd, out var remaining))
+                if (!IsArchiveOnlySession(session) && !IsSessionCooledDown(sessionEnd, out var remaining))
                 {
                     deferredByHotSession = true;
                     _logger.LogInformation(
@@ -749,6 +751,11 @@ public class DialogSummaryWorkerService : BackgroundService
         var elapsed = DateTime.UtcNow - lastMessageTimestampUtc;
         idleRemaining = HotSessionIdleTimeout - elapsed;
         return elapsed >= HotSessionIdleTimeout;
+    }
+
+    private static bool IsArchiveOnlySession(IReadOnlyCollection<Message> session)
+    {
+        return session.Count > 0 && session.All(x => x.Source == MessageSource.Archive);
     }
 
     private bool ShouldAutoFinalizeArchiveSession(DateTime sessionEndUtc)
