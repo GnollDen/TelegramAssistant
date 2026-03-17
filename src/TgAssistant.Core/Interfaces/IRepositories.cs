@@ -18,15 +18,29 @@ public interface IMessageRepository
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
+    Task<List<EditDiffCandidate>> GetPendingEditDiffCandidatesAsync(int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
         long chatId,
         MessageSource source,
         IReadOnlyCollection<long> telegramMessageIds,
         CancellationToken ct = default);
+    Task<Dictionary<long, List<long>>> ResolveChatsByTelegramMessageIdsAsync(
+        IReadOnlyCollection<long> telegramMessageIds,
+        MessageSource source,
+        CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
+    Task SaveEditDiffAnalysisAsync(
+        long messageId,
+        string classification,
+        string summary,
+        bool shouldAffectMemory,
+        bool addedImportant,
+        bool removedImportant,
+        float confidence,
+        CancellationToken ct = default);
     Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default);
     Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default);
     Task UpdateMediaProcessingResultAsync(long messageId, MediaProcessingResult result, ProcessingStatus status, CancellationToken ct = default);
@@ -38,6 +52,15 @@ public interface IMessageRepository
         bool needsReanalysis,
         bool clearMediaPath,
         CancellationToken ct = default);
+}
+
+public class EditDiffCandidate
+{
+    public long MessageId { get; set; }
+    public long ChatId { get; set; }
+    public DateTime? EditedAtUtc { get; set; }
+    public string BeforeText { get; set; } = string.Empty;
+    public string AfterText { get; set; } = string.Empty;
 }
 
 public interface IArchiveImportRepository

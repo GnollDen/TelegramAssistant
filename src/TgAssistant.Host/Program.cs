@@ -180,6 +180,7 @@ try
             services.AddHostedService<ArchiveImportWorkerService>();
             services.AddHostedService<ArchiveMediaProcessorService>();
             services.AddHostedService<VoiceParalinguisticsWorkerService>();
+            services.AddHostedService<EditDiffAnalysisWorkerService>();
             services.AddHostedService<AnalysisWorkerService>();
             services.AddHostedService<EntityEmbeddingWorkerService>();
             services.AddHostedService<FactEmbeddingBackfillWorkerService>();

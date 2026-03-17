@@ -170,6 +170,10 @@ public class AnalysisSettings
     public int SummaryHistoricalHintsQueryMaxChars { get; set; } = 2000;
     public int SummaryHistoricalHintsMaxCharsPerItem { get; set; } = 320;
     public float SummaryHistoricalHintsMinSimilarity { get; set; } = 0.72f;
+    public bool EditDiffEnabled { get; set; } = true;
+    public int EditDiffBatchSize { get; set; } = 20;
+    public int EditDiffPollIntervalSeconds { get; set; } = 5;
+    public int EditDiffMaxTokens { get; set; } = 320;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
     public int EpisodicShortSessionMergeThreshold { get; set; } = 10;
     public int EpisodicShortSessionMaxBridgeGapMinutes { get; set; } = 1440;
