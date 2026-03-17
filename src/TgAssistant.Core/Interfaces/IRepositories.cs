@@ -30,7 +30,7 @@ public interface IMessageRepository
         MessageSource source,
         CancellationToken ct = default);
     Task MarkProcessedAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
-    Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
+    Task MarkNeedsReanalysisAsync(IEnumerable<long> messageIds, string reasonCode = "unspecified", CancellationToken ct = default);
     Task MarkNeedsReanalysisDoneAsync(IEnumerable<long> messageIds, CancellationToken ct = default);
     Task SaveEditDiffAnalysisAsync(
         long messageId,

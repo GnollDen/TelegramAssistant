@@ -3,7 +3,7 @@
 ## Project overview
 
 Personal Telegram assistant with intelligence/dossier building pipeline.
-Monorepo with C# .NET 8 backend (`src/`) and TypeScript MCP server (`mcp/`).
+Monorepo with C# .NET 8 backend (`src/`) and TypeScript MCP server (`src/TgAssistant.Mcp`).
 
 ## Repository layout
 
@@ -16,7 +16,8 @@ src/
   TgAssistant.Intelligence/    — Stage 5 analysis, entity merge, embeddings, Neo4j sync
   TgAssistant.Web/             — placeholder for future web UI
   TgAssistant.Host/            — entry point, DI wiring
-mcp/                           — TypeScript MCP server (separate Node.js project)
+  TgAssistant.Mcp/             — TypeScript MCP server
+mcp/                           — reserved for legacy/auxiliary MCP docs
 deploy/                        — Dockerfile, docker-compose, monitoring, shell scripts
 scripts/                       — operational SQL scripts, prompt management
 ```
@@ -35,7 +36,7 @@ scripts/                       — operational SQL scripts, prompt management
 ## Working agreements
 
 - Run `dotnet build TelegramAssistant.sln` after modifying any C# file. Fix all compiler errors before committing.
-- Run `cd mcp && npm run build` after modifying any TypeScript file in `mcp/`.
+- Run `cd src/TgAssistant.Mcp && npm run build` after modifying any TypeScript file in `src/TgAssistant.Mcp/`.
 - Never modify files in `src/TgAssistant.Infrastructure/Database/Migrations/` — create new migration files instead.
 - Database schema changes go in new files: `0003_*.sql`, `0004_*.sql`, etc. in `Infrastructure/Database/Migrations/`.
 - All repository classes are **singletons** using `IDbContextFactory<TgAssistantDbContext>` — never inject `TgAssistantDbContext` directly.
@@ -75,9 +76,9 @@ scripts/                       — operational SQL scripts, prompt management
 
 ## Backlog reference
 
-See `CODEX_BACKLOG.md` in repository root for the full task list with acceptance criteria.
-Tasks are prefixed A1-A11 (Stage 5 fixes) and B1-B10 (MCP server).
-Follow the execution order recommended at the bottom of that file.
+See `CODEX_BACKLOG.md` in repository root for active tasks and acceptance criteria.
+Active task groups are prefixed `P*` (policy/platform), `R*` (targeted refactor), and `O*` (observability).
+Follow the sprint/merge order documented in that file.
 
 ## Codex delegated agent profiles
 

@@ -41,7 +41,12 @@ public class FactReviewCommandRepository : IFactReviewCommandRepository
 
     public async Task EnqueueAsync(Guid factId, string command, string? reason = null, CancellationToken ct = default)
     {
-        var normalizedCommand = string.IsNullOrWhiteSpace(command) ? "approve" : command.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            throw new ArgumentException("fact_review_command_required", nameof(command));
+        }
+
+        var normalizedCommand = command.Trim().ToLowerInvariant();
         await WithDbContextAsync(async db =>
         {
             var existsPending = await db.FactReviewCommands.AsNoTracking()

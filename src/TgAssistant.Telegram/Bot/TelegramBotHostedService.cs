@@ -100,7 +100,21 @@ public class TelegramBotHostedService : BackgroundService
                 return;
             }
 
-            var reply = await _botChatService.GenerateReplyAsync(message.Text);
+            var normalizedText = message.Text.Trim();
+            string reply;
+            if (TryParseResummaryCommand(normalizedText, out var chatId, out var sessionIndex))
+            {
+                reply = await _botChatService.TriggerSessionResummaryAsync(chatId, sessionIndex, ct);
+            }
+            else if (normalizedText.StartsWith("/resummary", StringComparison.OrdinalIgnoreCase))
+            {
+                reply = "Usage: /resummary <chat_id> <session_index>";
+            }
+            else
+            {
+                reply = await _botChatService.GenerateReplyAsync(normalizedText);
+            }
+
             var chunks = SplitReplyToChunks(reply, MaxTelegramMessageChars);
 #pragma warning disable CS0618 // Required by current phase requirement to call SendTextMessageAsync.
             foreach (var chunk in chunks)
@@ -176,5 +190,24 @@ public class TelegramBotHostedService : BackgroundService
         }
 
         return chunks;
+    }
+
+    private static bool TryParseResummaryCommand(string text, out long chatId, out int sessionIndex)
+    {
+        chatId = 0;
+        sessionIndex = 0;
+        if (!text.StartsWith("/resummary", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var parts = text
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 3)
+        {
+            return false;
+        }
+
+        return long.TryParse(parts[1], out chatId) && int.TryParse(parts[2], out sessionIndex);
     }
 }

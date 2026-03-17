@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Pool } from "pg";
 import { z } from "zod";
 
@@ -8,6 +10,13 @@ const postgresUser = process.env.POSTGRES_USER ?? "tgassistant";
 const postgresPassword = process.env.POSTGRES_PASSWORD ?? "";
 const postgresDb = process.env.POSTGRES_DB ?? "tgassistant";
 const postgresPort = Number.parseInt(process.env.POSTGRES_PORT ?? "5432", 10);
+const mcpTransport = (process.env.MCP_TRANSPORT ?? "stdio").trim().toLowerCase();
+const sseHost = (process.env.MCP_SSE_HOST ?? "127.0.0.1").trim();
+const ssePortRaw = Number.parseInt(process.env.MCP_SSE_PORT ?? "3800", 10);
+const ssePort = Number.isNaN(ssePortRaw) ? 3800 : ssePortRaw;
+const sseAuthToken = (process.env.MCP_SSE_AUTH_TOKEN ?? "").trim();
+const allowContainerBind =
+  (process.env.MCP_SSE_ALLOW_CONTAINER_BIND ?? "false").trim().toLowerCase() === "true";
 
 const pool = new Pool({
   host: postgresHost,
@@ -604,25 +613,173 @@ server.registerTool(
   }
 );
 
-const transport = new StdioServerTransport();
+let activeSseTransport: SSEServerTransport | null = null;
+let sseHttpServer: ReturnType<typeof createServer> | null = null;
 
 async function main(): Promise<void> {
   await pool.query("select 1");
-  await server.connect(transport);
+
+  if (mcpTransport === "stdio") {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    return;
+  }
+
+  if (mcpTransport === "sse") {
+    await startSseTransportAsync();
+    return;
+  }
+
+  throw new Error(`Unsupported MCP_TRANSPORT="${mcpTransport}". Use "stdio" or "sse".`);
+}
+
+async function startSseTransportAsync(): Promise<void> {
+  ensureLocalhostBind(sseHost);
+  if (!sseAuthToken) {
+    throw new Error("MCP_SSE_AUTH_TOKEN is required when MCP_TRANSPORT=sse.");
+  }
+
+  sseHttpServer = createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url ?? "/", `http://${sseHost}:${ssePort}`);
+      if (!isAuthorized(req)) {
+        res.statusCode = 401;
+        res.setHeader("www-authenticate", "Bearer");
+        res.end("Unauthorized");
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/sse") {
+        if (activeSseTransport !== null) {
+          res.statusCode = 409;
+          res.end("An active SSE MCP session already exists.");
+          return;
+        }
+
+        const transport = new SSEServerTransport("/messages", res);
+        activeSseTransport = transport;
+        res.on("close", () => {
+          if (activeSseTransport?.sessionId === transport.sessionId) {
+            activeSseTransport = null;
+          }
+        });
+        await server.connect(transport);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/messages") {
+        const sessionId = requestUrl.searchParams.get("sessionId");
+        if (!activeSseTransport || !sessionId || sessionId !== activeSseTransport.sessionId) {
+          res.statusCode = 404;
+          res.end("Session not found");
+          return;
+        }
+
+        const body = await readJsonBodyAsync(req);
+        await activeSseTransport.handlePostMessage(
+          req as IncomingMessage & { auth?: undefined },
+          res as ServerResponse,
+          body
+        );
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/health") {
+        res.statusCode = 200;
+        res.end("ok");
+        return;
+      }
+
+      res.statusCode = 404;
+      res.end("Not found");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.statusCode = 500;
+      res.end(`MCP SSE server error: ${message}`);
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    sseHttpServer!.once("error", onError);
+    sseHttpServer!.listen(ssePort, sseHost, () => {
+      sseHttpServer!.off("error", onError);
+      resolve();
+    });
+  });
+
+  console.log(
+    `MCP SSE server started on http://${sseHost}:${ssePort} (endpoints: GET /sse, POST /messages?sessionId=..., GET /health)`
+  );
+}
+
+function ensureLocalhostBind(host: string): void {
+  const normalized = host.toLowerCase();
+  const allowed = new Set(["127.0.0.1", "::1", "localhost"]);
+  if (allowContainerBind) {
+    allowed.add("0.0.0.0");
+  }
+
+  if (!allowed.has(normalized)) {
+    const allowedHosts = Array.from(allowed.values()).join(", ");
+    throw new Error(
+      `MCP_SSE_HOST must bind to localhost for safety. Allowed: ${allowedHosts}. Got: ${host}`
+    );
+  }
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  const header = req.headers.authorization;
+  if (!header) {
+    return false;
+  }
+
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  if (!match) {
+    return false;
+  }
+
+  return match[1] === sseAuthToken;
+}
+
+async function readJsonBodyAsync(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const rawBody = Buffer.concat(chunks).toString("utf8").trim();
+  if (!rawBody) {
+    return undefined;
+  }
+
+  return JSON.parse(rawBody);
+}
+
+async function shutdownAsync(): Promise<void> {
+  if (sseHttpServer) {
+    await new Promise<void>((resolve) => {
+      sseHttpServer?.close(() => resolve());
+    });
+    sseHttpServer = null;
+  }
+
+  activeSseTransport = null;
+  await pool.end().catch(() => undefined);
 }
 
 main().catch(async (error) => {
   console.error("Failed to start MCP server", error);
-  await pool.end().catch(() => undefined);
+  await shutdownAsync();
   process.exitCode = 1;
 });
 
 process.on("SIGINT", async () => {
-  await pool.end().catch(() => undefined);
+  await shutdownAsync();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
-  await pool.end().catch(() => undefined);
+  await shutdownAsync();
   process.exit(0);
 });
