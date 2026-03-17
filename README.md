@@ -25,18 +25,32 @@
 - Session analysis queue: `chat_sessions.is_analyzed=false` with idle gate `Analysis.SessionAnalysisMinIdleMinutes`.
 - Session chunk checkpoints: `analysis_state` keys `stage5:session_chunk_checkpoint:{chatId}:{sessionIndex}`.
 - Slice summary checkpoints: `analysis_state` keys `stage5:summary:session:{chatId}:{sessionIndex}`.
+- Session cap policy: production uses explicit `Analysis.EpisodicMaxSessionsPerChat` (0 = disabled); `Analysis.TestModeMaxSessionsPerChat` applies only when `Analysis.EnableTestModeSessionCap=true`.
 - Legacy summary message-watermarks (`stage5:summary_watermark`, `stage5:summary_extraction_watermark`) are no longer used by runtime.
 
 ## Documentation map
 - Runtime source-of-truth: `README.md` and `docs/stage5-extraction-algorithm.txt`.
+- Operations runbooks:
+  - `docs/runbooks/stage5-openrouter.md`
+  - `docs/runbooks/stage5-redis-ingestion.md`
 - Product/roadmap context: `CODEX_BACKLOG.md`, `docs/stage5_product_backlog.md`, `docs/backlog/stage5_hybrid_evolution.md`.
 - Historical artifacts: `docs/archive/`.
 
 ## Build & Run locally
 ```bash
-docker compose build app
+docker compose build app mcp
 docker compose up -d
 ```
+
+## MCP server (stdio + SSE)
+- MCP server source lives in `src/TgAssistant.Mcp`.
+- Transport is selected via `MCP_TRANSPORT=stdio|sse` (default in compose: `sse`).
+- SSE endpoints:
+  - `GET /sse`
+  - `POST /messages?sessionId=...`
+  - `GET /health`
+- SSE auth is required via Bearer token (`MCP_SSE_AUTH_TOKEN`).
+- Docker compose publishes MCP only to localhost: `127.0.0.1:${MCP_SSE_PORT}`.
 
 ## Faster builds on VPN
 - `deploy/Dockerfile` is optimized for NuGet cache reuse (project files are copied before source code).
@@ -106,6 +120,18 @@ Provisioned dashboards:
 Provisioned alert rules (UI-only):
 - `LLMCostHourlyExceeded`
 - `LLMCostDailyExceeded`
+
+Quick runbook (Stage5/OpenRouter):
+- Full runbook: `docs/runbooks/stage5-openrouter.md`
+- Check recent Stage5 failures/retries/cooldowns:
+  ```bash
+  docker logs --since 15m tga-app 2>&1 | rg -i "OpenRouter transient failure|OpenRouter request failed without retry|balance/quota issue|cheap phase blocked by cooldown|Stage5 session chunk failed|Stage5 summary loop failed" | tail -n 200
+  ```
+- Check current queue/cost pressure:
+  ```bash
+  docker compose exec -T postgres psql -U tgassistant -d tgassistant -c "select count(*) as expensive_backlog from message_extractions where needs_expensive=true;"
+  docker compose exec -T postgres psql -U tgassistant -d tgassistant -c "select phase, model, sum(total_tokens) as tokens, sum(cost_usd) as cost_usd from analysis_usage_events where created_at >= now() - interval '1 hour' group by phase, model order by cost_usd desc;"
+  ```
 
 Sanity-check SQL:
 

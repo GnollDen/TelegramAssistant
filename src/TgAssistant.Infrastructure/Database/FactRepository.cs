@@ -102,7 +102,16 @@ public class FactRepository : IFactRepository
             }
 
             existing.Confidence = Math.Max(existing.Confidence, fact.Confidence);
-            existing.Status = (short)fact.Status;
+            var currentStatus = (ConfidenceStatus)existing.Status;
+            if (currentStatus == ConfidenceStatus.Tentative && fact.Status == ConfidenceStatus.Confirmed)
+            {
+                // Tentative facts can only be confirmed by explicit manual review command flow.
+                existing.Status = (short)ConfidenceStatus.Tentative;
+            }
+            else
+            {
+                existing.Status = (short)fact.Status;
+            }
             existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
             existing.DecayClass = NormalizeDecayClass(fact.DecayClass);
             existing.IsUserConfirmed = existing.IsUserConfirmed || fact.IsUserConfirmed;

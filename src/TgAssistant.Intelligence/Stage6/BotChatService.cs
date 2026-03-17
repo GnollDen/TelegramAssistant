@@ -17,8 +17,11 @@ public class BotChatService : IBotChatService
     private const int MaxToolCallsPerTurn = 3;
     private const int MaxToolResultChars = 8000;
     private const int DefaultDossierLimit = 40;
+    private const string SessionSummaryCheckpointPrefix = "stage5:summary:session";
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly IMessageRepository _messageRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
+    private readonly IAnalysisStateRepository _analysisStateRepository;
     private readonly IEntityRepository _entityRepository;
     private readonly IFactRepository _factRepository;
     private readonly IRelationshipRepository _relationshipRepository;
@@ -31,6 +34,8 @@ public class BotChatService : IBotChatService
     public BotChatService(
         ITextEmbeddingGenerator embeddingGenerator,
         IMessageRepository messageRepository,
+        IChatSessionRepository chatSessionRepository,
+        IAnalysisStateRepository analysisStateRepository,
         IEntityRepository entityRepository,
         IFactRepository factRepository,
         IRelationshipRepository relationshipRepository,
@@ -42,6 +47,8 @@ public class BotChatService : IBotChatService
     {
         _embeddingGenerator = embeddingGenerator;
         _messageRepository = messageRepository;
+        _chatSessionRepository = chatSessionRepository;
+        _analysisStateRepository = analysisStateRepository;
         _entityRepository = entityRepository;
         _factRepository = factRepository;
         _relationshipRepository = relationshipRepository;
@@ -186,6 +193,31 @@ public class BotChatService : IBotChatService
         return reply.Trim();
     }
 
+    public async Task<string> TriggerSessionResummaryAsync(long chatId, int sessionIndex, CancellationToken ct)
+    {
+        if (chatId == 0 || sessionIndex < 0)
+        {
+            return "Invalid parameters. Usage: /resummary <chat_id> <session_index>";
+        }
+
+        var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([chatId], ct);
+        var session = sessionsByChat.GetValueOrDefault(chatId)?
+            .FirstOrDefault(x => x.SessionIndex == sessionIndex);
+        if (session == null)
+        {
+            return $"Session not found: chat_id={chatId}, session_index={sessionIndex}.";
+        }
+
+        var checkpointKey = BuildSessionSummaryCheckpointKey(chatId, sessionIndex);
+        await _analysisStateRepository.SetWatermarkAsync(checkpointKey, 0, ct);
+        _logger.LogInformation(
+            "Manual session re-summary requested: chat_id={ChatId}, session_index={SessionIndex}, checkpoint_key={CheckpointKey}",
+            chatId,
+            sessionIndex,
+            checkpointKey);
+        return $"Re-summary requested: chat_id={chatId}, session_index={sessionIndex}.";
+    }
+
     private string ResolveReplyModel()
     {
         if (!string.IsNullOrWhiteSpace(_analysisSettings.CheapBaselineModel))
@@ -199,6 +231,11 @@ public class BotChatService : IBotChatService
         }
 
         return "openai/gpt-4o-mini";
+    }
+
+    private static string BuildSessionSummaryCheckpointKey(long chatId, int sessionIndex)
+    {
+        return $"{SessionSummaryCheckpointPrefix}:{chatId}:{sessionIndex}";
     }
 
     private static List<OpenRouterTool> BuildTools()
