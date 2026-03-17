@@ -1,0 +1,14 @@
+snapshot_utc	2026-03-17T08:20:24Z
+chat_id	885574984
+session_range	0-4
+target_sessions_total	5
+target_sessions_pending	5
+target_messages	406
+target_messages_processing_status_1	406
+target_messages_processing_status_3	0
+target_extractions	213
+target_nonempty_extractions	0
+usage_events_total	128
+usage_tokens_total	244862
+usage_cost_total	0.066525
+errors_last_30m	0

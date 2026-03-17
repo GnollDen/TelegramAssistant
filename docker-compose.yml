@@ -142,6 +142,10 @@ services:
       Analysis__SummaryHistoricalHintsQueryMaxChars: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_QUERY_MAX_CHARS:-2000}
       Analysis__SummaryHistoricalHintsMaxCharsPerItem: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MAX_CHARS_PER_ITEM:-320}
       Analysis__SummaryHistoricalHintsMinSimilarity: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MIN_SIMILARITY:-0.72}
+      Analysis__EditDiffEnabled: ${ANALYSIS_EDIT_DIFF_ENABLED:-true}
+      Analysis__EditDiffBatchSize: ${ANALYSIS_EDIT_DIFF_BATCH_SIZE:-20}
+      Analysis__EditDiffPollIntervalSeconds: ${ANALYSIS_EDIT_DIFF_POLL_INTERVAL_SECONDS:-5}
+      Analysis__EditDiffMaxTokens: ${ANALYSIS_EDIT_DIFF_MAX_TOKENS:-320}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
       Analysis__EpisodicShortSessionMergeThreshold: ${ANALYSIS_EPISODIC_SHORT_SESSION_MERGE_THRESHOLD:-10}
       Analysis__EpisodicShortSessionMaxBridgeGapMinutes: ${ANALYSIS_EPISODIC_SHORT_SESSION_MAX_BRIDGE_GAP_MINUTES:-1440}

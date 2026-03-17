@@ -15,6 +15,7 @@ public class TelegramListenerService : BackgroundService
     private readonly TelegramSettings _settings;
     private readonly MediaSettings _mediaSettings;
     private readonly IMessageQueue _queue;
+    private readonly IMessageRepository _messageRepository;
     private readonly ILogger<TelegramListenerService> _logger;
     private Client? _client;
     private readonly Dictionary<long, string> _userNameCache = new();
@@ -23,11 +24,13 @@ public class TelegramListenerService : BackgroundService
         IOptions<TelegramSettings> settings,
         IOptions<MediaSettings> mediaSettings,
         IMessageQueue queue,
+        IMessageRepository messageRepository,
         ILogger<TelegramListenerService> logger)
     {
         _settings = settings.Value;
         _mediaSettings = mediaSettings.Value;
         _queue = queue;
+        _messageRepository = messageRepository;
         _logger = logger;
     }
 
@@ -100,6 +103,9 @@ public class TelegramListenerService : BackgroundService
                 break;
             case UpdateEditMessage { message: TL.Message editMsg }:
                 await HandleMessage(editMsg, isEdit: true);
+                break;
+            case UpdateDeleteChannelMessages delChannel:
+                await HandleDelete(delChannel.messages, chatId: delChannel.channel_id);
                 break;
             case UpdateDeleteMessages del:
                 await HandleDelete(del.messages, chatId: 0);
@@ -190,7 +196,38 @@ public class TelegramListenerService : BackgroundService
     {
         if (chatId == 0)
         {
-            _logger.LogDebug("Skipping delete event for chat_id=0");
+            var byTelegramMessageId = await _messageRepository.ResolveChatsByTelegramMessageIdsAsync(
+                messageIds.Select(x => (long)x).ToArray(),
+                MessageSource.Realtime);
+
+            var emitted = 0;
+            foreach (var msgId in messageIds)
+            {
+                if (!byTelegramMessageId.TryGetValue(msgId, out var chatIds) || chatIds.Count == 0)
+                {
+                    _logger.LogInformation(
+                        "Delete event received without resolvable chat context: message_id={MessageId}",
+                        msgId);
+                    continue;
+                }
+
+                foreach (var resolvedChatId in chatIds)
+                {
+                    if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(resolvedChatId))
+                    {
+                        continue;
+                    }
+
+                    var raw = BuildDeleteTombstone(msgId, resolvedChatId);
+                    await _queue.EnqueueAsync(raw);
+                    emitted++;
+                }
+            }
+
+            _logger.LogInformation(
+                "Delete event with unknown peer resolved via DB lookup: source_count={SourceCount}, emitted_tombstones={EmittedCount}",
+                messageIds.Length,
+                emitted);
             return;
         }
 
@@ -200,13 +237,31 @@ public class TelegramListenerService : BackgroundService
         foreach (var msgId in messageIds)
         {
             _logger.LogInformation("Deleted message {Id} in chat {ChatId}", msgId, chatId);
-            var raw = new RawTelegramMessage
-            {
-                MessageId = msgId, ChatId = chatId, SenderId = 0, SenderName = "",
-                Timestamp = DateTime.UtcNow, Text = "[DELETED]", MediaType = Core.Models.MediaType.None
-            };
+            var raw = BuildDeleteTombstone(msgId, chatId);
             await _queue.EnqueueAsync(raw);
         }
+    }
+
+    private static RawTelegramMessage BuildDeleteTombstone(int messageId, long chatId)
+    {
+        var now = DateTime.UtcNow;
+        return new RawTelegramMessage
+        {
+            MessageId = messageId,
+            ChatId = chatId,
+            SenderId = 0,
+            SenderName = "",
+            Timestamp = now,
+            Text = "[DELETED]",
+            MediaType = Core.Models.MediaType.None,
+            EditTimestamp = now,
+            ForwardJson = JsonSerializer.Serialize(new
+            {
+                event_type = "message_deleted",
+                deleted_at_utc = now,
+                reason = "unknown"
+            })
+        };
     }
 
     private async Task HandleReactions(UpdateMessageReactions react)

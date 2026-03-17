@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -101,6 +103,11 @@ public class MessageRepository : IMessageRepository
 
     private static bool ShouldUpdateExisting(DbMessage current, Message incoming)
     {
+        if (IsDeletedMarker(incoming.Text) && !IsDeletedMarker(current.Text))
+        {
+            return true;
+        }
+
         if (incoming.EditTimestamp != null)
         {
             if (current.EditTimestamp == null || incoming.EditTimestamp > current.EditTimestamp)
@@ -122,18 +129,106 @@ public class MessageRepository : IMessageRepository
         return false;
     }
 
+    private static bool IsDeletedMarker(string? text)
+    {
+        return string.Equals(text?.Trim(), "[DELETED]", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void ApplyUpdate(DbMessage current, Message incoming)
     {
+        var oldText = current.Text;
         current.Text = incoming.Text;
         current.EditTimestamp = incoming.EditTimestamp ?? current.EditTimestamp;
         current.ReactionsJson = incoming.ReactionsJson ?? current.ReactionsJson;
-        current.ForwardJson = incoming.ForwardJson ?? current.ForwardJson;
+        current.ForwardJson = BuildForwardJsonWithEditTracking(
+            current.ForwardJson,
+            incoming.ForwardJson,
+            oldText,
+            incoming.Text,
+            incoming.EditTimestamp);
         current.NeedsReanalysis = true;
         current.ProcessedAt = DateTime.UtcNow;
         if (current.ProcessingStatus == (short)ProcessingStatus.Failed)
         {
             current.ProcessingStatus = (short)ProcessingStatus.Processed;
         }
+    }
+
+    private static string? BuildForwardJsonWithEditTracking(
+        string? currentForwardJson,
+        string? incomingForwardJson,
+        string? oldText,
+        string? newText,
+        DateTime? incomingEditTimestamp)
+    {
+        JsonObject root = [];
+        if (!string.IsNullOrWhiteSpace(currentForwardJson))
+        {
+            root = ParseJsonObject(currentForwardJson) ?? new JsonObject();
+        }
+
+        if (!string.IsNullOrWhiteSpace(incomingForwardJson))
+        {
+            var incomingObj = ParseJsonObject(incomingForwardJson);
+            if (incomingObj != null)
+            {
+                foreach (var pair in incomingObj)
+                {
+                    root[pair.Key] = pair.Value?.DeepClone();
+                }
+            }
+            else
+            {
+                root["forward_raw"] = incomingForwardJson;
+            }
+        }
+
+        if (incomingEditTimestamp != null && !string.Equals(oldText, newText, StringComparison.Ordinal))
+        {
+            var tracking = root["edit_tracking"] as JsonObject ?? new JsonObject();
+            tracking["status"] = "pending";
+            tracking["edited_at_utc"] = incomingEditTimestamp.Value.ToUniversalTime().ToString("O");
+            tracking["before"] = TruncateForJson(oldText, 3000);
+            tracking["after"] = TruncateForJson(newText, 3000);
+            tracking["classification"] = null;
+            tracking["summary"] = null;
+            tracking["should_affect_memory"] = null;
+            tracking["added_important"] = null;
+            tracking["removed_important"] = null;
+            tracking["confidence"] = null;
+            tracking["analyzed_at_utc"] = null;
+            root["edit_tracking"] = tracking;
+        }
+
+        return root.Count == 0 ? null : root.ToJsonString();
+    }
+
+    private static JsonObject? ParseJsonObject(string json)
+    {
+        try
+        {
+            return JsonNode.Parse(json) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string TruncateForJson(string? value, int maxChars)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var text = value.Trim();
+        if (text.Length <= maxChars)
+        {
+            return text;
+        }
+
+        return text[..maxChars].TrimEnd() + "...";
     }
 
     public async Task<List<Message>> GetUnprocessedAsync(int limit = 100, CancellationToken ct = default)
@@ -147,6 +242,41 @@ public class MessageRepository : IMessageRepository
             .ToListAsync(ct);
 
         return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<Dictionary<long, List<long>>> ResolveChatsByTelegramMessageIdsAsync(
+        IReadOnlyCollection<long> telegramMessageIds,
+        MessageSource source,
+        CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, List<long>>();
+        if (telegramMessageIds.Count == 0)
+        {
+            return result;
+        }
+
+        var ids = telegramMessageIds
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return result;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.Source == (short)source && ids.Contains(x.TelegramMessageId))
+            .Select(x => new { x.TelegramMessageId, x.ChatId })
+            .Distinct()
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(x => x.TelegramMessageId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.ChatId).Distinct().OrderBy(x => x).ToList());
     }
 
     public async Task<List<Message>> GetByContactSinceAsync(long chatId, DateTime since, CancellationToken ct = default)
@@ -477,6 +607,49 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
+    public async Task<List<EditDiffCandidate>> GetPendingEditDiffCandidatesAsync(int limit, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.EditTimestamp != null
+                        && x.ForwardJson != null
+                        && EF.Functions.Like(x.ForwardJson!, "%\"edit_tracking\"%")
+                        && EF.Functions.Like(x.ForwardJson!, "%\"status\":\"pending\"%"))
+            .OrderByDescending(x => x.EditTimestamp)
+            .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        var result = new List<EditDiffCandidate>(rows.Count);
+        foreach (var row in rows)
+        {
+            var tracking = TryGetEditTracking(row.ForwardJson);
+            if (tracking == null)
+            {
+                continue;
+            }
+
+            var before = tracking["before"]?.GetValue<string>() ?? string.Empty;
+            var after = tracking["after"]?.GetValue<string>() ?? string.Empty;
+            var status = tracking["status"]?.GetValue<string>() ?? string.Empty;
+            if (!string.Equals(status, "pending", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            result.Add(new EditDiffCandidate
+            {
+                MessageId = row.Id,
+                ChatId = row.ChatId,
+                EditedAtUtc = row.EditTimestamp,
+                BeforeText = before,
+                AfterText = after
+            });
+        }
+
+        return result;
+    }
+
     public async Task<Message?> GetByIdAsync(long id, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -566,6 +739,51 @@ public class MessageRepository : IMessageRepository
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task SaveEditDiffAnalysisAsync(
+        long messageId,
+        string classification,
+        string summary,
+        bool shouldAffectMemory,
+        bool addedImportant,
+        bool removedImportant,
+        float confidence,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.Messages.FirstOrDefaultAsync(x => x.Id == messageId, ct);
+        if (row == null)
+        {
+            return;
+        }
+
+        var root = ParseJsonObject(row.ForwardJson ?? "{}") ?? new JsonObject();
+        var tracking = root["edit_tracking"] as JsonObject ?? new JsonObject();
+        tracking["status"] = "done";
+        tracking["classification"] = string.IsNullOrWhiteSpace(classification) ? "unknown" : classification.Trim();
+        tracking["summary"] = TruncateForJson(summary, 900);
+        tracking["should_affect_memory"] = shouldAffectMemory;
+        tracking["added_important"] = addedImportant;
+        tracking["removed_important"] = removedImportant;
+        tracking["confidence"] = Math.Clamp(confidence, 0f, 1f);
+        tracking["analyzed_at_utc"] = DateTime.UtcNow.ToString("O");
+        root["edit_tracking"] = tracking;
+        row.ForwardJson = root.ToJsonString();
+        row.NeedsReanalysis = shouldAffectMemory || addedImportant || removedImportant;
+        row.ProcessedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static JsonObject? TryGetEditTracking(string? forwardJson)
+    {
+        var root = ParseJsonObject(forwardJson ?? string.Empty);
+        if (root == null)
+        {
+            return null;
+        }
+
+        return root["edit_tracking"] as JsonObject;
     }
 
     public async Task<List<Message>> GetPendingArchiveMediaAsync(int limit, CancellationToken ct = default)
