@@ -23,6 +23,11 @@ public class TelegramDesktopArchiveParser
         var root = doc.RootElement;
         var chatName = root.TryGetProperty("name", out var nameNode) ? nameNode.GetString() ?? "Unknown chat" : "Unknown chat";
         var chatId = ParseChatId(root);
+        if (chatId <= 0)
+        {
+            _logger.LogWarning("Archive parsed with invalid chat_id={ChatId}. Returning empty result", chatId);
+            return new ArchiveParseResult(chatName, chatId, [], new ArchiveCostEstimate());
+        }
 
         var messages = new List<ArchiveMessageRecord>();
         var estimate = new ArchiveCostEstimate();

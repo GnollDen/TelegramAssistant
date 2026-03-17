@@ -102,7 +102,7 @@ services:
       Analysis__CheapAbCandidatePercent: ${ANALYSIS_CHEAP_AB_CANDIDATE_PERCENT:-50}
       Analysis__ExpensiveModel: ${ANALYSIS_EXPENSIVE_MODEL:-anthropic/claude-3.5-sonnet}
       Analysis__ExpensiveFallbackModel: ${ANALYSIS_EXPENSIVE_FALLBACK_MODEL:-openai/gpt-4o}
-      Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-8}
+      Analysis__BatchSize: ${ANALYSIS_BATCH_SIZE:-100}
       Analysis__CheapBatchWorkers: ${ANALYSIS_CHEAP_BATCH_WORKERS:-1}
       Analysis__CheapLlmParallelism: ${ANALYSIS_CHEAP_LLM_PARALLELISM:-4}
       Analysis__CheapMaxTokens: ${ANALYSIS_CHEAP_MAX_TOKENS:-2000}
@@ -143,6 +143,8 @@ services:
       Analysis__SummaryHistoricalHintsMaxCharsPerItem: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MAX_CHARS_PER_ITEM:-320}
       Analysis__SummaryHistoricalHintsMinSimilarity: ${ANALYSIS_SUMMARY_HISTORICAL_HINTS_MIN_SIMILARITY:-0.72}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
+      Analysis__EpisodicShortSessionMergeThreshold: ${ANALYSIS_EPISODIC_SHORT_SESSION_MERGE_THRESHOLD:-10}
+      Analysis__EpisodicShortSessionMaxBridgeGapMinutes: ${ANALYSIS_EPISODIC_SHORT_SESSION_MAX_BRIDGE_GAP_MINUTES:-1440}
       Analysis__TestModeMaxSessionsPerChat: ${ANALYSIS_TEST_MODE_MAX_SESSIONS_PER_CHAT:-100}
       Analysis__SessionChunkSize: ${ANALYSIS_SESSION_CHUNK_SIZE:-40}
       Analysis__SessionAnalysisBatchSize: ${ANALYSIS_SESSION_ANALYSIS_BATCH_SIZE:-20}
@@ -152,6 +154,10 @@ services:
       Analysis__SessionChunkMinMessages: ${ANALYSIS_SESSION_CHUNK_MIN_MESSAGES:-12}
       Analysis__SessionChunkHardMaxMessages: ${ANALYSIS_SESSION_CHUNK_HARD_MAX_MESSAGES:-80}
       Analysis__SessionChunkPauseGapMinutes: ${ANALYSIS_SESSION_CHUNK_PAUSE_GAP_MINUTES:-25}
+      Analysis__CheapChunkTargetChars: ${ANALYSIS_CHEAP_CHUNK_TARGET_CHARS:-12000}
+      Analysis__CheapChunkMaxChars: ${ANALYSIS_CHEAP_CHUNK_MAX_CHARS:-15000}
+      Analysis__CheapChunkMinMessages: ${ANALYSIS_CHEAP_CHUNK_MIN_MESSAGES:-6}
+      Analysis__CheapChunkPauseGapMinutes: ${ANALYSIS_CHEAP_CHUNK_PAUSE_GAP_MINUTES:-20}
       Aggregation__MinIdleAgeHours: ${AGGREGATION_MIN_IDLE_AGE_HOURS:-6}
       Aggregation__ArchiveThresholdHours: ${AGGREGATION_ARCHIVE_THRESHOLD_HOURS:-24}
       Merge__Enabled: ${MERGE_ENABLED:-true}

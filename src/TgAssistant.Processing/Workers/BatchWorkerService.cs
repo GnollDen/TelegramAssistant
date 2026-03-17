@@ -41,14 +41,29 @@ public class BatchWorkerService : BackgroundService
             try
             {
                 var messages = await _queue.DequeueAsync(50, TimeSpan.FromSeconds(2), stoppingToken);
+                var invalidStreamIds = new List<string>();
                 foreach (var msg in messages)
                 {
+                    if (msg.ChatId <= 0)
+                    {
+                        invalidStreamIds.Add(msg.StreamId);
+                        continue;
+                    }
+
                     if (!_buffers.ContainsKey(msg.ChatId))
                     {
                         _buffers[msg.ChatId] = new ChatBuffer();
                     }
 
                     _buffers[msg.ChatId].Add(msg);
+                }
+
+                if (invalidStreamIds.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Dropped realtime messages with invalid chat_id<=0: count={Count}",
+                        invalidStreamIds.Count);
+                    await _queue.AcknowledgeAsync(invalidStreamIds, stoppingToken);
                 }
 
                 var now = DateTime.UtcNow;
@@ -103,6 +118,16 @@ public class BatchWorkerService : BackgroundService
 
     private async Task FlushBatchAsync(long chatId, ChatBuffer buffer, CancellationToken ct)
     {
+        if (chatId <= 0)
+        {
+            _logger.LogWarning(
+                "Dropped buffered batch with invalid chat_id={ChatId}, count={Count}",
+                chatId,
+                buffer.Messages.Count);
+            await _queue.AcknowledgeAsync(buffer.Messages.Select(x => x.StreamId), ct);
+            return;
+        }
+
         _logger.LogInformation("Flushing batch: chat {ChatId}, {Count} messages", chatId, buffer.Messages.Count);
 
         var dbMessages = new List<Message>();

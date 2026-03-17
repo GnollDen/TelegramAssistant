@@ -171,6 +171,8 @@ public class AnalysisSettings
     public int SummaryHistoricalHintsMaxCharsPerItem { get; set; } = 320;
     public float SummaryHistoricalHintsMinSimilarity { get; set; } = 0.72f;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
+    public int EpisodicShortSessionMergeThreshold { get; set; } = 10;
+    public int EpisodicShortSessionMaxBridgeGapMinutes { get; set; } = 1440;
     public int TestModeMaxSessionsPerChat { get; set; } = 23;
     public int SessionChunkSize { get; set; } = 40;
     public int SessionAnalysisBatchSize { get; set; } = 20;
@@ -180,6 +182,10 @@ public class AnalysisSettings
     public int SessionChunkMinMessages { get; set; } = 12;
     public int SessionChunkHardMaxMessages { get; set; } = 80;
     public int SessionChunkPauseGapMinutes { get; set; } = 25;
+    public int CheapChunkTargetChars { get; set; } = 12000;
+    public int CheapChunkMaxChars { get; set; } = 15000;
+    public int CheapChunkMinMessages { get; set; } = 6;
+    public int CheapChunkPauseGapMinutes { get; set; } = 20;
 }
 
 public class AggregationSettings

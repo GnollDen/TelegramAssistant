@@ -163,7 +163,6 @@ public interface IMessageExtractionRepository
     Task QuarantineMessagesAsync(IReadOnlyCollection<long> messageIds, string reason, CancellationToken ct = default);
     Task<HashSet<long>> GetQuarantinedMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<Dictionary<long, string>> GetCheapJsonByMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
-    Task<List<long>> GetSummaryReadyMessageIdsAfterIdAsync(long afterMessageId, int limit, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
     Task<List<RefinementCandidate>> GetRefinementCandidatesAsync(
         long afterExtractionId,

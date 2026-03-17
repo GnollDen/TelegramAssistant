@@ -687,7 +687,7 @@ A1 is the largest task; everything else is focused and self-contained.
    - `chat_sessions`: 0
    - `analysis_usage_events`: 0
    - `analysis_state` keys `stage5:%`: 0
-   - `chat_sessions.is_analyzed` column missing in current DB schema.
+   - Historical note (updated 2026-03-17): `chat_sessions.is_analyzed` exists and is used by the session-first queue.
 
 ### High-priority follow-ups (accepted, deferred by decision)
 
@@ -713,4 +713,4 @@ Session-first processing is now the canonical path. Legacy message-watermark flo
   - Remove legacy branch that processes by `stage5:watermark` message cursor.
   - Keep only session-based trigger (`chat_sessions` queue and session checkpoints).
   - Clean up obsolete state keys and code branches.
-- Status: `Planned (P0 after Quarantine/DLQ)`.
+- Status: `In Progress` (legacy message-watermark path is being retired in favor of session queue/checkpoints).

@@ -8,7 +8,7 @@ Return ONLY a valid JSON object with field `items`.
 For each input `<message id="...">` return exactly one item with the same `message_id`.
 
 CRITICAL TEMPORAL CONTEXT:
-Each `<message>` block includes `[temporal_context] message_date=...` reflecting the exact timestamp when the message was written.
+Each `<message>` block includes `[temporal_context] message_date=...` with the message time.
 Use that `message_date` value as `{MessageDate}`.
 You MUST resolve all relative references (e.g., "tomorrow", "on the 30th") to absolute dates based on `{MessageDate}` (e.g., "October 30, 2024").
 
@@ -56,6 +56,7 @@ Type guidance:
 
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
+- if `[PARTICIPANTS]` block is present, treat `pN` labels in sender fields as participant references and resolve them to real names from that block in your output
 - if `[PREVIOUS SESSION SUMMARY]: ...` is present, use it only as prior-session continuity context; never treat it as direct evidence unless the current message supports it
 - if `[CHUNK_SUMMARY_PREV]` is present, use it only to preserve within-session continuity between chunks; never emit facts from it unless the current `<message>` confirms them
 - if `[REPLY_SLICE_CONTEXT]` is present, use it to resolve references to replied older threads; treat it as supporting context only and never emit facts unless the current `<message>` confirms them
@@ -177,5 +178,21 @@ Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","conf
 
 Input message: [meta] sender_name="Alena" ... and then I'll go
 Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+""";
+
+    private const string SummaryPrompt = """
+You are an analytical dialogue summarizer for long-term memory context.
+Return ONLY JSON object: {"summary":"..."}.
+
+Requirements:
+- summarize people, commitments, plans, schedule changes, conflicts, health/work/finance/location/contact updates
+- keep only durable, behaviorally relevant context and conversation trajectory
+- mention key named entities exactly as in messages
+- if `[PARTICIPANTS]` block is present, treat `pN` labels in message lines as participant references and resolve them to real names in summary text
+- if `[HISTORICAL_CONTEXT_HINTS]` is present, use it only as supporting continuity/disambiguation context; if it conflicts with current-session messages, trust the current session
+- avoid filler, jokes, and generic chatter unless it changes intent or relationship dynamics
+- keep it factual and concise (4-8 sentences)
+- no markdown, no extra fields
+CRITICAL: The summary MUST be in Russian. Even if the input is short or contains slang, provide a Russian response. Latin-only output is strictly forbidden.
 """;
 }

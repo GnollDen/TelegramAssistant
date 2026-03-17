@@ -16,10 +16,21 @@
 ## Current worker topology (Stage5/Stage6)
 - Core ingestion: `TelegramListenerService` → `BatchWorkerService` → `ArchiveImportWorkerService`
 - Media enrichment: `ArchiveMediaProcessorService`, `VoiceParalinguisticsWorkerService`
-- Stage5 extraction: `AnalysisWorkerService` + `ExpensivePassResolver`
-- Stage5 summaries: `DialogSummaryWorkerService` (+ historical retrieval embeddings)
+- Stage5 extraction (session-first): `AnalysisWorkerService` + `ExpensivePassResolver`
+- Stage5 summaries (slice-based): `DialogSummaryWorkerService` (+ historical retrieval embeddings)
 - Stage6 refinement: `ContinuousRefinementWorkerService` (disabled by default)
 - Stage6 chat/dossier runtime: `TelegramBotHostedService` + retrieval/embedding workers
+
+### Stage5 cursors (current)
+- Session analysis queue: `chat_sessions.is_analyzed=false` with idle gate `Analysis.SessionAnalysisMinIdleMinutes`.
+- Session chunk checkpoints: `analysis_state` keys `stage5:session_chunk_checkpoint:{chatId}:{sessionIndex}`.
+- Slice summary checkpoints: `analysis_state` keys `stage5:summary:session:{chatId}:{sessionIndex}`.
+- Legacy summary message-watermarks (`stage5:summary_watermark`, `stage5:summary_extraction_watermark`) are no longer used by runtime.
+
+## Documentation map
+- Runtime source-of-truth: `README.md` and `docs/stage5-extraction-algorithm.txt`.
+- Product/roadmap context: `CODEX_BACKLOG.md`, `docs/stage5_product_backlog.md`, `docs/backlog/stage5_hybrid_evolution.md`.
+- Historical artifacts: `docs/archive/`.
 
 ## Build & Run locally
 ```bash

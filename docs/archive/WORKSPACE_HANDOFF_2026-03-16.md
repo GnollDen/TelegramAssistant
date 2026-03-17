@@ -19,5 +19,7 @@ Untracked local files preserved separately:
 
 Recommended after switching team/workspace:
 1. Open this repository on branch `master`.
-2. Verify the latest commit is `225c235`.
+2. Treat commit `225c235` as the handoff snapshot commit from 2026-03-16 (not as a required current head).
 3. If needed, restore the untracked file snapshot from `workspace_backup_2026-03-16.tar.gz`.
+> Archive note (2026-03-17): operational handoff snapshot.
+> Do not use as architecture source-of-truth; see `README.md` and `docs/stage5-extraction-algorithm.txt`.
