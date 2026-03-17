@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
@@ -13,6 +14,10 @@ namespace TgAssistant.Processing.Media;
 
 public class OpenRouterMediaProcessor : IMediaProcessor
 {
+    private static readonly Regex RefusalLikeRegex = new(
+        "(can't|cannot|unable to|i\\s+am\\s+sorry|as an ai|can't actually|cannot directly|not able to|не могу|извините)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private readonly HttpClient _http;
     private readonly GeminiSettings _settings;
     private readonly MediaSettings _mediaSettings;
@@ -153,12 +158,13 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             var maxTokens = isArchive ? _mediaSettings.ArchiveVisionMaxTokens : _mediaSettings.VisionMaxTokens;
 
             var response = await SendImageRequestWithFallbackAsync(primaryModel, fallbackModel, maxTokens, mimeType, base64, prompt, ct);
+            var normalizedDescription = NormalizeImageDescription(response);
 
             return new MediaProcessingResult
             {
                 Success = true,
-                Description = response,
-                Confidence = 0.9f
+                Description = normalizedDescription,
+                Confidence = IsUnavailableMarker(normalizedDescription) ? 0.25f : 0.9f
             };
         }
         finally
@@ -251,12 +257,14 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             };
 
             var response = await SendRequestAsync(request, ct);
+            var normalized = NormalizeAudioTranscription(response);
 
             return new MediaProcessingResult
             {
                 Success = true,
-                Transcription = response,
-                Confidence = 0.9f
+                Transcription = normalized.Transcription,
+                Description = normalized.Description,
+                Confidence = normalized.Confidence
             };
         }
         finally
@@ -470,5 +478,57 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
 
         return "media_processing_error";
+    }
+
+    private static (string? Transcription, string? Description, float Confidence) NormalizeAudioTranscription(string raw)
+    {
+        var text = NormalizeLlmOutput(raw);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return (string.Empty, "[media_unavailable] reason=audio_empty_output", 0.2f);
+        }
+
+        if (IsRefusalLike(text))
+        {
+            return (string.Empty, "[media_unavailable] reason=audio_refusal", 0.2f);
+        }
+
+        return (text, null, 0.9f);
+    }
+
+    private static string NormalizeImageDescription(string raw)
+    {
+        var text = NormalizeLlmOutput(raw);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "[media_unavailable] reason=vision_empty_output";
+        }
+
+        if (IsRefusalLike(text))
+        {
+            return "[media_unavailable] reason=vision_refusal";
+        }
+
+        return text;
+    }
+
+    private static string NormalizeLlmOutput(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        return Regex.Replace(raw.Trim(), "\\s+", " ");
+    }
+
+    private static bool IsRefusalLike(string value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && RefusalLikeRegex.IsMatch(value);
+    }
+
+    private static bool IsUnavailableMarker(string value)
+    {
+        return value.StartsWith("[media_unavailable]", StringComparison.OrdinalIgnoreCase);
     }
 }
