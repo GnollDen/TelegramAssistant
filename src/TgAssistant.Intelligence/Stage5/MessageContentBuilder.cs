@@ -55,6 +55,11 @@ public class MessageContentBuilder
 
         if (!string.IsNullOrWhiteSpace(message.MediaTranscription)) parts.Add($"[media_transcription] {message.MediaTranscription}");
         if (!string.IsNullOrWhiteSpace(message.MediaDescription)) parts.Add($"[media_description] {message.MediaDescription}");
+        var mediaFallbackMarker = BuildMediaPresenceFallbackMarker(message);
+        if (!string.IsNullOrWhiteSpace(mediaFallbackMarker))
+        {
+            parts.Add(mediaFallbackMarker);
+        }
         if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson)) parts.Add($"[voice_paralinguistics] {message.MediaParalinguisticsJson}");
         if (!string.IsNullOrWhiteSpace(context?.PreviousSessionSummary))
         {
@@ -204,6 +209,12 @@ public class MessageContentBuilder
         if (!string.IsNullOrWhiteSpace(mediaDescription))
         {
             parts.Add($"[media_description] {mediaDescription}");
+        }
+
+        var mediaFallbackMarker = BuildMediaPresenceFallbackMarker(message);
+        if (!string.IsNullOrWhiteSpace(mediaFallbackMarker))
+        {
+            parts.Add(mediaFallbackMarker);
         }
 
         if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson))
@@ -458,6 +469,12 @@ public class MessageContentBuilder
             parts.Add(message.MediaDescription);
         }
 
+        var mediaFallbackMarker = BuildMediaPresenceFallbackMarker(message);
+        if (!string.IsNullOrWhiteSpace(mediaFallbackMarker))
+        {
+            parts.Add(mediaFallbackMarker);
+        }
+
         var editTrackingSnippet = BuildEditTrackingSnippet(message.ForwardJson);
         if (!string.IsNullOrWhiteSpace(editTrackingSnippet))
         {
@@ -638,6 +655,24 @@ public class MessageContentBuilder
         return string.IsNullOrWhiteSpace(transcription)
             ? prefix
             : $"{prefix} \"{transcription}\"";
+    }
+
+    private static string BuildMediaPresenceFallbackMarker(Message message)
+    {
+        if (message.MediaType == MediaType.None)
+        {
+            return string.Empty;
+        }
+
+        var hasText = !string.IsNullOrWhiteSpace(message.Text);
+        var hasTranscription = !string.IsNullOrWhiteSpace(message.MediaTranscription);
+        var hasDescription = !string.IsNullOrWhiteSpace(message.MediaDescription);
+        if (hasText || hasTranscription || hasDescription)
+        {
+            return string.Empty;
+        }
+
+        return $"[media_present] type={message.MediaType}; content_unavailable=true";
     }
 
     private static bool IsVoiceLikeMediaType(MediaType mediaType)

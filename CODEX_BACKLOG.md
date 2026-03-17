@@ -83,7 +83,21 @@ Status: closed as scaffold; remaining work is productization (`P` tasks).
 
 ## Current active
 
-- no active items in this file snapshot
+- `P9` Media pipeline coverage baseline and observability.
+  - Add SQL baseline report for media coverage/empty signal.
+  - Track `media_with_extraction`, `processed_without_extraction`, `empty_signal` split.
+- `P10` Media fallback marker for Stage5 eligibility.
+  - Ensure messages with media but without transcription/description are still analyzable.
+  - Add explicit marker into chunk payload/semantic content.
+- `P11` Media processor guardrails.
+  - Detect refusal/placeholder outputs from media LLM responses.
+  - Normalize into structured "unavailable" markers instead of noisy free text.
+- `P12` Voice short/long routing and paralinguistics integration.
+  - Split voice flow by duration class.
+  - Add long-voice resilient path and improve trust-factor inputs.
+- `P13` Controlled replay for media backlog.
+  - Requeue media processed without extraction in canary batches.
+  - Validate cost/quality before full replay rollout.
 
 ---
 
