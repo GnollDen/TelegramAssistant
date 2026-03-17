@@ -131,9 +131,14 @@ public static class ExtractionRefiner
 
     public static ExtractionItem RefineExtractionForMessage(ExtractionItem item, Message? message, AnalysisSettings settings)
     {
-        _ = message;
         _ = settings;
-        return SanitizeExtraction(item);
+        var effective = SanitizeExtraction(item);
+        if (message == null || message.MediaType == MediaType.None)
+        {
+            return effective;
+        }
+
+        return ApplyMediaTrustCaps(effective, message);
     }
 
     public static ExtractionItem FinalizeResolvedExtraction(ExtractionItem item)
@@ -183,5 +188,113 @@ public static class ExtractionRefiner
     private static float Clamp01(float value)
     {
         return Math.Clamp(value, 0f, 1f);
+    }
+
+    private static ExtractionItem ApplyMediaTrustCaps(ExtractionItem item, Message message)
+    {
+        var hasText = !string.IsNullOrWhiteSpace(message.Text);
+        var hasTranscript = !string.IsNullOrWhiteSpace(message.MediaTranscription);
+        var hasDescription = !string.IsNullOrWhiteSpace(message.MediaDescription);
+        var hasParalinguistics = !string.IsNullOrWhiteSpace(message.MediaParalinguisticsJson);
+
+        var trustCap = ResolveMediaTrustCap(hasText, hasTranscript, hasDescription, hasParalinguistics);
+        if (trustCap >= 1f)
+        {
+            return item;
+        }
+
+        item.Entities = item.Entities
+            .Select(entity =>
+            {
+                entity.TrustFactor = Math.Min(entity.TrustFactor, trustCap);
+                entity.Confidence = Math.Min(entity.Confidence, trustCap);
+                return entity;
+            })
+            .ToList();
+
+        item.Facts = item.Facts
+            .Select(fact =>
+            {
+                fact.TrustFactor = Math.Min(fact.TrustFactor, trustCap);
+                fact.Confidence = Math.Min(fact.Confidence, trustCap);
+                if (trustCap <= 0.7f)
+                {
+                    fact.NeedsClarification = true;
+                }
+
+                return fact;
+            })
+            .ToList();
+
+        item.Claims = item.Claims
+            .Select(claim =>
+            {
+                claim.Confidence = Math.Min(claim.Confidence, trustCap);
+                return claim;
+            })
+            .ToList();
+
+        item.Observations = item.Observations
+            .Select(observation =>
+            {
+                observation.Confidence = Math.Min(observation.Confidence, trustCap);
+                return observation;
+            })
+            .ToList();
+
+        item.Events = item.Events
+            .Select(evt =>
+            {
+                evt.Confidence = Math.Min(evt.Confidence, trustCap);
+                return evt;
+            })
+            .ToList();
+
+        item.Relationships = item.Relationships
+            .Select(relationship =>
+            {
+                relationship.Confidence = Math.Min(relationship.Confidence, trustCap);
+                return relationship;
+            })
+            .ToList();
+
+        item.ProfileSignals = item.ProfileSignals
+            .Select(signal =>
+            {
+                signal.Confidence = Math.Min(signal.Confidence, trustCap);
+                return signal;
+            })
+            .ToList();
+
+        return item;
+    }
+
+    private static float ResolveMediaTrustCap(
+        bool hasText,
+        bool hasTranscript,
+        bool hasDescription,
+        bool hasParalinguistics)
+    {
+        if (hasTranscript)
+        {
+            return 0.85f;
+        }
+
+        if (hasText && hasDescription)
+        {
+            return 0.8f;
+        }
+
+        if (hasDescription && !hasText)
+        {
+            return 0.7f;
+        }
+
+        if (hasParalinguistics)
+        {
+            return 0.65f;
+        }
+
+        return 0.55f;
     }
 }
