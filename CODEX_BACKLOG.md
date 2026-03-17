@@ -1130,3 +1130,135 @@ D1 → D2 → D3 → D4 → D5 → D6 → D7 → D8 → D9 → D10
 
 Each task is independent enough to be a single commit/PR.
 A1 remains the largest refactor task.
+
+---
+
+## Sprint plan (non-blocking + multi-agent orchestration)
+
+Goal: keep product development moving while stabilization/refactor tasks run in parallel with minimal merge conflicts.
+
+### Sprint S0 (1-2 days) — Baseline and branch strategy
+
+**Scope:**
+- Freeze architecture decisions from 2026-03-17 baseline.
+- Define ownership map for agents (by files/modules).
+- Prepare integration checklist for fast parallel merges.
+
+**Deliverables:**
+- `main` branch protection + small PR policy.
+- File ownership matrix for parallel agents.
+- Smoke commands pinned for each PR (`dotnet build`, MCP build when touched).
+
+---
+
+### Sprint S1 (P0 hardening, parallel) — E1 + E2 + E3 + E4
+
+Run as 4 parallel lanes.
+
+**Lane A (Core facts):** E1  
+**Files:** `ExtractionApplier.cs`, fact-review command flow.
+
+**Lane B (Ingestion reliability):** E2  
+**Files:** `RedisMessageQueue.cs`, ingestion telemetry.
+
+**Lane C (Expensive isolation):** E3  
+**Files:** `ExpensivePassResolver.cs`, `analysis_state` keys.
+
+**Lane D (Session continuity):** E4  
+**Files:** `AnalysisWorkerService.cs`, summary context/prompt builder.
+
+**Merge order:** B -> C -> A -> D  
+Reason: reliability primitives first, then state model, then behavior changes, then session-path fallback.
+
+**Exit criteria:**
+- No queue deadlocks after crash/restart scenario.
+- Tentative facts require explicit manual approval.
+- Per-model expensive backoff survives restart.
+- Missing previous summary no longer blocks downstream session processing.
+
+---
+
+### Sprint S2 (P1 behavior + MCP foundation, parallel) — E5 + E6(part1) + E7
+
+Run as 3 parallel lanes.
+
+**Lane A (Summary ownership):** E5  
+**Files:** `AnalysisWorkerService.cs`, `DialogSummaryWorkerService.cs`, bot command entrypoints.
+
+**Lane B (MCP transport foundation):** E6 part 1 + B1-B4  
+**Files:** MCP project structure, transport selection (`stdio|sse`), read-tools parity.
+
+**Lane C (Runtime limits):** E7  
+**Files:** analysis settings + workers using `TestModeMaxSessionsPerChat`.
+
+**Merge order:** C -> A -> B  
+Reason: reduce runtime surprises first, then summary flow policy, then external MCP interface layer.
+
+**Exit criteria:**
+- One default summary pass per slice/session in steady-state.
+- Manual re-summary command works.
+- Production path independent from test cap defaults.
+- MCP starts in both `stdio` and `sse` modes with same read-tool registry.
+
+---
+
+### Sprint S3 (MCP completion + ops integration) — E6(part2) + B5-B9
+
+**Scope:**
+- Write tools (management/ops commands).
+- Docker integration and localhost bind policy.
+- Auth middleware for SSE endpoint.
+
+**Parallel lanes:**
+- Lane A: write-tools (`B5`, `B6`)
+- Lane B: container/runtime (`B7`, `B8`)
+- Lane C: auth and hardening (`B9`)
+
+**Exit criteria:**
+- End-to-end MCP workflow works for Codex and Claude clients.
+- SSE endpoint authenticated and deployable via docker-compose.
+
+---
+
+### Sprint S4 (Quality and observability without blocking feature work) — A2/A5/A6/A8 + C1-C5
+
+**Scope:**
+- Data-integrity improvements in Stage5 path.
+- Broadcast observability foundations and sampling controls.
+
+**Parallelization rule:**
+- One agent owns Stage5 data-path changes (A-tasks).
+- One agent owns telemetry schema/injection (C1-C3).
+- One agent owns privacy/sampling policy (C4-C5).
+
+**Exit criteria:**
+- Transactional integrity and quality safeguards in extraction apply path.
+- Trace coverage available with privacy-safe defaults.
+
+---
+
+### Sprint S5 (Refactor track, low coupling to delivery) — D1-D10 + remaining A/B/C tails
+
+**Scope:**
+- Controlled decomposition of `AnalysisWorkerService`.
+- Finish optional/low-priority items (`A7`, `A11`, `B10`, `C6-C10`).
+
+**Rule:**
+- Refactor PRs are small, behavior-preserving, and continuously rebased on stabilized code from S1-S4.
+
+**Exit criteria:**
+- Orchestrator shrunk to target size.
+- Runtime parity verified by smoke metrics/logs.
+
+---
+
+## Multi-agent orchestration protocol
+
+1. Create one orchestrator branch per sprint and one feature branch per lane (`s1-lane-a-*`, `s1-lane-b-*`, ...).
+2. Assign strict file ownership per lane to avoid overlap in the same sprint.
+3. Require lane-level smoke checks before merge:
+   - C# touched: `dotnet build TelegramAssistant.sln`
+   - MCP touched: MCP build command for the active MCP project
+4. Merge lanes in planned order; rebase remaining lanes after each merge.
+5. Keep a daily integration window for conflict resolution and end-to-end smoke run.
+6. Defer cross-cutting refactors to S5 unless they are required to unblock a P0/P1 fix.
