@@ -13,6 +13,7 @@ using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
+using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
@@ -39,6 +40,7 @@ try
     var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
     var runStateSmoke = args.Any(arg => string.Equals(arg, "--state-smoke", StringComparison.OrdinalIgnoreCase));
     var runProfileSmoke = args.Any(arg => string.Equals(arg, "--profile-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStrategySmoke = args.Any(arg => string.Equals(arg, "--strategy-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -48,7 +50,8 @@ try
         "--clarification-smoke",
         "--periodization-smoke",
         "--state-smoke",
-        "--profile-smoke"
+        "--profile-smoke",
+        "--strategy-smoke"
     };
 
     if (runListSmokes)
@@ -195,6 +198,13 @@ try
             services.AddSingleton<IPatternSynthesisService, PatternSynthesisService>();
             services.AddSingleton<IProfileEngine, ProfileEngine>();
             services.AddSingleton<ProfileEngineVerificationService>();
+            services.AddSingleton<IStrategyOptionGenerator, StrategyOptionGenerator>();
+            services.AddSingleton<IStrategyRiskEvaluator, StrategyRiskEvaluator>();
+            services.AddSingleton<IStrategyRanker, StrategyRanker>();
+            services.AddSingleton<IStrategyConfidenceEvaluator, StrategyConfidenceEvaluator>();
+            services.AddSingleton<IMicroStepPlanner, MicroStepPlanner>();
+            services.AddSingleton<IStrategyEngine, StrategyEngine>();
+            services.AddSingleton<StrategyEngineVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -320,6 +330,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<ProfileEngineVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Profile smoke run requested via --profile-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runStrategySmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<StrategyEngineVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Strategy smoke run requested via --strategy-smoke. Exiting after successful verification.");
             return;
         }
 
