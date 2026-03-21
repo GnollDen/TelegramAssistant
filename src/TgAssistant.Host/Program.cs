@@ -12,6 +12,7 @@ using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.Periodization;
+using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
@@ -37,6 +38,7 @@ try
     var runClarificationSmoke = args.Any(arg => string.Equals(arg, "--clarification-smoke", StringComparison.OrdinalIgnoreCase));
     var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
     var runStateSmoke = args.Any(arg => string.Equals(arg, "--state-smoke", StringComparison.OrdinalIgnoreCase));
+    var runProfileSmoke = args.Any(arg => string.Equals(arg, "--profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
 
@@ -172,6 +174,12 @@ try
             services.AddSingleton<IRelationshipStatusMapper, RelationshipStatusMapper>();
             services.AddSingleton<ICurrentStateEngine, CurrentStateEngine>();
             services.AddSingleton<StateEngineVerificationService>();
+            services.AddSingleton<IProfileTraitExtractor, ProfileTraitExtractor>();
+            services.AddSingleton<IPairProfileSynthesizer, PairProfileSynthesizer>();
+            services.AddSingleton<IProfileConfidenceEvaluator, ProfileConfidenceEvaluator>();
+            services.AddSingleton<IPatternSynthesisService, PatternSynthesisService>();
+            services.AddSingleton<IProfileEngine, ProfileEngine>();
+            services.AddSingleton<ProfileEngineVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -289,6 +297,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<StateEngineVerificationService>();
             await verificationService.RunAsync();
             Log.Information("State smoke run requested via --state-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runProfileSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<ProfileEngineVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Profile smoke run requested via --profile-smoke. Exiting after successful verification.");
             return;
         }
 
