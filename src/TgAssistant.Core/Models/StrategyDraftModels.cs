@@ -10,6 +10,8 @@ public class StrategyRecord
     public float StrategyConfidence { get; set; }
     public string RecommendedGoal { get; set; } = string.Empty;
     public string WhyNotOthers { get; set; } = string.Empty;
+    public string MicroStep { get; set; } = string.Empty;
+    public string? HorizonJson { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public Guid? SourceSessionId { get; set; }
     public long? SourceMessageId { get; set; }
