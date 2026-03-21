@@ -32,6 +32,26 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbAnalysisUsageEvent> AnalysisUsageEvents => Set<DbAnalysisUsageEvent>();
     public DbSet<DbTextEmbedding> TextEmbeddings => Set<DbTextEmbedding>();
     public DbSet<DbStickerCache> StickerCache => Set<DbStickerCache>();
+    public DbSet<DbPeriod> Periods => Set<DbPeriod>();
+    public DbSet<DbPeriodTransition> PeriodTransitions => Set<DbPeriodTransition>();
+    public DbSet<DbHypothesis> Hypotheses => Set<DbHypothesis>();
+    public DbSet<DbClarificationQuestion> ClarificationQuestions => Set<DbClarificationQuestion>();
+    public DbSet<DbClarificationAnswer> ClarificationAnswers => Set<DbClarificationAnswer>();
+    public DbSet<DbOfflineEvent> OfflineEvents => Set<DbOfflineEvent>();
+    public DbSet<DbAudioAsset> AudioAssets => Set<DbAudioAsset>();
+    public DbSet<DbAudioSegment> AudioSegments => Set<DbAudioSegment>();
+    public DbSet<DbAudioSnippet> AudioSnippets => Set<DbAudioSnippet>();
+    public DbSet<DbStateSnapshot> StateSnapshots => Set<DbStateSnapshot>();
+    public DbSet<DbProfileSnapshot> ProfileSnapshots => Set<DbProfileSnapshot>();
+    public DbSet<DbProfileTrait> ProfileTraits => Set<DbProfileTrait>();
+    public DbSet<DbStrategyRecord> StrategyRecords => Set<DbStrategyRecord>();
+    public DbSet<DbStrategyOption> StrategyOptions => Set<DbStrategyOption>();
+    public DbSet<DbDraftRecord> DraftRecords => Set<DbDraftRecord>();
+    public DbSet<DbDraftOutcome> DraftOutcomes => Set<DbDraftOutcome>();
+    public DbSet<DbInboxItem> InboxItems => Set<DbInboxItem>();
+    public DbSet<DbConflictRecord> ConflictRecords => Set<DbConflictRecord>();
+    public DbSet<DbDependencyLink> DependencyLinks => Set<DbDependencyLink>();
+    public DbSet<DbDomainReviewEvent> DomainReviewEvents => Set<DbDomainReviewEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -446,6 +466,431 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.HitCount).HasColumnName("hit_count");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
+        });
+
+        modelBuilder.Entity<DbPeriod>(e =>
+        {
+            e.ToTable("domain_periods");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.Label).HasColumnName("label");
+            e.Property(x => x.CustomLabel).HasColumnName("custom_label");
+            e.Property(x => x.StartAt).HasColumnName("start_at");
+            e.Property(x => x.EndAt).HasColumnName("end_at");
+            e.Property(x => x.IsOpen).HasColumnName("is_open");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.KeySignalsJson).HasColumnName("key_signals_json").HasColumnType("jsonb");
+            e.Property(x => x.WhatHelped).HasColumnName("what_helped");
+            e.Property(x => x.WhatHurt).HasColumnName("what_hurt");
+            e.Property(x => x.OpenQuestionsCount).HasColumnName("open_questions_count");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.InterpretationConfidence).HasColumnName("interpretation_confidence");
+            e.Property(x => x.ReviewPriority).HasColumnName("review_priority");
+            e.Property(x => x.IsSensitive).HasColumnName("is_sensitive");
+            e.Property(x => x.StatusSnapshot).HasColumnName("status_snapshot");
+            e.Property(x => x.DynamicSnapshot).HasColumnName("dynamic_snapshot");
+            e.Property(x => x.Lessons).HasColumnName("lessons");
+            e.Property(x => x.StrategicPatterns).HasColumnName("strategic_patterns");
+            e.Property(x => x.ManualNotes).HasColumnName("manual_notes");
+            e.Property(x => x.UserOverrideSummary).HasColumnName("user_override_summary");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.StartAt });
+            e.HasIndex(x => new { x.CaseId, x.IsOpen });
+        });
+
+        modelBuilder.Entity<DbPeriodTransition>(e =>
+        {
+            e.ToTable("domain_period_transitions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.FromPeriodId).HasColumnName("from_period_id");
+            e.Property(x => x.ToPeriodId).HasColumnName("to_period_id");
+            e.Property(x => x.TransitionType).HasColumnName("transition_type");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.IsResolved).HasColumnName("is_resolved");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.GapId).HasColumnName("gap_id");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => x.FromPeriodId);
+            e.HasIndex(x => x.ToPeriodId);
+            e.HasIndex(x => x.IsResolved);
+        });
+
+        modelBuilder.Entity<DbHypothesis>(e =>
+        {
+            e.ToTable("domain_hypotheses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.HypothesisType).HasColumnName("hypothesis_type");
+            e.Property(x => x.SubjectType).HasColumnName("subject_type");
+            e.Property(x => x.SubjectId).HasColumnName("subject_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.Statement).HasColumnName("statement");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.ConflictRefsJson).HasColumnName("conflict_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.ValidationTargetsJson).HasColumnName("validation_targets_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.Status });
+            e.HasIndex(x => x.PeriodId);
+        });
+
+        modelBuilder.Entity<DbClarificationQuestion>(e =>
+        {
+            e.ToTable("domain_clarification_questions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.QuestionText).HasColumnName("question_text");
+            e.Property(x => x.QuestionType).HasColumnName("question_type");
+            e.Property(x => x.Priority).HasColumnName("priority");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.RelatedHypothesisId).HasColumnName("related_hypothesis_id");
+            e.Property(x => x.AffectedOutputsJson).HasColumnName("affected_outputs_json").HasColumnType("jsonb");
+            e.Property(x => x.WhyItMatters).HasColumnName("why_it_matters");
+            e.Property(x => x.ExpectedGain).HasColumnName("expected_gain");
+            e.Property(x => x.AnswerOptionsJson).HasColumnName("answer_options_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.Status, x.Priority });
+            e.HasIndex(x => x.PeriodId);
+        });
+
+        modelBuilder.Entity<DbClarificationAnswer>(e =>
+        {
+            e.ToTable("domain_clarification_answers");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.QuestionId).HasColumnName("question_id");
+            e.Property(x => x.AnswerType).HasColumnName("answer_type");
+            e.Property(x => x.AnswerValue).HasColumnName("answer_value");
+            e.Property(x => x.AnswerConfidence).HasColumnName("answer_confidence");
+            e.Property(x => x.SourceClass).HasColumnName("source_class");
+            e.Property(x => x.AffectedObjectsJson).HasColumnName("affected_objects_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.QuestionId);
+        });
+
+        modelBuilder.Entity<DbOfflineEvent>(e =>
+        {
+            e.ToTable("domain_offline_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.EventType).HasColumnName("event_type");
+            e.Property(x => x.Title).HasColumnName("title");
+            e.Property(x => x.UserSummary).HasColumnName("user_summary");
+            e.Property(x => x.AutoSummary).HasColumnName("auto_summary");
+            e.Property(x => x.TimestampStart).HasColumnName("timestamp_start");
+            e.Property(x => x.TimestampEnd).HasColumnName("timestamp_end");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.ReviewStatus).HasColumnName("review_status");
+            e.Property(x => x.ImpactSummary).HasColumnName("impact_summary");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.TimestampStart });
+            e.HasIndex(x => new { x.CaseId, x.ReviewStatus });
+        });
+
+        modelBuilder.Entity<DbAudioAsset>(e =>
+        {
+            e.ToTable("domain_audio_assets");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.OfflineEventId).HasColumnName("offline_event_id");
+            e.Property(x => x.FilePath).HasColumnName("file_path");
+            e.Property(x => x.DurationSeconds).HasColumnName("duration_seconds");
+            e.Property(x => x.TranscriptStatus).HasColumnName("transcript_status");
+            e.Property(x => x.TranscriptText).HasColumnName("transcript_text");
+            e.Property(x => x.SpeakerReviewStatus).HasColumnName("speaker_review_status");
+            e.Property(x => x.ProcessingStatus).HasColumnName("processing_status");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => x.OfflineEventId);
+        });
+
+        modelBuilder.Entity<DbAudioSegment>(e =>
+        {
+            e.ToTable("domain_audio_segments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AudioAssetId).HasColumnName("audio_asset_id");
+            e.Property(x => x.SegmentIndex).HasColumnName("segment_index");
+            e.Property(x => x.StartSeconds).HasColumnName("start_seconds").HasColumnType("numeric(10,3)");
+            e.Property(x => x.EndSeconds).HasColumnName("end_seconds").HasColumnType("numeric(10,3)");
+            e.Property(x => x.SpeakerLabel).HasColumnName("speaker_label");
+            e.Property(x => x.TranscriptText).HasColumnName("transcript_text");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.AudioAssetId, x.SegmentIndex }).IsUnique();
+        });
+
+        modelBuilder.Entity<DbAudioSnippet>(e =>
+        {
+            e.ToTable("domain_audio_snippets");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.AudioAssetId).HasColumnName("audio_asset_id");
+            e.Property(x => x.AudioSegmentId).HasColumnName("audio_segment_id");
+            e.Property(x => x.SnippetType).HasColumnName("snippet_type");
+            e.Property(x => x.Text).HasColumnName("text");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.AudioAssetId);
+            e.HasIndex(x => x.AudioSegmentId);
+        });
+
+        modelBuilder.Entity<DbStateSnapshot>(e =>
+        {
+            e.ToTable("domain_state_snapshots");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.DynamicLabel).HasColumnName("dynamic_label");
+            e.Property(x => x.RelationshipStatus).HasColumnName("relationship_status");
+            e.Property(x => x.AlternativeStatus).HasColumnName("alternative_status");
+            e.Property(x => x.InitiativeScore).HasColumnName("initiative_score");
+            e.Property(x => x.ResponsivenessScore).HasColumnName("responsiveness_score");
+            e.Property(x => x.OpennessScore).HasColumnName("openness_score");
+            e.Property(x => x.WarmthScore).HasColumnName("warmth_score");
+            e.Property(x => x.ReciprocityScore).HasColumnName("reciprocity_score");
+            e.Property(x => x.AmbiguityScore).HasColumnName("ambiguity_score");
+            e.Property(x => x.AvoidanceRiskScore).HasColumnName("avoidance_risk_score");
+            e.Property(x => x.EscalationReadinessScore).HasColumnName("escalation_readiness_score");
+            e.Property(x => x.ExternalPressureScore).HasColumnName("external_pressure_score");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.KeySignalRefsJson).HasColumnName("key_signal_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.RiskRefsJson).HasColumnName("risk_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.CaseId, x.AsOf });
+        });
+
+        modelBuilder.Entity<DbProfileSnapshot>(e =>
+        {
+            e.ToTable("domain_profile_snapshots");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.SubjectType).HasColumnName("subject_type");
+            e.Property(x => x.SubjectId).HasColumnName("subject_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.CaseId, x.SubjectType, x.SubjectId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbProfileTrait>(e =>
+        {
+            e.ToTable("domain_profile_traits");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProfileSnapshotId).HasColumnName("profile_snapshot_id");
+            e.Property(x => x.TraitKey).HasColumnName("trait_key");
+            e.Property(x => x.ValueLabel).HasColumnName("value_label");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.IsSensitive).HasColumnName("is_sensitive");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ProfileSnapshotId, x.TraitKey });
+        });
+
+        modelBuilder.Entity<DbStrategyRecord>(e =>
+        {
+            e.ToTable("domain_strategy_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.StateSnapshotId).HasColumnName("state_snapshot_id");
+            e.Property(x => x.StrategyConfidence).HasColumnName("strategy_confidence");
+            e.Property(x => x.RecommendedGoal).HasColumnName("recommended_goal");
+            e.Property(x => x.WhyNotOthers).HasColumnName("why_not_others");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.CaseId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbStrategyOption>(e =>
+        {
+            e.ToTable("domain_strategy_options");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.StrategyRecordId).HasColumnName("strategy_record_id");
+            e.Property(x => x.ActionType).HasColumnName("action_type");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.Purpose).HasColumnName("purpose");
+            e.Property(x => x.Risk).HasColumnName("risk");
+            e.Property(x => x.WhenToUse).HasColumnName("when_to_use");
+            e.Property(x => x.SuccessSigns).HasColumnName("success_signs");
+            e.Property(x => x.FailureSigns).HasColumnName("failure_signs");
+            e.Property(x => x.IsPrimary).HasColumnName("is_primary");
+            e.HasIndex(x => x.StrategyRecordId);
+        });
+
+        modelBuilder.Entity<DbDraftRecord>(e =>
+        {
+            e.ToTable("domain_draft_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.StrategyRecordId).HasColumnName("strategy_record_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.MainDraft).HasColumnName("main_draft");
+            e.Property(x => x.AltDraft1).HasColumnName("alt_draft_1");
+            e.Property(x => x.AltDraft2).HasColumnName("alt_draft_2");
+            e.Property(x => x.StyleNotes).HasColumnName("style_notes");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.StrategyRecordId);
+        });
+
+        modelBuilder.Entity<DbDraftOutcome>(e =>
+        {
+            e.ToTable("domain_draft_outcomes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DraftId).HasColumnName("draft_id");
+            e.Property(x => x.ActualMessageId).HasColumnName("actual_message_id");
+            e.Property(x => x.MatchScore).HasColumnName("match_score");
+            e.Property(x => x.OutcomeLabel).HasColumnName("outcome_label");
+            e.Property(x => x.Notes).HasColumnName("notes");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => x.DraftId);
+        });
+
+        modelBuilder.Entity<DbInboxItem>(e =>
+        {
+            e.ToTable("domain_inbox_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ItemType).HasColumnName("item_type");
+            e.Property(x => x.SourceObjectType).HasColumnName("source_object_type");
+            e.Property(x => x.SourceObjectId).HasColumnName("source_object_id");
+            e.Property(x => x.Priority).HasColumnName("priority");
+            e.Property(x => x.IsBlocking).HasColumnName("is_blocking");
+            e.Property(x => x.Title).HasColumnName("title");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.LastActor).HasColumnName("last_actor");
+            e.Property(x => x.LastReason).HasColumnName("last_reason");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.Status, x.Priority });
+        });
+
+        modelBuilder.Entity<DbConflictRecord>(e =>
+        {
+            e.ToTable("domain_conflict_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ConflictType).HasColumnName("conflict_type");
+            e.Property(x => x.ObjectAType).HasColumnName("object_a_type");
+            e.Property(x => x.ObjectAId).HasColumnName("object_a_id");
+            e.Property(x => x.ObjectBType).HasColumnName("object_b_type");
+            e.Property(x => x.ObjectBId).HasColumnName("object_b_id");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.Severity).HasColumnName("severity");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PeriodId).HasColumnName("period_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.LastActor).HasColumnName("last_actor");
+            e.Property(x => x.LastReason).HasColumnName("last_reason");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.Status, x.Severity });
+        });
+
+        modelBuilder.Entity<DbDependencyLink>(e =>
+        {
+            e.ToTable("domain_dependency_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.UpstreamType).HasColumnName("upstream_type");
+            e.Property(x => x.UpstreamId).HasColumnName("upstream_id");
+            e.Property(x => x.DownstreamType).HasColumnName("downstream_type");
+            e.Property(x => x.DownstreamId).HasColumnName("downstream_id");
+            e.Property(x => x.LinkType).HasColumnName("link_type");
+            e.Property(x => x.LinkReason).HasColumnName("link_reason");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.UpstreamType, x.UpstreamId });
+            e.HasIndex(x => new { x.DownstreamType, x.DownstreamId });
+        });
+
+        modelBuilder.Entity<DbDomainReviewEvent>(e =>
+        {
+            e.ToTable("domain_review_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ObjectType).HasColumnName("object_type");
+            e.Property(x => x.ObjectId).HasColumnName("object_id");
+            e.Property(x => x.Action).HasColumnName("action");
+            e.Property(x => x.OldValueRef).HasColumnName("old_value_ref");
+            e.Property(x => x.NewValueRef).HasColumnName("new_value_ref");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.Actor).HasColumnName("actor");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ObjectType, x.ObjectId, x.CreatedAt });
         });
     }
 }
