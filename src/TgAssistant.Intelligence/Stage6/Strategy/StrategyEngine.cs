@@ -17,6 +17,7 @@ public class StrategyEngine : IStrategyEngine
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly ICompetingContextRuntimeService _competingContextRuntimeService;
     private readonly IStrategyOptionGenerator _optionGenerator;
     private readonly IStrategyRiskEvaluator _riskEvaluator;
     private readonly IStrategyRanker _ranker;
@@ -33,6 +34,7 @@ public class StrategyEngine : IStrategyEngine
         IStateProfileRepository stateProfileRepository,
         IStrategyDraftRepository strategyDraftRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
+        ICompetingContextRuntimeService competingContextRuntimeService,
         IStrategyOptionGenerator optionGenerator,
         IStrategyRiskEvaluator riskEvaluator,
         IStrategyRanker ranker,
@@ -48,6 +50,7 @@ public class StrategyEngine : IStrategyEngine
         _stateProfileRepository = stateProfileRepository;
         _strategyDraftRepository = strategyDraftRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _competingContextRuntimeService = competingContextRuntimeService;
         _optionGenerator = optionGenerator;
         _riskEvaluator = riskEvaluator;
         _ranker = ranker;
@@ -60,6 +63,15 @@ public class StrategyEngine : IStrategyEngine
     {
         var asOf = request.AsOfUtc ?? DateTime.UtcNow;
         var context = await LoadContextAsync(request, asOf, ct);
+        var competingRuntime = await _competingContextRuntimeService.RunAsync(new CompetingContextRuntimeRequest
+        {
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            AsOfUtc = asOf,
+            Actor = request.Actor,
+            SourceType = request.SourceType,
+            SourceId = request.SourceId
+        }, ct);
 
         var candidates = (await _optionGenerator.GenerateAsync(context, ct)).ToList();
         foreach (var candidate in candidates)
@@ -69,11 +81,14 @@ public class StrategyEngine : IStrategyEngine
             candidate.RiskScore = risk.RiskScore;
         }
 
+        ApplyCompetingStrategyConstraints(candidates, competingRuntime.Interpretation.StrategyConstraints);
         var ranked = _ranker.Rank(context, candidates);
         var confidence = _confidenceEvaluator.Evaluate(context, ranked);
+        ApplyCompetingConfidenceGates(confidence, competingRuntime.Interpretation);
         var primary = ranked.First();
         var (microStep, horizon) = _microStepPlanner.Plan(context, primary, confidence);
         var whyNotNotes = BuildWhyNotNotes(primary, ranked);
+        whyNotNotes = AppendCompetingWhyNot(whyNotNotes, competingRuntime.Interpretation);
 
         var sourceMessage = context.RecentMessages.OrderByDescending(x => x.Timestamp).FirstOrDefault();
         var sourceSession = context.RecentSessions.OrderByDescending(x => x.EndDate).FirstOrDefault();
@@ -140,6 +155,9 @@ public class StrategyEngine : IStrategyEngine
                     record.StrategyConfidence,
                     record.RecommendedGoal,
                     record.MicroStep,
+                    competing_source_records = competingRuntime.SourceRecordIds.Count,
+                    competing_constraints = competingRuntime.Interpretation.StrategyConstraints.Count,
+                    competing_blocked_overrides = competingRuntime.Interpretation.BlockedOverrideAttempts.Count,
                     horizon_enabled = confidence.HorizonAllowed,
                     options = ranked.Select(x => new
                     {
@@ -370,5 +388,94 @@ public class StrategyEngine : IStrategyEngine
         return alternatives.Count == 0
             ? "No meaningful alternatives were available beyond the primary safe option."
             : string.Join(" | ", alternatives);
+    }
+
+    private static void ApplyCompetingStrategyConstraints(
+        IReadOnlyList<StrategyCandidateOption> candidates,
+        IReadOnlyList<CompetingStrategyConstraint> constraints)
+    {
+        if (constraints.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            foreach (var constraint in constraints)
+            {
+                candidate.RiskLabels.Add($"competing:{constraint.ConstraintType}");
+                if (constraint.RequiresReview)
+                {
+                    candidate.RiskLabels.Add("competing:review_required");
+                }
+
+                if (!IsEscalationAction(candidate.ActionType))
+                {
+                    continue;
+                }
+
+                var penalty = IsHighImpactSeverity(constraint.Severity) ? 0.22f : 0.12f;
+                candidate.RiskScore = Math.Clamp(candidate.RiskScore + penalty, 0f, 1f);
+            }
+        }
+    }
+
+    private static void ApplyCompetingConfidenceGates(
+        StrategyConfidenceAssessment confidence,
+        CompetingContextInterpretationResult interpretation)
+    {
+        if (!interpretation.RequiresExplicitReview)
+        {
+            return;
+        }
+
+        if (interpretation.StrategyConstraints.Count > 0)
+        {
+            confidence.Confidence = Math.Clamp(confidence.Confidence - 0.05f, 0f, 1f);
+        }
+
+        var hasHighImpact = interpretation.BlockedOverrideAttempts.Count > 0
+            || interpretation.StrategyConstraints.Any(x => IsHighImpactSeverity(x.Severity));
+        if (hasHighImpact)
+        {
+            confidence.HighUncertainty = true;
+            confidence.HorizonAllowed = false;
+        }
+    }
+
+    private static string AppendCompetingWhyNot(string baseWhyNot, CompetingContextInterpretationResult interpretation)
+    {
+        if (interpretation.StrategyConstraints.Count == 0 && interpretation.BlockedOverrideAttempts.Count == 0)
+        {
+            return baseWhyNot;
+        }
+
+        var segments = new List<string>();
+        if (!string.IsNullOrWhiteSpace(baseWhyNot))
+        {
+            segments.Add(baseWhyNot.Trim());
+        }
+
+        if (interpretation.StrategyConstraints.Count > 0)
+        {
+            segments.Add($"competing constraints active ({interpretation.StrategyConstraints.Count}), review before aggressive moves");
+        }
+
+        if (interpretation.BlockedOverrideAttempts.Count > 0)
+        {
+            segments.Add($"blocked override attempts recorded ({interpretation.BlockedOverrideAttempts.Count}), non-applied by policy");
+        }
+
+        return string.Join(" | ", segments);
+    }
+
+    private static bool IsEscalationAction(string actionType)
+    {
+        return actionType is "invite" or "deepen" or "light_test";
+    }
+
+    private static bool IsHighImpactSeverity(string? severity)
+    {
+        return string.Equals(severity, "high", StringComparison.OrdinalIgnoreCase);
     }
 }
