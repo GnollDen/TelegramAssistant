@@ -8,10 +8,11 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class SummaryHistoricalRetrievalService
 {
-    private const string EmbeddingModel = "text-embedding-3-small";
+    private const string DefaultEmbeddingModel = "text-embedding-3-small";
     private const string DailyFinalOwnerTypePrefix = "priority:chat_daily_final";
 
     private readonly AnalysisSettings _analysisSettings;
+    private readonly EmbeddingSettings _embeddingSettings;
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly IEmbeddingRepository _embeddingRepository;
     private readonly IIntelligenceRepository _intelligenceRepository;
@@ -19,12 +20,14 @@ public class SummaryHistoricalRetrievalService
 
     public SummaryHistoricalRetrievalService(
         IOptions<AnalysisSettings> analysisSettings,
+        IOptions<EmbeddingSettings> embeddingSettings,
         ITextEmbeddingGenerator embeddingGenerator,
         IEmbeddingRepository embeddingRepository,
         IIntelligenceRepository intelligenceRepository,
         ILogger<SummaryHistoricalRetrievalService> logger)
     {
         _analysisSettings = analysisSettings.Value;
+        _embeddingSettings = embeddingSettings.Value;
         _embeddingGenerator = embeddingGenerator;
         _embeddingRepository = embeddingRepository;
         _intelligenceRepository = intelligenceRepository;
@@ -48,6 +51,7 @@ public class SummaryHistoricalRetrievalService
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(Math.Max(250, _analysisSettings.SummaryHistoricalHintsTimeoutMs));
+            var embeddingModel = ResolveEmbeddingModel();
 
             var query = await BuildQueryAsync(sessionMessages, timeoutCts.Token);
             if (string.IsNullOrWhiteSpace(query))
@@ -55,7 +59,7 @@ public class SummaryHistoricalRetrievalService
                 return [];
             }
 
-            var vector = await _embeddingGenerator.GenerateAsync(EmbeddingModel, query, timeoutCts.Token);
+            var vector = await _embeddingGenerator.GenerateAsync(embeddingModel, query, timeoutCts.Token);
             if (vector.Length == 0)
             {
                 return [];
@@ -64,7 +68,7 @@ public class SummaryHistoricalRetrievalService
             var ownerType = BuildOwnerType(chatId);
             var nearest = await _embeddingRepository.FindNearestAsync(
                 ownerType,
-                EmbeddingModel,
+                embeddingModel,
                 vector,
                 Math.Max(1, _analysisSettings.SummaryHistoricalHintsCandidatePool),
                 timeoutCts.Token);
@@ -127,9 +131,10 @@ public class SummaryHistoricalRetrievalService
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(Math.Max(250, _analysisSettings.SummaryHistoricalHintsTimeoutMs));
+            var embeddingModel = ResolveEmbeddingModel();
 
             var compact = MessageContentBuilder.CollapseWhitespace(summary);
-            var vector = await _embeddingGenerator.GenerateAsync(EmbeddingModel, compact, timeoutCts.Token);
+            var vector = await _embeddingGenerator.GenerateAsync(embeddingModel, compact, timeoutCts.Token);
             if (vector.Length == 0)
             {
                 return;
@@ -140,7 +145,7 @@ public class SummaryHistoricalRetrievalService
                 OwnerType = BuildOwnerType(chatId),
                 OwnerId = sessionIndex.ToString(),
                 SourceText = compact,
-                Model = EmbeddingModel,
+                Model = embeddingModel,
                 Vector = vector,
                 CreatedAt = DateTime.UtcNow
             }, timeoutCts.Token);
@@ -177,9 +182,10 @@ public class SummaryHistoricalRetrievalService
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(Math.Max(250, _analysisSettings.SummaryHistoricalHintsTimeoutMs));
+            var embeddingModel = ResolveEmbeddingModel();
 
             var compact = MessageContentBuilder.CollapseWhitespace(summary);
-            var vector = await _embeddingGenerator.GenerateAsync(EmbeddingModel, compact, timeoutCts.Token);
+            var vector = await _embeddingGenerator.GenerateAsync(embeddingModel, compact, timeoutCts.Token);
             if (vector.Length == 0)
             {
                 return;
@@ -190,7 +196,7 @@ public class SummaryHistoricalRetrievalService
                 OwnerType = BuildDailyFinalOwnerType(chatId),
                 OwnerId = day.ToString("yyyy-MM-dd"),
                 SourceText = compact,
-                Model = EmbeddingModel,
+                Model = embeddingModel,
                 Vector = vector,
                 CreatedAt = DateTime.UtcNow
             }, timeoutCts.Token);
@@ -245,6 +251,26 @@ public class SummaryHistoricalRetrievalService
 
     private static string BuildOwnerType(long chatId) => $"chat_session_summary:{chatId}";
     private static string BuildDailyFinalOwnerType(long chatId) => $"{DailyFinalOwnerTypePrefix}:{chatId}";
+    private string ResolveEmbeddingModel()
+    {
+        var configured = _embeddingSettings.Model?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        return DefaultEmbeddingModel;
+    }
+
+    public Stage5SummaryHistoricalRoutingState GetOperationalState()
+    {
+        return new Stage5SummaryHistoricalRoutingState
+        {
+            HistoricalHintsEnabled = _analysisSettings.SummaryHistoricalHintsEnabled,
+            EmbeddingModel = ResolveEmbeddingModel(),
+            EmbeddingModelFromConfig = !string.IsNullOrWhiteSpace(_embeddingSettings.Model)
+        };
+    }
 
     private static int? TryParseSessionIndex(string ownerId)
     {
@@ -275,4 +301,11 @@ public class SummaryHistoricalRetrievalService
 
         return (float)(dot / (Math.Sqrt(normA) * Math.Sqrt(normB)));
     }
+}
+
+public sealed class Stage5SummaryHistoricalRoutingState
+{
+    public bool HistoricalHintsEnabled { get; init; }
+    public string EmbeddingModel { get; init; } = string.Empty;
+    public bool EmbeddingModelFromConfig { get; init; }
 }
