@@ -12,6 +12,7 @@ using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
+using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.DraftReview;
@@ -63,6 +64,7 @@ try
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
+    var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
     var externalArchiveImportArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-import-file=", StringComparison.OrdinalIgnoreCase));
     var externalArchiveActorArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-actor=", StringComparison.OrdinalIgnoreCase));
     var externalArchiveImportFile = externalArchiveImportArg is null
@@ -94,7 +96,8 @@ try
         "--stage5-smoke",
         "--budget-smoke",
         "--eval-smoke",
-        "--external-archive-smoke"
+        "--external-archive-smoke",
+        "--competing-context-smoke"
     };
 
     if (runListSmokes)
@@ -297,6 +300,9 @@ try
             services.AddSingleton<IExternalArchivePreparationService, ExternalArchivePreparationService>();
             services.AddSingleton<IExternalArchiveIngestionService, ExternalArchiveIngestionService>();
             services.AddSingleton<ExternalArchiveVerificationService>();
+            services.AddSingleton<ICompetingContextInterpretationService, CompetingContextInterpretationService>();
+            services.AddSingleton<ICompetingContextRuntimeService, CompetingContextRuntimeService>();
+            services.AddSingleton<CompetingContextVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -535,6 +541,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<ExternalArchiveVerificationService>();
             await verificationService.RunAsync();
             Log.Information("External archive smoke run requested via --external-archive-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runCompetingContextSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<CompetingContextVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Competing context smoke run requested via --competing-context-smoke. Exiting after successful verification.");
             return;
         }
 
