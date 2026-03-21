@@ -52,6 +52,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbConflictRecord> ConflictRecords => Set<DbConflictRecord>();
     public DbSet<DbDependencyLink> DependencyLinks => Set<DbDependencyLink>();
     public DbSet<DbDomainReviewEvent> DomainReviewEvents => Set<DbDomainReviewEvent>();
+    public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
+    public DbSet<DbEvalRun> EvalRuns => Set<DbEvalRun>();
+    public DbSet<DbEvalScenarioResult> EvalScenarioResults => Set<DbEvalScenarioResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -901,6 +904,47 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Actor).HasColumnName("actor");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => new { x.ObjectType, x.ObjectId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbBudgetOperationalState>(e =>
+        {
+            e.ToTable("ops_budget_operational_states");
+            e.HasKey(x => x.PathKey);
+            e.Property(x => x.PathKey).HasColumnName("path_key");
+            e.Property(x => x.Modality).HasColumnName("modality");
+            e.Property(x => x.State).HasColumnName("state");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.DetailsJson).HasColumnName("details_json").HasColumnType("jsonb");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.State, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbEvalRun>(e =>
+        {
+            e.ToTable("ops_eval_runs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RunName).HasColumnName("run_name");
+            e.Property(x => x.Passed).HasColumnName("passed");
+            e.Property(x => x.StartedAt).HasColumnName("started_at");
+            e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
+            e.HasIndex(x => new { x.RunName, x.StartedAt });
+        });
+
+        modelBuilder.Entity<DbEvalScenarioResult>(e =>
+        {
+            e.ToTable("ops_eval_scenario_results");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.ScenarioName).HasColumnName("scenario_name");
+            e.Property(x => x.Passed).HasColumnName("passed");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.RunId, x.CreatedAt });
         });
     }
 }

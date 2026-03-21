@@ -44,6 +44,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly ExtractionApplier _extractionApplier;
     private readonly MessageContentBuilder _messageContentBuilder;
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<AnalysisWorkerService> _logger;
     private readonly DateTime? _archiveCutoffUtc;
 
@@ -61,6 +62,7 @@ public partial class AnalysisWorkerService : BackgroundService
         ExtractionApplier extractionApplier,
         MessageContentBuilder messageContentBuilder,
         SummaryHistoricalRetrievalService historicalRetrievalService,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<AnalysisWorkerService> logger)
     {
         _settings = settings.Value;
@@ -76,6 +78,7 @@ public partial class AnalysisWorkerService : BackgroundService
         _extractionApplier = extractionApplier;
         _messageContentBuilder = messageContentBuilder;
         _historicalRetrievalService = historicalRetrievalService;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
         _archiveCutoffUtc = ParseArchiveCutoffUtc(_settings.ArchiveCutoffUtc);
         if (!string.IsNullOrWhiteSpace(_settings.ArchiveCutoffUtc) && !_archiveCutoffUtc.HasValue)
@@ -125,6 +128,23 @@ public partial class AnalysisWorkerService : BackgroundService
         {
             try
             {
+                var cheapPathDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+                {
+                    PathKey = "stage5_cheap",
+                    Modality = BudgetModalities.TextAnalysis,
+                    IsImportScope = false,
+                    IsOptionalPath = false
+                }, stoppingToken);
+                if (cheapPathDecision.ShouldPausePath)
+                {
+                    _logger.LogWarning(
+                        "Stage5 cheap path paused by budget guardrail. state={State}, reason={Reason}",
+                        cheapPathDecision.State,
+                        cheapPathDecision.Reason);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.PollIntervalSeconds)), stoppingToken);
+                    continue;
+                }
+
                 var expensiveResolved = await _expensivePassResolver.ProcessExpensiveBacklogAsync(
                     async ct => (await GetPromptAsync(ExpensivePromptId, DefaultExpensivePrompt, ct)).SystemPrompt,
                     stoppingToken);

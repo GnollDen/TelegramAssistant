@@ -236,6 +236,7 @@ public interface IAnalysisUsageRepository
 {
     Task LogAsync(AnalysisUsageEvent evt, CancellationToken ct = default);
     Task<decimal> GetCostUsdSinceAsync(string phase, DateTime sinceUtc, CancellationToken ct = default);
+    Task<Dictionary<string, decimal>> GetCostUsdByPhaseSinceAsync(DateTime sinceUtc, CancellationToken ct = default);
 }
 
 public interface IEmbeddingRepository
@@ -416,6 +417,23 @@ public interface IDomainReviewEventRepository
 {
     Task<DomainReviewEvent> AddAsync(DomainReviewEvent evt, CancellationToken ct = default);
     Task<List<DomainReviewEvent>> GetByObjectAsync(string objectType, string objectId, int limit = 100, CancellationToken ct = default);
+}
+
+public interface IBudgetOpsRepository
+{
+    Task UpsertBudgetOperationalStateAsync(BudgetOperationalState state, CancellationToken ct = default);
+    Task<BudgetOperationalState?> GetBudgetOperationalStateAsync(string pathKey, CancellationToken ct = default);
+    Task<List<BudgetOperationalState>> GetBudgetOperationalStatesAsync(CancellationToken ct = default);
+}
+
+public interface IEvalRepository
+{
+    Task<EvalRunResult> CreateRunAsync(EvalRunResult run, CancellationToken ct = default);
+    Task<EvalScenarioResult> AddScenarioResultAsync(EvalScenarioResult result, CancellationToken ct = default);
+    Task CompleteRunAsync(Guid runId, bool passed, string summary, string metricsJson, DateTime finishedAt, CancellationToken ct = default);
+    Task<EvalRunResult?> GetRunByIdAsync(Guid runId, CancellationToken ct = default);
+    Task<List<EvalScenarioResult>> GetScenarioResultsAsync(Guid runId, CancellationToken ct = default);
+    Task<EvalRunResult?> GetLatestRunByNameAsync(string runName, CancellationToken ct = default);
 }
 
 public class EntityMergeCandidate

@@ -288,3 +288,25 @@ public class ContinuousRefinementSettings
     public int MaxDelaySeconds { get; set; } = 120;
     public float LowConfidenceThreshold { get; set; } = 0.7f;
 }
+
+public class BudgetGuardrailSettings
+{
+    public const string Section = "BudgetGuardrails";
+    public bool Enabled { get; set; } = true;
+    public decimal DailyBudgetUsd { get; set; } = 0m;
+    public decimal ImportBudgetUsd { get; set; } = 0m;
+    public decimal SoftLimitRatio { get; set; } = 0.85m;
+    public decimal HardLimitRatio { get; set; } = 1.00m;
+    public decimal StageTextAnalysisBudgetUsd { get; set; } = 0m;
+    public decimal StageEmbeddingsBudgetUsd { get; set; } = 0m;
+    public decimal StageVisionBudgetUsd { get; set; } = 0m;
+    public decimal StageAudioBudgetUsd { get; set; } = 0m;
+    public int QuotaBlockMinutes { get; set; } = 20;
+}
+
+public class EvalHarnessSettings
+{
+    public const string Section = "EvalHarness";
+    public bool Enabled { get; set; } = true;
+    public string DefaultRunName { get; set; } = "default";
+}
