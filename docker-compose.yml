@@ -63,6 +63,8 @@ services:
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
       BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-0}
+      BotChat__DefaultCaseId: ${BOTCHAT_DEFAULT_CASE_ID:-0}
+      BotChat__DefaultChatId: ${BOTCHAT_DEFAULT_CHAT_ID:-0}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}

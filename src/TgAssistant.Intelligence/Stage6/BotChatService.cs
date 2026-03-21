@@ -26,6 +26,7 @@ public class BotChatService : IBotChatService
     private readonly IFactRepository _factRepository;
     private readonly IRelationshipRepository _relationshipRepository;
     private readonly ICommunicationEventRepository _communicationEventRepository;
+    private readonly IBotCommandService _botCommandService;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly AnalysisSettings _analysisSettings;
@@ -40,6 +41,7 @@ public class BotChatService : IBotChatService
         IFactRepository factRepository,
         IRelationshipRepository relationshipRepository,
         ICommunicationEventRepository communicationEventRepository,
+        IBotCommandService botCommandService,
         OpenRouterAnalysisService analysisService,
         IOptions<EmbeddingSettings> embeddingSettings,
         IOptions<AnalysisSettings> analysisSettings,
@@ -53,18 +55,35 @@ public class BotChatService : IBotChatService
         _factRepository = factRepository;
         _relationshipRepository = relationshipRepository;
         _communicationEventRepository = communicationEventRepository;
+        _botCommandService = botCommandService;
         _analysisService = analysisService;
         _embeddingSettings = embeddingSettings.Value;
         _analysisSettings = analysisSettings.Value;
         _logger = logger;
     }
 
-    public async Task<string> GenerateReplyAsync(string userMessage)
+    public async Task<string> GenerateReplyAsync(
+        string userMessage,
+        long? transportChatId = null,
+        long? sourceMessageId = null,
+        long? senderId = null,
+        CancellationToken ct = default)
     {
         var normalizedMessage = (userMessage ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalizedMessage))
         {
             return "Please provide a message.";
+        }
+
+        var commandResult = await _botCommandService.TryHandleAsync(
+            normalizedMessage,
+            transportChatId,
+            sourceMessageId,
+            senderId,
+            ct);
+        if (commandResult.Handled)
+        {
+            return commandResult.Reply;
         }
 
         var embedding = await _embeddingGenerator.GenerateAsync(

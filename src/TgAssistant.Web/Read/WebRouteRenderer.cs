@@ -1,0 +1,465 @@
+using System.Net;
+using System.Text;
+
+namespace TgAssistant.Web.Read;
+
+public class WebRouteRenderer : IWebRouteRenderer
+{
+    public static readonly string[] DefaultRoutes =
+    [
+        "/dashboard",
+        "/state",
+        "/timeline",
+        "/profiles",
+        "/clarifications",
+        "/strategy",
+        "/drafts-reviews",
+        "/offline-events",
+        "/review"
+    ];
+
+    private readonly IWebReadService _webReadService;
+    private readonly IWebReviewService _webReviewService;
+
+    public WebRouteRenderer(IWebReadService webReadService, IWebReviewService webReviewService)
+    {
+        _webReadService = webReadService;
+        _webReviewService = webReviewService;
+    }
+
+    public IReadOnlyList<string> Routes => DefaultRoutes;
+
+    public async Task<WebRenderResult?> RenderAsync(string route, WebReadRequest request, CancellationToken ct = default)
+    {
+        var (path, query) = ParseRoute(route);
+        return path switch
+        {
+            "/dashboard" => new WebRenderResult { Route = path, Title = "Dashboard", Html = RenderDashboard(await _webReadService.GetDashboardAsync(request, ct)) },
+            "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
+            "/timeline" => new WebRenderResult { Route = path, Title = "Timeline", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
+            "/profiles" => new WebRenderResult { Route = path, Title = "Profiles", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
+            "/clarifications" => new WebRenderResult { Route = path, Title = "Clarifications", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
+            "/strategy" => new WebRenderResult { Route = path, Title = "Strategy", Html = RenderStrategy(await _webReadService.GetStrategyAsync(request, ct)) },
+            "/drafts-reviews" => new WebRenderResult { Route = path, Title = "Drafts / Reviews", Html = RenderDraftsReviews(await _webReadService.GetDraftsReviewsAsync(request, ct)) },
+            "/offline-events" => new WebRenderResult { Route = path, Title = "Offline Events", Html = RenderOfflineEvents(await _webReadService.GetOfflineEventsAsync(request, ct)) },
+            "/review" => new WebRenderResult { Route = path, Title = "Review", Html = RenderReviewBoard(await _webReviewService.GetBoardAsync(request, ct), request) },
+            "/review-action" => new WebRenderResult { Route = path, Title = "Review Action", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request) },
+            "/review-edit-period" => new WebRenderResult { Route = path, Title = "Edit Period", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request) },
+            _ => null
+        };
+    }
+
+    private async Task<WebReviewActionResult> ExecuteReviewActionAsync(
+        WebReadRequest request,
+        IReadOnlyDictionary<string, string> query,
+        CancellationToken ct)
+    {
+        var actionRequest = new WebReviewActionRequest
+        {
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ObjectType = GetQuery(query, "objectType"),
+            ObjectId = GetQuery(query, "objectId"),
+            Action = GetQuery(query, "action"),
+            Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
+            Reason = EmptyToNull(GetQuery(query, "reason"))
+        };
+
+        return await _webReviewService.ApplyActionAsync(actionRequest, ct);
+    }
+
+    private async Task<WebReviewActionResult> ExecutePeriodEditAsync(
+        WebReadRequest request,
+        IReadOnlyDictionary<string, string> query,
+        CancellationToken ct)
+    {
+        var periodIdText = GetQuery(query, "periodId");
+        if (!Guid.TryParse(periodIdText, out var periodId))
+        {
+            return new WebReviewActionResult
+            {
+                Success = false,
+                ObjectType = "period",
+                ObjectId = periodIdText,
+                Action = "edit",
+                Message = "Invalid periodId."
+            };
+        }
+
+        short? reviewPriority = null;
+        if (short.TryParse(GetQuery(query, "reviewPriority"), out var parsedPriority))
+        {
+            reviewPriority = parsedPriority;
+        }
+
+        bool? isOpen = null;
+        if (bool.TryParse(GetQuery(query, "isOpen"), out var parsedIsOpen))
+        {
+            isOpen = parsedIsOpen;
+        }
+
+        return await _webReviewService.EditPeriodAsync(new WebPeriodEditRequest
+        {
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            PeriodId = periodId,
+            Label = EmptyToNull(GetQuery(query, "label")),
+            Summary = EmptyToNull(GetQuery(query, "summary")),
+            ReviewPriority = reviewPriority,
+            IsOpen = isOpen,
+            Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
+            Reason = EmptyToNull(GetQuery(query, "reason"))
+        }, ct);
+    }
+
+    private static string RenderDashboard(DashboardReadModel model)
+    {
+        var sb = CreateShell("Dashboard");
+        sb.AppendLine("<h1>Dashboard</h1>");
+
+        sb.AppendLine("<section><h2>1. Current State</h2>");
+        sb.AppendLine($"<p><strong>{E(model.CurrentState.DynamicLabel)}</strong> / {E(model.CurrentState.RelationshipStatus)} (conf {model.CurrentState.Confidence:0.00})</p>");
+        sb.AppendLine($"<p>signals: {E(string.Join(", ", model.CurrentState.KeySignals.Take(4)))} </p>");
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>2. Next Step</h2>");
+        sb.AppendLine($"<p>{E(model.Strategy.PrimarySummary)}</p>");
+        sb.AppendLine($"<p>micro-step: {E(model.Strategy.MicroStep)}</p>");
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>3. Open Clarifications</h2>");
+        sb.AppendLine($"<p>open: {model.Clarifications.OpenCount}</p>");
+        foreach (var q in model.Clarifications.TopQuestions.Take(3))
+        {
+            sb.AppendLine($"<div><strong>{E(q.Priority)}</strong> - {E(q.QuestionText)}</div>");
+        }
+
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>4. Current Period</h2>");
+        if (model.Timeline.CurrentPeriod != null)
+        {
+            sb.AppendLine($"<p>{E(model.Timeline.CurrentPeriod.Label)} [{model.Timeline.CurrentPeriod.StartAt:yyyy-MM-dd}..{(model.Timeline.CurrentPeriod.EndAt?.ToString("yyyy-MM-dd") ?? "now")}]</p>");
+        }
+        else
+        {
+            sb.AppendLine("<p>No current period</p>");
+        }
+
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>5. Alerts</h2>");
+        if (model.Alerts.Count == 0)
+        {
+            sb.AppendLine("<p>No active alerts</p>");
+        }
+        else
+        {
+            foreach (var alert in model.Alerts)
+            {
+                sb.AppendLine($"<div>{E(alert)}</div>");
+            }
+        }
+
+        sb.AppendLine("</section>");
+
+        if (model.DraftsReviews.LatestDraft != null)
+        {
+            sb.AppendLine("<section><h2>Recent Draft</h2>");
+            sb.AppendLine($"<p>{E(model.DraftsReviews.LatestDraft.MainDraft)}</p>");
+            sb.AppendLine("</section>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderState(CurrentStateReadModel model)
+    {
+        var sb = CreateShell("Current State");
+        sb.AppendLine("<h1>Current State</h1>");
+        sb.AppendLine($"<p>dynamic: <strong>{E(model.DynamicLabel)}</strong></p>");
+        sb.AppendLine($"<p>status: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (alt {E(model.AlternativeStatus!)})")}</p>");
+        sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
+
+        sb.AppendLine("<h2>Scores</h2>");
+        foreach (var kv in model.Scores.OrderBy(x => x.Key))
+        {
+            sb.AppendLine($"<div>{E(kv.Key)}: {kv.Value:0.00}</div>");
+        }
+
+        sb.AppendLine("<h2>Key Signals</h2>");
+        foreach (var s in model.KeySignals)
+        {
+            sb.AppendLine($"<div>{E(s)}</div>");
+        }
+
+        sb.AppendLine("<h2>Main Risks</h2>");
+        foreach (var r in model.MainRisks)
+        {
+            sb.AppendLine($"<div>{E(r)}</div>");
+        }
+
+        sb.AppendLine("<h2>Next Move</h2>");
+        sb.AppendLine($"<p>{E(model.NextMoveSummary)}</p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderTimeline(TimelineReadModel model)
+    {
+        var sb = CreateShell("Timeline");
+        sb.AppendLine("<h1>Timeline</h1>");
+        if (model.CurrentPeriod != null)
+        {
+            sb.AppendLine("<h2>Current Period</h2>");
+            sb.AppendLine(RenderPeriod(model.CurrentPeriod));
+        }
+
+        sb.AppendLine("<h2>Prior Periods</h2>");
+        foreach (var p in model.PriorPeriods)
+        {
+            sb.AppendLine(RenderPeriod(p));
+        }
+
+        sb.AppendLine("<h2>Transitions</h2>");
+        foreach (var t in model.Transitions)
+        {
+            sb.AppendLine($"<div>{E(t.TransitionType)} | resolved={t.IsResolved} | conf={t.Confidence:0.00} | {E(t.Summary)}</div>");
+        }
+
+        sb.AppendLine($"<p>unresolved transitions: {model.UnresolvedTransitions}</p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderProfiles(ProfilesReadModel model)
+    {
+        var sb = CreateShell("Profiles");
+        sb.AppendLine("<h1>Profiles</h1>");
+        sb.AppendLine(RenderProfileSubject(model.Self));
+        sb.AppendLine(RenderProfileSubject(model.Other));
+        sb.AppendLine(RenderProfileSubject(model.Pair));
+        return CloseShell(sb);
+    }
+
+    private static string RenderClarifications(ClarificationsReadModel model)
+    {
+        var sb = CreateShell("Clarifications");
+        sb.AppendLine("<h1>Clarifications</h1>");
+        sb.AppendLine($"<p>open questions: {model.OpenCount}</p>");
+        foreach (var q in model.TopQuestions)
+        {
+            sb.AppendLine($"<article><h3>{E(q.QuestionText)}</h3><p>why: {E(q.WhyItMatters)}</p><p>{E(q.Priority)} / {E(q.Status)}</p></article>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderStrategy(StrategyReadModel model)
+    {
+        var sb = CreateShell("Strategy");
+        sb.AppendLine("<h1>Strategy</h1>");
+        sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
+        sb.AppendLine($"<h2>Primary</h2><p>{E(model.PrimarySummary)}</p><p>purpose: {E(model.PrimaryPurpose)}</p>");
+        sb.AppendLine($"<p>risks: {E(string.Join(", ", model.PrimaryRisks))}</p>");
+        sb.AppendLine("<h2>Alternatives</h2>");
+        foreach (var alt in model.Alternatives)
+        {
+            sb.AppendLine($"<div><strong>{E(alt.ActionType)}</strong> - {E(alt.Summary)} | risks: {E(string.Join(", ", alt.Risks))}</div>");
+        }
+
+        sb.AppendLine($"<h2>Micro-step</h2><p>{E(model.MicroStep)}</p>");
+        if (model.Horizon.Count > 0)
+        {
+            sb.AppendLine($"<h2>Horizon</h2><p>{E(string.Join(" -> ", model.Horizon))}</p>");
+        }
+
+        sb.AppendLine($"<h2>Why Not</h2><p>{E(model.WhyNotNotes)}</p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderDraftsReviews(DraftsReviewsReadModel model)
+    {
+        var sb = CreateShell("Drafts / Reviews");
+        sb.AppendLine("<h1>Drafts / Reviews</h1>");
+        if (model.LatestDraft != null)
+        {
+            sb.AppendLine($"<h2>Latest Draft ({model.LatestDraft.CreatedAt:yyyy-MM-dd HH:mm})</h2>");
+            sb.AppendLine($"<p>main: {E(model.LatestDraft.MainDraft)}</p>");
+            sb.AppendLine($"<p>alt 1: {E(model.LatestDraft.AltDraft1 ?? "-")}</p>");
+            sb.AppendLine($"<p>alt 2: {E(model.LatestDraft.AltDraft2 ?? "-")}</p>");
+            sb.AppendLine($"<p>style: {E(model.LatestDraft.StyleNotes ?? "-")}</p>");
+        }
+
+        if (model.LatestReview != null)
+        {
+            sb.AppendLine("<h2>Latest Review</h2>");
+            sb.AppendLine($"<p>assessment: {E(model.LatestReview.Assessment)}</p>");
+            sb.AppendLine($"<p>risks: {E(string.Join("; ", model.LatestReview.MainRisks))}</p>");
+            sb.AppendLine($"<p>safer rewrite: {E(model.LatestReview.SaferRewrite)}</p>");
+            sb.AppendLine($"<p>more natural rewrite: {E(model.LatestReview.NaturalRewrite)}</p>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderOfflineEvents(OfflineEventsReadModel model)
+    {
+        var sb = CreateShell("Offline Events");
+        sb.AppendLine("<h1>Offline Events</h1>");
+        foreach (var e in model.Events)
+        {
+            sb.AppendLine($"<article><h3>{E(e.Title)}</h3><p>{e.TimestampStart:yyyy-MM-dd HH:mm} | {E(e.EventType)}</p><p>{E(e.UserSummary)}</p><p>period: {E(e.LinkedPeriodId?.ToString() ?? "-")}</p><p>evidence: {E(e.EvidenceSummary)}</p></article>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderReviewBoard(WebReviewBoardModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Review");
+        sb.AppendLine("<h1>Review Board</h1>");
+        sb.AppendLine("<p>Card pattern: summary, provenance, suggested interpretation, and actions (confirm/reject/defer/edit).</p>");
+        if (model.Cards.Count == 0)
+        {
+            sb.AppendLine("<p>No reviewable objects found.</p>");
+            return CloseShell(sb);
+        }
+
+        foreach (var card in model.Cards)
+        {
+            var objectType = UrlEncode(card.ObjectType);
+            var objectId = UrlEncode(card.ObjectId);
+            var baseQuery = $"case={request.CaseId}&chat={request.ChatId}&objectType={objectType}&objectId={objectId}&actor={UrlEncode(request.Actor)}";
+            var confirm = $"/review-action?{baseQuery}&action=confirm";
+            var reject = $"/review-action?{baseQuery}&action=reject";
+            var defer = $"/review-action?{baseQuery}&action=defer";
+
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>{E(card.ObjectType)}:{E(card.ObjectId)}</h3>");
+            sb.AppendLine($"<p><strong>summary:</strong> {E(card.Summary)}</p>");
+            sb.AppendLine($"<p><strong>provenance:</strong> {E(card.Provenance)}</p>");
+            sb.AppendLine($"<p><strong>suggested:</strong> {E(card.SuggestedInterpretation)}</p>");
+            sb.AppendLine($"<p><strong>context:</strong> {E(card.LinkedContext)}</p>");
+            sb.AppendLine($"<p><strong>confidence:</strong> {(card.Confidence.HasValue ? card.Confidence.Value.ToString("0.00") : "-")}</p>");
+            sb.AppendLine($"<p><a href='{E(confirm)}'>confirm</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(defer)}'>defer</a></p>");
+
+            if (card.CanEdit && card.ObjectType == "period")
+            {
+                var editHref = $"/review-edit-period?case={request.CaseId}&chat={request.ChatId}&periodId={objectId}&label={UrlEncode("edited_label")}&summary={UrlEncode("edited from web review")}&reviewPriority=3&actor={UrlEncode(request.Actor)}";
+                sb.AppendLine($"<p><a href='{E(editHref)}'>edit period (sample)</a></p>");
+            }
+
+            sb.AppendLine("</article>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderReviewAction(WebReviewActionResult result, WebReadRequest request)
+    {
+        var sb = CreateShell("Review Action");
+        sb.AppendLine("<h1>Review Action</h1>");
+        sb.AppendLine($"<p>success: {result.Success}</p>");
+        sb.AppendLine($"<p>object: {E(result.ObjectType)}:{E(result.ObjectId)}</p>");
+        sb.AppendLine($"<p>action: {E(result.Action)}</p>");
+        sb.AppendLine($"<p>message: {E(result.Message)}</p>");
+        sb.AppendLine($"<p><a href='/review'>Back to review board</a> (case={request.CaseId}, chat={request.ChatId})</p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderProfileSubject(ProfileSubjectReadModel subject)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"<section><h2>{E(subject.SubjectType)} ({E(subject.SubjectId)})</h2>");
+        sb.AppendLine($"<p>{E(subject.Summary)}</p>");
+        sb.AppendLine($"<p>confidence={subject.Confidence:0.00} stability={subject.Stability:0.00}</p>");
+        foreach (var trait in subject.TopTraits)
+        {
+            sb.AppendLine($"<div>{E(trait.TraitKey)}: {E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
+        }
+
+        sb.AppendLine($"<p>what works: {E(subject.WhatWorks)}</p>");
+        sb.AppendLine($"<p>what fails: {E(subject.WhatFails)}</p>");
+        sb.AppendLine("</section>");
+        return sb.ToString();
+    }
+
+    private static string RenderPeriod(TimelinePeriodReadModel period)
+    {
+        return $"<article><h3>{E(period.Label)}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "now")}, conf={period.InterpretationConfidence:0.00}, open_q={period.OpenQuestionsCount}</p><p>{E(period.Summary)}</p><p>evidence: {E(string.Join("; ", period.EvidenceHooks))}</p></article>";
+    }
+
+    private static (string Path, Dictionary<string, string> Query) ParseRoute(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return ("/dashboard", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        }
+
+        var trimmed = route.Trim();
+        if (!trimmed.StartsWith('/'))
+        {
+            trimmed = "/" + trimmed;
+        }
+
+        var queryIndex = trimmed.IndexOf('?');
+        var path = queryIndex >= 0 ? trimmed[..queryIndex] : trimmed;
+        var rawQuery = queryIndex >= 0 ? trimmed[(queryIndex + 1)..] : string.Empty;
+        var query = ParseQuery(rawQuery);
+        return (path.ToLowerInvariant(), query);
+    }
+
+    private static Dictionary<string, string> ParseQuery(string rawQuery)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(rawQuery))
+        {
+            return result;
+        }
+
+        var parts = rawQuery.Split('&', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            var split = part.Split('=', 2);
+            var key = Uri.UnescapeDataString(split[0]).Trim();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var value = split.Length > 1 ? Uri.UnescapeDataString(split[1]).Trim() : string.Empty;
+            result[key] = value;
+        }
+
+        return result;
+    }
+
+    private static string GetQuery(IReadOnlyDictionary<string, string> query, string key)
+    {
+        return query.TryGetValue(key, out var value) ? value : string.Empty;
+    }
+
+    private static string? EmptyToNull(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static StringBuilder CreateShell(string title)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<!doctype html>");
+        sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
+        sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;max-width:980px;margin:20px auto;padding:0 12px;color:#1f2937}nav a{margin-right:10px}section,article{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin:10px 0}h1,h2,h3{margin:6px 0}</style>");
+        sb.AppendLine("</head><body>");
+        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a></nav>");
+        return sb;
+    }
+
+    private static string CloseShell(StringBuilder sb)
+    {
+        sb.AppendLine("</body></html>");
+        return sb.ToString();
+    }
+
+    private static string UrlEncode(string value) => Uri.EscapeDataString(value ?? string.Empty);
+    private static string E(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
+}
