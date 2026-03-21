@@ -208,6 +208,12 @@ services:
       - /opt/tgassistant/logs:/app/logs
       - /home/codex/projects/TelegramAssistant/archive:/data/archive
     network_mode: "host"
+    healthcheck:
+      test: ["CMD", "dotnet", "TgAssistant.Host.dll", "--healthcheck"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 45s
 
   mcp:
     image: ${MCP_IMAGE_TAG:-}
