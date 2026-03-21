@@ -8,17 +8,20 @@ public class WebOpsService : IWebOpsService
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IPeriodRepository _periodRepository;
+    private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
 
     public WebOpsService(
         IInboxConflictRepository inboxConflictRepository,
         IClarificationRepository clarificationRepository,
         IPeriodRepository periodRepository,
+        IStrategyDraftRepository strategyDraftRepository,
         IDomainReviewEventRepository domainReviewEventRepository)
     {
         _inboxConflictRepository = inboxConflictRepository;
         _clarificationRepository = clarificationRepository;
         _periodRepository = periodRepository;
+        _strategyDraftRepository = strategyDraftRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
     }
 
@@ -194,6 +197,20 @@ public class WebOpsService : IWebOpsService
                 }
 
                 break;
+            case "draft_outcome":
+                if (Guid.TryParse(objectId, out var oid))
+                {
+                    var outcomes = await _strategyDraftRepository.GetDraftOutcomesByCaseAsync(request.CaseId, ct);
+                    var outcome = outcomes.FirstOrDefault(x => x.Id == oid);
+                    if (outcome != null)
+                    {
+                        objectModel.ObjectSummary = $"{outcome.OutcomeLabel} (match={(outcome.MatchScore ?? 0f):0.00})";
+                        objectModel.Status = outcome.SystemOutcomeLabel;
+                        objectModel.Priority = outcome.UserOutcomeLabel;
+                    }
+                }
+
+                break;
         }
 
         var history = await _domainReviewEventRepository.GetByObjectAsync(normalizedType, objectId, Math.Max(1, limit), ct);
@@ -245,6 +262,12 @@ public class WebOpsService : IWebOpsService
             .Take(20)
             .ToList();
         objectRefs.AddRange(periods.Select(x => ("period", x.Id.ToString())));
+
+        var outcomes = (await _strategyDraftRepository.GetDraftOutcomesByCaseAsync(request.CaseId, ct))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(20)
+            .ToList();
+        objectRefs.AddRange(outcomes.Select(x => ("draft_outcome", x.Id.ToString())));
 
         var distinctRefs = objectRefs
             .DistinctBy(x => $"{x.ObjectType}:{x.ObjectId}")

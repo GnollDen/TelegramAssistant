@@ -434,7 +434,10 @@ public class WebReadService : IWebReadService
                 StyleNotes = latestDraft.StyleNotes,
                 Confidence = latestDraft.Confidence
             },
-            LatestReview = latestReview
+            LatestReview = latestReview,
+            LatestOutcome = latestDraft == null
+                ? null
+                : await LoadLatestOutcomeAsync(latestDraft, strategy, ct)
         };
     }
 
@@ -662,6 +665,96 @@ public class WebReadService : IWebReadService
                 .Take(Math.Max(1, limit))
                 .Cast<string>()
                 .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private async Task<DraftOutcomeReadModel?> LoadLatestOutcomeAsync(
+        DraftRecord latestDraft,
+        StrategyRecord strategy,
+        CancellationToken ct)
+    {
+        var outcomes = await _strategyDraftRepository.GetDraftOutcomesByDraftIdAsync(latestDraft.Id, ct);
+        if (outcomes.Count == 0)
+        {
+            outcomes = await _strategyDraftRepository.GetDraftOutcomesByStrategyRecordIdAsync(strategy.Id, ct);
+        }
+
+        var latest = outcomes
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        if (latest == null)
+        {
+            return null;
+        }
+
+        return new DraftOutcomeReadModel
+        {
+            Id = latest.Id,
+            DraftId = latest.DraftId,
+            StrategyRecordId = latest.StrategyRecordId,
+            ActualMessageId = latest.ActualMessageId,
+            FollowUpMessageId = latest.FollowUpMessageId,
+            MatchScore = latest.MatchScore,
+            MatchedBy = latest.MatchedBy ?? string.Empty,
+            OutcomeLabel = latest.OutcomeLabel,
+            UserOutcomeLabel = latest.UserOutcomeLabel,
+            SystemOutcomeLabel = latest.SystemOutcomeLabel,
+            OutcomeConfidence = latest.OutcomeConfidence,
+            LearningSignals = ParseLearningSignalLabels(latest.LearningSignalsJson),
+            Notes = latest.Notes,
+            CreatedAt = latest.CreatedAt
+        };
+    }
+
+    private static List<string> ParseLearningSignalLabels(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var labels = new List<string>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("signalKey", out var keyNode) || keyNode.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = item.TryGetProperty("value", out var valueNode) && valueNode.ValueKind == JsonValueKind.String
+                    ? valueNode.GetString()
+                    : string.Empty;
+                var key = keyNode.GetString();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                labels.Add(string.IsNullOrWhiteSpace(value) ? key : $"{key}:{value}");
+                if (labels.Count >= 6)
+                {
+                    break;
+                }
+            }
+
+            return labels;
         }
         catch (JsonException)
         {

@@ -14,6 +14,7 @@ using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.DraftReview;
 using TgAssistant.Intelligence.Stage6.Drafts;
 using TgAssistant.Intelligence.Stage6.Network;
+using TgAssistant.Intelligence.Stage6.Outcome;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Intelligence.Stage6.Strategy;
@@ -53,6 +54,7 @@ try
     var runOpsWebSmoke = args.Any(arg => string.Equals(arg, "--ops-web-smoke", StringComparison.OrdinalIgnoreCase));
     var runSearchSmoke = args.Any(arg => string.Equals(arg, "--search-smoke", StringComparison.OrdinalIgnoreCase));
     var runNetworkSmoke = args.Any(arg => string.Equals(arg, "--network-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOutcomeSmoke = args.Any(arg => string.Equals(arg, "--outcome-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
@@ -73,6 +75,7 @@ try
         "--ops-web-smoke",
         "--search-smoke",
         "--network-smoke",
+        "--outcome-smoke",
         "--stage5-smoke"
     };
 
@@ -256,6 +259,11 @@ try
             services.AddSingleton<INetworkScoringService, NetworkScoringService>();
             services.AddSingleton<INetworkGraphService, NetworkGraphService>();
             services.AddSingleton<NetworkVerificationService>();
+            services.AddSingleton<IDraftActionMatcher, DraftActionMatcher>();
+            services.AddSingleton<IObservedOutcomeRecorder, ObservedOutcomeRecorder>();
+            services.AddSingleton<ILearningSignalBuilder, LearningSignalBuilder>();
+            services.AddSingleton<IOutcomeService, OutcomeService>();
+            services.AddSingleton<OutcomeVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -454,6 +462,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<NetworkVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Network smoke run requested via --network-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runOutcomeSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<OutcomeVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Outcome smoke run requested via --outcome-smoke. Exiting after successful verification.");
             return;
         }
 

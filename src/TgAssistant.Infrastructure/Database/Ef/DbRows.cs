@@ -619,9 +619,16 @@ public class DbDraftOutcome
 {
     public Guid Id { get; set; }
     public Guid DraftId { get; set; }
+    public Guid? StrategyRecordId { get; set; }
     public long? ActualMessageId { get; set; }
+    public long? FollowUpMessageId { get; set; }
+    public string? MatchedBy { get; set; }
     public float? MatchScore { get; set; }
     public string OutcomeLabel { get; set; } = string.Empty;
+    public string? UserOutcomeLabel { get; set; }
+    public string? SystemOutcomeLabel { get; set; }
+    public float? OutcomeConfidence { get; set; }
+    public string? LearningSignalsJson { get; set; }
     public string? Notes { get; set; }
     public Guid? SourceSessionId { get; set; }
     public long? SourceMessageId { get; set; }
