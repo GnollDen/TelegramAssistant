@@ -49,6 +49,8 @@ try
     var runBotSmoke = args.Any(arg => string.Equals(arg, "--bot-smoke", StringComparison.OrdinalIgnoreCase));
     var runWebSmoke = args.Any(arg => string.Equals(arg, "--web-smoke", StringComparison.OrdinalIgnoreCase));
     var runWebReviewSmoke = args.Any(arg => string.Equals(arg, "--web-review-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpsWebSmoke = args.Any(arg => string.Equals(arg, "--ops-web-smoke", StringComparison.OrdinalIgnoreCase));
+    var runSearchSmoke = args.Any(arg => string.Equals(arg, "--search-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -64,7 +66,9 @@ try
         "--review-smoke",
         "--bot-smoke",
         "--web-smoke",
-        "--web-review-smoke"
+        "--web-review-smoke",
+        "--ops-web-smoke",
+        "--search-smoke"
     };
 
     if (runListSmokes)
@@ -234,9 +238,13 @@ try
             services.AddSingleton<BotCommandVerificationService>();
             services.AddSingleton<IWebReadService, WebReadService>();
             services.AddSingleton<IWebReviewService, WebReviewService>();
+            services.AddSingleton<IWebOpsService, WebOpsService>();
+            services.AddSingleton<IWebSearchService, WebSearchService>();
             services.AddSingleton<IWebRouteRenderer, WebRouteRenderer>();
             services.AddSingleton<WebReadVerificationService>();
             services.AddSingleton<WebReviewVerificationService>();
+            services.AddSingleton<WebOpsVerificationService>();
+            services.AddSingleton<WebSearchVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -410,6 +418,22 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<WebReviewVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Web review smoke run requested via --web-review-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runOpsWebSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<WebOpsVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Ops web smoke run requested via --ops-web-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runSearchSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<WebSearchVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Search smoke run requested via --search-smoke. Exiting after successful verification.");
             return;
         }
 

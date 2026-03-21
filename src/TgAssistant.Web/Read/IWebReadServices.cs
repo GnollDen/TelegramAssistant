@@ -24,3 +24,56 @@ public interface IWebReviewService
     Task<WebReviewActionResult> ApplyActionAsync(WebReviewActionRequest request, CancellationToken ct = default);
     Task<WebReviewActionResult> EditPeriodAsync(WebPeriodEditRequest request, CancellationToken ct = default);
 }
+
+public interface IWebOpsService
+{
+    Task<InboxReadModel> GetInboxAsync(
+        WebReadRequest request,
+        string? group = null,
+        string? status = "open",
+        string? priority = null,
+        bool? blocking = null,
+        CancellationToken ct = default);
+
+    Task<HistoryReadModel> GetHistoryAsync(
+        WebReadRequest request,
+        string? objectType = null,
+        string? action = null,
+        int limit = 50,
+        CancellationToken ct = default);
+
+    Task<ObjectHistoryReadModel> GetObjectHistoryAsync(
+        WebReadRequest request,
+        string objectType,
+        string objectId,
+        int limit = 30,
+        CancellationToken ct = default);
+
+    Task<RecentChangesReadModel> GetRecentChangesAsync(
+        WebReadRequest request,
+        int limit = 8,
+        CancellationToken ct = default);
+}
+
+public interface IWebSearchService
+{
+    Task<SearchReadModel> SearchAsync(
+        WebReadRequest request,
+        string? query,
+        string? objectType = null,
+        string? status = null,
+        string? priority = null,
+        int limit = 100,
+        CancellationToken ct = default);
+
+    Task<SavedViewReadModel> GetSavedViewAsync(
+        WebReadRequest request,
+        string viewKey,
+        int limit = 50,
+        CancellationToken ct = default);
+
+    Task<DossierReadModel> GetDossierAsync(
+        WebReadRequest request,
+        int limit = 50,
+        CancellationToken ct = default);
+}
