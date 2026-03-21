@@ -26,6 +26,8 @@ public class StrategyDraftRepository : IStrategyDraftRepository
             StrategyConfidence = record.StrategyConfidence,
             RecommendedGoal = record.RecommendedGoal,
             WhyNotOthers = record.WhyNotOthers,
+            MicroStep = record.MicroStep,
+            HorizonJson = record.HorizonJson,
             SourceSessionId = record.SourceSessionId,
             SourceMessageId = record.SourceMessageId,
             CreatedAt = record.CreatedAt == default ? DateTime.UtcNow : record.CreatedAt
@@ -178,6 +180,8 @@ public class StrategyDraftRepository : IStrategyDraftRepository
         StrategyConfidence = row.StrategyConfidence,
         RecommendedGoal = row.RecommendedGoal,
         WhyNotOthers = row.WhyNotOthers,
+        MicroStep = row.MicroStep,
+        HorizonJson = row.HorizonJson,
         CreatedAt = row.CreatedAt,
         SourceSessionId = row.SourceSessionId,
         SourceMessageId = row.SourceMessageId

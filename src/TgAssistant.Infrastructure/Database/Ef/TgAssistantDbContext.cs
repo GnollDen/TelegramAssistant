@@ -759,6 +759,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.StrategyConfidence).HasColumnName("strategy_confidence");
             e.Property(x => x.RecommendedGoal).HasColumnName("recommended_goal");
             e.Property(x => x.WhyNotOthers).HasColumnName("why_not_others");
+            e.Property(x => x.MicroStep).HasColumnName("micro_step");
+            e.Property(x => x.HorizonJson).HasColumnName("horizon_json").HasColumnType("jsonb");
             e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
             e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
