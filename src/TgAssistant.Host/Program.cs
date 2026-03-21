@@ -51,6 +51,7 @@ try
     var runWebReviewSmoke = args.Any(arg => string.Equals(arg, "--web-review-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpsWebSmoke = args.Any(arg => string.Equals(arg, "--ops-web-smoke", StringComparison.OrdinalIgnoreCase));
     var runSearchSmoke = args.Any(arg => string.Equals(arg, "--search-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -68,7 +69,8 @@ try
         "--web-smoke",
         "--web-review-smoke",
         "--ops-web-smoke",
-        "--search-smoke"
+        "--search-smoke",
+        "--stage5-smoke"
     };
 
     if (runListSmokes)
@@ -277,6 +279,7 @@ try
             services.AddSingleton<MessageContentBuilder>();
             services.AddSingleton<AnalysisContextBuilder>();
             services.AddSingleton<SummaryHistoricalRetrievalService>();
+            services.AddSingleton<Stage5VerificationService>();
             services.AddSingleton<ExtractionApplier>();
             services.AddSingleton<ExpensivePassResolver>();
             services.AddSingleton<IBotChatService, BotChatService>();
@@ -434,6 +437,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<WebSearchVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Search smoke run requested via --search-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runStage5Smoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<Stage5VerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Stage5 smoke run requested via --stage5-smoke. Exiting after successful verification.");
             return;
         }
 

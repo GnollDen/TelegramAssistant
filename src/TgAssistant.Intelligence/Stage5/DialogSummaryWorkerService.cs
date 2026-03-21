@@ -57,7 +57,11 @@ public class DialogSummaryWorkerService : BackgroundService
     {
         if (!_settings.Enabled || !_settings.SummaryEnabled || !_settings.SummaryWorkerEnabled)
         {
-            _logger.LogInformation("Stage5 summary worker is disabled");
+            _logger.LogInformation(
+                "Stage5 summary worker is disabled. analysis_enabled={AnalysisEnabled}, summary_enabled={SummaryEnabled}, summary_worker_enabled={SummaryWorkerEnabled}. Inline session summary still runs in AnalysisWorker when Stage5 analysis is enabled.",
+                _settings.Enabled,
+                _settings.SummaryEnabled,
+                _settings.SummaryWorkerEnabled);
             return;
         }
 

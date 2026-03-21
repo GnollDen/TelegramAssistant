@@ -33,7 +33,10 @@ public class EditDiffAnalysisWorkerService : BackgroundService
     {
         if (!_settings.Enabled || !_settings.EditDiffEnabled)
         {
-            _logger.LogInformation("Edit-diff worker is disabled");
+            _logger.LogInformation(
+                "Edit-diff worker is disabled. analysis_enabled={AnalysisEnabled}, edit_diff_enabled={EditDiffEnabled}",
+                _settings.Enabled,
+                _settings.EditDiffEnabled);
             return;
         }
 

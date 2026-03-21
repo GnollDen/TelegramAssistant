@@ -119,7 +119,8 @@ services:
       Analysis__CheapProviderOrder: ${ANALYSIS_CHEAP_PROVIDER_ORDER:-}
       Analysis__CheapProviderAllowFallbacks: ${ANALYSIS_CHEAP_PROVIDER_ALLOW_FALLBACKS:-true}
       Analysis__PollIntervalSeconds: ${ANALYSIS_POLL_INTERVAL_SECONDS:-2}
-      Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-10}
+      Analysis__ExpensivePassEnabled: ${ANALYSIS_EXPENSIVE_PASS_ENABLED:-false}
+      Analysis__MaxExpensivePerBatch: ${ANALYSIS_MAX_EXPENSIVE_PER_BATCH:-0}
       Analysis__ExpensiveDailyBudgetUsd: ${ANALYSIS_EXPENSIVE_DAILY_BUDGET_USD:-0.15}
       Analysis__HttpTimeoutSeconds: ${ANALYSIS_HTTP_TIMEOUT_SECONDS:-120}
       Analysis__ExpensiveCooldownMinutes: ${ANALYSIS_EXPENSIVE_COOLDOWN_MINUTES:-10}
