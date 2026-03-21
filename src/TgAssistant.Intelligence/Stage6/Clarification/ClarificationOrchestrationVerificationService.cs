@@ -25,13 +25,16 @@ public class ClarificationOrchestrationVerificationService
 
     public async Task RunAsync(CancellationToken ct = default)
     {
-        var caseId = 92020000 + DateTime.UtcNow.Minute;
+        // Keep case scope explicit: case_id is analysis scope, chat_id is canonical source anchor.
+        var caseScope = CaseScopeFactory.CreateSmokeScope("clarification");
+        var caseId = caseScope.CaseId;
+        var chatId = caseScope.ChatId;
         var created = await _clarificationOrchestrator.EnqueueQuestionsAsync(
             caseId,
             [
                 new ClarificationQuestionDraft
                 {
-                    ChatId = caseId,
+                    ChatId = chatId,
                     QuestionText = "Did transition happen after the conflict event?",
                     QuestionType = "timeline_state_strategy",
                     Priority = "blocking",
@@ -41,7 +44,7 @@ public class ClarificationOrchestrationVerificationService
                 },
                 new ClarificationQuestionDraft
                 {
-                    ChatId = caseId,
+                    ChatId = chatId,
                     QuestionText = "If yes, what exact date?",
                     QuestionType = "timeline_followup",
                     Priority = "important",
@@ -51,7 +54,7 @@ public class ClarificationOrchestrationVerificationService
                 },
                 new ClarificationQuestionDraft
                 {
-                    ChatId = caseId,
+                    ChatId = chatId,
                     QuestionText = "Confirm again if transition happened after conflict",
                     QuestionType = "timeline_duplicate",
                     Priority = "important",

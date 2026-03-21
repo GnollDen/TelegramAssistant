@@ -37,8 +37,10 @@ public class ProfileEngineVerificationService
 
     public async Task RunAsync(CancellationToken ct = default)
     {
-        var caseId = 95000000 + (DateTime.UtcNow.Ticks % 1000000);
-        var chatId = caseId;
+        // Keep case scope explicit: case_id is analysis scope, chat_id is canonical source anchor.
+        var caseScope = CaseScopeFactory.CreateSmokeScope("profiles");
+        var caseId = caseScope.CaseId;
+        var chatId = caseScope.ChatId;
         var selfSenderId = 101L;
         var otherSenderId = 202L;
         var now = DateTime.UtcNow;
@@ -202,12 +204,13 @@ public class ProfileEngineVerificationService
 
     private async Task SeedSessionsAsync(long chatId, IReadOnlyList<Period> periods, DateTime now, CancellationToken ct)
     {
+        var baseIndex = (int)(Math.Abs(now.Ticks) % 10000) * 10;
         var sessions = new[]
         {
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 1,
+                SessionIndex = baseIndex + 1,
                 StartDate = periods[0].StartAt.AddDays(2),
                 EndDate = periods[0].StartAt.AddDays(2).AddHours(2),
                 LastMessageAt = periods[0].StartAt.AddDays(2).AddHours(2),
@@ -218,7 +221,7 @@ public class ProfileEngineVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 2,
+                SessionIndex = baseIndex + 2,
                 StartDate = periods[1].StartAt.AddDays(2),
                 EndDate = periods[1].StartAt.AddDays(9),
                 LastMessageAt = periods[1].StartAt.AddDays(9),
