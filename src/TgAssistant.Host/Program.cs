@@ -20,6 +20,7 @@ using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
+using TgAssistant.Web.Read;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -45,6 +46,9 @@ try
     var runStrategySmoke = args.Any(arg => string.Equals(arg, "--strategy-smoke", StringComparison.OrdinalIgnoreCase));
     var runDraftSmoke = args.Any(arg => string.Equals(arg, "--draft-smoke", StringComparison.OrdinalIgnoreCase));
     var runReviewSmoke = args.Any(arg => string.Equals(arg, "--review-smoke", StringComparison.OrdinalIgnoreCase));
+    var runBotSmoke = args.Any(arg => string.Equals(arg, "--bot-smoke", StringComparison.OrdinalIgnoreCase));
+    var runWebSmoke = args.Any(arg => string.Equals(arg, "--web-smoke", StringComparison.OrdinalIgnoreCase));
+    var runWebReviewSmoke = args.Any(arg => string.Equals(arg, "--web-review-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -57,7 +61,10 @@ try
         "--profile-smoke",
         "--strategy-smoke",
         "--draft-smoke",
-        "--review-smoke"
+        "--review-smoke",
+        "--bot-smoke",
+        "--web-smoke",
+        "--web-review-smoke"
     };
 
     if (runListSmokes)
@@ -223,6 +230,13 @@ try
             services.AddSingleton<INaturalRewriteGenerator, NaturalRewriteGenerator>();
             services.AddSingleton<IDraftReviewEngine, DraftReviewEngine>();
             services.AddSingleton<DraftReviewVerificationService>();
+            services.AddSingleton<IBotCommandService, BotCommandService>();
+            services.AddSingleton<BotCommandVerificationService>();
+            services.AddSingleton<IWebReadService, WebReadService>();
+            services.AddSingleton<IWebReviewService, WebReviewService>();
+            services.AddSingleton<IWebRouteRenderer, WebRouteRenderer>();
+            services.AddSingleton<WebReadVerificationService>();
+            services.AddSingleton<WebReviewVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -372,6 +386,30 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<DraftReviewVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Review smoke run requested via --review-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runBotSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<BotCommandVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Bot smoke run requested via --bot-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runWebSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<WebReadVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Web smoke run requested via --web-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runWebReviewSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<WebReviewVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Web review smoke run requested via --web-review-smoke. Exiting after successful verification.");
             return;
         }
 
