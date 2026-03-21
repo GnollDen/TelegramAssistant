@@ -8,6 +8,10 @@ public class WebRouteRenderer : IWebRouteRenderer
     public static readonly string[] DefaultRoutes =
     [
         "/dashboard",
+        "/search",
+        "/dossier",
+        "/inbox",
+        "/history",
         "/state",
         "/timeline",
         "/profiles",
@@ -20,11 +24,19 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private readonly IWebReadService _webReadService;
     private readonly IWebReviewService _webReviewService;
+    private readonly IWebOpsService _webOpsService;
+    private readonly IWebSearchService _webSearchService;
 
-    public WebRouteRenderer(IWebReadService webReadService, IWebReviewService webReviewService)
+    public WebRouteRenderer(
+        IWebReadService webReadService,
+        IWebReviewService webReviewService,
+        IWebOpsService webOpsService,
+        IWebSearchService webSearchService)
     {
         _webReadService = webReadService;
         _webReviewService = webReviewService;
+        _webOpsService = webOpsService;
+        _webSearchService = webSearchService;
     }
 
     public IReadOnlyList<string> Routes => DefaultRoutes;
@@ -34,7 +46,22 @@ public class WebRouteRenderer : IWebRouteRenderer
         var (path, query) = ParseRoute(route);
         return path switch
         {
-            "/dashboard" => new WebRenderResult { Route = path, Title = "Dashboard", Html = RenderDashboard(await _webReadService.GetDashboardAsync(request, ct)) },
+            "/dashboard" => new WebRenderResult
+            {
+                Route = path,
+                Title = "Dashboard",
+                Html = RenderDashboard(
+                    await _webReadService.GetDashboardAsync(request, ct),
+                    await _webOpsService.GetRecentChangesAsync(request, 6, ct))
+            },
+            "/search" => new WebRenderResult { Route = path, Title = "Search", Html = RenderSearch(await ExecuteSearchAsync(request, query, ct)) },
+            "/dossier" => new WebRenderResult { Route = path, Title = "Dossier", Html = RenderDossier(await _webSearchService.GetDossierAsync(request, 30, ct)) },
+            "/view/blocking" => new WebRenderResult { Route = path, Title = "Saved View: Blocking", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "blocking", 40, ct)) },
+            "/view/current-period" => new WebRenderResult { Route = path, Title = "Saved View: Current Period", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "current-period", 10, ct)) },
+            "/view/conflicts" => new WebRenderResult { Route = path, Title = "Saved View: Conflicts", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "conflicts", 40, ct)) },
+            "/inbox" => new WebRenderResult { Route = path, Title = "Inbox", Html = RenderInbox(await ExecuteInboxReadAsync(request, query, ct), request) },
+            "/history" => new WebRenderResult { Route = path, Title = "History", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
+            "/history-object" => new WebRenderResult { Route = path, Title = "Object History", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
             "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
             "/timeline" => new WebRenderResult { Route = path, Title = "Timeline", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
             "/profiles" => new WebRenderResult { Route = path, Title = "Profiles", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
@@ -49,12 +76,77 @@ public class WebRouteRenderer : IWebRouteRenderer
         };
     }
 
-    private async Task<WebReviewActionResult> ExecuteReviewActionAsync(
-        WebReadRequest request,
-        IReadOnlyDictionary<string, string> query,
-        CancellationToken ct)
+    private async Task<SearchReadModel> ExecuteSearchAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
     {
-        var actionRequest = new WebReviewActionRequest
+        var limit = 120;
+        if (int.TryParse(GetQuery(query, "limit"), out var parsedLimit))
+        {
+            limit = Math.Clamp(parsedLimit, 10, 500);
+        }
+
+        return await _webSearchService.SearchAsync(
+            request,
+            query: EmptyToNull(GetQuery(query, "q")),
+            objectType: EmptyToNull(GetQuery(query, "objectType")),
+            status: EmptyToNull(GetQuery(query, "status")),
+            priority: EmptyToNull(GetQuery(query, "priority")),
+            limit: limit,
+            ct: ct);
+    }
+
+    private async Task<InboxReadModel> ExecuteInboxReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        bool? blocking = null;
+        if (bool.TryParse(GetQuery(query, "blocking"), out var parsedBlocking))
+        {
+            blocking = parsedBlocking;
+        }
+
+        return await _webOpsService.GetInboxAsync(
+            request,
+            group: EmptyToNull(GetQuery(query, "group")),
+            status: EmptyToNull(GetQuery(query, "status")) ?? "open",
+            priority: EmptyToNull(GetQuery(query, "priority")),
+            blocking: blocking,
+            ct: ct);
+    }
+
+    private async Task<HistoryReadModel> ExecuteHistoryReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        var limit = 40;
+        if (int.TryParse(GetQuery(query, "limit"), out var parsedLimit))
+        {
+            limit = Math.Clamp(parsedLimit, 5, 200);
+        }
+
+        return await _webOpsService.GetHistoryAsync(
+            request,
+            objectType: EmptyToNull(GetQuery(query, "objectType")),
+            action: EmptyToNull(GetQuery(query, "action")),
+            limit: limit,
+            ct: ct);
+    }
+
+    private async Task<ObjectHistoryReadModel> ExecuteObjectHistoryReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        var objectType = GetQuery(query, "objectType");
+        var objectId = GetQuery(query, "objectId");
+        if (string.IsNullOrWhiteSpace(objectType) || string.IsNullOrWhiteSpace(objectId))
+        {
+            return new ObjectHistoryReadModel
+            {
+                ObjectType = objectType,
+                ObjectId = objectId,
+                ObjectSummary = "Missing objectType/objectId."
+            };
+        }
+
+        return await _webOpsService.GetObjectHistoryAsync(request, objectType, objectId, 40, ct);
+    }
+
+    private async Task<WebReviewActionResult> ExecuteReviewActionAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        return await _webReviewService.ApplyActionAsync(new WebReviewActionRequest
         {
             CaseId = request.CaseId,
             ChatId = request.ChatId,
@@ -63,15 +155,10 @@ public class WebRouteRenderer : IWebRouteRenderer
             Action = GetQuery(query, "action"),
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
             Reason = EmptyToNull(GetQuery(query, "reason"))
-        };
-
-        return await _webReviewService.ApplyActionAsync(actionRequest, ct);
+        }, ct);
     }
 
-    private async Task<WebReviewActionResult> ExecutePeriodEditAsync(
-        WebReadRequest request,
-        IReadOnlyDictionary<string, string> query,
-        CancellationToken ct)
+    private async Task<WebReviewActionResult> ExecutePeriodEditAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
     {
         var periodIdText = GetQuery(query, "periodId");
         if (!Guid.TryParse(periodIdText, out var periodId))
@@ -112,64 +199,135 @@ public class WebRouteRenderer : IWebRouteRenderer
         }, ct);
     }
 
-    private static string RenderDashboard(DashboardReadModel model)
+    private static string RenderDashboard(DashboardReadModel model, RecentChangesReadModel recentChanges)
     {
         var sb = CreateShell("Dashboard");
         sb.AppendLine("<h1>Dashboard</h1>");
-
-        sb.AppendLine("<section><h2>1. Current State</h2>");
-        sb.AppendLine($"<p><strong>{E(model.CurrentState.DynamicLabel)}</strong> / {E(model.CurrentState.RelationshipStatus)} (conf {model.CurrentState.Confidence:0.00})</p>");
-        sb.AppendLine($"<p>signals: {E(string.Join(", ", model.CurrentState.KeySignals.Take(4)))} </p>");
-        sb.AppendLine("</section>");
-
-        sb.AppendLine("<section><h2>2. Next Step</h2>");
-        sb.AppendLine($"<p>{E(model.Strategy.PrimarySummary)}</p>");
-        sb.AppendLine($"<p>micro-step: {E(model.Strategy.MicroStep)}</p>");
-        sb.AppendLine("</section>");
-
-        sb.AppendLine("<section><h2>3. Open Clarifications</h2>");
-        sb.AppendLine($"<p>open: {model.Clarifications.OpenCount}</p>");
-        foreach (var q in model.Clarifications.TopQuestions.Take(3))
+        sb.AppendLine($"<section><h2>Current State</h2><p><strong>{E(model.CurrentState.DynamicLabel)}</strong> / {E(model.CurrentState.RelationshipStatus)} (conf {model.CurrentState.Confidence:0.00})</p></section>");
+        sb.AppendLine($"<section><h2>Next Step</h2><p>{E(model.Strategy.PrimarySummary)}</p><p>micro-step: {E(model.Strategy.MicroStep)}</p></section>");
+        sb.AppendLine($"<section><h2>Open Clarifications</h2><p>open: {model.Clarifications.OpenCount}</p></section>");
+        sb.AppendLine("<section><h2>Recent Changes</h2>");
+        foreach (var evt in recentChanges.Items.Take(5))
         {
-            sb.AppendLine($"<div><strong>{E(q.Priority)}</strong> - {E(q.QuestionText)}</div>");
+            var trail = $"/history-object?objectType={UrlEncode(evt.ObjectType)}&objectId={UrlEncode(evt.ObjectId)}";
+            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.ObjectType)} | {E(evt.Action)} | <a href='{E(trail)}'>trail</a></div>");
         }
 
         sb.AppendLine("</section>");
+        return CloseShell(sb);
+    }
 
-        sb.AppendLine("<section><h2>4. Current Period</h2>");
-        if (model.Timeline.CurrentPeriod != null)
+    private static string RenderSearch(SearchReadModel model)
+    {
+        var sb = CreateShell("Search");
+        sb.AppendLine("<h1>Search</h1>");
+        sb.AppendLine($"<p>query={E(model.Query)} objectType={E(model.ObjectTypeFilter ?? "-")} status={E(model.StatusFilter ?? "-")} priority={E(model.PriorityFilter ?? "-")} count={model.Results.Count}</p>");
+        foreach (var result in model.Results)
         {
-            sb.AppendLine($"<p>{E(model.Timeline.CurrentPeriod.Label)} [{model.Timeline.CurrentPeriod.StartAt:yyyy-MM-dd}..{(model.Timeline.CurrentPeriod.EndAt?.ToString("yyyy-MM-dd") ?? "now")}]</p>");
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<p><strong>{E(result.ObjectType)}</strong>:{E(result.ObjectId)}</p>");
+            sb.AppendLine($"<p>{E(result.Title)}</p>");
+            sb.AppendLine($"<p>{E(result.Summary)}</p>");
+            sb.AppendLine($"<p>status={E(result.Status ?? "-")} priority={E(result.Priority ?? "-")}</p>");
+            sb.AppendLine($"<p><a href='{E(result.Link)}'>open</a></p>");
+            sb.AppendLine("</article>");
         }
-        else
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderSavedView(SavedViewReadModel model)
+    {
+        var sb = CreateShell(model.Title);
+        sb.AppendLine($"<h1>{E(model.Title)}</h1>");
+        sb.AppendLine($"<p>{E(model.Description)}</p>");
+        foreach (var item in model.Items)
         {
-            sb.AppendLine("<p>No current period</p>");
+            sb.AppendLine($"<div>{E(item.ObjectType)} | {E(item.Title)} | status={E(item.Status ?? "-")} | <a href='{E(item.Link)}'>open</a></div>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderDossier(DossierReadModel model)
+    {
+        var sb = CreateShell("Dossier");
+        sb.AppendLine("<h1>Dossier</h1>");
+        RenderDossierSection(sb, "Confirmed", model.Confirmed);
+        RenderDossierSection(sb, "Hypotheses", model.Hypotheses);
+        RenderDossierSection(sb, "Conflicts", model.Conflicts);
+        return CloseShell(sb);
+    }
+
+    private static void RenderDossierSection(StringBuilder sb, string title, IReadOnlyCollection<DossierItemReadModel> rows)
+    {
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var row in rows)
+        {
+            sb.AppendLine($"<div>{E(row.ObjectType)} | {E(row.Title)} | {E(row.Summary)} | <a href='{E(row.Link)}'>open</a></div>");
+        }
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("<p>No items.</p>");
         }
 
         sb.AppendLine("</section>");
+    }
 
-        sb.AppendLine("<section><h2>5. Alerts</h2>");
-        if (model.Alerts.Count == 0)
+    private static string RenderInbox(InboxReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Inbox");
+        sb.AppendLine("<h1>Inbox</h1>");
+        RenderInboxGroup(sb, "Blocking", model.Blocking, request);
+        RenderInboxGroup(sb, "High Impact", model.HighImpact, request);
+        RenderInboxGroup(sb, "Everything Else", model.EverythingElse, request);
+        return CloseShell(sb);
+    }
+
+    private static void RenderInboxGroup(StringBuilder sb, string title, IReadOnlyCollection<InboxItemReadModel> items, WebReadRequest request)
+    {
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var item in items)
         {
-            sb.AppendLine("<p>No active alerts</p>");
+            var trail = $"/history-object?objectType={UrlEncode(item.SourceObjectType)}&objectId={UrlEncode(item.SourceObjectId)}";
+            var review = $"/review?case={request.CaseId}&chat={request.ChatId}&objectType={UrlEncode(item.SourceObjectType)}&objectId={UrlEncode(item.SourceObjectId)}";
+            sb.AppendLine($"<div>{E(item.Priority)} | {E(item.Summary)} | <a href='{E(trail)}'>trail</a> | <a href='{E(review)}'>review</a></div>");
         }
-        else
+
+        if (items.Count == 0)
         {
-            foreach (var alert in model.Alerts)
-            {
-                sb.AppendLine($"<div>{E(alert)}</div>");
-            }
+            sb.AppendLine("<p>No items.</p>");
         }
 
         sb.AppendLine("</section>");
+    }
 
-        if (model.DraftsReviews.LatestDraft != null)
+    private static string RenderHistory(HistoryReadModel model)
+    {
+        var sb = CreateShell("History");
+        sb.AppendLine("<h1>History / Activity</h1>");
+        foreach (var evt in model.Events)
         {
-            sb.AppendLine("<section><h2>Recent Draft</h2>");
-            sb.AppendLine($"<p>{E(model.DraftsReviews.LatestDraft.MainDraft)}</p>");
-            sb.AppendLine("</section>");
+            var trailLink = $"/history-object?objectType={UrlEncode(evt.ObjectType)}&objectId={UrlEncode(evt.ObjectId)}";
+            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.ObjectType)} | {E(evt.Action)} | <a href='{E(trailLink)}'>trail</a></div>");
         }
 
+        return CloseShell(sb);
+    }
+
+    private static string RenderObjectHistory(ObjectHistoryReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Object History");
+        sb.AppendLine("<h1>Object / History Trail</h1>");
+        sb.AppendLine($"<p>object: {E(model.ObjectType)}:{E(model.ObjectId)}</p>");
+        sb.AppendLine($"<p>summary: {E(model.ObjectSummary)}</p>");
+        foreach (var evt in model.Events.OrderByDescending(x => x.CreatedAt))
+        {
+            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.Action)} | {E(evt.Summary)}</div>");
+        }
+
+        sb.AppendLine($"<p>case={request.CaseId}, chat={request.ChatId}</p>");
         return CloseShell(sb);
     }
 
@@ -180,27 +338,12 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>dynamic: <strong>{E(model.DynamicLabel)}</strong></p>");
         sb.AppendLine($"<p>status: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (alt {E(model.AlternativeStatus!)})")}</p>");
         sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
-
         sb.AppendLine("<h2>Scores</h2>");
         foreach (var kv in model.Scores.OrderBy(x => x.Key))
         {
             sb.AppendLine($"<div>{E(kv.Key)}: {kv.Value:0.00}</div>");
         }
 
-        sb.AppendLine("<h2>Key Signals</h2>");
-        foreach (var s in model.KeySignals)
-        {
-            sb.AppendLine($"<div>{E(s)}</div>");
-        }
-
-        sb.AppendLine("<h2>Main Risks</h2>");
-        foreach (var r in model.MainRisks)
-        {
-            sb.AppendLine($"<div>{E(r)}</div>");
-        }
-
-        sb.AppendLine("<h2>Next Move</h2>");
-        sb.AppendLine($"<p>{E(model.NextMoveSummary)}</p>");
         return CloseShell(sb);
     }
 
@@ -210,17 +353,14 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<h1>Timeline</h1>");
         if (model.CurrentPeriod != null)
         {
-            sb.AppendLine("<h2>Current Period</h2>");
             sb.AppendLine(RenderPeriod(model.CurrentPeriod));
         }
 
-        sb.AppendLine("<h2>Prior Periods</h2>");
         foreach (var p in model.PriorPeriods)
         {
             sb.AppendLine(RenderPeriod(p));
         }
 
-        sb.AppendLine("<h2>Transitions</h2>");
         foreach (var t in model.Transitions)
         {
             sb.AppendLine($"<div>{E(t.TransitionType)} | resolved={t.IsResolved} | conf={t.Confidence:0.00} | {E(t.Summary)}</div>");
@@ -247,7 +387,8 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>open questions: {model.OpenCount}</p>");
         foreach (var q in model.TopQuestions)
         {
-            sb.AppendLine($"<article><h3>{E(q.QuestionText)}</h3><p>why: {E(q.WhyItMatters)}</p><p>{E(q.Priority)} / {E(q.Status)}</p></article>");
+            var trailLink = $"/history-object?objectType=clarification_question&objectId={UrlEncode(q.Id.ToString())}";
+            sb.AppendLine($"<article><h3>{E(q.QuestionText)}</h3><p>why: {E(q.WhyItMatters)}</p><p>{E(q.Priority)} / {E(q.Status)}</p><p><a href='{E(trailLink)}'>history trail</a></p></article>");
         }
 
         return CloseShell(sb);
@@ -332,6 +473,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             var confirm = $"/review-action?{baseQuery}&action=confirm";
             var reject = $"/review-action?{baseQuery}&action=reject";
             var defer = $"/review-action?{baseQuery}&action=defer";
+            var trail = $"/history-object?objectType={objectType}&objectId={objectId}";
 
             sb.AppendLine("<article>");
             sb.AppendLine($"<h3>{E(card.ObjectType)}:{E(card.ObjectId)}</h3>");
@@ -340,7 +482,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p><strong>suggested:</strong> {E(card.SuggestedInterpretation)}</p>");
             sb.AppendLine($"<p><strong>context:</strong> {E(card.LinkedContext)}</p>");
             sb.AppendLine($"<p><strong>confidence:</strong> {(card.Confidence.HasValue ? card.Confidence.Value.ToString("0.00") : "-")}</p>");
-            sb.AppendLine($"<p><a href='{E(confirm)}'>confirm</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(defer)}'>defer</a></p>");
+            sb.AppendLine($"<p><a href='{E(confirm)}'>confirm</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(defer)}'>defer</a> | <a href='{E(trail)}'>history trail</a></p>");
 
             if (card.CanEdit && card.ObjectType == "period")
             {
@@ -450,7 +592,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
         sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;max-width:980px;margin:20px auto;padding:0 12px;color:#1f2937}nav a{margin-right:10px}section,article{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin:10px 0}h1,h2,h3{margin:6px 0}</style>");
         sb.AppendLine("</head><body>");
-        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a></nav>");
+        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Inbox</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a></nav>");
         return sb;
     }
 
