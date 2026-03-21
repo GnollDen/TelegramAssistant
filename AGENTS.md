@@ -19,7 +19,7 @@ src/
   TgAssistant.Mcp/             — TypeScript MCP server
 mcp/                           — reserved for legacy/auxiliary MCP docs
 deploy/                        — Dockerfile, docker-compose, monitoring, shell scripts
-scripts/                       — operational SQL scripts, prompt management
+scripts/                       — minimal operational SQL helpers
 ```
 
 ## Tech stack
