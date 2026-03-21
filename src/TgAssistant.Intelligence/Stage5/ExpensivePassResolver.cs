@@ -31,6 +31,7 @@ public class ExpensivePassResolver
     private readonly Dictionary<string, DateTimeOffset> _expensiveBlockedUntilByModel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _expensiveFailureStreakByModel = new(StringComparer.OrdinalIgnoreCase);
     private bool _expensiveBackoffStateLoaded;
+    private bool _expensiveDisabledLogged;
 
     public ExpensivePassResolver(
         IOptions<AnalysisSettings> settings,
@@ -75,8 +76,27 @@ public class ExpensivePassResolver
     {
         await EnsureExpensiveBackoffStateLoadedAsync(ct);
 
+        if (!_settings.ExpensivePassEnabled)
+        {
+            if (!_expensiveDisabledLogged)
+            {
+                _logger.LogInformation(
+                    "Stage5 expensive pass is disabled by policy. Set Analysis:ExpensivePassEnabled=true and Analysis:MaxExpensivePerBatch>0 to activate.");
+                _expensiveDisabledLogged = true;
+            }
+
+            return 0;
+        }
+
         if (_settings.MaxExpensivePerBatch <= 0)
         {
+            if (!_expensiveDisabledLogged)
+            {
+                _logger.LogInformation(
+                    "Stage5 expensive pass is configured with zero batch limit. Set Analysis:MaxExpensivePerBatch>0 to activate.");
+                _expensiveDisabledLogged = true;
+            }
+
             return 0;
         }
 

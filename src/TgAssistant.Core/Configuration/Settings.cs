@@ -136,6 +136,7 @@ public class AnalysisSettings
     public string CheapProviderOrder { get; set; } = string.Empty;
     public bool CheapProviderAllowFallbacks { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 2;
+    public bool ExpensivePassEnabled { get; set; } = false;
     public int MaxExpensivePerBatch { get; set; } = 10;
     public int FactReviewBatchSize { get; set; } = 100;
     public int CheapMaxTokens { get; set; } = 2000;

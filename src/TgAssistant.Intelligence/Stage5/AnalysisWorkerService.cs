@@ -32,6 +32,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private static readonly TimeSpan OpenRouterRecoveryPollInterval = TimeSpan.FromSeconds(15);
 
     private readonly AnalysisSettings _settings;
+    private readonly EmbeddingSettings _embeddingSettings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMessageExtractionRepository _extractionRepository;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
@@ -48,6 +49,7 @@ public partial class AnalysisWorkerService : BackgroundService
 
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
+        IOptions<EmbeddingSettings> embeddingSettings,
         IMessageRepository messageRepository,
         IMessageExtractionRepository extractionRepository,
         IExtractionErrorRepository extractionErrorRepository,
@@ -62,6 +64,7 @@ public partial class AnalysisWorkerService : BackgroundService
         ILogger<AnalysisWorkerService> logger)
     {
         _settings = settings.Value;
+        _embeddingSettings = embeddingSettings.Value;
         _messageRepository = messageRepository;
         _extractionRepository = extractionRepository;
         _extractionErrorRepository = extractionErrorRepository;
@@ -106,6 +109,17 @@ public partial class AnalysisWorkerService : BackgroundService
             Math.Max(1, _settings.CheapChunkPauseGapMinutes),
             _settings.ArchiveOnlyMode,
             _archiveCutoffUtc);
+        _logger.LogInformation(
+            "Stage5 operational paths: expensive_pass_enabled={ExpensiveEnabled}, expensive_batch_limit={ExpensiveBatchLimit}, expensive_daily_budget_usd={ExpensiveDailyBudget:0.000000}, summary_inline_enabled={SummaryInlineEnabled}, summary_llm_enabled={SummaryLlmEnabled}, summary_worker_enabled={SummaryWorkerEnabled}, summary_historical_hints_enabled={SummaryHistoricalHintsEnabled}, summary_historical_embedding_model={SummaryHistoricalEmbeddingModel}, edit_diff_enabled={EditDiffEnabled}",
+            IsExpensivePassEnabled(),
+            Math.Max(0, _settings.MaxExpensivePerBatch),
+            _settings.ExpensiveDailyBudgetUsd,
+            true,
+            _settings.SummaryEnabled,
+            _settings.SummaryWorkerEnabled,
+            _settings.SummaryHistoricalHintsEnabled,
+            ResolveSummaryHistoricalEmbeddingModel(),
+            _settings.EditDiffEnabled);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -1968,7 +1982,18 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private bool IsExpensivePassEnabled()
     {
-        return _settings.MaxExpensivePerBatch > 0;
+        return _settings.ExpensivePassEnabled && _settings.MaxExpensivePerBatch > 0;
+    }
+
+    private string ResolveSummaryHistoricalEmbeddingModel()
+    {
+        var configured = _embeddingSettings.Model?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        return "text-embedding-3-small";
     }
 
     private int GetFetchLimit()
