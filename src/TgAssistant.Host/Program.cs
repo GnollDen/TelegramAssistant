@@ -11,6 +11,7 @@ using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CurrentState;
+using TgAssistant.Intelligence.Stage6.Drafts;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Intelligence.Stage6.Strategy;
@@ -41,6 +42,7 @@ try
     var runStateSmoke = args.Any(arg => string.Equals(arg, "--state-smoke", StringComparison.OrdinalIgnoreCase));
     var runProfileSmoke = args.Any(arg => string.Equals(arg, "--profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStrategySmoke = args.Any(arg => string.Equals(arg, "--strategy-smoke", StringComparison.OrdinalIgnoreCase));
+    var runDraftSmoke = args.Any(arg => string.Equals(arg, "--draft-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -51,7 +53,8 @@ try
         "--periodization-smoke",
         "--state-smoke",
         "--profile-smoke",
-        "--strategy-smoke"
+        "--strategy-smoke",
+        "--draft-smoke"
     };
 
     if (runListSmokes)
@@ -205,6 +208,12 @@ try
             services.AddSingleton<IMicroStepPlanner, MicroStepPlanner>();
             services.AddSingleton<IStrategyEngine, StrategyEngine>();
             services.AddSingleton<StrategyEngineVerificationService>();
+            services.AddSingleton<IDraftGenerator, DraftGenerator>();
+            services.AddSingleton<IDraftStyleAdapter, DraftStyleAdapter>();
+            services.AddSingleton<IDraftStrategyChecker, DraftStrategyChecker>();
+            services.AddSingleton<IDraftPackagingService, DraftPackagingService>();
+            services.AddSingleton<IDraftEngine, DraftEngine>();
+            services.AddSingleton<DraftEngineVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -338,6 +347,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<StrategyEngineVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Strategy smoke run requested via --strategy-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runDraftSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<DraftEngineVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Draft smoke run requested via --draft-smoke. Exiting after successful verification.");
             return;
         }
 
