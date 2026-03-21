@@ -14,6 +14,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         "/history",
         "/state",
         "/timeline",
+        "/network",
         "/profiles",
         "/clarifications",
         "/strategy",
@@ -64,6 +65,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/history-object" => new WebRenderResult { Route = path, Title = "Object History", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
             "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
             "/timeline" => new WebRenderResult { Route = path, Title = "Timeline", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
+            "/network" => new WebRenderResult { Route = path, Title = "Network", Html = RenderNetwork(await _webReadService.GetNetworkAsync(request, ct), query) },
             "/profiles" => new WebRenderResult { Route = path, Title = "Profiles", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
             "/clarifications" => new WebRenderResult { Route = path, Title = "Clarifications", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
             "/strategy" => new WebRenderResult { Route = path, Title = "Strategy", Html = RenderStrategy(await _webReadService.GetStrategyAsync(request, ct)) },
@@ -367,6 +369,88 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
 
         sb.AppendLine($"<p>unresolved transitions: {model.UnresolvedTransitions}</p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderNetwork(NetworkReadModel model, IReadOnlyDictionary<string, string> query)
+    {
+        var nodeTypeFilter = EmptyToNull(GetQuery(query, "nodeType"));
+        var roleFilter = EmptyToNull(GetQuery(query, "role"));
+        var selectedNodeId = EmptyToNull(GetQuery(query, "nodeId"));
+
+        var filteredNodes = model.Nodes
+            .Where(x => string.IsNullOrWhiteSpace(nodeTypeFilter)
+                        || x.NodeType.Equals(nodeTypeFilter, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(roleFilter)
+                        || x.PrimaryRole.Equals(roleFilter, StringComparison.OrdinalIgnoreCase)
+                        || x.AdditionalRoles.Any(role => role.Equals(roleFilter, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(x => x.ImportanceScore)
+            .ToList();
+
+        var selected = filteredNodes.FirstOrDefault(x =>
+                           !string.IsNullOrWhiteSpace(selectedNodeId)
+                           && x.NodeId.Equals(selectedNodeId, StringComparison.OrdinalIgnoreCase))
+                       ?? filteredNodes.FirstOrDefault();
+
+        var sb = CreateShell("Network");
+        sb.AppendLine("<h1>Network</h1>");
+        sb.AppendLine($"<p>generated: {model.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss} UTC</p>");
+        sb.AppendLine($"<p>filters: nodeType={E(nodeTypeFilter ?? "-")} role={E(roleFilter ?? "-")} nodes={filteredNodes.Count}</p>");
+        sb.AppendLine("<section><h2>Nodes</h2>");
+        foreach (var node in filteredNodes.Take(40))
+        {
+            var pick = $"/network?nodeId={UrlEncode(node.NodeId)}";
+            sb.AppendLine($"<div><a href='{E(pick)}'>{E(node.DisplayName)}</a> | {E(node.NodeType)} | role={E(node.PrimaryRole)} | importance={node.ImportanceScore:0.00} | conf={node.Confidence:0.00}</div>");
+        }
+
+        if (filteredNodes.Count == 0)
+        {
+            sb.AppendLine("<p>No nodes match current filters.</p>");
+        }
+
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Influence</h2>");
+        foreach (var edge in model.InfluenceEdges.Take(50))
+        {
+            if (selected != null
+                && !edge.FromNodeId.Equals(selected.NodeId, StringComparison.OrdinalIgnoreCase)
+                && !edge.ToNodeId.Equals(selected.NodeId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sb.AppendLine($"<div>{E(edge.FromNodeId)} -> {E(edge.ToNodeId)} | {E(edge.InfluenceType)} | conf={edge.Confidence:0.00}{(edge.IsHypothesis ? " | hypothesis" : string.Empty)}</div>");
+        }
+
+        sb.AppendLine("</section>");
+        sb.AppendLine("<section><h2>Information Flow</h2>");
+        foreach (var edge in model.InformationFlows.Take(50))
+        {
+            if (selected != null
+                && !edge.FromNodeId.Equals(selected.NodeId, StringComparison.OrdinalIgnoreCase)
+                && !edge.ToNodeId.Equals(selected.NodeId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            sb.AppendLine($"<div>{E(edge.FromNodeId)} => {E(edge.ToNodeId)} | {E(edge.Direction)} | conf={edge.Confidence:0.00}</div>");
+        }
+
+        sb.AppendLine("</section>");
+
+        if (selected != null)
+        {
+            sb.AppendLine("<section><h2>Selected Node</h2>");
+            sb.AppendLine($"<p><strong>{E(selected.DisplayName)}</strong> ({E(selected.NodeType)})</p>");
+            sb.AppendLine($"<p>primary role: {E(selected.PrimaryRole)}; additional: {E(string.Join(", ", selected.AdditionalRoles))}</p>");
+            sb.AppendLine($"<p>global role: {E(selected.GlobalRole)}; focal={selected.IsFocalActor}</p>");
+            sb.AppendLine($"<p>linked periods: {E(string.Join(", ", selected.LinkedPeriods))}</p>");
+            sb.AppendLine($"<p>linked events: {E(string.Join(", ", selected.LinkedEvents))}</p>");
+            sb.AppendLine($"<p>linked clarifications: {E(string.Join(", ", selected.LinkedClarifications))}</p>");
+            sb.AppendLine("</section>");
+        }
+
         return CloseShell(sb);
     }
 

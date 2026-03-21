@@ -5,6 +5,7 @@ public interface IWebReadService
     Task<DashboardReadModel> GetDashboardAsync(WebReadRequest request, CancellationToken ct = default);
     Task<CurrentStateReadModel> GetCurrentStateAsync(WebReadRequest request, CancellationToken ct = default);
     Task<TimelineReadModel> GetTimelineAsync(WebReadRequest request, CancellationToken ct = default);
+    Task<NetworkReadModel> GetNetworkAsync(WebReadRequest request, CancellationToken ct = default);
     Task<ProfilesReadModel> GetProfilesAsync(WebReadRequest request, CancellationToken ct = default);
     Task<ClarificationsReadModel> GetClarificationsAsync(WebReadRequest request, CancellationToken ct = default);
     Task<StrategyReadModel> GetStrategyAsync(WebReadRequest request, CancellationToken ct = default);
