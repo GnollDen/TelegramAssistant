@@ -30,6 +30,9 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Starting Telegram Assistant...");
+    var runFoundationSmoke = args.Any(arg => string.Equals(arg, "--foundation-smoke", StringComparison.OrdinalIgnoreCase));
+    var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
+    var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
 
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
@@ -136,6 +139,15 @@ try
             services.AddSingleton<ISummaryRepository, SummaryRepository>();
             services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
             services.AddSingleton<IChatSessionRepository, ChatSessionRepository>();
+            services.AddSingleton<IPeriodRepository, PeriodRepository>();
+            services.AddSingleton<IClarificationRepository, ClarificationRepository>();
+            services.AddSingleton<IOfflineEventRepository, OfflineEventRepository>();
+            services.AddSingleton<IStateProfileRepository, StateProfileRepository>();
+            services.AddSingleton<IStrategyDraftRepository, StrategyDraftRepository>();
+            services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
+            services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
+            services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
+            services.AddSingleton<FoundationDomainVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -200,11 +212,49 @@ try
 
     using (var scope = host.Services.CreateScope())
     {
+        if (runHealthCheck)
+        {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
+            await using var db = await dbFactory.CreateDbContextAsync(timeoutCts.Token);
+            if (!await db.Database.CanConnectAsync(timeoutCts.Token))
+            {
+                throw new InvalidOperationException("Database connectivity check failed.");
+            }
+
+            var redis = scope.ServiceProvider.GetRequiredService<IConnectionMultiplexer>();
+            var redisDb = redis.GetDatabase();
+            _ = await redisDb.PingAsync();
+
+            Log.Information("Healthcheck passed: database and redis are reachable.");
+            return;
+        }
+
         var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
         await dbInit.InitializeAsync();
 
         var redisQueue = scope.ServiceProvider.GetRequiredService<RedisMessageQueue>();
         await redisQueue.InitializeAsync();
+
+        if (runFoundationSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<FoundationDomainVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Foundation smoke run requested via --foundation-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runRuntimeWiringCheck)
+        {
+            var hostedServices = scope.ServiceProvider.GetServices<IHostedService>().Select(x => x.GetType().Name).OrderBy(x => x).ToList();
+            Log.Information("Runtime wiring check passed. Hosted services resolved: {Count}", hostedServices.Count);
+            foreach (var serviceName in hostedServices)
+            {
+                Log.Information("Hosted service registered: {ServiceName}", serviceName);
+            }
+
+            return;
+        }
     }
 
     await host.RunAsync();
@@ -212,6 +262,7 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Application terminated unexpectedly");
+    Environment.ExitCode = 1;
 }
 finally
 {
