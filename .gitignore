@@ -14,3 +14,5 @@ logs/
 /data/media/
 .DS_Store
 Thumbs.db
+
+/docs/reports/
