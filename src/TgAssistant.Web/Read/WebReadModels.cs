@@ -63,6 +63,55 @@ public class TimelineTransitionReadModel
     public float Confidence { get; set; }
 }
 
+public class NetworkReadModel
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public List<NetworkNodeReadModel> Nodes { get; set; } = [];
+    public List<NetworkInfluenceEdgeReadModel> InfluenceEdges { get; set; } = [];
+    public List<NetworkInformationFlowReadModel> InformationFlows { get; set; } = [];
+}
+
+public class NetworkNodeReadModel
+{
+    public string NodeId { get; set; } = string.Empty;
+    public string NodeType { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string PrimaryRole { get; set; } = string.Empty;
+    public List<string> AdditionalRoles { get; set; } = [];
+    public string GlobalRole { get; set; } = string.Empty;
+    public bool IsFocalActor { get; set; }
+    public float ImportanceScore { get; set; }
+    public float Confidence { get; set; }
+    public List<Guid> LinkedPeriods { get; set; } = [];
+    public List<Guid> LinkedEvents { get; set; } = [];
+    public List<Guid> LinkedClarifications { get; set; } = [];
+    public List<string> EvidenceRefs { get; set; } = [];
+}
+
+public class NetworkInfluenceEdgeReadModel
+{
+    public string EdgeId { get; set; } = string.Empty;
+    public string FromNodeId { get; set; } = string.Empty;
+    public string ToNodeId { get; set; } = string.Empty;
+    public string InfluenceType { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public bool IsHypothesis { get; set; }
+    public Guid? LinkedPeriodId { get; set; }
+    public List<string> EvidenceRefs { get; set; } = [];
+}
+
+public class NetworkInformationFlowReadModel
+{
+    public string EdgeId { get; set; } = string.Empty;
+    public string FromNodeId { get; set; } = string.Empty;
+    public string ToNodeId { get; set; } = string.Empty;
+    public string FlowType { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public Guid? LinkedPeriodId { get; set; }
+    public List<string> EvidenceRefs { get; set; } = [];
+}
+
 public class ProfilesReadModel
 {
     public ProfileSubjectReadModel Self { get; set; } = new();
