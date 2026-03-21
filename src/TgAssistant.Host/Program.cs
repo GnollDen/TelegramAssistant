@@ -11,6 +11,7 @@ using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CurrentState;
+using TgAssistant.Intelligence.Stage6.DraftReview;
 using TgAssistant.Intelligence.Stage6.Drafts;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
@@ -43,6 +44,7 @@ try
     var runProfileSmoke = args.Any(arg => string.Equals(arg, "--profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStrategySmoke = args.Any(arg => string.Equals(arg, "--strategy-smoke", StringComparison.OrdinalIgnoreCase));
     var runDraftSmoke = args.Any(arg => string.Equals(arg, "--draft-smoke", StringComparison.OrdinalIgnoreCase));
+    var runReviewSmoke = args.Any(arg => string.Equals(arg, "--review-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -54,7 +56,8 @@ try
         "--state-smoke",
         "--profile-smoke",
         "--strategy-smoke",
-        "--draft-smoke"
+        "--draft-smoke",
+        "--review-smoke"
     };
 
     if (runListSmokes)
@@ -214,6 +217,12 @@ try
             services.AddSingleton<IDraftPackagingService, DraftPackagingService>();
             services.AddSingleton<IDraftEngine, DraftEngine>();
             services.AddSingleton<DraftEngineVerificationService>();
+            services.AddSingleton<IDraftRiskAssessor, DraftRiskAssessor>();
+            services.AddSingleton<IDraftStrategyFitChecker, DraftStrategyFitChecker>();
+            services.AddSingleton<ISaferRewriteGenerator, SaferRewriteGenerator>();
+            services.AddSingleton<INaturalRewriteGenerator, NaturalRewriteGenerator>();
+            services.AddSingleton<IDraftReviewEngine, DraftReviewEngine>();
+            services.AddSingleton<DraftReviewVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -355,6 +364,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<DraftEngineVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Draft smoke run requested via --draft-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runReviewSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<DraftReviewVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Review smoke run requested via --review-smoke. Exiting after successful verification.");
             return;
         }
 
