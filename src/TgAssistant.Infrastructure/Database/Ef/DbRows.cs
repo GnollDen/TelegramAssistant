@@ -333,3 +333,360 @@ public class DbStickerCache
     public DateTime CreatedAt { get; set; }
     public DateTime LastUsedAt { get; set; }
 }
+
+public class DbPeriod
+{
+    public Guid Id { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string? CustomLabel { get; set; }
+    public DateTime StartAt { get; set; }
+    public DateTime? EndAt { get; set; }
+    public bool IsOpen { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string KeySignalsJson { get; set; } = "[]";
+    public string WhatHelped { get; set; } = string.Empty;
+    public string WhatHurt { get; set; } = string.Empty;
+    public int OpenQuestionsCount { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public float InterpretationConfidence { get; set; }
+    public short ReviewPriority { get; set; }
+    public bool IsSensitive { get; set; }
+    public string StatusSnapshot { get; set; } = string.Empty;
+    public string DynamicSnapshot { get; set; } = string.Empty;
+    public string? Lessons { get; set; }
+    public string? StrategicPatterns { get; set; }
+    public string? ManualNotes { get; set; }
+    public string? UserOverrideSummary { get; set; }
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbPeriodTransition
+{
+    public Guid Id { get; set; }
+    public Guid FromPeriodId { get; set; }
+    public Guid ToPeriodId { get; set; }
+    public string TransitionType { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public bool IsResolved { get; set; }
+    public float Confidence { get; set; }
+    public Guid? GapId { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbHypothesis
+{
+    public Guid Id { get; set; }
+    public string HypothesisType { get; set; } = string.Empty;
+    public string SubjectType { get; set; } = string.Empty;
+    public string SubjectId { get; set; } = string.Empty;
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public Guid? PeriodId { get; set; }
+    public string Statement { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public string ConflictRefsJson { get; set; } = "[]";
+    public string ValidationTargetsJson { get; set; } = "[]";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbClarificationQuestion
+{
+    public Guid Id { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string QuestionText { get; set; } = string.Empty;
+    public string QuestionType { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public Guid? PeriodId { get; set; }
+    public Guid? RelatedHypothesisId { get; set; }
+    public string AffectedOutputsJson { get; set; } = "[]";
+    public string WhyItMatters { get; set; } = string.Empty;
+    public float ExpectedGain { get; set; }
+    public string AnswerOptionsJson { get; set; } = "[]";
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbClarificationAnswer
+{
+    public Guid Id { get; set; }
+    public Guid QuestionId { get; set; }
+    public string AnswerType { get; set; } = string.Empty;
+    public string AnswerValue { get; set; } = string.Empty;
+    public float AnswerConfidence { get; set; }
+    public string SourceClass { get; set; } = string.Empty;
+    public string AffectedObjectsJson { get; set; } = "[]";
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbOfflineEvent
+{
+    public Guid Id { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string UserSummary { get; set; } = string.Empty;
+    public string? AutoSummary { get; set; }
+    public DateTime TimestampStart { get; set; }
+    public DateTime? TimestampEnd { get; set; }
+    public Guid? PeriodId { get; set; }
+    public string ReviewStatus { get; set; } = string.Empty;
+    public string? ImpactSummary { get; set; }
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbAudioAsset
+{
+    public Guid Id { get; set; }
+    public Guid OfflineEventId { get; set; }
+    public string FilePath { get; set; } = string.Empty;
+    public int? DurationSeconds { get; set; }
+    public string TranscriptStatus { get; set; } = string.Empty;
+    public string? TranscriptText { get; set; }
+    public string SpeakerReviewStatus { get; set; } = string.Empty;
+    public string ProcessingStatus { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbAudioSegment
+{
+    public Guid Id { get; set; }
+    public Guid AudioAssetId { get; set; }
+    public int SegmentIndex { get; set; }
+    public decimal StartSeconds { get; set; }
+    public decimal EndSeconds { get; set; }
+    public string? SpeakerLabel { get; set; }
+    public string TranscriptText { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbAudioSnippet
+{
+    public Guid Id { get; set; }
+    public Guid AudioAssetId { get; set; }
+    public Guid? AudioSegmentId { get; set; }
+    public string SnippetType { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbStateSnapshot
+{
+    public Guid Id { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public DateTime AsOf { get; set; }
+    public string DynamicLabel { get; set; } = string.Empty;
+    public string RelationshipStatus { get; set; } = string.Empty;
+    public string? AlternativeStatus { get; set; }
+    public float InitiativeScore { get; set; }
+    public float ResponsivenessScore { get; set; }
+    public float OpennessScore { get; set; }
+    public float WarmthScore { get; set; }
+    public float ReciprocityScore { get; set; }
+    public float AmbiguityScore { get; set; }
+    public float AvoidanceRiskScore { get; set; }
+    public float EscalationReadinessScore { get; set; }
+    public float ExternalPressureScore { get; set; }
+    public float Confidence { get; set; }
+    public Guid? PeriodId { get; set; }
+    public string KeySignalRefsJson { get; set; } = "[]";
+    public string RiskRefsJson { get; set; } = "[]";
+    public Guid? SourceSessionId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbProfileSnapshot
+{
+    public Guid Id { get; set; }
+    public string SubjectType { get; set; } = string.Empty;
+    public string SubjectId { get; set; } = string.Empty;
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public Guid? PeriodId { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public float Stability { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbProfileTrait
+{
+    public Guid Id { get; set; }
+    public Guid ProfileSnapshotId { get; set; }
+    public string TraitKey { get; set; } = string.Empty;
+    public string ValueLabel { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public float Stability { get; set; }
+    public bool IsSensitive { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public Guid? SourceSessionId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbStrategyRecord
+{
+    public Guid Id { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public Guid? PeriodId { get; set; }
+    public Guid? StateSnapshotId { get; set; }
+    public float StrategyConfidence { get; set; }
+    public string RecommendedGoal { get; set; } = string.Empty;
+    public string WhyNotOthers { get; set; } = string.Empty;
+    public Guid? SourceSessionId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbStrategyOption
+{
+    public Guid Id { get; set; }
+    public Guid StrategyRecordId { get; set; }
+    public string ActionType { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string Purpose { get; set; } = string.Empty;
+    public string Risk { get; set; } = string.Empty;
+    public string WhenToUse { get; set; } = string.Empty;
+    public string SuccessSigns { get; set; } = string.Empty;
+    public string FailureSigns { get; set; } = string.Empty;
+    public bool IsPrimary { get; set; }
+}
+
+public class DbDraftRecord
+{
+    public Guid Id { get; set; }
+    public Guid StrategyRecordId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public string MainDraft { get; set; } = string.Empty;
+    public string? AltDraft1 { get; set; }
+    public string? AltDraft2 { get; set; }
+    public string? StyleNotes { get; set; }
+    public float Confidence { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbDraftOutcome
+{
+    public Guid Id { get; set; }
+    public Guid DraftId { get; set; }
+    public long? ActualMessageId { get; set; }
+    public float? MatchScore { get; set; }
+    public string OutcomeLabel { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbInboxItem
+{
+    public Guid Id { get; set; }
+    public string ItemType { get; set; } = string.Empty;
+    public string SourceObjectType { get; set; } = string.Empty;
+    public string SourceObjectId { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public bool IsBlocking { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public Guid? PeriodId { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? LastActor { get; set; }
+    public string? LastReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbConflictRecord
+{
+    public Guid Id { get; set; }
+    public string ConflictType { get; set; } = string.Empty;
+    public string ObjectAType { get; set; } = string.Empty;
+    public string ObjectAId { get; set; } = string.Empty;
+    public string ObjectBType { get; set; } = string.Empty;
+    public string ObjectBId { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public Guid? PeriodId { get; set; }
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string? LastActor { get; set; }
+    public string? LastReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDependencyLink
+{
+    public Guid Id { get; set; }
+    public string UpstreamType { get; set; } = string.Empty;
+    public string UpstreamId { get; set; } = string.Empty;
+    public string DownstreamType { get; set; } = string.Empty;
+    public string DownstreamId { get; set; } = string.Empty;
+    public string LinkType { get; set; } = string.Empty;
+    public string? LinkReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbDomainReviewEvent
+{
+    public Guid Id { get; set; }
+    public string ObjectType { get; set; } = string.Empty;
+    public string ObjectId { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string? OldValueRef { get; set; }
+    public string? NewValueRef { get; set; }
+    public string? Reason { get; set; }
+    public string Actor { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}

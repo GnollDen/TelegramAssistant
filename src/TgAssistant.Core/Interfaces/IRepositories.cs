@@ -278,6 +278,137 @@ public class ExpensiveRetryResult
     public DateTime? NextRetryAt { get; set; }
 }
 
+public interface IPeriodRepository
+{
+    Task<Period> CreatePeriodAsync(Period period, CancellationToken ct = default);
+    Task<Period?> GetPeriodByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<Period>> GetPeriodsByCaseAsync(long caseId, CancellationToken ct = default);
+    Task<bool> UpdatePeriodLifecycleAsync(
+        Guid id,
+        string label,
+        string summary,
+        bool isOpen,
+        DateTime? endAt,
+        short reviewPriority,
+        string actor,
+        string? reason = null,
+        CancellationToken ct = default);
+
+    Task<PeriodTransition> CreateTransitionAsync(PeriodTransition transition, CancellationToken ct = default);
+    Task<PeriodTransition?> GetTransitionByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<PeriodTransition>> GetTransitionsByPeriodAsync(Guid periodId, CancellationToken ct = default);
+
+    Task<Hypothesis> CreateHypothesisAsync(Hypothesis hypothesis, CancellationToken ct = default);
+    Task<Hypothesis?> GetHypothesisByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<Hypothesis>> GetHypothesesByCaseAsync(long caseId, string? status = null, CancellationToken ct = default);
+    Task<bool> UpdateHypothesisLifecycleAsync(
+        Guid id,
+        string status,
+        float confidence,
+        string actor,
+        string? reason = null,
+        CancellationToken ct = default);
+}
+
+public interface IClarificationRepository
+{
+    Task<ClarificationQuestion> CreateQuestionAsync(ClarificationQuestion question, CancellationToken ct = default);
+    Task<ClarificationQuestion?> GetQuestionByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<ClarificationQuestion>> GetQuestionsAsync(long caseId, Guid? periodId = null, string? status = null, CancellationToken ct = default);
+
+    Task<ClarificationAnswer> CreateAnswerAsync(ClarificationAnswer answer, CancellationToken ct = default);
+    Task<ClarificationAnswer?> GetAnswerByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<ClarificationAnswer>> GetAnswersByQuestionIdAsync(Guid questionId, CancellationToken ct = default);
+    Task<bool> UpdateQuestionWorkflowAsync(
+        Guid id,
+        string status,
+        string priority,
+        string actor,
+        string? reason = null,
+        CancellationToken ct = default);
+    Task<ClarificationAnswer> ApplyAnswerAsync(
+        Guid questionId,
+        ClarificationAnswer answer,
+        bool markResolved,
+        string actor,
+        string? reason = null,
+        CancellationToken ct = default);
+}
+
+public interface IOfflineEventRepository
+{
+    Task<OfflineEvent> CreateOfflineEventAsync(OfflineEvent evt, CancellationToken ct = default);
+    Task<OfflineEvent?> GetOfflineEventByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<OfflineEvent>> GetOfflineEventsByCaseAsync(long caseId, CancellationToken ct = default);
+
+    Task<AudioAsset> CreateAudioAssetAsync(AudioAsset asset, CancellationToken ct = default);
+    Task<AudioAsset?> GetAudioAssetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<AudioAsset>> GetAudioAssetsByOfflineEventIdAsync(Guid offlineEventId, CancellationToken ct = default);
+
+    Task<AudioSegment> CreateAudioSegmentAsync(AudioSegment segment, CancellationToken ct = default);
+    Task<List<AudioSegment>> GetAudioSegmentsByAssetIdAsync(Guid audioAssetId, CancellationToken ct = default);
+
+    Task<AudioSnippet> CreateAudioSnippetAsync(AudioSnippet snippet, CancellationToken ct = default);
+    Task<List<AudioSnippet>> GetAudioSnippetsByAssetIdAsync(Guid audioAssetId, CancellationToken ct = default);
+}
+
+public interface IStateProfileRepository
+{
+    Task<StateSnapshot> CreateStateSnapshotAsync(StateSnapshot snapshot, CancellationToken ct = default);
+    Task<StateSnapshot?> GetStateSnapshotByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<StateSnapshot>> GetStateSnapshotsByCaseAsync(long caseId, int limit = 20, CancellationToken ct = default);
+
+    Task<ProfileSnapshot> CreateProfileSnapshotAsync(ProfileSnapshot snapshot, CancellationToken ct = default);
+    Task<ProfileSnapshot?> GetProfileSnapshotByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<ProfileSnapshot>> GetProfileSnapshotsByCaseAsync(long caseId, string subjectType, string subjectId, CancellationToken ct = default);
+
+    Task<ProfileTrait> CreateProfileTraitAsync(ProfileTrait trait, CancellationToken ct = default);
+    Task<List<ProfileTrait>> GetProfileTraitsBySnapshotIdAsync(Guid profileSnapshotId, CancellationToken ct = default);
+}
+
+public interface IStrategyDraftRepository
+{
+    Task<StrategyRecord> CreateStrategyRecordAsync(StrategyRecord record, CancellationToken ct = default);
+    Task<StrategyRecord?> GetStrategyRecordByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<StrategyRecord>> GetStrategyRecordsByCaseAsync(long caseId, CancellationToken ct = default);
+
+    Task<StrategyOption> CreateStrategyOptionAsync(StrategyOption option, CancellationToken ct = default);
+    Task<List<StrategyOption>> GetStrategyOptionsByRecordIdAsync(Guid strategyRecordId, CancellationToken ct = default);
+
+    Task<DraftRecord> CreateDraftRecordAsync(DraftRecord draft, CancellationToken ct = default);
+    Task<DraftRecord?> GetDraftRecordByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<DraftRecord>> GetDraftRecordsByStrategyRecordIdAsync(Guid strategyRecordId, CancellationToken ct = default);
+
+    Task<DraftOutcome> CreateDraftOutcomeAsync(DraftOutcome outcome, CancellationToken ct = default);
+    Task<List<DraftOutcome>> GetDraftOutcomesByDraftIdAsync(Guid draftId, CancellationToken ct = default);
+}
+
+public interface IInboxConflictRepository
+{
+    Task<InboxItem> CreateInboxItemAsync(InboxItem item, CancellationToken ct = default);
+    Task<InboxItem?> GetInboxItemByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<InboxItem>> GetInboxItemsAsync(long caseId, string? status = null, CancellationToken ct = default);
+
+    Task<ConflictRecord> CreateConflictRecordAsync(ConflictRecord record, CancellationToken ct = default);
+    Task<ConflictRecord?> GetConflictRecordByIdAsync(Guid id, CancellationToken ct = default);
+    Task<List<ConflictRecord>> GetConflictRecordsAsync(long caseId, string? status = null, CancellationToken ct = default);
+    Task<bool> UpdateInboxItemStatusAsync(Guid id, string status, string actor, string? reason = null, CancellationToken ct = default);
+    Task<bool> UpdateConflictStatusAsync(Guid id, string status, string actor, string? reason = null, CancellationToken ct = default);
+}
+
+public interface IDependencyLinkRepository
+{
+    Task<DependencyLink> CreateDependencyLinkAsync(DependencyLink link, CancellationToken ct = default);
+    Task<List<DependencyLink>> GetByUpstreamAsync(string upstreamType, string upstreamId, CancellationToken ct = default);
+    Task<List<DependencyLink>> GetByDownstreamAsync(string downstreamType, string downstreamId, CancellationToken ct = default);
+}
+
+public interface IDomainReviewEventRepository
+{
+    Task<DomainReviewEvent> AddAsync(DomainReviewEvent evt, CancellationToken ct = default);
+    Task<List<DomainReviewEvent>> GetByObjectAsync(string objectType, string objectId, int limit = 100, CancellationToken ct = default);
+}
+
 public class EntityMergeCandidate
 {
     public long Id { get; set; }
