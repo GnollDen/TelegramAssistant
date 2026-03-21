@@ -81,6 +81,10 @@ public class PeriodizationService : IPeriodizationService
             var periodMessages = messages
                 .Where(x => x.Timestamp >= basePeriod.StartAt && x.Timestamp <= (basePeriod.EndAt ?? DateTime.MaxValue))
                 .ToList();
+            var periodOfflineEvents = offlineEvents
+                .Where(x => x.TimestampStart >= basePeriod.StartAt && x.TimestampStart <= (basePeriod.EndAt ?? DateTime.MaxValue))
+                .ToList();
+            var periodAudioSnippets = await CollectAudioSnippetsAsync(periodOfflineEvents, ct);
             var periodClarificationQuestions = clarificationQuestions
                 .Where(x =>
                     x.PeriodId == basePeriod.Id ||
@@ -95,7 +99,8 @@ public class PeriodizationService : IPeriodizationService
                 basePeriod,
                 periodMessages,
                 sessions,
-                offlineEvents,
+                periodOfflineEvents,
+                periodAudioSnippets,
                 periodClarificationQuestions,
                 periodClarificationAnswers,
                 ct);
@@ -106,8 +111,13 @@ public class PeriodizationService : IPeriodizationService
             basePeriod.WhatHelped = evidence.WhatHelped;
             basePeriod.WhatHurt = evidence.WhatHurt;
             basePeriod.InterpretationConfidence = evidence.InterpretationConfidence;
-            basePeriod.Summary = BuildPeriodSummary(basePeriod, periodMessages.Count, offlineEvents, evidence);
+            basePeriod.Summary = BuildPeriodSummary(basePeriod, periodMessages.Count, periodOfflineEvents, evidence);
             basePeriod.ReviewPriority = CalculateReviewPriority(basePeriod, conflicts);
+            basePeriod.IsSensitive = IsSensitivePeriod(periodMessages, periodOfflineEvents, periodClarificationQuestions);
+            basePeriod.StatusSnapshot = BuildStatusSnapshot(periodMessages);
+            basePeriod.DynamicSnapshot = BuildDynamicSnapshot(periodMessages, periodClarificationAnswers);
+            basePeriod.Lessons = BuildLessons(evidence);
+            basePeriod.StrategicPatterns = BuildStrategicPatterns(periodMessages, periodClarificationAnswers);
 
             if (!request.Persist)
             {
@@ -133,6 +143,14 @@ public class PeriodizationService : IPeriodizationService
                 Actor = request.Actor,
                 CreatedAt = DateTime.UtcNow
             }, ct);
+
+            _ = await _offlineEventRepository.AssignPeriodByTimeRangeAsync(
+                request.CaseId,
+                request.ChatId,
+                persisted.Id,
+                persisted.StartAt,
+                persisted.EndAt,
+                ct);
 
             persistedPeriods.Add(persisted);
         }
@@ -224,5 +242,119 @@ public class PeriodizationService : IPeriodizationService
     {
         var eventCount = offlineEvents.Count(x => x.TimestampStart >= period.StartAt && x.TimestampStart <= (period.EndAt ?? DateTime.MaxValue));
         return $"Period {period.Label}: messages={messageCount}, events={eventCount}, open_questions={evidence.OpenQuestionsCount}.";
+    }
+
+    private async Task<List<AudioSnippet>> CollectAudioSnippetsAsync(IReadOnlyList<OfflineEvent> periodEvents, CancellationToken ct)
+    {
+        var snippets = new List<AudioSnippet>();
+        foreach (var evt in periodEvents)
+        {
+            var assets = await _offlineEventRepository.GetAudioAssetsByOfflineEventIdAsync(evt.Id, ct);
+            foreach (var asset in assets)
+            {
+                var byAsset = await _offlineEventRepository.GetAudioSnippetsByAssetIdAsync(asset.Id, ct);
+                snippets.AddRange(byAsset);
+            }
+        }
+
+        return snippets
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(16)
+            .ToList();
+    }
+
+    private static bool IsSensitivePeriod(
+        IReadOnlyList<Message> periodMessages,
+        IReadOnlyList<OfflineEvent> periodEvents,
+        IReadOnlyList<ClarificationQuestion> periodQuestions)
+    {
+        var sensitiveQuestion = periodQuestions.Any(x => x.QuestionType.Contains("sensitive", StringComparison.OrdinalIgnoreCase));
+        if (sensitiveQuestion)
+        {
+            return true;
+        }
+
+        var sensitiveEvent = periodEvents.Any(x => x.EventType.Contains("conflict", StringComparison.OrdinalIgnoreCase) || x.EventType.Contains("health", StringComparison.OrdinalIgnoreCase));
+        if (sensitiveEvent)
+        {
+            return true;
+        }
+
+        return periodMessages.Any(x =>
+            (x.Text ?? string.Empty).Contains("private", StringComparison.OrdinalIgnoreCase) ||
+            (x.Text ?? string.Empty).Contains("confidential", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildStatusSnapshot(IReadOnlyList<Message> periodMessages)
+    {
+        var signal = periodMessages.Select(x => x.Text ?? string.Empty).ToList();
+        var positive = signal.Count(x => x.Contains("thanks", StringComparison.OrdinalIgnoreCase) || x.Contains("ok", StringComparison.OrdinalIgnoreCase));
+        var negative = signal.Count(x => x.Contains("later", StringComparison.OrdinalIgnoreCase) || x.Contains("no", StringComparison.OrdinalIgnoreCase) || x.Contains("busy", StringComparison.OrdinalIgnoreCase));
+
+        if (positive > negative + 2)
+        {
+            return "mostly_positive";
+        }
+
+        if (negative > positive + 2)
+        {
+            return "mostly_negative";
+        }
+
+        return "mixed";
+    }
+
+    private static string BuildDynamicSnapshot(IReadOnlyList<Message> periodMessages, IReadOnlyList<ClarificationAnswer> answers)
+    {
+        var senderVariety = periodMessages.Select(x => x.SenderId).Distinct().Count();
+        var pace = periodMessages.Count <= 1
+            ? 0
+            : (periodMessages.Max(x => x.Timestamp) - periodMessages.Min(x => x.Timestamp)).TotalHours / periodMessages.Count;
+        if (answers.Any(x => x.AnswerValue.Equals("yes", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "clarified_shift";
+        }
+
+        if (senderVariety > 1 && pace < 4)
+        {
+            return "active_exchange";
+        }
+
+        if (pace > 24)
+        {
+            return "slow_exchange";
+        }
+
+        return "stable";
+    }
+
+    private static string BuildLessons(PeriodEvidencePack evidence)
+    {
+        if (evidence.OpenQuestionsCount > 0)
+        {
+            return "Clarification gaps still affect interpretation quality; keep review loop active.";
+        }
+
+        if (evidence.KeySignals.Any(x => x.Contains("offline_event_count:") && !x.EndsWith(":0", StringComparison.Ordinal)))
+        {
+            return "Offline events can materially reshape timeline interpretation and should be captured promptly.";
+        }
+
+        return "Consistent interaction traces improve period interpretability.";
+    }
+
+    private static string BuildStrategicPatterns(IReadOnlyList<Message> periodMessages, IReadOnlyList<ClarificationAnswer> answers)
+    {
+        if (answers.Count >= 2)
+        {
+            return "Use clarification-confirmed milestones as anchors for downstream reasoning.";
+        }
+
+        if (periodMessages.Count >= 30)
+        {
+            return "Dense communication windows are suitable anchors for phase-level interpretation.";
+        }
+
+        return "Rely on conservative transition assumptions until more evidence appears.";
     }
 }
