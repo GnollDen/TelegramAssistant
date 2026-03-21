@@ -70,6 +70,41 @@ public class OfflineEventRepository : IOfflineEventRepository
         }, ct);
     }
 
+    public async Task<int> AssignPeriodByTimeRangeAsync(
+        long caseId,
+        long? chatId,
+        Guid periodId,
+        DateTime startAt,
+        DateTime? endAt,
+        CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var safeEnd = endAt ?? DateTime.MaxValue;
+            var query = db.OfflineEvents.Where(x => x.CaseId == caseId && x.TimestampStart >= startAt && x.TimestampStart <= safeEnd);
+            if (chatId.HasValue)
+            {
+                query = query.Where(x => x.ChatId == null || x.ChatId == chatId.Value);
+            }
+
+            var rows = await query.ToListAsync(ct);
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            var now = DateTime.UtcNow;
+            foreach (var row in rows)
+            {
+                row.PeriodId = periodId;
+                row.UpdatedAt = now;
+            }
+
+            await db.SaveChangesAsync(ct);
+            return rows.Count;
+        }, ct);
+    }
+
     public async Task<AudioAsset> CreateAudioAssetAsync(AudioAsset asset, CancellationToken ct = default)
     {
         var row = new DbAudioAsset

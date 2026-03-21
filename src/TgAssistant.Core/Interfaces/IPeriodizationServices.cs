@@ -45,6 +45,7 @@ public interface IPeriodEvidenceAssembler
         IReadOnlyList<Message> periodMessages,
         IReadOnlyList<ChatSession> sessions,
         IReadOnlyList<OfflineEvent> offlineEvents,
+        IReadOnlyList<AudioSnippet> audioSnippets,
         IReadOnlyList<ClarificationQuestion> clarificationQuestions,
         IReadOnlyList<ClarificationAnswer> clarificationAnswers,
         CancellationToken ct = default);

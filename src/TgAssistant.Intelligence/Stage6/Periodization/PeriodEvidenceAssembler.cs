@@ -11,6 +11,7 @@ public class PeriodEvidenceAssembler : IPeriodEvidenceAssembler
         IReadOnlyList<Message> periodMessages,
         IReadOnlyList<ChatSession> sessions,
         IReadOnlyList<OfflineEvent> offlineEvents,
+        IReadOnlyList<AudioSnippet> audioSnippets,
         IReadOnlyList<ClarificationQuestion> clarificationQuestions,
         IReadOnlyList<ClarificationAnswer> clarificationAnswers,
         CancellationToken ct = default)
@@ -37,8 +38,11 @@ public class PeriodEvidenceAssembler : IPeriodEvidenceAssembler
         evidenceRefs.AddRange(clarificationAnswers
             .Take(8)
             .Select(x => new EvidenceRef { Type = "clarification_answer", Id = x.Id.ToString(), Note = x.SourceClass }));
+        evidenceRefs.AddRange(audioSnippets
+            .Take(8)
+            .Select(x => new EvidenceRef { Type = "audio_snippet", Id = x.Id.ToString(), Note = x.SnippetType }));
 
-        var keySignals = BuildKeySignals(periodMessages, overlappingSessions, overlappingEvents, clarificationAnswers);
+        var keySignals = BuildKeySignals(periodMessages, overlappingSessions, overlappingEvents, audioSnippets, clarificationAnswers);
         var openQuestions = clarificationQuestions
             .Where(x => string.Equals(x.Status, "open", StringComparison.OrdinalIgnoreCase) || string.Equals(x.Status, "in_progress", StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -64,6 +68,7 @@ public class PeriodEvidenceAssembler : IPeriodEvidenceAssembler
         IReadOnlyList<Message> messages,
         IReadOnlyList<ChatSession> sessions,
         IReadOnlyList<OfflineEvent> events,
+        IReadOnlyList<AudioSnippet> audioSnippets,
         IReadOnlyList<ClarificationAnswer> answers)
     {
         var signals = new List<string>
@@ -71,6 +76,7 @@ public class PeriodEvidenceAssembler : IPeriodEvidenceAssembler
             $"message_count:{messages.Count}",
             $"session_count:{sessions.Count}",
             $"offline_event_count:{events.Count}",
+            $"audio_snippet_count:{audioSnippets.Count}",
             $"clarification_answer_count:{answers.Count}",
             $"distinct_senders:{messages.Select(x => x.SenderId).Distinct().Count()}"
         };
