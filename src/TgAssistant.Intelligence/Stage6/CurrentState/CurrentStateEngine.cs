@@ -17,6 +17,7 @@ public class CurrentStateEngine : ICurrentStateEngine
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly ICompetingContextRuntimeService _competingContextRuntimeService;
     private readonly IStateScoreCalculator _scoreCalculator;
     private readonly IStateConfidenceEvaluator _confidenceEvaluator;
     private readonly IDynamicLabelMapper _dynamicLabelMapper;
@@ -32,6 +33,7 @@ public class CurrentStateEngine : ICurrentStateEngine
         IInboxConflictRepository inboxConflictRepository,
         IStateProfileRepository stateProfileRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
+        ICompetingContextRuntimeService competingContextRuntimeService,
         IStateScoreCalculator scoreCalculator,
         IStateConfidenceEvaluator confidenceEvaluator,
         IDynamicLabelMapper dynamicLabelMapper,
@@ -46,6 +48,7 @@ public class CurrentStateEngine : ICurrentStateEngine
         _inboxConflictRepository = inboxConflictRepository;
         _stateProfileRepository = stateProfileRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _competingContextRuntimeService = competingContextRuntimeService;
         _scoreCalculator = scoreCalculator;
         _confidenceEvaluator = confidenceEvaluator;
         _dynamicLabelMapper = dynamicLabelMapper;
@@ -61,7 +64,19 @@ public class CurrentStateEngine : ICurrentStateEngine
         var scores = await _scoreCalculator.CalculateAsync(context, ct);
         ApplyModelInterpretationHints(scores, context.ClarificationAnswers);
 
+        var competingRuntime = await _competingContextRuntimeService.RunAsync(new CompetingContextRuntimeRequest
+        {
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            AsOfUtc = asOf,
+            Actor = request.Actor,
+            SourceType = request.SourceType,
+            SourceId = request.SourceId
+        }, ct);
+        ApplyCompetingStateModifiers(scores, competingRuntime.Interpretation.StateModifiers);
+
         var confidence = _confidenceEvaluator.Evaluate(scores, context);
+        ApplyCompetingConfidenceCap(confidence, competingRuntime.Interpretation.StateModifiers);
         var previousSnapshot = context.HistoricalSnapshots.OrderByDescending(x => x.AsOf).FirstOrDefault();
         var dynamicLabel = _dynamicLabelMapper.Map(scores, context, confidence, previousSnapshot);
         var (relationshipStatus, alternativeStatus) = _relationshipStatusMapper.Map(scores, context, confidence, previousSnapshot);
@@ -119,6 +134,8 @@ public class CurrentStateEngine : ICurrentStateEngine
                     snapshot.AlternativeStatus,
                     snapshot.Confidence,
                     snapshot.AmbiguityScore,
+                    competing_source_records = competingRuntime.SourceRecordIds.Count,
+                    competing_state_modifier_refs = competingRuntime.Interpretation.StateModifiers.RationaleRefs.Count,
                     confidence.HistoryConflictDetected,
                     scores.HistoricalModulationWeight
                 }, JsonOptions),
@@ -245,5 +262,39 @@ public class CurrentStateEngine : ICurrentStateEngine
         }
 
         scores.Ambiguity = Math.Clamp(scores.Ambiguity + 0.05f, 0f, 1f);
+    }
+
+    private static void ApplyCompetingStateModifiers(StateScoreResult scores, CompetingStateModifiers modifiers)
+    {
+        if (!modifiers.IsAdditiveOnly || modifiers.RationaleRefs.Count == 0)
+        {
+            return;
+        }
+
+        scores.ExternalPressure = Math.Clamp(scores.ExternalPressure + modifiers.ExternalPressureDelta, 0f, 1f);
+        scores.Ambiguity = Math.Clamp(scores.Ambiguity + modifiers.AmbiguityDelta, 0f, 1f);
+
+        scores.SignalRefs.Add($"competing_context:state_modifier_refs={modifiers.RationaleRefs.Count}");
+        scores.RiskRefs.Add("competing_context:review_required");
+        if (modifiers.ExternalPressureDelta > 0f)
+        {
+            scores.RiskRefs.Add("competing_context:external_pressure");
+        }
+
+        if (modifiers.AmbiguityDelta > 0f)
+        {
+            scores.RiskRefs.Add("competing_context:ambiguity_increase");
+        }
+    }
+
+    private static void ApplyCompetingConfidenceCap(StateConfidenceResult confidence, CompetingStateModifiers modifiers)
+    {
+        if (modifiers.RationaleRefs.Count == 0)
+        {
+            return;
+        }
+
+        confidence.Confidence = Math.Min(confidence.Confidence, modifiers.ConfidenceCap);
+        confidence.HighAmbiguity |= modifiers.AmbiguityDelta > 0f;
     }
 }

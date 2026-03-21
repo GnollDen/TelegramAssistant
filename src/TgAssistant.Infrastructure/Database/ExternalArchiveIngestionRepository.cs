@@ -193,6 +193,40 @@ public class ExternalArchiveIngestionRepository : IExternalArchiveIngestionRepos
         }, ct);
     }
 
+    public async Task<List<ExternalArchivePersistedRecord>> GetRecentRecordsByCaseSourceAsync(
+        long caseId,
+        string sourceClass,
+        long? chatId,
+        DateTime asOfUtc,
+        int limit = 200,
+        CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var normalizedLimit = Math.Clamp(limit, 1, 2000);
+
+            var query = db.ExternalArchiveImportRecords
+                .AsNoTracking()
+                .Where(x =>
+                    x.CaseId == caseId
+                    && x.SourceClass == sourceClass
+                    && x.OccurredAtUtc <= asOfUtc);
+
+            if (chatId.HasValue)
+            {
+                query = query.Where(x => x.ChatId == null || x.ChatId == chatId.Value);
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .ThenByDescending(x => x.CreatedAt)
+                .Take(normalizedLimit)
+                .ToListAsync(ct);
+
+            return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
     public async Task<List<ExternalArchiveLinkageArtifact>> GetLinkageArtifactsByRunIdAsync(Guid runId, CancellationToken ct = default)
     {
         return await WithDbContextAsync(async db =>

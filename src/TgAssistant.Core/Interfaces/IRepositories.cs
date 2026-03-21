@@ -444,6 +444,13 @@ public interface IExternalArchiveIngestionRepository
     Task<ExternalArchivePersistedRecord> CreateRecordAsync(ExternalArchivePersistedRecord record, CancellationToken ct = default);
     Task<ExternalArchiveLinkageArtifact> CreateLinkageArtifactAsync(ExternalArchiveLinkageArtifact artifact, CancellationToken ct = default);
     Task<List<ExternalArchivePersistedRecord>> GetRecordsByRunIdAsync(Guid runId, CancellationToken ct = default);
+    Task<List<ExternalArchivePersistedRecord>> GetRecentRecordsByCaseSourceAsync(
+        long caseId,
+        string sourceClass,
+        long? chatId,
+        DateTime asOfUtc,
+        int limit = 200,
+        CancellationToken ct = default);
     Task<List<ExternalArchiveLinkageArtifact>> GetLinkageArtifactsByRunIdAsync(Guid runId, CancellationToken ct = default);
 }
 
