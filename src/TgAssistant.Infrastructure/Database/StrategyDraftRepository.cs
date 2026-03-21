@@ -143,9 +143,16 @@ public class StrategyDraftRepository : IStrategyDraftRepository
         {
             Id = outcome.Id == Guid.Empty ? Guid.NewGuid() : outcome.Id,
             DraftId = outcome.DraftId,
+            StrategyRecordId = outcome.StrategyRecordId,
             ActualMessageId = outcome.ActualMessageId,
+            FollowUpMessageId = outcome.FollowUpMessageId,
+            MatchedBy = outcome.MatchedBy,
             MatchScore = outcome.MatchScore,
             OutcomeLabel = outcome.OutcomeLabel,
+            UserOutcomeLabel = outcome.UserOutcomeLabel,
+            SystemOutcomeLabel = outcome.SystemOutcomeLabel,
+            OutcomeConfidence = outcome.OutcomeConfidence,
+            LearningSignalsJson = outcome.LearningSignalsJson,
             Notes = outcome.Notes,
             SourceSessionId = outcome.SourceSessionId,
             SourceMessageId = outcome.SourceMessageId,
@@ -166,6 +173,35 @@ public class StrategyDraftRepository : IStrategyDraftRepository
         return await WithDbContextAsync(async db =>
         {
             var rows = await db.DraftOutcomes.AsNoTracking().Where(x => x.DraftId == draftId).OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
+    public async Task<List<DraftOutcome>> GetDraftOutcomesByStrategyRecordIdAsync(Guid strategyRecordId, CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await db.DraftOutcomes.AsNoTracking()
+                .Where(x => x.StrategyRecordId == strategyRecordId)
+                .OrderByDescending(x => x.CreatedAt)
+                .ToListAsync(ct);
+            return rows.Select(ToDomain).ToList();
+        }, ct);
+    }
+
+    public async Task<List<DraftOutcome>> GetDraftOutcomesByCaseAsync(long caseId, CancellationToken ct = default)
+    {
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await (
+                from outcome in db.DraftOutcomes.AsNoTracking()
+                join draft in db.DraftRecords.AsNoTracking() on outcome.DraftId equals draft.Id
+                join strategy in db.StrategyRecords.AsNoTracking() on draft.StrategyRecordId equals strategy.Id
+                where strategy.CaseId == caseId
+                orderby outcome.CreatedAt descending
+                select outcome
+            ).ToListAsync(ct);
+
             return rows.Select(ToDomain).ToList();
         }, ct);
     }
@@ -219,9 +255,16 @@ public class StrategyDraftRepository : IStrategyDraftRepository
     {
         Id = row.Id,
         DraftId = row.DraftId,
+        StrategyRecordId = row.StrategyRecordId,
         ActualMessageId = row.ActualMessageId,
+        FollowUpMessageId = row.FollowUpMessageId,
+        MatchedBy = row.MatchedBy,
         MatchScore = row.MatchScore,
         OutcomeLabel = row.OutcomeLabel,
+        UserOutcomeLabel = row.UserOutcomeLabel,
+        SystemOutcomeLabel = row.SystemOutcomeLabel,
+        OutcomeConfidence = row.OutcomeConfidence,
+        LearningSignalsJson = row.LearningSignalsJson,
         Notes = row.Notes,
         CreatedAt = row.CreatedAt,
         SourceSessionId = row.SourceSessionId,

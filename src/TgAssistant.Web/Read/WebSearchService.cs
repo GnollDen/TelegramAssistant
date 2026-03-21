@@ -294,6 +294,19 @@ public class WebSearchService : IWebSearchService
                 UpdatedAt = x.CreatedAt,
                 Link = "/drafts-reviews"
             }));
+
+            var outcomes = await _strategyDraftRepository.GetDraftOutcomesByStrategyRecordIdAsync(record.Id, ct);
+            items.AddRange(outcomes.Select(x => new SearchResultReadModel
+            {
+                ObjectType = "draft_outcome",
+                ObjectId = x.Id.ToString(),
+                Title = x.OutcomeLabel,
+                Summary = x.Notes ?? $"{x.MatchedBy ?? "match"} score={(x.MatchScore ?? 0f):0.00}",
+                Status = x.SystemOutcomeLabel,
+                Priority = x.UserOutcomeLabel,
+                UpdatedAt = x.CreatedAt,
+                Link = $"/history-object?objectType=draft_outcome&objectId={x.Id}"
+            }));
         }
 
         var (selfSenderId, otherSenderId) = await ResolveSelfOtherSendersAsync(request.ChatId, ct);

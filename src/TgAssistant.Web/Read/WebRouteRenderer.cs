@@ -523,6 +523,16 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p>more natural rewrite: {E(model.LatestReview.NaturalRewrite)}</p>");
         }
 
+        if (model.LatestOutcome != null)
+        {
+            sb.AppendLine($"<h2>Latest Outcome ({model.LatestOutcome.CreatedAt:yyyy-MM-dd HH:mm})</h2>");
+            sb.AppendLine($"<p>strategy: {E(model.LatestOutcome.StrategyRecordId?.ToString() ?? "-")} | draft: {E(model.LatestOutcome.DraftId.ToString())}</p>");
+            sb.AppendLine($"<p>actual message: {E(model.LatestOutcome.ActualMessageId?.ToString() ?? "-")} | follow-up: {E(model.LatestOutcome.FollowUpMessageId?.ToString() ?? "-")}</p>");
+            sb.AppendLine($"<p>label: {E(model.LatestOutcome.OutcomeLabel)} (user={E(model.LatestOutcome.UserOutcomeLabel ?? "-")}, system={E(model.LatestOutcome.SystemOutcomeLabel ?? "-")}, conf={(model.LatestOutcome.OutcomeConfidence ?? 0f):0.00})</p>");
+            sb.AppendLine($"<p>match: {(model.LatestOutcome.MatchScore ?? 0f):0.00} via {E(model.LatestOutcome.MatchedBy)}</p>");
+            sb.AppendLine($"<p>signals: {E(string.Join("; ", model.LatestOutcome.LearningSignals))}</p>");
+        }
+
         return CloseShell(sb);
     }
 

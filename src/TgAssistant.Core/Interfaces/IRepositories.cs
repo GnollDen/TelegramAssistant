@@ -388,6 +388,8 @@ public interface IStrategyDraftRepository
 
     Task<DraftOutcome> CreateDraftOutcomeAsync(DraftOutcome outcome, CancellationToken ct = default);
     Task<List<DraftOutcome>> GetDraftOutcomesByDraftIdAsync(Guid draftId, CancellationToken ct = default);
+    Task<List<DraftOutcome>> GetDraftOutcomesByStrategyRecordIdAsync(Guid strategyRecordId, CancellationToken ct = default);
+    Task<List<DraftOutcome>> GetDraftOutcomesByCaseAsync(long caseId, CancellationToken ct = default);
 }
 
 public interface IInboxConflictRepository

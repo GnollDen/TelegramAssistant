@@ -179,6 +179,7 @@ public class DraftsReviewsReadModel
 {
     public DraftReadModel? LatestDraft { get; set; }
     public DraftReviewReadModel? LatestReview { get; set; }
+    public DraftOutcomeReadModel? LatestOutcome { get; set; }
 }
 
 public class DraftReadModel
@@ -200,6 +201,24 @@ public class DraftReviewReadModel
     public string SaferRewrite { get; set; } = string.Empty;
     public string NaturalRewrite { get; set; } = string.Empty;
     public bool StrategyConflictDetected { get; set; }
+}
+
+public class DraftOutcomeReadModel
+{
+    public Guid Id { get; set; }
+    public Guid DraftId { get; set; }
+    public Guid? StrategyRecordId { get; set; }
+    public long? ActualMessageId { get; set; }
+    public long? FollowUpMessageId { get; set; }
+    public float? MatchScore { get; set; }
+    public string MatchedBy { get; set; } = string.Empty;
+    public string OutcomeLabel { get; set; } = string.Empty;
+    public string? UserOutcomeLabel { get; set; }
+    public string? SystemOutcomeLabel { get; set; }
+    public float? OutcomeConfidence { get; set; }
+    public List<string> LearningSignals { get; set; } = [];
+    public string? Notes { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
 public class OfflineEventsReadModel
