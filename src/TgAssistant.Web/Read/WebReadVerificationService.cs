@@ -104,6 +104,7 @@ public class WebReadVerificationService
         AssertNonEmptyRoute(rendered, "/dashboard", "Current State");
         AssertNonEmptyRoute(rendered, "/state", "dynamic:");
         AssertNonEmptyRoute(rendered, "/timeline", "Timeline");
+        AssertNonEmptyRoute(rendered, "/network", "Network");
         AssertNonEmptyRoute(rendered, "/profiles", "Profiles");
         AssertNonEmptyRoute(rendered, "/strategy", "Strategy");
 

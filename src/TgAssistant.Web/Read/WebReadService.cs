@@ -16,6 +16,7 @@ public class WebReadService : IWebReadService
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IInboxConflictRepository _inboxConflictRepository;
+    private readonly INetworkGraphService _networkGraphService;
     private readonly ICurrentStateEngine _currentStateEngine;
     private readonly IStrategyEngine _strategyEngine;
     private readonly IProfileEngine _profileEngine;
@@ -32,6 +33,7 @@ public class WebReadService : IWebReadService
         IStateProfileRepository stateProfileRepository,
         IStrategyDraftRepository strategyDraftRepository,
         IInboxConflictRepository inboxConflictRepository,
+        INetworkGraphService networkGraphService,
         ICurrentStateEngine currentStateEngine,
         IStrategyEngine strategyEngine,
         IProfileEngine profileEngine,
@@ -47,6 +49,7 @@ public class WebReadService : IWebReadService
         _stateProfileRepository = stateProfileRepository;
         _strategyDraftRepository = strategyDraftRepository;
         _inboxConflictRepository = inboxConflictRepository;
+        _networkGraphService = networkGraphService;
         _currentStateEngine = currentStateEngine;
         _strategyEngine = strategyEngine;
         _profileEngine = profileEngine;
@@ -203,6 +206,67 @@ public class WebReadService : IWebReadService
                 })
                 .ToList(),
             UnresolvedTransitions = distinctTransitions.Count(x => !x.IsResolved)
+        };
+    }
+
+    public async Task<NetworkReadModel> GetNetworkAsync(WebReadRequest request, CancellationToken ct = default)
+    {
+        var graph = await _networkGraphService.BuildAsync(new NetworkBuildRequest
+        {
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            Actor = request.Actor,
+            AsOfUtc = request.AsOfUtc,
+            MessageLimit = 700
+        }, ct);
+
+        return new NetworkReadModel
+        {
+            GeneratedAtUtc = graph.GeneratedAtUtc,
+            Nodes = graph.Nodes
+                .Select(x => new NetworkNodeReadModel
+                {
+                    NodeId = x.NodeId,
+                    NodeType = x.NodeType,
+                    DisplayName = x.DisplayName,
+                    PrimaryRole = x.PrimaryRole,
+                    AdditionalRoles = x.AdditionalRoles,
+                    GlobalRole = x.GlobalRole,
+                    IsFocalActor = x.IsFocalActor,
+                    ImportanceScore = x.ImportanceScore,
+                    Confidence = x.Confidence,
+                    LinkedPeriods = x.LinkedPeriodIds,
+                    LinkedEvents = x.LinkedOfflineEventIds,
+                    LinkedClarifications = x.LinkedClarificationIds,
+                    EvidenceRefs = x.EvidenceRefs
+                })
+                .ToList(),
+            InfluenceEdges = graph.InfluenceEdges
+                .Select(x => new NetworkInfluenceEdgeReadModel
+                {
+                    EdgeId = x.EdgeId,
+                    FromNodeId = x.FromNodeId,
+                    ToNodeId = x.ToNodeId,
+                    InfluenceType = x.InfluenceType,
+                    Confidence = x.Confidence,
+                    IsHypothesis = x.IsHypothesis,
+                    LinkedPeriodId = x.LinkedPeriodId,
+                    EvidenceRefs = x.EvidenceRefs
+                })
+                .ToList(),
+            InformationFlows = graph.InformationFlows
+                .Select(x => new NetworkInformationFlowReadModel
+                {
+                    EdgeId = x.EdgeId,
+                    FromNodeId = x.FromNodeId,
+                    ToNodeId = x.ToNodeId,
+                    FlowType = x.FlowType,
+                    Direction = x.Direction,
+                    Confidence = x.Confidence,
+                    LinkedPeriodId = x.LinkedPeriodId,
+                    EvidenceRefs = x.EvidenceRefs
+                })
+                .ToList()
         };
     }
 
