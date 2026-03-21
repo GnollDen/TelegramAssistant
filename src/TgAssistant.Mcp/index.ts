@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Pool } from "pg";
 import { z } from "zod";
@@ -614,6 +615,7 @@ server.registerTool(
 );
 
 let activeSseTransport: SSEServerTransport | null = null;
+let streamableHttpTransport: StreamableHTTPServerTransport | null = null;
 let sseHttpServer: ReturnType<typeof createServer> | null = null;
 
 async function main(): Promise<void> {
@@ -630,7 +632,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  throw new Error(`Unsupported MCP_TRANSPORT="${mcpTransport}". Use "stdio" or "sse".`);
+  if (mcpTransport === "streamable-http" || mcpTransport === "streamable_http") {
+    await startStreamableHttpTransportAsync();
+    return;
+  }
+
+  throw new Error(
+    `Unsupported MCP_TRANSPORT="${mcpTransport}". Use "stdio", "sse", or "streamable-http".`
+  );
 }
 
 async function startSseTransportAsync(): Promise<void> {
@@ -642,10 +651,47 @@ async function startSseTransportAsync(): Promise<void> {
   sseHttpServer = createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url ?? "/", `http://${sseHost}:${ssePort}`);
+      console.log(
+        "MCP streamable-http request",
+        JSON.stringify({
+          method: req.method ?? "",
+          path: requestUrl.pathname,
+          accept: req.headers.accept ?? "",
+          contentType: req.headers["content-type"] ?? "",
+          hasAuth: Boolean(req.headers.authorization)
+        })
+      );
+      if (requestUrl.pathname === "/mcp" && req.method === "OPTIONS") {
+        res.statusCode = 204;
+        res.setHeader("access-control-allow-origin", "*");
+        res.setHeader("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
+        res.setHeader(
+          "access-control-allow-headers",
+          "authorization,content-type,accept,mcp-session-id,mcp-protocol-version"
+        );
+        res.setHeader("access-control-max-age", "86400");
+        res.end();
+        return;
+      }
+
       if (!isAuthorized(req)) {
         res.statusCode = 401;
         res.setHeader("www-authenticate", "Bearer");
-        res.end("Unauthorized");
+        if (requestUrl.pathname === "/mcp") {
+          res.setHeader("content-type", "application/json; charset=utf-8");
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              error: {
+                code: -32001,
+                message: "Unauthorized"
+              },
+              id: null
+            })
+          );
+        } else {
+          res.end("Unauthorized");
+        }
         return;
       }
 
@@ -713,6 +759,102 @@ async function startSseTransportAsync(): Promise<void> {
   );
 }
 
+async function startStreamableHttpTransportAsync(): Promise<void> {
+  ensureLocalhostBind(sseHost);
+  if (!sseAuthToken) {
+    throw new Error(
+      "MCP_SSE_AUTH_TOKEN is required when MCP_TRANSPORT=streamable-http."
+    );
+  }
+
+  streamableHttpTransport = new StreamableHTTPServerTransport({
+    // Stateless mode allows many independent client sessions without server-side session map management.
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true
+  });
+  streamableHttpTransport.onerror = (error: Error) => {
+    console.error("StreamableHTTP transport error", error);
+  };
+  streamableHttpTransport.onclose = () => {
+    console.log("StreamableHTTP transport closed");
+  };
+  await server.connect(streamableHttpTransport);
+
+  sseHttpServer = createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url ?? "/", `http://${sseHost}:${ssePort}`);
+      if (requestUrl.pathname === "/mcp" && req.method === "OPTIONS") {
+        res.statusCode = 204;
+        res.setHeader("access-control-allow-origin", "*");
+        res.setHeader("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
+        res.setHeader(
+          "access-control-allow-headers",
+          "authorization,content-type,accept,mcp-session-id,mcp-protocol-version"
+        );
+        res.setHeader("access-control-max-age", "86400");
+        res.end();
+        return;
+      }
+
+      if (!isAuthorized(req)) {
+        res.statusCode = 401;
+        res.setHeader("www-authenticate", "Bearer");
+        res.end("Unauthorized");
+        return;
+      }
+
+      if (requestUrl.pathname === "/health" && req.method === "GET") {
+        res.statusCode = 200;
+        res.end("ok");
+        return;
+      }
+
+      if (requestUrl.pathname === "/mcp" && streamableHttpTransport !== null) {
+        await streamableHttpTransport.handleRequest(
+          req as IncomingMessage & { auth?: undefined },
+          res as ServerResponse
+        );
+        return;
+      }
+
+      res.statusCode = 404;
+      res.end("Not found");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Streamable HTTP request failed", error);
+      res.statusCode = 500;
+      if ((req.url ?? "").includes("/mcp")) {
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32603,
+              message: `Internal error: ${message}`
+            },
+            id: null
+          })
+        );
+      } else {
+        res.end(`MCP streamable-http server error: ${message}`);
+      }
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    sseHttpServer!.once("error", onError);
+    sseHttpServer!.listen(ssePort, sseHost, () => {
+      sseHttpServer!.off("error", onError);
+      resolve();
+    });
+  });
+
+  console.log(
+    `MCP streamable-http server started on http://${sseHost}:${ssePort} (endpoints: POST/GET/DELETE /mcp, GET /health)`
+  );
+}
+
 function ensureLocalhostBind(host: string): void {
   const normalized = host.toLowerCase();
   const allowed = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -765,6 +907,10 @@ async function shutdownAsync(): Promise<void> {
   }
 
   activeSseTransport = null;
+  if (streamableHttpTransport) {
+    await streamableHttpTransport.close().catch(() => undefined);
+    streamableHttpTransport = null;
+  }
   await pool.end().catch(() => undefined);
 }
 
