@@ -28,18 +28,7 @@
   - `analysis_usage_events` (phase/model/tokens/cost),
   - `stage5_metrics_snapshots` now include usage (`analysis_requests_1h`, `analysis_tokens_1h`, `analysis_cost_usd_1h`) and queue health,
   - maintenance worker cleanup policy for telemetry/decisions/review queues,
-  - operational SQL scripts:
-    - `scripts/stage5-progress.sql`
-    - `scripts/stage5-requeue.sql`
-    - `scripts/stage5-expensive-health.sql`
-    - `scripts/stage5-cheap-ab-report.sql`
-    - `scripts/stage5-quality-report.sql`
-    - `scripts/fact-review-progress.sql`
-    - `scripts/merge-command-progress.sql`
-    - `scripts/merge-review.sql`
-    - `scripts/merge-review-export.sh`
-    - `scripts/merge-command-examples.sql`
-    - `scripts/fact-review-command-examples.sql`
+  - operational SQL script: `scripts/llm-cost-sanity.sql`
 
 ## Runtime Control Surface (Config)
 - `Analysis.*`:

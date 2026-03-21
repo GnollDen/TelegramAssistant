@@ -34,7 +34,7 @@
   - `docs/runbooks/stage5-openrouter.md`
   - `docs/runbooks/stage5-redis-ingestion.md`
 - Product/roadmap context: `CODEX_BACKLOG.md`, `docs/stage5_product_backlog.md`, `docs/backlog/stage5_hybrid_evolution.md`.
-- Historical artifacts: `docs/archive/`.
+- Historical artifacts: `archive/docs-archive/archive/` (local archival workspace, ignored by Git).
 
 ## Build & Run locally
 ```bash
