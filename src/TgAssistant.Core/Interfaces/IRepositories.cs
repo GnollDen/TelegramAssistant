@@ -419,6 +419,34 @@ public interface IDomainReviewEventRepository
     Task<List<DomainReviewEvent>> GetByObjectAsync(string objectType, string objectId, int limit = 100, CancellationToken ct = default);
 }
 
+public interface IExternalArchiveIngestionRepository
+{
+    Task<ExternalArchiveImportBatch?> GetBatchByDedupKeyAsync(
+        long caseId,
+        string sourceClass,
+        string sourceRef,
+        string requestPayloadHash,
+        CancellationToken ct = default);
+    Task<ExternalArchiveImportBatch> CreateBatchAsync(ExternalArchiveImportBatch batch, CancellationToken ct = default);
+    Task UpdateBatchStatusAsync(
+        Guid runId,
+        int acceptedCount,
+        int replayedCount,
+        int rejectedCount,
+        string status,
+        CancellationToken ct = default);
+    Task<ExternalArchivePersistedRecord?> GetRecordByNaturalKeyAsync(
+        long caseId,
+        string sourceClass,
+        string sourceRef,
+        string recordId,
+        CancellationToken ct = default);
+    Task<ExternalArchivePersistedRecord> CreateRecordAsync(ExternalArchivePersistedRecord record, CancellationToken ct = default);
+    Task<ExternalArchiveLinkageArtifact> CreateLinkageArtifactAsync(ExternalArchiveLinkageArtifact artifact, CancellationToken ct = default);
+    Task<List<ExternalArchivePersistedRecord>> GetRecordsByRunIdAsync(Guid runId, CancellationToken ct = default);
+    Task<List<ExternalArchiveLinkageArtifact>> GetLinkageArtifactsByRunIdAsync(Guid runId, CancellationToken ct = default);
+}
+
 public interface IBudgetOpsRepository
 {
     Task UpsertBudgetOperationalStateAsync(BudgetOperationalState state, CancellationToken ct = default);
@@ -434,6 +462,7 @@ public interface IEvalRepository
     Task<EvalRunResult?> GetRunByIdAsync(Guid runId, CancellationToken ct = default);
     Task<List<EvalScenarioResult>> GetScenarioResultsAsync(Guid runId, CancellationToken ct = default);
     Task<EvalRunResult?> GetLatestRunByNameAsync(string runName, CancellationToken ct = default);
+    Task<List<EvalRunResult>> GetRecentRunsAsync(int limit = 20, CancellationToken ct = default);
 }
 
 public class EntityMergeCandidate

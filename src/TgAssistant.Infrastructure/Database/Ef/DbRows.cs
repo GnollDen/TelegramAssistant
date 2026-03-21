@@ -731,3 +731,70 @@ public class DbEvalScenarioResult
     public string MetricsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
 }
+
+public class DbExternalArchiveImportBatch
+{
+    public Guid RunId { get; set; }
+    public long CaseId { get; set; }
+    public string SourceClass { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string ImportBatchId { get; set; } = string.Empty;
+    public string RequestPayloadHash { get; set; } = string.Empty;
+    public DateTime ImportedAtUtc { get; set; }
+    public string Actor { get; set; } = string.Empty;
+    public int RecordCount { get; set; }
+    public int AcceptedCount { get; set; }
+    public int ReplayedCount { get; set; }
+    public int RejectedCount { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbExternalArchiveImportRecord
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public long CaseId { get; set; }
+    public string SourceClass { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string ImportBatchId { get; set; } = string.Empty;
+    public string RecordId { get; set; } = string.Empty;
+    public DateTime OccurredAtUtc { get; set; }
+    public string RecordType { get; set; } = string.Empty;
+    public string? Text { get; set; }
+    public string? SubjectActorKey { get; set; }
+    public string? TargetActorKey { get; set; }
+    public long? ChatId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public float Confidence { get; set; }
+    public string RawPayloadJson { get; set; } = "{}";
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PayloadHash { get; set; } = string.Empty;
+    public float BaseWeight { get; set; }
+    public float ConfidenceMultiplier { get; set; }
+    public float CorroborationMultiplier { get; set; }
+    public float FinalWeight { get; set; }
+    public bool NeedsClarification { get; set; }
+    public string WeightingReason { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbExternalArchiveLinkageArtifact
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public Guid RecordRowId { get; set; }
+    public long CaseId { get; set; }
+    public string LinkType { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public string TargetId { get; set; } = string.Empty;
+    public float LinkConfidence { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string ReviewStatus { get; set; } = string.Empty;
+    public bool AutoApplyAllowed { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
