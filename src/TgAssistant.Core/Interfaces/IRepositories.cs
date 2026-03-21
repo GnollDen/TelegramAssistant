@@ -340,6 +340,13 @@ public interface IOfflineEventRepository
     Task<OfflineEvent> CreateOfflineEventAsync(OfflineEvent evt, CancellationToken ct = default);
     Task<OfflineEvent?> GetOfflineEventByIdAsync(Guid id, CancellationToken ct = default);
     Task<List<OfflineEvent>> GetOfflineEventsByCaseAsync(long caseId, CancellationToken ct = default);
+    Task<int> AssignPeriodByTimeRangeAsync(
+        long caseId,
+        long? chatId,
+        Guid periodId,
+        DateTime startAt,
+        DateTime? endAt,
+        CancellationToken ct = default);
 
     Task<AudioAsset> CreateAudioAssetAsync(AudioAsset asset, CancellationToken ct = default);
     Task<AudioAsset?> GetAudioAssetByIdAsync(Guid id, CancellationToken ct = default);

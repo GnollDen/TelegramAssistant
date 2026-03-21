@@ -43,7 +43,7 @@ public class PeriodizationVerificationService
             await _chatSessionRepository.UpsertAsync(session, ct);
         }
 
-        _ = await _offlineEventRepository.CreateOfflineEventAsync(new OfflineEvent
+        var createdOfflineEvent = await _offlineEventRepository.CreateOfflineEventAsync(new OfflineEvent
         {
             CaseId = caseId,
             ChatId = chatId,
@@ -127,6 +127,12 @@ public class PeriodizationVerificationService
         if (!result.Periods.Any(x => !string.IsNullOrWhiteSpace(x.EvidenceRefsJson) && x.EvidenceRefsJson != "[]"))
         {
             throw new InvalidOperationException("Periodization smoke failed: evidence pack is empty.");
+        }
+
+        var refreshedEvent = await _offlineEventRepository.GetOfflineEventByIdAsync(createdOfflineEvent.Id, ct);
+        if (refreshedEvent?.PeriodId == null)
+        {
+            throw new InvalidOperationException("Periodization smoke failed: offline event was not linked into a period.");
         }
 
         if (result.Proposals.Count == 0)
