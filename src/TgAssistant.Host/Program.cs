@@ -9,6 +9,8 @@ using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
+using TgAssistant.Intelligence.Stage6.Clarification;
+using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
@@ -31,6 +33,8 @@ try
 {
     Log.Information("Starting Telegram Assistant...");
     var runFoundationSmoke = args.Any(arg => string.Equals(arg, "--foundation-smoke", StringComparison.OrdinalIgnoreCase));
+    var runClarificationSmoke = args.Any(arg => string.Equals(arg, "--clarification-smoke", StringComparison.OrdinalIgnoreCase));
+    var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
 
@@ -148,6 +152,18 @@ try
             services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
             services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
             services.AddSingleton<FoundationDomainVerificationService>();
+            services.AddSingleton<IClarificationAnswerApplier, ClarificationAnswerApplier>();
+            services.AddSingleton<IClarificationDependencyResolver, ClarificationDependencyResolver>();
+            services.AddSingleton<IRecomputeTargetPlanner, RecomputeTargetPlanner>();
+            services.AddSingleton<IClarificationOrchestrator, ClarificationOrchestrator>();
+            services.AddSingleton<ClarificationOrchestrationVerificationService>();
+            services.AddSingleton<IPeriodBoundaryDetector, PeriodBoundaryDetector>();
+            services.AddSingleton<ITimelineAssembler, TimelineAssembler>();
+            services.AddSingleton<ITransitionBuilder, TransitionBuilder>();
+            services.AddSingleton<IPeriodEvidenceAssembler, PeriodEvidenceAssembler>();
+            services.AddSingleton<IPeriodProposalService, PeriodProposalService>();
+            services.AddSingleton<IPeriodizationService, PeriodizationService>();
+            services.AddSingleton<PeriodizationVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -241,6 +257,22 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<FoundationDomainVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Foundation smoke run requested via --foundation-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runClarificationSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<ClarificationOrchestrationVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Clarification smoke run requested via --clarification-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runPeriodizationSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<PeriodizationVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Periodization smoke run requested via --periodization-smoke. Exiting after successful verification.");
             return;
         }
 
