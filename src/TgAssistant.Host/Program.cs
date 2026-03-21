@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StackExchange.Redis;
+using System.Text.Json;
 using System.Net.Http.Headers;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
@@ -20,6 +22,7 @@ using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
+using TgAssistant.Processing.Archive.ExternalIngestion;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
@@ -59,6 +62,15 @@ try
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
+    var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
+    var externalArchiveImportArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-import-file=", StringComparison.OrdinalIgnoreCase));
+    var externalArchiveActorArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-actor=", StringComparison.OrdinalIgnoreCase));
+    var externalArchiveImportFile = externalArchiveImportArg is null
+        ? null
+        : externalArchiveImportArg["--external-archive-import-file=".Length..];
+    var externalArchiveActor = externalArchiveActorArg is null
+        ? "operator"
+        : externalArchiveActorArg["--external-archive-actor=".Length..];
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -81,7 +93,8 @@ try
         "--outcome-smoke",
         "--stage5-smoke",
         "--budget-smoke",
-        "--eval-smoke"
+        "--eval-smoke",
+        "--external-archive-smoke"
     };
 
     if (runListSmokes)
@@ -207,6 +220,7 @@ try
             services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
             services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
             services.AddSingleton<IEvalRepository, EvalRepository>();
+            services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();
             services.AddSingleton<FoundationDomainVerificationService>();
             services.AddSingleton<IClarificationAnswerApplier, ClarificationAnswerApplier>();
             services.AddSingleton<IClarificationDependencyResolver, ClarificationDependencyResolver>();
@@ -277,6 +291,12 @@ try
             services.AddSingleton<IEvalHarnessService, EvalHarnessService>();
             services.AddSingleton<BudgetVerificationService>();
             services.AddSingleton<EvalVerificationService>();
+            services.AddSingleton<IExternalArchiveImportContractValidator, ExternalArchiveImportContractValidator>();
+            services.AddSingleton<IExternalArchiveProvenanceWeightingService, ExternalArchiveProvenanceWeightingService>();
+            services.AddSingleton<IExternalArchiveLinkagePlanner, ExternalArchiveLinkagePlanner>();
+            services.AddSingleton<IExternalArchivePreparationService, ExternalArchivePreparationService>();
+            services.AddSingleton<IExternalArchiveIngestionService, ExternalArchiveIngestionService>();
+            services.AddSingleton<ExternalArchiveVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -507,6 +527,42 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<EvalVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Eval smoke run requested via --eval-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runExternalArchiveSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<ExternalArchiveVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("External archive smoke run requested via --external-archive-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalArchiveImportFile))
+        {
+            if (!File.Exists(externalArchiveImportFile))
+            {
+                throw new FileNotFoundException($"External archive import file was not found: {externalArchiveImportFile}");
+            }
+
+            var json = await File.ReadAllTextAsync(externalArchiveImportFile);
+            var request = JsonSerializer.Deserialize<ExternalArchiveImportRequest>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                ?? throw new InvalidOperationException("External archive import payload could not be deserialized.");
+            if (string.IsNullOrWhiteSpace(request.Actor))
+            {
+                request.Actor = externalArchiveActor;
+            }
+
+            var ingestionService = scope.ServiceProvider.GetRequiredService<IExternalArchiveIngestionService>();
+            var result = await ingestionService.IngestAsync(request);
+            Log.Information(
+                "External archive import completed via command mode. run_id={RunId}, case_id={CaseId}, is_replay={Replay}, persisted_records={Records}, persisted_linkages={Linkages}, rejected={Rejected}",
+                result.Batch.RunId,
+                result.Batch.CaseId,
+                result.IsReplay,
+                result.PersistedRecordCount,
+                result.PersistedLinkageCount,
+                result.Batch.RejectedCount);
             return;
         }
 
