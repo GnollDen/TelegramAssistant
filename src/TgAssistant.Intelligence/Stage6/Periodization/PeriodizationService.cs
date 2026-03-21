@@ -63,6 +63,37 @@ public class PeriodizationService : IPeriodizationService
             .OrderBy(x => x.TimestampStart)
             .ToList();
         var clarificationQuestions = await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct);
+        var existingPeriodsForScope = request.Persist
+            ? (await _periodRepository.GetPeriodsByCaseAsync(request.CaseId, ct))
+                .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+                .ToList()
+            : [];
+
+        if (request.Persist && existingPeriodsForScope.Count > 0)
+        {
+            // Stabilization policy: until timeline revision/supersede lands, periodization is append-only and review-driven.
+            _logger.LogWarning(
+                "Periodization append-only run on existing timeline scope: case_id={CaseId}, chat_id={ChatId}, existing_periods={ExistingPeriodCount}. Supersede/revision is not auto-applied.",
+                request.CaseId,
+                request.ChatId,
+                existingPeriodsForScope.Count);
+
+            await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
+            {
+                ObjectType = "timeline_scope",
+                ObjectId = $"{request.CaseId}:{request.ChatId}",
+                Action = "periodization_append_without_supersede",
+                NewValueRef = JsonSerializer.Serialize(new
+                {
+                    request.CaseId,
+                    request.ChatId,
+                    ExistingPeriodCount = existingPeriodsForScope.Count
+                }, JsonOptions),
+                Reason = "timeline_revision_policy_append_only",
+                Actor = request.Actor,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
 
         var answerByQuestion = new Dictionary<Guid, List<ClarificationAnswer>>();
         foreach (var question in clarificationQuestions)

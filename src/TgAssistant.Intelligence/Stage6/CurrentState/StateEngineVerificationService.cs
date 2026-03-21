@@ -63,8 +63,10 @@ public class StateEngineVerificationService
 
     public async Task RunAsync(CancellationToken ct = default)
     {
-        var caseId = 94040000 + DateTime.UtcNow.Minute;
-        var chatId = caseId;
+        // Keep case scope explicit: case_id is analysis scope, chat_id is canonical source anchor.
+        var caseScope = CaseScopeFactory.CreateSmokeScope("current_state");
+        var caseId = caseScope.CaseId;
+        var chatId = caseScope.ChatId;
         var now = DateTime.UtcNow;
 
         await SeedPeriodsAsync(caseId, chatId, now, ct);
@@ -205,12 +207,13 @@ public class StateEngineVerificationService
 
     private async Task SeedSessionsAsync(long chatId, DateTime now, CancellationToken ct)
     {
+        var baseIndex = (int)(Math.Abs(now.Ticks) % 10000) * 10;
         var sessions = new[]
         {
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 1,
+                SessionIndex = baseIndex + 1,
                 StartDate = now.AddDays(-11),
                 EndDate = now.AddDays(-11).AddHours(2),
                 LastMessageAt = now.AddDays(-11).AddHours(2),
@@ -221,7 +224,7 @@ public class StateEngineVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 2,
+                SessionIndex = baseIndex + 2,
                 StartDate = now.AddDays(-9),
                 EndDate = now.AddDays(-9).AddHours(4),
                 LastMessageAt = now.AddDays(-9).AddHours(4),
@@ -232,7 +235,7 @@ public class StateEngineVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 3,
+                SessionIndex = baseIndex + 3,
                 StartDate = now.AddDays(-3),
                 EndDate = now.AddDays(-2),
                 LastMessageAt = now.AddDays(-2),
