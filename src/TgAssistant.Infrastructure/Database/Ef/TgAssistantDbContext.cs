@@ -807,14 +807,22 @@ public class TgAssistantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.DraftId).HasColumnName("draft_id");
+            e.Property(x => x.StrategyRecordId).HasColumnName("strategy_record_id");
             e.Property(x => x.ActualMessageId).HasColumnName("actual_message_id");
+            e.Property(x => x.FollowUpMessageId).HasColumnName("follow_up_message_id");
+            e.Property(x => x.MatchedBy).HasColumnName("matched_by");
             e.Property(x => x.MatchScore).HasColumnName("match_score");
             e.Property(x => x.OutcomeLabel).HasColumnName("outcome_label");
+            e.Property(x => x.UserOutcomeLabel).HasColumnName("user_outcome_label");
+            e.Property(x => x.SystemOutcomeLabel).HasColumnName("system_outcome_label");
+            e.Property(x => x.OutcomeConfidence).HasColumnName("outcome_confidence");
+            e.Property(x => x.LearningSignalsJson).HasColumnName("learning_signals_json").HasColumnType("jsonb");
             e.Property(x => x.Notes).HasColumnName("notes");
             e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
             e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.DraftId);
+            e.HasIndex(x => x.StrategyRecordId);
         });
 
         modelBuilder.Entity<DbInboxItem>(e =>
