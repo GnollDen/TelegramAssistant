@@ -39,4 +39,20 @@ public class AnalysisUsageRepository : IAnalysisUsageRepository
             .SumAsync(x => (decimal?)x.CostUsd, ct);
         return sum ?? 0m;
     }
+
+    public async Task<Dictionary<string, decimal>> GetCostUsdByPhaseSinceAsync(DateTime sinceUtc, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.AnalysisUsageEvents
+            .AsNoTracking()
+            .Where(x => x.CreatedAt >= sinceUtc)
+            .GroupBy(x => x.Phase)
+            .Select(g => new { Phase = g.Key, Cost = g.Sum(x => x.CostUsd) })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            x => string.IsNullOrWhiteSpace(x.Phase) ? "unknown" : x.Phase,
+            x => x.Cost < 0 ? 0 : x.Cost,
+            StringComparer.OrdinalIgnoreCase);
+    }
 }

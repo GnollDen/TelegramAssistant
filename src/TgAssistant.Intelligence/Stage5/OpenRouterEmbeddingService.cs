@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -9,20 +10,39 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
 {
     private readonly HttpClient _http;
     private readonly IAnalysisUsageRepository _usageRepository;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<OpenRouterEmbeddingService> _logger;
 
     public OpenRouterEmbeddingService(
         HttpClient http,
         IAnalysisUsageRepository usageRepository,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<OpenRouterEmbeddingService> logger)
     {
         _http = http;
         _usageRepository = usageRepository;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
     }
 
     public async Task<float[]> GenerateAsync(string model, string input, CancellationToken ct = default)
     {
+        var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+        {
+            PathKey = "embedding_generation",
+            Modality = BudgetModalities.Embeddings,
+            IsImportScope = false,
+            IsOptionalPath = true
+        }, ct);
+        if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+        {
+            _logger.LogWarning(
+                "Embedding generation skipped by budget guardrail. state={State}, reason={Reason}",
+                budgetDecision.State,
+                budgetDecision.Reason);
+            return Array.Empty<float>();
+        }
+
         var req = new EmbeddingRequest
         {
             Model = model,
@@ -33,6 +53,17 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
         var body = await res.Content.ReadAsStringAsync(ct);
         if (!res.IsSuccessStatusCode)
         {
+            if (BudgetErrorClassifier.IsQuotaLike(res.StatusCode, body))
+            {
+                await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                    pathKey: "embedding_generation",
+                    modality: BudgetModalities.Embeddings,
+                    reason: "quota_like_provider_failure",
+                    isImportScope: false,
+                    isOptionalPath: true,
+                    ct: ct);
+            }
+
             throw new HttpRequestException($"OpenRouter embedding error {res.StatusCode}: {body}");
         }
 

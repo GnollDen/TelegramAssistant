@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 
 namespace TgAssistant.Processing.Media;
 
@@ -14,17 +15,23 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
     private readonly HttpClient _http;
     private readonly GeminiSettings _gemini;
     private readonly VoiceParalinguisticsSettings _settings;
+    private readonly IAnalysisUsageRepository _usageRepository;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<OpenRouterVoiceParalinguisticsAnalyzer> _logger;
 
     public OpenRouterVoiceParalinguisticsAnalyzer(
         HttpClient http,
         IOptions<GeminiSettings> gemini,
         IOptions<VoiceParalinguisticsSettings> settings,
+        IAnalysisUsageRepository usageRepository,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<OpenRouterVoiceParalinguisticsAnalyzer> logger)
     {
         _http = http;
         _gemini = gemini.Value;
         _settings = settings.Value;
+        _usageRepository = usageRepository;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
         _http.BaseAddress = new Uri(_gemini.BaseUrl);
         if (!_http.DefaultRequestHeaders.Contains("Authorization"))
@@ -75,6 +82,17 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
             {
+                if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, body))
+                {
+                    await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                        pathKey: "audio_paralinguistics",
+                        modality: BudgetModalities.Audio,
+                        reason: "quota_like_provider_failure",
+                        isImportScope: false,
+                        isOptionalPath: true,
+                        ct: ct);
+                }
+
                 throw new HttpRequestException($"OpenRouter error {(int)response.StatusCode}: {body}");
             }
 
@@ -84,6 +102,8 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
             {
                 throw new InvalidOperationException("Empty voice paralinguistics response");
             }
+
+            await TryLogUsageAsync(parsed?.Usage, ct);
 
             var sanitized = TryExtractJson(text);
             using var doc = JsonDocument.Parse(sanitized);
@@ -241,6 +261,25 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    private async Task TryLogUsageAsync(VoiceOpenRouterUsage? usage, CancellationToken ct)
+    {
+        if (usage == null)
+        {
+            return;
+        }
+
+        await _usageRepository.LogAsync(new AnalysisUsageEvent
+        {
+            Phase = "audio_paralinguistics",
+            Model = _settings.Model,
+            PromptTokens = usage.PromptTokens ?? 0,
+            CompletionTokens = usage.CompletionTokens ?? 0,
+            TotalTokens = usage.TotalTokens ?? 0,
+            CostUsd = usage.Cost ?? 0m,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
     private sealed class VoiceOpenRouterRequest
     {
         public string Model { get; set; } = string.Empty;
@@ -257,6 +296,7 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
     private sealed class VoiceOpenRouterResponse
     {
         public List<VoiceOpenRouterChoice>? Choices { get; set; }
+        public VoiceOpenRouterUsage? Usage { get; set; }
     }
 
     private sealed class VoiceOpenRouterChoice
@@ -267,5 +307,13 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
     private sealed class VoiceOpenRouterResponseMessage
     {
         public string? Content { get; set; }
+    }
+
+    private sealed class VoiceOpenRouterUsage
+    {
+        public int? PromptTokens { get; set; }
+        public int? CompletionTokens { get; set; }
+        public int? TotalTokens { get; set; }
+        public decimal? Cost { get; set; }
     }
 }

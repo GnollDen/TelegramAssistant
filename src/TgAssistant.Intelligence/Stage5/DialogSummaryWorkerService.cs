@@ -25,6 +25,7 @@ public class DialogSummaryWorkerService : BackgroundService
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<DialogSummaryWorkerService> _logger;
 
     public DialogSummaryWorkerService(
@@ -38,6 +39,7 @@ public class DialogSummaryWorkerService : BackgroundService
         IExtractionErrorRepository extractionErrorRepository,
         OpenRouterAnalysisService analysisService,
         SummaryHistoricalRetrievalService historicalRetrievalService,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<DialogSummaryWorkerService> logger)
     {
         _settings = settings.Value;
@@ -50,6 +52,7 @@ public class DialogSummaryWorkerService : BackgroundService
         _extractionErrorRepository = extractionErrorRepository;
         _analysisService = analysisService;
         _historicalRetrievalService = historicalRetrievalService;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
     }
 
@@ -71,6 +74,23 @@ public class DialogSummaryWorkerService : BackgroundService
         {
             try
             {
+                var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+                {
+                    PathKey = "stage5_summary_worker",
+                    Modality = BudgetModalities.TextAnalysis,
+                    IsImportScope = false,
+                    IsOptionalPath = true
+                }, stoppingToken);
+                if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+                {
+                    _logger.LogWarning(
+                        "Stage5 summary worker paused by budget guardrail. state={State}, reason={Reason}",
+                        budgetDecision.State,
+                        budgetDecision.Reason);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
+                    continue;
+                }
+
                 var staleBeforeUtc = DateTime.UtcNow - HotSessionIdleTimeout;
                 var candidatesByChat = await _chatSessionRepository.GetPendingAggregationCandidatesAsync(staleBeforeUtc, stoppingToken);
                 var candidates = candidatesByChat

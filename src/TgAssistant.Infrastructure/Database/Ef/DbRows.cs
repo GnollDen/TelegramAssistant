@@ -699,3 +699,35 @@ public class DbDomainReviewEvent
     public string Actor { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }
+
+public class DbBudgetOperationalState
+{
+    public string PathKey { get; set; } = string.Empty;
+    public string Modality { get; set; } = string.Empty;
+    public string State { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string DetailsJson { get; set; } = "{}";
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbEvalRun
+{
+    public Guid Id { get; set; }
+    public string RunName { get; set; } = string.Empty;
+    public bool Passed { get; set; }
+    public DateTime StartedAt { get; set; }
+    public DateTime FinishedAt { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string MetricsJson { get; set; } = "{}";
+}
+
+public class DbEvalScenarioResult
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public string ScenarioName { get; set; } = string.Empty;
+    public bool Passed { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string MetricsJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}

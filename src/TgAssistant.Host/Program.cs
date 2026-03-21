@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
+using TgAssistant.Intelligence.Stage6.Control;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.DraftReview;
 using TgAssistant.Intelligence.Stage6.Drafts;
@@ -56,6 +57,8 @@ try
     var runNetworkSmoke = args.Any(arg => string.Equals(arg, "--network-smoke", StringComparison.OrdinalIgnoreCase));
     var runOutcomeSmoke = args.Any(arg => string.Equals(arg, "--outcome-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
+    var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
+    var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
@@ -76,7 +79,9 @@ try
         "--search-smoke",
         "--network-smoke",
         "--outcome-smoke",
-        "--stage5-smoke"
+        "--stage5-smoke",
+        "--budget-smoke",
+        "--eval-smoke"
     };
 
     if (runListSmokes)
@@ -109,6 +114,8 @@ try
             services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
             services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
             services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
+            services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
+            services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
 
             services.PostConfigure<TelegramSettings>(s =>
             {
@@ -198,6 +205,8 @@ try
             services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
             services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
             services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
+            services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
+            services.AddSingleton<IEvalRepository, EvalRepository>();
             services.AddSingleton<FoundationDomainVerificationService>();
             services.AddSingleton<IClarificationAnswerApplier, ClarificationAnswerApplier>();
             services.AddSingleton<IClarificationDependencyResolver, ClarificationDependencyResolver>();
@@ -264,6 +273,10 @@ try
             services.AddSingleton<ILearningSignalBuilder, LearningSignalBuilder>();
             services.AddSingleton<IOutcomeService, OutcomeService>();
             services.AddSingleton<OutcomeVerificationService>();
+            services.AddSingleton<IBudgetGuardrailService, BudgetGuardrailService>();
+            services.AddSingleton<IEvalHarnessService, EvalHarnessService>();
+            services.AddSingleton<BudgetVerificationService>();
+            services.AddSingleton<EvalVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -478,6 +491,22 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<Stage5VerificationService>();
             await verificationService.RunAsync();
             Log.Information("Stage5 smoke run requested via --stage5-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runBudgetSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<BudgetVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Budget smoke run requested via --budget-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runEvalSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<EvalVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Eval smoke run requested via --eval-smoke. Exiting after successful verification.");
             return;
         }
 

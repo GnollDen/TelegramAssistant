@@ -232,6 +232,7 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
                 promptTemplate.SystemPrompt,
                 userPrompt,
                 Math.Max(300, _settings.SummaryMaxTokens),
+                "daily_crystallization",
                 ct);
             return ExtractFinalSummary(raw);
         }

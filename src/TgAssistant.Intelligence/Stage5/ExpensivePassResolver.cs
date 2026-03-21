@@ -18,6 +18,7 @@ public class ExpensivePassResolver
     private readonly IMessageExtractionRepository _extractionRepository;
     private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly IAnalysisUsageRepository _analysisUsageRepository;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly IAnalysisStateRepository _analysisStateRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly IEntityRepository _entityRepository;
@@ -40,6 +41,7 @@ public class ExpensivePassResolver
         IMessageExtractionRepository extractionRepository,
         IExtractionErrorRepository extractionErrorRepository,
         IAnalysisUsageRepository analysisUsageRepository,
+        IBudgetGuardrailService budgetGuardrailService,
         IAnalysisStateRepository analysisStateRepository,
         IMessageRepository messageRepository,
         IEntityRepository entityRepository,
@@ -57,6 +59,7 @@ public class ExpensivePassResolver
         _extractionRepository = extractionRepository;
         _extractionErrorRepository = extractionErrorRepository;
         _analysisUsageRepository = analysisUsageRepository;
+        _budgetGuardrailService = budgetGuardrailService;
         _analysisStateRepository = analysisStateRepository;
         _messageRepository = messageRepository;
         _entityRepository = entityRepository;
@@ -500,6 +503,22 @@ public class ExpensivePassResolver
 
     private async Task<bool> CanRunExpensivePassAsync(CancellationToken ct)
     {
+        var decision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+        {
+            PathKey = "stage5_expensive",
+            Modality = BudgetModalities.TextAnalysis,
+            IsImportScope = false,
+            IsOptionalPath = true
+        }, ct);
+        if (decision.ShouldPausePath || decision.ShouldDegradeOptionalPath)
+        {
+            _logger.LogWarning(
+                "Stage5 expensive pass blocked by budget guardrail. state={State}, reason={Reason}",
+                decision.State,
+                decision.Reason);
+            return false;
+        }
+
         if (_settings.ExpensiveDailyBudgetUsd <= 0)
         {
             return true;

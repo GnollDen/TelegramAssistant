@@ -14,6 +14,7 @@ public class ArchiveMediaProcessorService : BackgroundService
     private readonly ArchiveImportSettings _settings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMediaProcessor _mediaProcessor;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<ArchiveMediaProcessorService> _logger;
     private readonly SlidingWindowRateLimiter _rateLimiter;
 
@@ -21,11 +22,13 @@ public class ArchiveMediaProcessorService : BackgroundService
         IOptions<ArchiveImportSettings> settings,
         IMessageRepository messageRepository,
         IMediaProcessor mediaProcessor,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<ArchiveMediaProcessorService> logger)
     {
         _settings = settings.Value;
         _messageRepository = messageRepository;
         _mediaProcessor = mediaProcessor;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
         _rateLimiter = new SlidingWindowRateLimiter(_settings.RequestsPerMinute, TimeSpan.FromMinutes(1));
     }
@@ -60,6 +63,28 @@ public class ArchiveMediaProcessorService : BackgroundService
 
     private async Task ProcessMessageAsync(Message message, CancellationToken ct)
     {
+        var modality = ResolveModality(message.MediaType);
+        var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+        {
+            PathKey = $"archive_media_{modality}",
+            Modality = modality,
+            IsImportScope = true,
+            IsOptionalPath = true
+        }, ct);
+        if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+        {
+            await _messageRepository.UpdateMediaProcessingResultAsync(
+                message.Id,
+                new MediaProcessingResult
+                {
+                    Success = false,
+                    FailureReason = $"Budget limited: {budgetDecision.State} ({budgetDecision.Reason})"
+                },
+                ProcessingStatus.PendingReview,
+                ct);
+            return;
+        }
+
         var resolvedPath = ResolveAccessiblePath(message.MediaPath);
         if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath))
         {
@@ -108,6 +133,15 @@ public class ArchiveMediaProcessorService : BackgroundService
                 ProcessingStatus.PendingReview,
                 ct);
         }
+    }
+
+    private static string ResolveModality(MediaType mediaType)
+    {
+        return mediaType switch
+        {
+            MediaType.Voice or MediaType.Video or MediaType.VideoNote => BudgetModalities.Audio,
+            _ => BudgetModalities.Vision
+        };
     }
 
     private string? ResolveAccessiblePath(string? mediaPath)
