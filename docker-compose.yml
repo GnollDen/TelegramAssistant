@@ -205,6 +205,18 @@ services:
       Embedding__Model: ${EMBEDDING_MODEL:-text-embedding-3-small}
       Embedding__PollIntervalSeconds: ${EMBEDDING_POLL_INTERVAL_SECONDS:-30}
       Embedding__BatchSize: ${EMBEDDING_BATCH_SIZE:-100}
+      BudgetGuardrails__Enabled: ${BUDGET_GUARDRAILS_ENABLED:-true}
+      BudgetGuardrails__DailyBudgetUsd: ${BUDGET_GUARDRAILS_DAILY_BUDGET_USD:-0.5}
+      BudgetGuardrails__ImportBudgetUsd: ${BUDGET_GUARDRAILS_IMPORT_BUDGET_USD:-0.2}
+      BudgetGuardrails__SoftLimitRatio: ${BUDGET_GUARDRAILS_SOFT_LIMIT_RATIO:-0.85}
+      BudgetGuardrails__HardLimitRatio: ${BUDGET_GUARDRAILS_HARD_LIMIT_RATIO:-1.0}
+      BudgetGuardrails__StageTextAnalysisBudgetUsd: ${BUDGET_GUARDRAILS_STAGE_TEXT_BUDGET_USD:-0.25}
+      BudgetGuardrails__StageEmbeddingsBudgetUsd: ${BUDGET_GUARDRAILS_STAGE_EMBEDDINGS_BUDGET_USD:-0.1}
+      BudgetGuardrails__StageVisionBudgetUsd: ${BUDGET_GUARDRAILS_STAGE_VISION_BUDGET_USD:-0.1}
+      BudgetGuardrails__StageAudioBudgetUsd: ${BUDGET_GUARDRAILS_STAGE_AUDIO_BUDGET_USD:-0.1}
+      BudgetGuardrails__QuotaBlockMinutes: ${BUDGET_GUARDRAILS_QUOTA_BLOCK_MINUTES:-20}
+      EvalHarness__Enabled: ${EVAL_HARNESS_ENABLED:-true}
+      EvalHarness__DefaultRunName: ${EVAL_HARNESS_DEFAULT_RUN_NAME:-default}
     volumes:
       - /opt/tgassistant/data/media:/data/media
       - /opt/tgassistant/data/telegram-session:/app/data

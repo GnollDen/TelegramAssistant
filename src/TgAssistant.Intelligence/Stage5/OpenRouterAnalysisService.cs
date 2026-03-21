@@ -26,6 +26,7 @@ public class OpenRouterAnalysisService
     private readonly AnalysisSettings _analysis;
     private readonly ExtractionSchemaValidator _schemaValidator;
     private readonly IAnalysisUsageRepository _usageRepository;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<OpenRouterAnalysisService> _logger;
 
     public OpenRouterAnalysisService(
@@ -33,12 +34,14 @@ public class OpenRouterAnalysisService
         IOptions<AnalysisSettings> analysis,
         ExtractionSchemaValidator schemaValidator,
         IAnalysisUsageRepository usageRepository,
+        IBudgetGuardrailService budgetGuardrailService,
         ILogger<OpenRouterAnalysisService> logger)
     {
         _http = http;
         _analysis = analysis.Value;
         _schemaValidator = schemaValidator;
         _usageRepository = usageRepository;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
     }
 
@@ -82,6 +85,10 @@ public class OpenRouterAnalysisService
             return !string.IsNullOrWhiteSpace(json);
         }
         catch (OpenRouterBalanceException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
         {
             return false;
         }
@@ -161,6 +168,7 @@ public class OpenRouterAnalysisService
         string systemPrompt,
         string userPrompt,
         int maxTokens,
+        string phase,
         CancellationToken ct)
     {
         var req = new OpenRouterRequest
@@ -175,7 +183,7 @@ public class OpenRouterAnalysisService
             Temperature = 0.2f
         };
 
-        return await SendAndExtractTextAsync(req, "chat", ct);
+        return await SendAndExtractTextAsync(req, phase, ct);
     }
 
     public async Task<OpenRouterResponseMessage> CompleteChatWithToolsAsync(
@@ -274,6 +282,15 @@ public class OpenRouterAnalysisService
 
     private async Task<OpenRouterResponse?> SendAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
+        var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(
+            BuildBudgetPathRequest(phase),
+            ct);
+        if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+        {
+            throw new InvalidOperationException(
+                $"Budget guardrail blocked phase '{phase}' with state '{budgetDecision.State}' ({budgetDecision.Reason}).");
+        }
+
         if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
         {
             var pauseUntil = _cheapBalancePauseUntilUtc;
@@ -309,6 +326,14 @@ public class OpenRouterAnalysisService
                 {
                     if (IsBalanceOrQuotaIssue(res.StatusCode, body))
                     {
+                        await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                            pathKey: ResolveBudgetPathKey(phase),
+                            modality: ResolveBudgetModality(phase),
+                            reason: "quota_like_provider_failure",
+                            isImportScope: phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                            isOptionalPath: IsBudgetOptionalPath(phase),
+                            ct: ct);
+
                         if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
                         {
                             _cheapBalancePauseUntilUtc = DateTime.UtcNow.Add(CheapBalanceCooldown);
@@ -499,26 +524,7 @@ public class OpenRouterAnalysisService
 
     private static bool IsBalanceOrQuotaIssue(HttpStatusCode statusCode, string body)
     {
-        if (statusCode == HttpStatusCode.PaymentRequired)
-        {
-            return true;
-        }
-
-        if (statusCode is not (HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest))
-        {
-            return false;
-        }
-
-        var text = body?.ToLowerInvariant() ?? string.Empty;
-        return text.Contains("insufficient", StringComparison.Ordinal)
-               || text.Contains("credit", StringComparison.Ordinal)
-               || text.Contains("quota", StringComparison.Ordinal)
-               || text.Contains("balance", StringComparison.Ordinal)
-               || text.Contains("billing", StringComparison.Ordinal)
-               || text.Contains("payment", StringComparison.Ordinal)
-               || text.Contains("funds", StringComparison.Ordinal)
-               || text.Contains("exhausted", StringComparison.Ordinal)
-               || text.Contains("limit reached", StringComparison.Ordinal);
+        return BudgetErrorClassifier.IsQuotaLike(statusCode, body);
     }
 
     private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)
@@ -584,5 +590,46 @@ public class OpenRouterAnalysisService
     private static int NormalizeMaxTokens(int requested, int min, int max)
     {
         return Math.Max(min, Math.Min(max, requested));
+    }
+
+    private static BudgetPathCheckRequest BuildBudgetPathRequest(string phase)
+    {
+        return new BudgetPathCheckRequest
+        {
+            PathKey = ResolveBudgetPathKey(phase),
+            Modality = ResolveBudgetModality(phase),
+            IsImportScope = phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+            IsOptionalPath = IsBudgetOptionalPath(phase)
+        };
+    }
+
+    private static string ResolveBudgetPathKey(string phase)
+    {
+        return phase switch
+        {
+            "cheap" => "stage5_cheap",
+            "cheap_probe" => "stage5_cheap_probe",
+            "expensive" => "stage5_expensive",
+            "summary" => "stage5_summary",
+            "edit_diff" => "stage5_edit_diff",
+            "daily_crystallization" => "stage5_daily_crystallization",
+            _ => $"stage5_{phase}"
+        };
+    }
+
+    private static string ResolveBudgetModality(string phase)
+    {
+        return phase switch
+        {
+            "embedding" => BudgetModalities.Embeddings,
+            "vision" or "import_vision" => BudgetModalities.Vision,
+            "audio_transcription" or "audio_paralinguistics" or "import_audio_transcription" or "import_audio_paralinguistics" => BudgetModalities.Audio,
+            _ => BudgetModalities.TextAnalysis
+        };
+    }
+
+    private static bool IsBudgetOptionalPath(string phase)
+    {
+        return phase is "expensive" or "summary" or "edit_diff" or "daily_crystallization";
     }
 }

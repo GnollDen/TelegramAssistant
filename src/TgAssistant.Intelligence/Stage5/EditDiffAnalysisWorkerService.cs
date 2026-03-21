@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -12,6 +13,7 @@ public class EditDiffAnalysisWorkerService : BackgroundService
     private readonly AnalysisSettings _settings;
     private readonly IMessageRepository _messageRepository;
     private readonly OpenRouterAnalysisService _analysisService;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly IExtractionErrorRepository _errorRepository;
     private readonly ILogger<EditDiffAnalysisWorkerService> _logger;
 
@@ -19,12 +21,14 @@ public class EditDiffAnalysisWorkerService : BackgroundService
         IOptions<AnalysisSettings> settings,
         IMessageRepository messageRepository,
         OpenRouterAnalysisService analysisService,
+        IBudgetGuardrailService budgetGuardrailService,
         IExtractionErrorRepository errorRepository,
         ILogger<EditDiffAnalysisWorkerService> logger)
     {
         _settings = settings.Value;
         _messageRepository = messageRepository;
         _analysisService = analysisService;
+        _budgetGuardrailService = budgetGuardrailService;
         _errorRepository = errorRepository;
         _logger = logger;
     }
@@ -50,6 +54,23 @@ public class EditDiffAnalysisWorkerService : BackgroundService
         {
             try
             {
+                var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+                {
+                    PathKey = "stage5_edit_diff",
+                    Modality = BudgetModalities.TextAnalysis,
+                    IsImportScope = false,
+                    IsOptionalPath = true
+                }, stoppingToken);
+                if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+                {
+                    _logger.LogWarning(
+                        "Edit-diff worker paused by budget guardrail. state={State}, reason={Reason}",
+                        budgetDecision.State,
+                        budgetDecision.Reason);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(2, _settings.EditDiffPollIntervalSeconds)), stoppingToken);
+                    continue;
+                }
+
                 var candidates = await _messageRepository.GetPendingEditDiffCandidatesAsync(
                     Math.Max(1, _settings.EditDiffBatchSize),
                     stoppingToken);
@@ -129,6 +150,7 @@ AFTER:
             systemPrompt,
             userPrompt,
             Math.Clamp(_settings.EditDiffMaxTokens, 128, 800),
+            "edit_diff",
             ct);
 
         return ParseAnalysis(raw, candidate);

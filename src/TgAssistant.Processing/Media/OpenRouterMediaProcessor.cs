@@ -29,6 +29,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     private readonly MediaSettings _mediaSettings;
     private readonly ArchiveImportSettings _archiveSettings;
     private readonly IStickerCacheRepository _stickerCacheRepository;
+    private readonly IAnalysisUsageRepository _usageRepository;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<OpenRouterMediaProcessor> _logger;
 
     public OpenRouterMediaProcessor(
@@ -37,6 +39,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         IOptions<MediaSettings> mediaSettings,
         IOptions<ArchiveImportSettings> archiveSettings,
         IStickerCacheRepository stickerCacheRepository,
+        IAnalysisUsageRepository usageRepository,
+        IBudgetGuardrailService budgetGuardrailService,
         ILoggerFactory loggerFactory)
     {
         _http = http;
@@ -44,6 +48,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         _mediaSettings = mediaSettings.Value;
         _archiveSettings = archiveSettings.Value;
         _stickerCacheRepository = stickerCacheRepository;
+        _usageRepository = usageRepository;
+        _budgetGuardrailService = budgetGuardrailService;
         _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
         _http.BaseAddress = new Uri(_settings.BaseUrl);
         _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
@@ -162,8 +168,8 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             var primaryModel = isArchive ? _mediaSettings.ArchiveVisionModel : _mediaSettings.VisionModel;
             var fallbackModel = isArchive ? _mediaSettings.VisionModel : null;
             var maxTokens = isArchive ? _mediaSettings.ArchiveVisionMaxTokens : _mediaSettings.VisionMaxTokens;
-
-            var response = await SendImageRequestWithFallbackAsync(primaryModel, fallbackModel, maxTokens, mimeType, base64, prompt, ct);
+            var phase = isArchive ? "import_vision" : "vision";
+            var response = await SendImageRequestWithFallbackAsync(primaryModel, fallbackModel, maxTokens, mimeType, base64, prompt, phase, ct);
             var normalizedDescription = NormalizeImageDescription(response);
 
             return new MediaProcessingResult
@@ -189,11 +195,12 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         string mimeType,
         string base64,
         string prompt,
+        string phase,
         CancellationToken ct)
     {
         try
         {
-            return await SendRequestAsync(BuildImageRequest(primaryModel, maxTokens, mimeType, base64, prompt), ct);
+            return await SendRequestAsync(BuildImageRequest(primaryModel, maxTokens, mimeType, base64, prompt), phase, ct);
         }
         catch (Exception ex) when (!string.IsNullOrWhiteSpace(fallbackModel) && !string.Equals(primaryModel, fallbackModel, StringComparison.OrdinalIgnoreCase))
         {
@@ -201,7 +208,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                 "Primary vision model failed ({PrimaryModel}), switching to fallback ({FallbackModel})",
                 primaryModel,
                 fallbackModel);
-            return await SendRequestAsync(BuildImageRequest(fallbackModel!, maxTokens, mimeType, base64, prompt), ct);
+            return await SendRequestAsync(BuildImageRequest(fallbackModel!, maxTokens, mimeType, base64, prompt), phase, ct);
         }
     }
 
@@ -242,12 +249,13 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         try
         {
             var durationSeconds = await TryGetAudioDurationSecondsAsync(wavPath, ct);
+            var phase = IsArchiveMediaPath(filePath) ? "import_audio_transcription" : "audio_transcription";
             if (durationSeconds.HasValue && durationSeconds.Value > AudioShortMaxSeconds)
             {
-                return await ProcessLongAudioAsync(wavPath, durationSeconds.Value, ct);
+                return await ProcessLongAudioAsync(wavPath, durationSeconds.Value, phase, ct);
             }
 
-            return await ProcessShortAudioAsync(wavPath, ct);
+            return await ProcessShortAudioAsync(wavPath, phase, ct);
         }
         finally
         {
@@ -272,7 +280,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         return outputPath;
     }
 
-    private async Task<string> SendRequestAsync(OpenRouterRequest request, CancellationToken ct)
+    private async Task<string> SendRequestAsync(OpenRouterRequest request, string phase, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(request, JsonOptions);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
@@ -284,12 +292,24 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
         if (!response.IsSuccessStatusCode)
         {
+            if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, responseJson))
+            {
+                await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                    pathKey: phase,
+                    modality: phase.Contains("audio", StringComparison.OrdinalIgnoreCase) ? BudgetModalities.Audio : BudgetModalities.Vision,
+                    reason: "quota_like_provider_failure",
+                    isImportScope: phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                    isOptionalPath: true,
+                    ct: ct);
+            }
+
             _logger.LogWarning("OpenRouter API error {Code}: {Body}", response.StatusCode, responseJson);
             throw new HttpRequestException($"OpenRouter API error {response.StatusCode}: {responseJson}");
         }
 
         var result = JsonSerializer.Deserialize<OpenRouterResponse>(responseJson, JsonOptions);
         var text = NormalizeMessageContent(result?.Choices?.FirstOrDefault()?.Message?.Content);
+        await TryLogUsageAsync(phase, request.Model, result?.Usage, ct);
 
         _logger.LogDebug("OpenRouter response ({Model}): {Text}",
             request.Model, text.Length > 100 ? text[..100] + "..." : text);
@@ -435,6 +455,25 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    private async Task TryLogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)
+    {
+        if (usage == null)
+        {
+            return;
+        }
+
+        await _usageRepository.LogAsync(new AnalysisUsageEvent
+        {
+            Phase = phase,
+            Model = model,
+            PromptTokens = usage.PromptTokens ?? 0,
+            CompletionTokens = usage.CompletionTokens ?? 0,
+            TotalTokens = usage.TotalTokens ?? 0,
+            CostUsd = usage.Cost ?? 0m,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
     private static string ClassifyFailureReason(Exception ex, string filePath, MediaType mediaType)
     {
         if (ex is IOException or UnauthorizedAccessException)
@@ -462,10 +501,10 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         return "media_processing_error";
     }
 
-    private async Task<MediaProcessingResult> ProcessShortAudioAsync(string wavPath, CancellationToken ct)
+    private async Task<MediaProcessingResult> ProcessShortAudioAsync(string wavPath, string phase, CancellationToken ct)
     {
         var bytes = await File.ReadAllBytesAsync(wavPath, ct);
-        var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), ct);
+        var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), phase, ct);
         var normalized = NormalizeAudioTranscription(response);
 
         return new MediaProcessingResult
@@ -477,7 +516,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         };
     }
 
-    private async Task<MediaProcessingResult> ProcessLongAudioAsync(string wavPath, double durationSeconds, CancellationToken ct)
+    private async Task<MediaProcessingResult> ProcessLongAudioAsync(string wavPath, double durationSeconds, string phase, CancellationToken ct)
     {
         var chunkDir = Path.Combine(Path.GetTempPath(), $"tgassistant_audio_chunks_{Guid.NewGuid():N}");
         Directory.CreateDirectory(chunkDir);
@@ -500,7 +539,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             for (var i = 0; i < chunkLimit; i++)
             {
                 var bytes = await File.ReadAllBytesAsync(chunks[i], ct);
-                var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), ct);
+                var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), phase, ct);
                 var normalized = NormalizeAudioTranscription(response);
                 var chunkText = normalized.Transcription;
                 if (string.IsNullOrWhiteSpace(chunkText))

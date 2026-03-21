@@ -17,6 +17,7 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
     private readonly IMessageRepository _messageRepository;
     private readonly IMediaProcessor _mediaProcessor;
     private readonly IVoiceParalinguisticsAnalyzer _analyzer;
+    private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly IExtractionErrorRepository _errorRepository;
     private readonly ILogger<VoiceParalinguisticsWorkerService> _logger;
     private readonly ConcurrentDictionary<long, DateTimeOffset> _blockedUntilByMessageId = new();
@@ -29,6 +30,7 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
         IMessageRepository messageRepository,
         IMediaProcessor mediaProcessor,
         IVoiceParalinguisticsAnalyzer analyzer,
+        IBudgetGuardrailService budgetGuardrailService,
         IExtractionErrorRepository errorRepository,
         ILogger<VoiceParalinguisticsWorkerService> logger)
     {
@@ -38,6 +40,7 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
         _messageRepository = messageRepository;
         _mediaProcessor = mediaProcessor;
         _analyzer = analyzer;
+        _budgetGuardrailService = budgetGuardrailService;
         _errorRepository = errorRepository;
         _logger = logger;
     }
@@ -60,6 +63,23 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
         {
             try
             {
+                var budgetDecision = await _budgetGuardrailService.EvaluatePathAsync(new BudgetPathCheckRequest
+                {
+                    PathKey = "voice_paralinguistics",
+                    Modality = BudgetModalities.Audio,
+                    IsImportScope = false,
+                    IsOptionalPath = true
+                }, stoppingToken);
+                if (budgetDecision.ShouldPausePath || budgetDecision.ShouldDegradeOptionalPath)
+                {
+                    _logger.LogWarning(
+                        "Voice paralinguistics paused by budget guardrail. state={State}, reason={Reason}",
+                        budgetDecision.State,
+                        budgetDecision.Reason);
+                    await Task.Delay(TimeSpan.FromSeconds(_settings.PollIntervalSeconds), stoppingToken);
+                    continue;
+                }
+
                 var batch = (await _messageRepository.GetPendingVoiceParalinguisticsAsync(_settings.BatchSize, stoppingToken))
                     .Where(message => !IsMessageBackedOff(message.Id))
                     .ToList();
@@ -351,6 +371,11 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
     private static bool IsTransientFailure(string? reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        if (BudgetErrorClassifier.IsQuotaLike(reason))
         {
             return false;
         }
