@@ -271,6 +271,8 @@ public class BotChatSettings
 {
     public const string Section = "BotChat";
     public long OwnerId { get; set; }
+    public long DefaultCaseId { get; set; }
+    public long DefaultChatId { get; set; }
 }
 
 public class ContinuousRefinementSettings

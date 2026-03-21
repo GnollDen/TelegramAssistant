@@ -112,7 +112,12 @@ public class TelegramBotHostedService : BackgroundService
             }
             else
             {
-                reply = await _botChatService.GenerateReplyAsync(normalizedText);
+                reply = await _botChatService.GenerateReplyAsync(
+                    normalizedText,
+                    transportChatId: message.Chat.Id,
+                    sourceMessageId: message.MessageId,
+                    senderId: message.From?.Id,
+                    ct: ct);
             }
 
             var chunks = SplitReplyToChunks(reply, MaxTelegramMessageChars);
