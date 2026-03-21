@@ -31,8 +31,10 @@ public class PeriodizationVerificationService
 
     public async Task RunAsync(CancellationToken ct = default)
     {
-        var caseId = 93030000 + DateTime.UtcNow.Minute;
-        var chatId = caseId;
+        // Keep case scope explicit: case_id is analysis scope, chat_id is canonical source anchor.
+        var caseScope = CaseScopeFactory.CreateSmokeScope("periodization");
+        var caseId = caseScope.CaseId;
+        var chatId = caseScope.ChatId;
         var now = DateTime.UtcNow;
 
         var seededMessages = BuildSeedMessages(chatId, now);
@@ -189,12 +191,13 @@ public class PeriodizationVerificationService
 
     private static List<ChatSession> BuildSeedSessions(long chatId, DateTime now)
     {
+        var baseIndex = (int)(Math.Abs(now.Ticks) % 10000) * 10;
         return
         [
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 1,
+                SessionIndex = baseIndex + 1,
                 StartDate = now.AddDays(-30),
                 EndDate = now.AddDays(-28),
                 LastMessageAt = now.AddDays(-28),
@@ -205,7 +208,7 @@ public class PeriodizationVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 2,
+                SessionIndex = baseIndex + 2,
                 StartDate = now.AddDays(-24),
                 EndDate = now.AddDays(-23),
                 LastMessageAt = now.AddDays(-23),
@@ -216,7 +219,7 @@ public class PeriodizationVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 3,
+                SessionIndex = baseIndex + 3,
                 StartDate = now.AddDays(-14),
                 EndDate = now.AddDays(-14).AddHours(5),
                 LastMessageAt = now.AddDays(-14).AddHours(5),
@@ -227,7 +230,7 @@ public class PeriodizationVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 4,
+                SessionIndex = baseIndex + 4,
                 StartDate = now.AddDays(-11),
                 EndDate = now.AddDays(-10),
                 LastMessageAt = now.AddDays(-10),
@@ -238,7 +241,7 @@ public class PeriodizationVerificationService
             new ChatSession
             {
                 ChatId = chatId,
-                SessionIndex = 5,
+                SessionIndex = baseIndex + 5,
                 StartDate = now.AddDays(-6),
                 EndDate = now.AddDays(-4),
                 LastMessageAt = now.AddDays(-4),

@@ -34,13 +34,16 @@ public class FoundationDomainVerificationService
 
     public async Task RunAsync(CancellationToken ct = default)
     {
-        const long caseId = 90010001;
+        // Keep case scope explicit: case_id is analysis scope, chat_id is canonical source anchor.
+        var caseScope = CaseScopeFactory.CreateSmokeScope("foundation");
+        var caseId = caseScope.CaseId;
+        var chatId = caseScope.ChatId;
         var now = DateTime.UtcNow;
 
         var period = await _periodRepository.CreatePeriodAsync(new Period
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             Label = "baseline",
             StartAt = now,
             IsOpen = true,
@@ -56,7 +59,7 @@ public class FoundationDomainVerificationService
         var question = await _clarificationRepository.CreateQuestionAsync(new ClarificationQuestion
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             PeriodId = period.Id,
             QuestionText = "smoke question",
             QuestionType = "confirmation",
@@ -70,7 +73,7 @@ public class FoundationDomainVerificationService
         var snapshot = await _stateProfileRepository.CreateStateSnapshotAsync(new StateSnapshot
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             PeriodId = period.Id,
             AsOf = now,
             DynamicLabel = "steady",
@@ -90,7 +93,7 @@ public class FoundationDomainVerificationService
         var offlineEvent = await _offlineEventRepository.CreateOfflineEventAsync(new OfflineEvent
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             EventType = "smoke",
             Title = "foundation smoke offline event",
             UserSummary = "offline smoke summary",
@@ -104,7 +107,7 @@ public class FoundationDomainVerificationService
         var hypothesis = await _periodRepository.CreateHypothesisAsync(new Hypothesis
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             PeriodId = period.Id,
             HypothesisType = "signal_interpretation",
             SubjectType = "chat",
@@ -119,7 +122,7 @@ public class FoundationDomainVerificationService
         var inboxItem = await _inboxConflictRepository.CreateInboxItemAsync(new InboxItem
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             ItemType = "clarification",
             SourceObjectType = "clarification_question",
             SourceObjectId = question.Id.ToString(),
@@ -131,7 +134,7 @@ public class FoundationDomainVerificationService
         var conflictRecord = await _inboxConflictRepository.CreateConflictRecordAsync(new ConflictRecord
         {
             CaseId = caseId,
-            ChatId = caseId,
+            ChatId = chatId,
             ConflictType = "contradiction",
             ObjectAType = "hypothesis",
             ObjectAId = hypothesis.Id.ToString(),

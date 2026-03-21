@@ -39,8 +39,23 @@ try
     var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
     var runStateSmoke = args.Any(arg => string.Equals(arg, "--state-smoke", StringComparison.OrdinalIgnoreCase));
     var runProfileSmoke = args.Any(arg => string.Equals(arg, "--profile-smoke", StringComparison.OrdinalIgnoreCase));
+    var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
+    var smokeEntrypoints = new[]
+    {
+        "--foundation-smoke",
+        "--clarification-smoke",
+        "--periodization-smoke",
+        "--state-smoke",
+        "--profile-smoke"
+    };
+
+    if (runListSmokes)
+    {
+        Log.Information("Available smoke entrypoints: {SmokeEntrypoints}", string.Join(", ", smokeEntrypoints));
+        return;
+    }
 
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
