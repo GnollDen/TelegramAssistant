@@ -55,6 +55,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbEvalRun> EvalRuns => Set<DbEvalRun>();
     public DbSet<DbEvalScenarioResult> EvalScenarioResults => Set<DbEvalScenarioResult>();
+    public DbSet<DbExternalArchiveImportBatch> ExternalArchiveImportBatches => Set<DbExternalArchiveImportBatch>();
+    public DbSet<DbExternalArchiveImportRecord> ExternalArchiveImportRecords => Set<DbExternalArchiveImportRecord>();
+    public DbSet<DbExternalArchiveLinkageArtifact> ExternalArchiveLinkageArtifacts => Set<DbExternalArchiveLinkageArtifact>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -945,6 +948,85 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => new { x.RunId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbExternalArchiveImportBatch>(e =>
+        {
+            e.ToTable("external_archive_import_batches");
+            e.HasKey(x => x.RunId);
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.SourceClass).HasColumnName("source_class");
+            e.Property(x => x.SourceRef).HasColumnName("source_ref");
+            e.Property(x => x.ImportBatchId).HasColumnName("import_batch_id");
+            e.Property(x => x.RequestPayloadHash).HasColumnName("request_payload_hash");
+            e.Property(x => x.ImportedAtUtc).HasColumnName("imported_at_utc");
+            e.Property(x => x.Actor).HasColumnName("actor");
+            e.Property(x => x.RecordCount).HasColumnName("record_count");
+            e.Property(x => x.AcceptedCount).HasColumnName("accepted_count");
+            e.Property(x => x.ReplayedCount).HasColumnName("replayed_count");
+            e.Property(x => x.RejectedCount).HasColumnName("rejected_count");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.CaseId, x.SourceClass, x.SourceRef, x.RequestPayloadHash }).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbExternalArchiveImportRecord>(e =>
+        {
+            e.ToTable("external_archive_import_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.SourceClass).HasColumnName("source_class");
+            e.Property(x => x.SourceRef).HasColumnName("source_ref");
+            e.Property(x => x.ImportBatchId).HasColumnName("import_batch_id");
+            e.Property(x => x.RecordId).HasColumnName("record_id");
+            e.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc");
+            e.Property(x => x.RecordType).HasColumnName("record_type");
+            e.Property(x => x.Text).HasColumnName("text");
+            e.Property(x => x.SubjectActorKey).HasColumnName("subject_actor_key");
+            e.Property(x => x.TargetActorKey).HasColumnName("target_actor_key");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.RawPayloadJson).HasColumnName("raw_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.TruthLayer).HasColumnName("truth_layer");
+            e.Property(x => x.PayloadHash).HasColumnName("payload_hash");
+            e.Property(x => x.BaseWeight).HasColumnName("base_weight");
+            e.Property(x => x.ConfidenceMultiplier).HasColumnName("confidence_multiplier");
+            e.Property(x => x.CorroborationMultiplier).HasColumnName("corroboration_multiplier");
+            e.Property(x => x.FinalWeight).HasColumnName("final_weight");
+            e.Property(x => x.NeedsClarification).HasColumnName("needs_clarification");
+            e.Property(x => x.WeightingReason).HasColumnName("weighting_reason");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.RunId, x.RecordId }).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.SourceClass, x.SourceRef, x.RecordId });
+        });
+
+        modelBuilder.Entity<DbExternalArchiveLinkageArtifact>(e =>
+        {
+            e.ToTable("external_archive_linkage_artifacts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.RecordRowId).HasColumnName("record_row_id");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.LinkType).HasColumnName("link_type");
+            e.Property(x => x.TargetType).HasColumnName("target_type");
+            e.Property(x => x.TargetId).HasColumnName("target_id");
+            e.Property(x => x.LinkConfidence).HasColumnName("link_confidence");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.ReviewStatus).HasColumnName("review_status");
+            e.Property(x => x.AutoApplyAllowed).HasColumnName("auto_apply_allowed");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.RecordRowId, x.LinkType, x.TargetType, x.TargetId }).IsUnique();
+            e.HasIndex(x => new { x.CaseId, x.ReviewStatus, x.CreatedAt });
         });
     }
 }
