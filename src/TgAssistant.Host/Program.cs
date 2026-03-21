@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
+using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
@@ -35,6 +36,7 @@ try
     var runFoundationSmoke = args.Any(arg => string.Equals(arg, "--foundation-smoke", StringComparison.OrdinalIgnoreCase));
     var runClarificationSmoke = args.Any(arg => string.Equals(arg, "--clarification-smoke", StringComparison.OrdinalIgnoreCase));
     var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStateSmoke = args.Any(arg => string.Equals(arg, "--state-smoke", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
 
@@ -164,6 +166,12 @@ try
             services.AddSingleton<IPeriodProposalService, PeriodProposalService>();
             services.AddSingleton<IPeriodizationService, PeriodizationService>();
             services.AddSingleton<PeriodizationVerificationService>();
+            services.AddSingleton<IStateScoreCalculator, StateScoreCalculator>();
+            services.AddSingleton<IStateConfidenceEvaluator, StateConfidenceEvaluator>();
+            services.AddSingleton<IDynamicLabelMapper, DynamicLabelMapper>();
+            services.AddSingleton<IRelationshipStatusMapper, RelationshipStatusMapper>();
+            services.AddSingleton<ICurrentStateEngine, CurrentStateEngine>();
+            services.AddSingleton<StateEngineVerificationService>();
 
             services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
             services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
@@ -273,6 +281,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<PeriodizationVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Periodization smoke run requested via --periodization-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runStateSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<StateEngineVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("State smoke run requested via --state-smoke. Exiting after successful verification.");
             return;
         }
 
