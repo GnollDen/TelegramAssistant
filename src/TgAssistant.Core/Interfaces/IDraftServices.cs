@@ -30,3 +30,28 @@ public interface IDraftPackagingService
         DraftConflictAssessment conflict,
         CancellationToken ct = default);
 }
+
+public interface IDraftReviewEngine
+{
+    Task<DraftReviewResult> RunAsync(DraftReviewRequest request, CancellationToken ct = default);
+}
+
+public interface IDraftRiskAssessor
+{
+    DraftRiskAssessment Assess(DraftReviewContext context, DraftStrategyFitResult strategyFit);
+}
+
+public interface IDraftStrategyFitChecker
+{
+    DraftStrategyFitResult Evaluate(DraftReviewContext context);
+}
+
+public interface ISaferRewriteGenerator
+{
+    string Generate(DraftReviewContext context, DraftRiskAssessment assessment, DraftStrategyFitResult strategyFit);
+}
+
+public interface INaturalRewriteGenerator
+{
+    string Generate(DraftReviewContext context, DraftRiskAssessment assessment);
+}
