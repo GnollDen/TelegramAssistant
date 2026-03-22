@@ -123,6 +123,8 @@ public partial class AnalysisWorkerService : BackgroundService
             _settings.SummaryHistoricalHintsEnabled,
             ResolveSummaryHistoricalEmbeddingModel(),
             _settings.EditDiffEnabled);
+        _logger.LogInformation(
+            "Stage5 session finalization semantics: chat_sessions.is_finalized is cold-path only in current runtime profile; stage5 hot/session-first path does not finalize sessions.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -153,6 +155,8 @@ public partial class AnalysisWorkerService : BackgroundService
                     await DelayBetweenBatchesAsync(stoppingToken);
                 }
 
+                var processedSessions = await ProcessSessionFirstPassAsync(stoppingToken);
+
                 var reanalysis = ApplyArchiveScope(
                     await _messageRepository.GetNeedsReanalysisAsync(GetFetchLimit(), stoppingToken),
                     "reanalysis");
@@ -174,15 +178,8 @@ public partial class AnalysisWorkerService : BackgroundService
                     continue;
                 }
 
-                var processedSessions = await ProcessSessionFirstPassAsync(stoppingToken);
-                if (processedSessions > 0)
-                {
-                    await DelayBetweenBatchesAsync(stoppingToken);
-                    continue;
-                }
-
                 var seededMessages = await SeedSessionsFromProcessedBacklogAsync(stoppingToken);
-                if (seededMessages > 0)
+                if (processedSessions > 0 || seededMessages > 0)
                 {
                     await DelayBetweenBatchesAsync(stoppingToken);
                     continue;
@@ -1112,6 +1109,14 @@ public partial class AnalysisWorkerService : BackgroundService
         {
             summary = BuildFastSessionSummary(sessionInput.Count > 0 ? sessionInput : sessionMessages);
         }
+        else if (LooksFallbackLikeSummary(summary))
+        {
+            _logger.LogInformation(
+                "Stage5 summary output looked fallback/truncated-like; replaced with deterministic compact summary. chat_id={ChatId}, session_index={SessionIndex}",
+                session.ChatId,
+                session.SessionIndex);
+            summary = BuildFastSessionSummary(sessionInput.Count > 0 ? sessionInput : sessionMessages);
+        }
 
         var previousSummary = MessageContentBuilder.CollapseWhitespace(existing?.Summary ?? string.Empty);
         var normalizedSummary = MessageContentBuilder.CollapseWhitespace(summary);
@@ -1260,23 +1265,104 @@ public partial class AnalysisWorkerService : BackgroundService
             return string.Empty;
         }
 
+        if (TryExtractSummaryFromJson(raw, out var summary))
+        {
+            return summary;
+        }
+
+        var extractedJson = TryExtractJsonObject(raw);
+        if (!string.IsNullOrWhiteSpace(extractedJson) && TryExtractSummaryFromJson(extractedJson, out summary))
+        {
+            return summary;
+        }
+
+        var collapsed = MessageContentBuilder.CollapseWhitespace(raw);
+        return StripCommonSummaryWrappers(collapsed);
+    }
+
+    private static bool TryExtractSummaryFromJson(string raw, out string summary)
+    {
+        summary = string.Empty;
         try
         {
             using var doc = JsonDocument.Parse(raw);
-            if (doc.RootElement.TryGetProperty("summary", out var summaryElement))
+            if (!doc.RootElement.TryGetProperty("summary", out var summaryElement) || summaryElement.ValueKind != JsonValueKind.String)
             {
-                var summary = summaryElement.GetString();
-                return string.IsNullOrWhiteSpace(summary)
-                    ? string.Empty
-                    : MessageContentBuilder.CollapseWhitespace(summary);
+                return false;
             }
+
+            var extracted = MessageContentBuilder.CollapseWhitespace(summaryElement.GetString() ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(extracted))
+            {
+                return false;
+            }
+
+            summary = StripCommonSummaryWrappers(extracted);
+            return !string.IsNullOrWhiteSpace(summary);
         }
         catch (JsonException)
         {
-            // Ignore and fallback to plain-text interpretation.
+            return false;
+        }
+    }
+
+    private static string? TryExtractJsonObject(string raw)
+    {
+        var start = raw.IndexOf('{');
+        var end = raw.LastIndexOf('}');
+        if (start < 0 || end <= start)
+        {
+            return null;
         }
 
-        return MessageContentBuilder.CollapseWhitespace(raw);
+        return raw[start..(end + 1)];
+    }
+
+    private static string StripCommonSummaryWrappers(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim();
+        normalized = normalized.Replace("```json", string.Empty, StringComparison.OrdinalIgnoreCase);
+        normalized = normalized.Replace("```", string.Empty, StringComparison.Ordinal);
+
+        if (normalized.StartsWith("summary:", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["summary:".Length..].Trim();
+        }
+
+        if (normalized.StartsWith("сводка:", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["сводка:".Length..].Trim();
+        }
+
+        return MessageContentBuilder.CollapseWhitespace(normalized);
+    }
+
+    private static bool LooksFallbackLikeSummary(string summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return true;
+        }
+
+        var normalized = MessageContentBuilder.CollapseWhitespace(summary).ToLowerInvariant();
+        if (normalized.Length < 42)
+        {
+            return true;
+        }
+
+        if (normalized.Contains("сводка сессии недоступна", StringComparison.Ordinal)
+            || normalized.Contains("не удалось сформировать", StringComparison.Ordinal)
+            || normalized.Contains("недостаточно данных", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return normalized.Contains("...", StringComparison.Ordinal) && normalized.Length < 90;
     }
 
     private static bool ContainsCyrillic(string? value)

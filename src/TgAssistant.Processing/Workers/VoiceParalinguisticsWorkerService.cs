@@ -360,7 +360,7 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
 
     private static bool IsTransientFailure(Exception ex)
     {
-        if (ex is TaskCanceledException or TimeoutException)
+        if (ex is TaskCanceledException or TimeoutException or JsonException)
         {
             return true;
         }

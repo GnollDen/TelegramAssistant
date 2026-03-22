@@ -9,15 +9,18 @@ public class EvalVerificationService
 {
     private readonly IEvalHarnessService _evalHarnessService;
     private readonly IEvalRepository _evalRepository;
+    private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly ILogger<EvalVerificationService> _logger;
 
     public EvalVerificationService(
         IEvalHarnessService evalHarnessService,
         IEvalRepository evalRepository,
+        IDomainReviewEventRepository domainReviewEventRepository,
         ILogger<EvalVerificationService> logger)
     {
         _evalHarnessService = evalHarnessService;
         _evalRepository = evalRepository;
+        _domainReviewEventRepository = domainReviewEventRepository;
         _logger = logger;
     }
 
@@ -66,5 +69,119 @@ public class EvalVerificationService
             run.RunName,
             run.Passed,
             run.Scenarios.Count);
+
+        await RunExperimentSmokeAsync(ct);
+    }
+
+    private async Task RunExperimentSmokeAsync(CancellationToken ct)
+    {
+        var experimentDefinition = new EvalExperimentDefinition
+        {
+            ExperimentKey = "ab_layer_smoke",
+            DisplayName = "A/B Layer Smoke",
+            Description = "Smoke definition for practical experiment layer validation.",
+            DefaultScenarioPackKey = "smoke_core",
+            Variants =
+            [
+                new EvalExperimentVariantDefinition
+                {
+                    VariantKey = "baseline",
+                    DisplayName = "Smoke Baseline",
+                    IsBaseline = true,
+                    RunNamePrefix = "exp:ab_layer_smoke:baseline"
+                },
+                new EvalExperimentVariantDefinition
+                {
+                    VariantKey = "candidate",
+                    DisplayName = "Smoke Candidate",
+                    IsBaseline = false,
+                    RunNamePrefix = "exp:ab_layer_smoke:candidate"
+                }
+            ],
+            ScenarioPacks =
+            [
+                new EvalScenarioPackDefinition
+                {
+                    PackKey = "smoke_core",
+                    Description = "Core smoke scenarios",
+                    Scenarios =
+                    [
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "budget_visibility",
+                            Required = true,
+                            Description = "Budget visibility path"
+                        },
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage5_config",
+                            Required = true,
+                            Description = "Stage5 verification path"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        await _evalHarnessService.RegisterExperimentDefinitionAsync(experimentDefinition, ct);
+        var comparison = await _evalHarnessService.RunExperimentComparisonAsync(new EvalExperimentRunComparisonRequest
+        {
+            ExperimentKey = experimentDefinition.ExperimentKey,
+            ScenarioPackKey = "smoke_core",
+            Actor = "eval_experiment_smoke",
+            PersistComparisonRun = true,
+            RecordReviewEvent = true
+        }, ct);
+
+        if (comparison.ExperimentRunId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: experiment run id was not generated.");
+        }
+
+        if (comparison.Variants.Count < 2)
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: expected at least two variant results.");
+        }
+
+        if (!comparison.ComparisonEvalRunId.HasValue || comparison.ComparisonEvalRunId.Value == Guid.Empty)
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: comparison eval run id was not generated.");
+        }
+
+        var persistedComparisonRun = await _evalRepository.GetRunByIdAsync(comparison.ComparisonEvalRunId.Value, ct)
+            ?? throw new InvalidOperationException("Eval experiment smoke failed: comparison run was not persisted.");
+        var persistedVariantScenarios = await _evalRepository.GetScenarioResultsAsync(comparison.ComparisonEvalRunId.Value, ct);
+        if (persistedVariantScenarios.Count != comparison.Variants.Count)
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: persisted variant scenario count mismatch.");
+        }
+
+        var reviewEvents = await _domainReviewEventRepository.GetByObjectAsync(
+            "eval_experiment_run",
+            comparison.ExperimentRunId.ToString("D"),
+            limit: 5,
+            ct);
+        if (!reviewEvents.Any(x => string.Equals(x.Action, "comparison_completed", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: experiment review event was not recorded.");
+        }
+
+        if (string.IsNullOrWhiteSpace(persistedComparisonRun.MetricsJson))
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: comparison run metrics are empty.");
+        }
+
+        using var metricsDoc = JsonDocument.Parse(comparison.MetricsJson);
+        if (!metricsDoc.RootElement.TryGetProperty("variant_count", out _))
+        {
+            throw new InvalidOperationException("Eval experiment smoke failed: comparison metrics do not contain variant_count.");
+        }
+
+        _logger.LogInformation(
+            "Eval experiment smoke passed. experiment_run_id={ExperimentRunId}, comparison_run_id={ComparisonRunId}, variants={VariantCount}, passed={Passed}",
+            comparison.ExperimentRunId,
+            comparison.ComparisonEvalRunId,
+            comparison.Variants.Count,
+            comparison.Passed);
     }
 }

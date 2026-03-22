@@ -266,7 +266,7 @@ public class WebSearchService : IWebSearchService
                 Status = null,
                 Priority = null,
                 UpdatedAt = record.CreatedAt,
-                Link = "/strategy"
+                Link = $"/outcomes?strategyRecordId={record.Id}"
             });
 
             var options = await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(record.Id, ct);
@@ -279,7 +279,7 @@ public class WebSearchService : IWebSearchService
                 Status = null,
                 Priority = x.IsPrimary ? "primary" : "alternative",
                 UpdatedAt = record.CreatedAt,
-                Link = "/strategy"
+                Link = $"/outcomes?strategyRecordId={record.Id}"
             }));
 
             var drafts = await _strategyDraftRepository.GetDraftRecordsByStrategyRecordIdAsync(record.Id, ct);
@@ -292,7 +292,7 @@ public class WebSearchService : IWebSearchService
                 Status = null,
                 Priority = null,
                 UpdatedAt = x.CreatedAt,
-                Link = "/drafts-reviews"
+                Link = $"/outcomes?draftId={x.Id}"
             }));
 
             var outcomes = await _strategyDraftRepository.GetDraftOutcomesByStrategyRecordIdAsync(record.Id, ct);
@@ -305,7 +305,7 @@ public class WebSearchService : IWebSearchService
                 Status = x.SystemOutcomeLabel,
                 Priority = x.UserOutcomeLabel,
                 UpdatedAt = x.CreatedAt,
-                Link = $"/history-object?objectType=draft_outcome&objectId={x.Id}"
+                Link = $"/outcomes?outcomeId={x.Id}"
             }));
         }
 
