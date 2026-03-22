@@ -112,6 +112,43 @@ public class EvalRepository : IEvalRepository
         return Map(row, scenarios.Select(MapScenario).ToList());
     }
 
+    public async Task<List<EvalRunResult>> GetRecentRunsAsync(int limit = 20, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var normalizedLimit = Math.Max(1, Math.Min(limit, 100));
+        var rows = await db.EvalRuns
+            .AsNoTracking()
+            .OrderByDescending(x => x.StartedAt)
+            .Take(normalizedLimit)
+            .ToListAsync(ct);
+
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        var runIds = rows.Select(x => x.Id).ToHashSet();
+        var scenarios = await db.EvalScenarioResults
+            .AsNoTracking()
+            .Where(x => runIds.Contains(x.RunId))
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync(ct);
+
+        var scenariosByRun = scenarios
+            .GroupBy(x => x.RunId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(MapScenario).ToList());
+
+        return rows
+            .Select(row =>
+            {
+                scenariosByRun.TryGetValue(row.Id, out var runScenarios);
+                return Map(row, runScenarios ?? []);
+            })
+            .ToList();
+    }
+
     private static EvalRunResult Map(DbEvalRun row, List<EvalScenarioResult> scenarios)
     {
         return new EvalRunResult

@@ -339,6 +339,7 @@ public class WebReadService : IWebReadService
 
         return new StrategyReadModel
         {
+            RecordId = record.Id,
             Confidence = record.StrategyConfidence,
             PrimarySummary = primary?.Summary ?? "No primary option",
             PrimaryPurpose = primary?.Purpose ?? string.Empty,
@@ -438,6 +439,75 @@ public class WebReadService : IWebReadService
             LatestOutcome = latestDraft == null
                 ? null
                 : await LoadLatestOutcomeAsync(latestDraft, strategy, ct)
+        };
+    }
+
+    public async Task<OutcomeTrailReadModel> GetOutcomeTrailAsync(WebReadRequest request, CancellationToken ct = default)
+    {
+        var strategies = (await _strategyDraftRepository.GetStrategyRecordsByCaseAsync(request.CaseId, ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToList();
+
+        var strategyById = strategies.ToDictionary(x => x.Id, x => x);
+        var outcomes = await _strategyDraftRepository.GetDraftOutcomesByCaseAsync(request.CaseId, ct);
+        var items = new List<OutcomeChainItemReadModel>();
+        var cacheByMessageId = new Dictionary<long, Message>();
+        var missingDraftCount = 0;
+        var missingStrategyCount = 0;
+        var scannedOutcomes = outcomes.Count;
+
+        foreach (var outcome in outcomes.OrderByDescending(x => x.CreatedAt).Take(24))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var draft = await _strategyDraftRepository.GetDraftRecordByIdAsync(outcome.DraftId, ct);
+            if (draft == null)
+            {
+                missingDraftCount++;
+                continue;
+            }
+
+            var strategyId = outcome.StrategyRecordId ?? draft.StrategyRecordId;
+            if (!strategyById.TryGetValue(strategyId, out var strategy))
+            {
+                missingStrategyCount++;
+                continue;
+            }
+
+            var actualMessage = await TryGetMessageAsync(outcome.ActualMessageId, cacheByMessageId, ct);
+            var followUpMessage = await TryGetMessageAsync(outcome.FollowUpMessageId, cacheByMessageId, ct);
+
+            items.Add(new OutcomeChainItemReadModel
+            {
+                OutcomeId = outcome.Id,
+                OutcomeCreatedAt = outcome.CreatedAt,
+                StrategyRecordId = strategy.Id,
+                StrategyCreatedAt = strategy.CreatedAt,
+                StrategySummary = strategy.MicroStep,
+                DraftId = draft.Id,
+                DraftCreatedAt = draft.CreatedAt,
+                DraftSnippet = BuildTextSnippet(draft.MainDraft, 220),
+                ActualMessageId = outcome.ActualMessageId,
+                ActualMessageSnippet = BuildTextSnippet(actualMessage?.Text, 220),
+                FollowUpMessageId = outcome.FollowUpMessageId,
+                FollowUpMessageSnippet = BuildTextSnippet(followUpMessage?.Text, 220),
+                MatchScore = outcome.MatchScore,
+                MatchedBy = outcome.MatchedBy ?? string.Empty,
+                OutcomeLabel = outcome.OutcomeLabel,
+                UserOutcomeLabel = outcome.UserOutcomeLabel,
+                SystemOutcomeLabel = outcome.SystemOutcomeLabel,
+                OutcomeConfidence = outcome.OutcomeConfidence,
+                LearningSignals = ParseLearningSignalLabels(outcome.LearningSignalsJson)
+            });
+        }
+
+        return new OutcomeTrailReadModel
+        {
+            TotalOutcomesScanned = scannedOutcomes,
+            MissingDraftCount = missingDraftCount,
+            MissingStrategyCount = missingStrategyCount,
+            Items = items
         };
     }
 
@@ -708,6 +778,43 @@ public class WebReadService : IWebReadService
             Notes = latest.Notes,
             CreatedAt = latest.CreatedAt
         };
+    }
+
+    private async Task<Message?> TryGetMessageAsync(long? messageId, Dictionary<long, Message> cache, CancellationToken ct)
+    {
+        if (!messageId.HasValue || messageId.Value <= 0)
+        {
+            return null;
+        }
+
+        if (cache.TryGetValue(messageId.Value, out var cached))
+        {
+            return cached;
+        }
+
+        var row = await _messageRepository.GetByIdAsync(messageId.Value, ct);
+        if (row != null)
+        {
+            cache[messageId.Value] = row;
+        }
+
+        return row;
+    }
+
+    private static string BuildTextSnippet(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var text = value.Trim().Replace('\n', ' ').Replace('\r', ' ');
+        if (text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        return text[..Math.Max(1, maxLength - 3)] + "...";
     }
 
     private static List<string> ParseLearningSignalLabels(string? json)

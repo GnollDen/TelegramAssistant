@@ -5,6 +5,59 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public static class ExtractionRefiner
 {
+    private static readonly string[] WeakValueTokens =
+    [
+        "да",
+        "нет",
+        "ага",
+        "угу",
+        "ок",
+        "окей",
+        "ясно",
+        "понял",
+        "поняла",
+        "норм",
+        "нормально",
+        "лол",
+        "ахах",
+        "хаха"
+    ];
+
+    private static readonly string[] JokeTokens =
+    [
+        "ахах",
+        "хаха",
+        "лол",
+        "шут",
+        "ржу",
+        ")))",
+        "ха-ха",
+        "сарказ"
+    ];
+
+    private static readonly string[] ActionableTokens =
+    [
+        "когда",
+        "где",
+        "во сколько",
+        "адрес",
+        "завтра",
+        "сегодня",
+        "встреч",
+        "созвон",
+        "подъед",
+        "поед",
+        "такси",
+        "деньг",
+        "перевод",
+        "работ",
+        "боле",
+        "лекар",
+        "распис",
+        "@",
+        "http"
+    ];
+
     public static ExtractionItem NormalizeExtractionForMessage(ExtractionItem item, Message message)
     {
         _ = message;
@@ -133,6 +186,8 @@ public static class ExtractionRefiner
     {
         _ = settings;
         var effective = SanitizeExtraction(item);
+        effective = ApplyTargetedSignalPolish(effective, message);
+
         if (message == null || message.MediaType == MediaType.None)
         {
             return effective;
@@ -296,5 +351,272 @@ public static class ExtractionRefiner
         }
 
         return 0.55f;
+    }
+
+    private static ExtractionItem ApplyTargetedSignalPolish(ExtractionItem item, Message? message)
+    {
+        var lowSignalQuestionOrJoke = IsLikelyLowSignalQuestionOrJoke(message);
+
+        item.Facts = item.Facts
+            .Where(fact => ShouldKeepFact(fact, lowSignalQuestionOrJoke))
+            .ToList();
+        item.Claims = item.Claims
+            .Where(claim => ShouldKeepClaim(claim, lowSignalQuestionOrJoke))
+            .ToList();
+        item.Observations = item.Observations
+            .Where(observation => ShouldKeepObservation(observation, lowSignalQuestionOrJoke))
+            .ToList();
+
+        if (lowSignalQuestionOrJoke)
+        {
+            item.Relationships = item.Relationships
+                .Where(relationship => relationship.Confidence >= 0.75f)
+                .ToList();
+            item.Events = item.Events
+                .Where(evt => evt.Confidence >= 0.75f)
+                .ToList();
+            item.ProfileSignals = item.ProfileSignals
+                .Where(signal => signal.Confidence >= 0.75f)
+                .ToList();
+        }
+
+        item.Facts = item.Facts
+            .DistinctBy(BuildFactSignature)
+            .ToList();
+
+        item.Claims = item.Claims
+            .DistinctBy(BuildClaimSignature)
+            .Where(claim => !item.Facts.Any(fact => IsClaimDuplicateOfFact(claim, fact)))
+            .ToList();
+
+        item.Observations = item.Observations
+            .DistinctBy(BuildObservationSignature)
+            .Where(observation => !IsObservationDuplicatingFactOrClaim(observation, item.Facts, item.Claims))
+            .ToList();
+
+        return item;
+    }
+
+    private static bool ShouldKeepFact(ExtractionFact fact, bool lowSignalQuestionOrJoke)
+    {
+        if (IsWeakTextValue(fact.Value))
+        {
+            return false;
+        }
+
+        var trust = Math.Max(fact.Confidence, fact.TrustFactor);
+        if (trust < 0.45f)
+        {
+            return false;
+        }
+
+        if (lowSignalQuestionOrJoke && trust < 0.75f)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool ShouldKeepClaim(ExtractionClaim claim, bool lowSignalQuestionOrJoke)
+    {
+        if (IsWeakTextValue(claim.Value))
+        {
+            return false;
+        }
+
+        if (claim.Confidence < 0.35f)
+        {
+            return false;
+        }
+
+        if (lowSignalQuestionOrJoke && claim.Confidence < 0.7f)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool ShouldKeepObservation(ExtractionObservation observation, bool lowSignalQuestionOrJoke)
+    {
+        if (IsWeakTextValue(observation.Value) && IsWeakTextValue(observation.Evidence))
+        {
+            return false;
+        }
+
+        if (observation.Confidence < 0.35f)
+        {
+            return false;
+        }
+
+        if (lowSignalQuestionOrJoke && observation.Confidence < 0.7f)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsWeakTextValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        if (normalized.Length <= 2)
+        {
+            return true;
+        }
+
+        return WeakValueTokens.Any(token => normalized.Equals(token, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsLikelyLowSignalQuestionOrJoke(Message? message)
+    {
+        if (message == null)
+        {
+            return false;
+        }
+
+        var semantic = MessageContentBuilder.CollapseWhitespace(MessageContentBuilder.BuildSemanticContent(message));
+        if (string.IsNullOrWhiteSpace(semantic) || semantic.Length > 100)
+        {
+            return false;
+        }
+
+        var lower = semantic.ToLowerInvariant();
+        var hasQuestion = lower.Contains('?') || lower.Contains(" ли ");
+        var hasJoke = JokeTokens.Any(token => lower.Contains(token, StringComparison.OrdinalIgnoreCase));
+        if (!hasQuestion && !hasJoke)
+        {
+            return false;
+        }
+
+        var hasActionable = ActionableTokens.Any(token => lower.Contains(token, StringComparison.OrdinalIgnoreCase))
+                            || lower.Any(char.IsDigit);
+        return !hasActionable;
+    }
+
+    private static string BuildFactSignature(ExtractionFact fact)
+    {
+        return string.Join('|',
+            NormalizeCompare(fact.EntityName),
+            NormalizeCompare(fact.Category),
+            NormalizeCompare(fact.Key),
+            NormalizeCompare(fact.Value));
+    }
+
+    private static string BuildClaimSignature(ExtractionClaim claim)
+    {
+        return string.Join('|',
+            NormalizeCompare(claim.EntityName),
+            NormalizeCompare(claim.Category),
+            NormalizeCompare(claim.Key),
+            NormalizeCompare(claim.Value));
+    }
+
+    private static string BuildObservationSignature(ExtractionObservation observation)
+    {
+        return string.Join('|',
+            NormalizeCompare(observation.SubjectName),
+            NormalizeCompare(observation.Type),
+            NormalizeCompare(observation.ObjectName),
+            NormalizeCompare(observation.Value),
+            NormalizeCompare(observation.Evidence));
+    }
+
+    private static bool IsClaimDuplicateOfFact(ExtractionClaim claim, ExtractionFact fact)
+    {
+        return string.Equals(NormalizeCompare(claim.EntityName), NormalizeCompare(fact.EntityName), StringComparison.Ordinal)
+               && string.Equals(NormalizeCompare(claim.Category), NormalizeCompare(fact.Category), StringComparison.Ordinal)
+               && string.Equals(NormalizeCompare(claim.Key), NormalizeCompare(fact.Key), StringComparison.Ordinal)
+               && string.Equals(NormalizeCompare(claim.Value), NormalizeCompare(fact.Value), StringComparison.Ordinal);
+    }
+
+    private static bool IsObservationDuplicatingFactOrClaim(
+        ExtractionObservation observation,
+        IReadOnlyCollection<ExtractionFact> facts,
+        IReadOnlyCollection<ExtractionClaim> claims)
+    {
+        var subject = NormalizeCompare(observation.SubjectName);
+        var observationValue = NormalizeCompare(observation.Value);
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(observationValue))
+        {
+            return false;
+        }
+
+        foreach (var fact in facts)
+        {
+            if (!string.Equals(subject, NormalizeCompare(fact.EntityName), StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!string.Equals(observationValue, NormalizeCompare(fact.Value), StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (HasSemanticOverlap(observation.Type, fact.Category, fact.Key))
+            {
+                return true;
+            }
+        }
+
+        foreach (var claim in claims)
+        {
+            if (!string.Equals(subject, NormalizeCompare(claim.EntityName), StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!string.Equals(observationValue, NormalizeCompare(claim.Value), StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (HasSemanticOverlap(observation.Type, claim.Category, claim.Key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasSemanticOverlap(string? observationType, string? category, string? key)
+    {
+        var type = NormalizeCompare(observationType);
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return false;
+        }
+
+        var categoryNorm = NormalizeCompare(category);
+        var keyNorm = NormalizeCompare(key);
+        if (!string.IsNullOrWhiteSpace(categoryNorm) && type.Contains(categoryNorm, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyNorm) && type.Contains(keyNorm, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string NormalizeCompare(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return MessageContentBuilder.CollapseWhitespace(value).Trim().ToLowerInvariant();
     }
 }

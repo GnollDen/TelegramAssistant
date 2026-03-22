@@ -80,3 +80,83 @@ public class EvalScenarioResult
     public string MetricsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+public class EvalExperimentDefinition
+{
+    public string ExperimentKey { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string DefaultScenarioPackKey { get; set; } = string.Empty;
+    public List<EvalExperimentVariantDefinition> Variants { get; set; } = new();
+    public List<EvalScenarioPackDefinition> ScenarioPacks { get; set; } = new();
+}
+
+public class EvalExperimentVariantDefinition
+{
+    public string VariantKey { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public bool IsBaseline { get; set; }
+    public string? RunNamePrefix { get; set; }
+    public List<string> IncludeScenarios { get; set; } = new();
+    public List<string> ExcludeScenarios { get; set; } = new();
+}
+
+public class EvalScenarioPackDefinition
+{
+    public string PackKey { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public List<EvalScenarioDefinition> Scenarios { get; set; } = new();
+}
+
+public class EvalScenarioDefinition
+{
+    public string ScenarioName { get; set; } = string.Empty;
+    public bool Required { get; set; } = true;
+    public string? Description { get; set; }
+}
+
+public class EvalExperimentRunComparisonRequest
+{
+    public string ExperimentKey { get; set; } = string.Empty;
+    public string? ScenarioPackKey { get; set; }
+    public List<string> VariantKeys { get; set; } = new();
+    public string Actor { get; set; } = "eval_experiment";
+    public bool PersistComparisonRun { get; set; } = true;
+    public bool RecordReviewEvent { get; set; } = true;
+}
+
+public class EvalExperimentRunComparisonResult
+{
+    public Guid ExperimentRunId { get; set; }
+    public Guid? ComparisonEvalRunId { get; set; }
+    public string ExperimentKey { get; set; } = string.Empty;
+    public string ScenarioPackKey { get; set; } = string.Empty;
+    public bool Passed { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public DateTime StartedAt { get; set; }
+    public DateTime FinishedAt { get; set; }
+    public string MetricsJson { get; set; } = "{}";
+    public List<EvalExperimentVariantRunResult> Variants { get; set; } = new();
+    public List<EvalExperimentScenarioDelta> ScenarioDeltas { get; set; } = new();
+}
+
+public class EvalExperimentVariantRunResult
+{
+    public string VariantKey { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public bool IsBaseline { get; set; }
+    public Guid EvalRunId { get; set; }
+    public bool Passed { get; set; }
+    public int ScenarioCount { get; set; }
+    public int ScenarioPassed { get; set; }
+    public int ScenarioFailed { get; set; }
+    public string Summary { get; set; } = string.Empty;
+}
+
+public class EvalExperimentScenarioDelta
+{
+    public string ScenarioName { get; set; } = string.Empty;
+    public bool? BaselinePassed { get; set; }
+    public string DeltaType { get; set; } = "unknown";
+    public Dictionary<string, bool?> VariantPassed { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}

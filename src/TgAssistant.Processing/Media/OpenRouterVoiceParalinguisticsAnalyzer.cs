@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
@@ -53,62 +55,23 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         {
             var bytes = await File.ReadAllBytesAsync(wavPath, ct);
             var base64 = Convert.ToBase64String(bytes);
-            var request = new VoiceOpenRouterRequest
-            {
-                Model = _settings.Model,
-                MaxTokens = _settings.MaxTokens,
-                Messages = new[]
-                {
-                    new VoiceOpenRouterMessage
-                    {
-                        Role = "user",
-                        Content = new object[]
-                        {
-                            new { type = "input_audio", input_audio = new { data = base64, format = "wav" } },
-                            new
-                            {
-                                type = "text",
-                                text =
-                                    "Return strict JSON only: {\"primary_emotion\":\"...\",\"secondary_emotion\":\"...\",\"valence\":-1..1,\"arousal\":0..1,\"dominance\":0..1,\"sarcasm_probability\":0..1,\"confidence\":0..1,\"evidence\":[\"...\"]}. Analyze tone/prosody/tempo/pauses/intensity from audio signal, not lexical meaning."
-                            }
-                        }
-                    }
-                }
-            };
-
-            var json = JsonSerializer.Serialize(request, JsonOptions);
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var response = await _http.PostAsync("/api/v1/chat/completions", content, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, body))
-                {
-                    await _budgetGuardrailService.RegisterQuotaBlockedAsync(
-                        pathKey: "audio_paralinguistics",
-                        modality: BudgetModalities.Audio,
-                        reason: "quota_like_provider_failure",
-                        isImportScope: false,
-                        isOptionalPath: true,
-                        ct: ct);
-                }
-
-                throw new HttpRequestException($"OpenRouter error {(int)response.StatusCode}: {body}");
-            }
-
-            var parsed = JsonSerializer.Deserialize<VoiceOpenRouterResponse>(body, JsonOptions);
-            var text = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
+            var parsed = await SendCompletionRequestAsync(base64, includeResponseFormat: true, ct);
+            var text = NormalizeMessageContent(parsed?.Choices?.FirstOrDefault()?.Message?.Content).Trim();
             if (string.IsNullOrWhiteSpace(text))
             {
                 throw new InvalidOperationException("Empty voice paralinguistics response");
             }
 
             await TryLogUsageAsync(parsed?.Usage, ct);
+            if (TryNormalizePayload(text, out var payloadJson))
+            {
+                return payloadJson;
+            }
 
-            var sanitized = TryExtractJson(text);
-            using var doc = JsonDocument.Parse(sanitized);
-            var normalized = NormalizePayload(doc.RootElement);
-            return JsonSerializer.Serialize(normalized, JsonOptions);
+            _logger.LogInformation(
+                "Voice paralinguistics response was non-JSON for model={Model}; using conservative fallback payload.",
+                _settings.Model);
+            return BuildFallbackPayload(text);
         }
         finally
         {
@@ -224,6 +187,238 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         return raw;
     }
 
+    private static bool TryNormalizePayload(string rawResponse, out string payloadJson)
+    {
+        payloadJson = string.Empty;
+        var sanitized = TryExtractJson(rawResponse);
+        if (!sanitized.Contains('{'))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(sanitized);
+            var normalized = NormalizePayload(doc.RootElement);
+            payloadJson = JsonSerializer.Serialize(normalized, JsonOptions);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string BuildFallbackPayload(string rawResponse)
+    {
+        var compact = CollapseWhitespace(rawResponse);
+        var primary = TryInferEmotionFromText(compact);
+        var confidence = 0.2f;
+        var evidence = string.IsNullOrWhiteSpace(compact)
+            ? new List<string>()
+            : new List<string> { compact.Length > 220 ? compact[..220] : compact };
+        var fallback = new
+        {
+            primary_emotion = primary,
+            secondary_emotion = "neutral",
+            valence = primary is "anger" or "sadness" or "fear" ? -0.15f : 0f,
+            arousal = primary is "anger" or "excitement" ? 0.45f : 0.3f,
+            dominance = 0.3f,
+            sarcasm_probability = TryParseFloatToken(compact, "sarcasm_probability"),
+            confidence,
+            evidence
+        };
+
+        return JsonSerializer.Serialize(fallback, JsonOptions);
+    }
+
+    private static string TryInferEmotionFromText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "neutral";
+        }
+
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("anger") || lower.Contains("angry") || lower.Contains("зл"))
+        {
+            return "anger";
+        }
+
+        if (lower.Contains("sad") || lower.Contains("sadness") || lower.Contains("груст"))
+        {
+            return "sadness";
+        }
+
+        if (lower.Contains("fear") || lower.Contains("anxiety") || lower.Contains("трев"))
+        {
+            return "fear";
+        }
+
+        if (lower.Contains("joy") || lower.Contains("happy") || lower.Contains("радост"))
+        {
+            return "joy";
+        }
+
+        if (lower.Contains("sarcas") || lower.Contains("сарказ"))
+        {
+            return "sarcasm";
+        }
+
+        return "neutral";
+    }
+
+    private static float TryParseFloatToken(string text, string tokenName)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0f;
+        }
+
+        var pattern = $@"{Regex.Escape(tokenName)}\s*[:=]\s*(?<num>-?\d+(?:[.,]\d+)?)";
+        var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            return 0f;
+        }
+
+        var raw = match.Groups["num"].Value.Replace(',', '.');
+        return float.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? Clamp(value, 0f, 1f)
+            : 0f;
+    }
+
+    private static string CollapseWhitespace(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    private static string NormalizeMessageContent(object? content)
+    {
+        if (content == null)
+        {
+            return string.Empty;
+        }
+
+        if (content is string text)
+        {
+            return text;
+        }
+
+        if (content is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                return element.GetString() ?? string.Empty;
+            }
+
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                var parts = element.EnumerateArray()
+                    .Select(part =>
+                    {
+                        if (part.ValueKind == JsonValueKind.String)
+                        {
+                            return part.GetString() ?? string.Empty;
+                        }
+
+                        if (part.ValueKind == JsonValueKind.Object &&
+                            part.TryGetProperty("text", out var textNode) &&
+                            textNode.ValueKind == JsonValueKind.String)
+                        {
+                            return textNode.GetString() ?? string.Empty;
+                        }
+
+                        return string.Empty;
+                    })
+                    .Where(part => !string.IsNullOrWhiteSpace(part));
+
+                return string.Join('\n', parts);
+            }
+
+            if (element.ValueKind == JsonValueKind.Object &&
+                element.TryGetProperty("text", out var objectTextNode) &&
+                objectTextNode.ValueKind == JsonValueKind.String)
+            {
+                return objectTextNode.GetString() ?? string.Empty;
+            }
+        }
+
+        return content.ToString() ?? string.Empty;
+    }
+
+    private async Task<VoiceOpenRouterResponse?> SendCompletionRequestAsync(string base64Audio, bool includeResponseFormat, CancellationToken ct)
+    {
+        var request = new VoiceOpenRouterRequest
+        {
+            Model = _settings.Model,
+            MaxTokens = _settings.MaxTokens,
+            ResponseFormat = includeResponseFormat
+                ? new VoiceOpenRouterResponseFormat { Type = "json_object" }
+                : null,
+            Messages = new[]
+            {
+                new VoiceOpenRouterMessage
+                {
+                    Role = "user",
+                    Content = new object[]
+                    {
+                        new { type = "input_audio", input_audio = new { data = base64Audio, format = "wav" } },
+                        new
+                        {
+                            type = "text",
+                            text =
+                                "Return strict JSON only: {\"primary_emotion\":\"...\",\"secondary_emotion\":\"...\",\"valence\":-1..1,\"arousal\":0..1,\"dominance\":0..1,\"sarcasm_probability\":0..1,\"confidence\":0..1,\"evidence\":[\"...\"]}. Analyze tone/prosody/tempo/pauses/intensity from audio signal, not lexical meaning."
+                        }
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(request, JsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _http.PostAsync("/api/v1/chat/completions", content, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            if (includeResponseFormat && IsUnsupportedResponseFormatError(response.StatusCode, body))
+            {
+                _logger.LogWarning(
+                    "Voice model {Model} does not support response_format=json_object, retrying without response_format.",
+                    _settings.Model);
+                return await SendCompletionRequestAsync(base64Audio, includeResponseFormat: false, ct);
+            }
+
+            if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, body))
+            {
+                await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                    pathKey: "audio_paralinguistics",
+                    modality: BudgetModalities.Audio,
+                    reason: "quota_like_provider_failure",
+                    isImportScope: false,
+                    isOptionalPath: true,
+                    ct: ct);
+            }
+
+            throw new HttpRequestException($"OpenRouter error {(int)response.StatusCode}: {body}");
+        }
+
+        return JsonSerializer.Deserialize<VoiceOpenRouterResponse>(body, JsonOptions);
+    }
+
+    private static bool IsUnsupportedResponseFormatError(HttpStatusCode statusCode, string body)
+    {
+        return statusCode == HttpStatusCode.BadRequest
+               && body.Contains("response_format", StringComparison.OrdinalIgnoreCase)
+               && body.Contains("not supported", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static async Task ConvertToWavAsync(string inputPath, string outputPath, CancellationToken ct)
     {
         await RunFfmpegAsync($"-i \"{inputPath}\" -ar 16000 -ac 1 -f wav \"{outputPath}\" -y", ct);
@@ -285,6 +480,12 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         public string Model { get; set; } = string.Empty;
         public VoiceOpenRouterMessage[] Messages { get; set; } = Array.Empty<VoiceOpenRouterMessage>();
         public int? MaxTokens { get; set; }
+        public VoiceOpenRouterResponseFormat? ResponseFormat { get; set; }
+    }
+
+    private sealed class VoiceOpenRouterResponseFormat
+    {
+        public string Type { get; set; } = "json_object";
     }
 
     private sealed class VoiceOpenRouterMessage
@@ -306,7 +507,7 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
 
     private sealed class VoiceOpenRouterResponseMessage
     {
-        public string? Content { get; set; }
+        public object? Content { get; set; }
     }
 
     private sealed class VoiceOpenRouterUsage

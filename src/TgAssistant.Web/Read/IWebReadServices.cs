@@ -10,6 +10,7 @@ public interface IWebReadService
     Task<ClarificationsReadModel> GetClarificationsAsync(WebReadRequest request, CancellationToken ct = default);
     Task<StrategyReadModel> GetStrategyAsync(WebReadRequest request, CancellationToken ct = default);
     Task<DraftsReviewsReadModel> GetDraftsReviewsAsync(WebReadRequest request, CancellationToken ct = default);
+    Task<OutcomeTrailReadModel> GetOutcomeTrailAsync(WebReadRequest request, CancellationToken ct = default);
     Task<OfflineEventsReadModel> GetOfflineEventsAsync(WebReadRequest request, CancellationToken ct = default);
 }
 
@@ -53,6 +54,20 @@ public interface IWebOpsService
     Task<RecentChangesReadModel> GetRecentChangesAsync(
         WebReadRequest request,
         int limit = 8,
+        CancellationToken ct = default);
+
+    Task<BudgetOperationalReadModel> GetBudgetOperationalStateAsync(CancellationToken ct = default);
+
+    Task<EvalRunsReadModel> GetEvalRunsAsync(
+        string? runName = null,
+        Guid? runId = null,
+        int limit = 10,
+        CancellationToken ct = default);
+
+    Task<AbScenarioCandidatePoolReadModel> GetAbScenarioCandidatesAsync(
+        WebReadRequest request,
+        int targetCount = 30,
+        string? bucket = null,
         CancellationToken ct = default);
 }
 

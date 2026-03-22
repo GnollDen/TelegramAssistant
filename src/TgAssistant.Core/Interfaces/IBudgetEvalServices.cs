@@ -18,4 +18,7 @@ public interface IBudgetGuardrailService
 public interface IEvalHarnessService
 {
     Task<EvalRunResult> RunAsync(EvalRunRequest request, CancellationToken ct = default);
+    Task RegisterExperimentDefinitionAsync(EvalExperimentDefinition definition, CancellationToken ct = default);
+    Task<List<EvalExperimentDefinition>> GetExperimentDefinitionsAsync(CancellationToken ct = default);
+    Task<EvalExperimentRunComparisonResult> RunExperimentComparisonAsync(EvalExperimentRunComparisonRequest request, CancellationToken ct = default);
 }

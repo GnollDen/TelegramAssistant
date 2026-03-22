@@ -107,6 +107,19 @@ public class WebReadVerificationService
         AssertNonEmptyRoute(rendered, "/network", "Network");
         AssertNonEmptyRoute(rendered, "/profiles", "Profiles");
         AssertNonEmptyRoute(rendered, "/strategy", "Strategy");
+        AssertNonEmptyRoute(rendered, "/outcomes", "Outcome Trail");
+        AssertNonEmptyRoute(rendered, "/outcomes", "Chain visibility");
+        AssertNonEmptyRoute(rendered, "/ops-budget", "Ops Budget");
+        AssertNonEmptyRoute(rendered, "/ops-eval", "Ops Eval");
+        AssertNonEmptyRoute(rendered, "/ops-ab-candidates", "Ops A/B Scenario Candidates");
+        AssertNonEmptyRoute(rendered, "/dashboard", "Open budget view");
+
+        var focusedOutcome = await _webRouteRenderer.RenderAsync($"/outcomes?outcomeId={Guid.NewGuid()}", request, ct)
+            ?? throw new InvalidOperationException("Web smoke failed: focused /outcomes route did not resolve.");
+        if (!focusedOutcome.Html.Contains("No outcome chain items matched this view yet.", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Web smoke failed: focused /outcomes empty state did not render.");
+        }
 
         _ = rendered.Count;
     }
