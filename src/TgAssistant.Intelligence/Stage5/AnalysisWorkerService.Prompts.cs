@@ -194,6 +194,9 @@ Requirements:
 - if `[HISTORICAL_CONTEXT_HINTS]` is present, use it only as supporting continuity/disambiguation context; if it conflicts with current-session messages, trust the current session
 - avoid filler, jokes, and generic chatter unless it changes intent or relationship dynamics
 - keep it factual and concise (4-8 sentences)
+- prefer concrete observed actions/messages over relational interpretations
+- if evidence for relationship interpretation is weak or ambiguous, state uncertainty explicitly and avoid strong labels
+- avoid truncation-like endings and ellipsis-only conclusions; return complete compact sentences
 - no markdown, no extra fields
 CRITICAL: The summary MUST be in Russian. Even if the input is short or contains slang, provide a Russian response. Latin-only output is strictly forbidden.
 """;

@@ -6,17 +6,41 @@ namespace TgAssistant.Web.Read;
 public class WebOpsVerificationService
 {
     private readonly IWebRouteRenderer _webRouteRenderer;
+    private readonly IMessageRepository _messageRepository;
+    private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IInboxConflictRepository _inboxConflictRepository;
+    private readonly IPeriodRepository _periodRepository;
+    private readonly IStateProfileRepository _stateProfileRepository;
+    private readonly IStrategyDraftRepository _strategyDraftRepository;
+    private readonly IOfflineEventRepository _offlineEventRepository;
+    private readonly IBudgetOpsRepository _budgetOpsRepository;
+    private readonly IEvalRepository _evalRepository;
 
     public WebOpsVerificationService(
         IWebRouteRenderer webRouteRenderer,
+        IMessageRepository messageRepository,
+        IChatSessionRepository chatSessionRepository,
         IClarificationRepository clarificationRepository,
-        IInboxConflictRepository inboxConflictRepository)
+        IInboxConflictRepository inboxConflictRepository,
+        IPeriodRepository periodRepository,
+        IStateProfileRepository stateProfileRepository,
+        IStrategyDraftRepository strategyDraftRepository,
+        IOfflineEventRepository offlineEventRepository,
+        IBudgetOpsRepository budgetOpsRepository,
+        IEvalRepository evalRepository)
     {
         _webRouteRenderer = webRouteRenderer;
+        _messageRepository = messageRepository;
+        _chatSessionRepository = chatSessionRepository;
         _clarificationRepository = clarificationRepository;
         _inboxConflictRepository = inboxConflictRepository;
+        _periodRepository = periodRepository;
+        _stateProfileRepository = stateProfileRepository;
+        _strategyDraftRepository = strategyDraftRepository;
+        _offlineEventRepository = offlineEventRepository;
+        _budgetOpsRepository = budgetOpsRepository;
+        _evalRepository = evalRepository;
     }
 
     public async Task RunAsync(CancellationToken ct = default)
@@ -38,6 +62,8 @@ public class WebOpsVerificationService
             SourceType = "smoke",
             SourceId = "ops_web"
         }, ct);
+
+        await SeedScenarioMinerArtifactsAsync(caseId, chatId, ct);
 
         _ = await _clarificationRepository.UpdateQuestionWorkflowAsync(
             question.Id,
@@ -61,6 +87,82 @@ public class WebOpsVerificationService
             Status = "open",
             LastActor = "ops_web_smoke",
             LastReason = "seeded"
+        }, ct);
+
+        await _budgetOpsRepository.UpsertBudgetOperationalStateAsync(new BudgetOperationalState
+        {
+            PathKey = "stage5.expensive_pass",
+            Modality = BudgetModalities.TextAnalysis,
+            State = BudgetPathStates.SoftLimited,
+            Reason = "daily_budget_soft_limit",
+            DetailsJson = "{\"daily_spent_usd\":8.5,\"daily_budget_usd\":10.0}",
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        await _budgetOpsRepository.UpsertBudgetOperationalStateAsync(new BudgetOperationalState
+        {
+            PathKey = "stage5.expensive_pass.backfill",
+            Modality = BudgetModalities.TextAnalysis,
+            State = BudgetPathStates.QuotaBlocked,
+            Reason = "external_provider_quota_exhausted",
+            DetailsJson = "{\"quota_remaining\":0,\"window_reset_minutes\":41}",
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        await _budgetOpsRepository.UpsertBudgetOperationalStateAsync(new BudgetOperationalState
+        {
+            PathKey = "stage5.deep_check",
+            Modality = BudgetModalities.TextAnalysis,
+            State = BudgetPathStates.HardPaused,
+            Reason = "manual_operator_pause",
+            DetailsJson = "{\"operator\":\"ops_web_smoke\"}",
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        var runId = Guid.NewGuid();
+        await _evalRepository.CreateRunAsync(new EvalRunResult
+        {
+            RunId = runId,
+            RunName = "ops_web_smoke",
+            Passed = true,
+            StartedAt = DateTime.UtcNow.AddMinutes(-1),
+            FinishedAt = DateTime.UtcNow,
+            Summary = "ops visibility smoke run",
+            MetricsJson = "{\"pass_rate\":1.0,\"scenarios\":1}"
+        }, ct);
+
+        var previousRunId = Guid.NewGuid();
+        await _evalRepository.CreateRunAsync(new EvalRunResult
+        {
+            RunId = previousRunId,
+            RunName = "ops_web_smoke",
+            Passed = false,
+            StartedAt = DateTime.UtcNow.AddMinutes(-16),
+            FinishedAt = DateTime.UtcNow.AddMinutes(-15),
+            Summary = "ops visibility prior run",
+            MetricsJson = "{\"pass_rate\":0.0,\"scenarios\":1}"
+        }, ct);
+
+        await _evalRepository.AddScenarioResultAsync(new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioName = "budget_visibility",
+            Passed = true,
+            Summary = "budget state visible",
+            MetricsJson = "{\"states_visible\":1}",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        await _evalRepository.AddScenarioResultAsync(new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = previousRunId,
+            ScenarioName = "budget_visibility",
+            Passed = false,
+            Summary = "previous run failed for comparison visibility",
+            MetricsJson = "{\"states_visible\":0}",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-15)
         }, ct);
 
         var request = new WebReadRequest
@@ -98,6 +200,229 @@ public class WebOpsVerificationService
             || !trailPage.Html.Contains(question.QuestionText, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: cross-link object/history path did not render clarification trail.");
+        }
+
+        var budgetPage = await _webRouteRenderer.RenderAsync("/ops-budget", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /ops-budget route did not resolve.");
+        if (string.IsNullOrWhiteSpace(budgetPage.Html)
+            || !budgetPage.Html.Contains("Ops Budget", StringComparison.OrdinalIgnoreCase)
+            || !budgetPage.Html.Contains("stage5.expensive_pass", StringComparison.OrdinalIgnoreCase)
+            || !budgetPage.Html.Contains("quota-blocked", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: /ops-budget route does not show budget states.");
+        }
+
+        var quotaBudgetPage = await _webRouteRenderer.RenderAsync("/ops-budget?state=quota_blocked", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: filtered /ops-budget route did not resolve.");
+        if (string.IsNullOrWhiteSpace(quotaBudgetPage.Html)
+            || !quotaBudgetPage.Html.Contains("external_provider_quota_exhausted", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: quota-blocked filter is not visible.");
+        }
+
+        var evalPage = await _webRouteRenderer.RenderAsync($"/ops-eval?runId={runId}", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /ops-eval route did not resolve.");
+        if (string.IsNullOrWhiteSpace(evalPage.Html)
+            || !evalPage.Html.Contains("Ops Eval", StringComparison.OrdinalIgnoreCase)
+            || !evalPage.Html.Contains("budget_visibility", StringComparison.OrdinalIgnoreCase)
+            || !evalPage.Html.Contains("Run Comparisons", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: /ops-eval route does not show eval run/scenarios.");
+        }
+
+        var failedEvalPage = await _webRouteRenderer.RenderAsync("/ops-eval?status=failed", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: filtered /ops-eval route did not resolve.");
+        if (string.IsNullOrWhiteSpace(failedEvalPage.Html)
+            || !failedEvalPage.Html.Contains("ops visibility prior run", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: failed eval filter is not visible.");
+        }
+
+        var candidatesPage = await _webRouteRenderer.RenderAsync("/ops-ab-candidates?target=24", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /ops-ab-candidates route did not resolve.");
+        if (string.IsNullOrWhiteSpace(candidatesPage.Html)
+            || !candidatesPage.Html.Contains("Ops A/B Scenario Candidates", StringComparison.OrdinalIgnoreCase)
+            || !candidatesPage.Html.Contains("candidate_id=", StringComparison.OrdinalIgnoreCase)
+            || !candidatesPage.Html.Contains("source_artifacts:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: /ops-ab-candidates route did not render candidate pool shape.");
+        }
+
+        var candidatesJsonPage = await _webRouteRenderer.RenderAsync("/ops-ab-candidates?target=24&format=json", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: json /ops-ab-candidates route did not resolve.");
+        if (string.IsNullOrWhiteSpace(candidatesJsonPage.Html)
+            || !candidatesJsonPage.Html.Contains("candidateId", StringComparison.OrdinalIgnoreCase)
+            || !candidatesJsonPage.Html.Contains("sourceArtifacts", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: /ops-ab-candidates json output is not readable/stable.");
+        }
+    }
+
+    private async Task SeedScenarioMinerArtifactsAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var baseTg = 9_710_000_000_000L + (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 100_000_000L);
+        var messages = new List<Message>();
+        for (var i = 0; i < 180; i++)
+        {
+            var ts = now.AddDays(-36).AddHours(i * 4);
+            var text = i % 11 == 0
+                ? "Need to keep this low pressure and avoid over-reading intent."
+                : (i % 7 == 0 ? "Let's coordinate timing and logistics for next week." : "Warm exchange with some ambiguity around next move.");
+            messages.Add(new Message
+            {
+                TelegramMessageId = baseTg + i,
+                ChatId = chatId,
+                SenderId = i % 2 == 0 ? 1001 : 1002,
+                SenderName = i % 2 == 0 ? "Self" : "Other",
+                Timestamp = ts,
+                Text = text,
+                ProcessingStatus = ProcessingStatus.Processed,
+                Source = MessageSource.Archive,
+                CreatedAt = now
+            });
+        }
+
+        _ = await _messageRepository.SaveBatchAsync(messages, ct);
+
+        var sessionBase = (int)(Math.Abs(now.Ticks) % 1_000_000);
+        for (var i = 0; i < 8; i++)
+        {
+            await _chatSessionRepository.UpsertAsync(new ChatSession
+            {
+                ChatId = chatId,
+                SessionIndex = sessionBase + i,
+                StartDate = now.AddDays(-36 + (i * 4)),
+                EndDate = now.AddDays(-34 + (i * 4)),
+                LastMessageAt = now.AddDays(-34 + (i * 4)),
+                Summary = i % 3 == 0 ? "ambiguous warming" : (i % 2 == 0 ? "strategy-sensitive exchange" : "logistics-heavy"),
+                IsFinalized = true,
+                IsAnalyzed = true
+            }, ct);
+        }
+
+        var createdPeriods = new List<Period>();
+        for (var i = 0; i < 5; i++)
+        {
+            var period = await _periodRepository.CreatePeriodAsync(new Period
+            {
+                CaseId = caseId,
+                ChatId = chatId,
+                Label = i switch
+                {
+                    0 => "warming",
+                    1 => "ambiguous",
+                    2 => "fragile",
+                    3 => "cooling",
+                    _ => "logistics"
+                },
+                StartAt = now.AddDays(-35 + (i * 6)),
+                EndAt = now.AddDays(-30 + (i * 6)),
+                IsOpen = i == 4,
+                Summary = i % 2 == 0
+                    ? "Signal-rich period with uncertainty and need for careful calibration."
+                    : "Period with logistics-heavy messages and sparse emotional clarity.",
+                StatusSnapshot = i % 2 == 0 ? "ambiguous" : "stable",
+                DynamicSnapshot = i % 2 == 0 ? "fragile" : "cooling",
+                ReviewPriority = (short)(3 + i),
+                SourceType = "smoke",
+                SourceId = "ops_ab_candidates"
+            }, ct);
+            createdPeriods.Add(period);
+
+            _ = await _stateProfileRepository.CreateStateSnapshotAsync(new StateSnapshot
+            {
+                CaseId = caseId,
+                ChatId = chatId,
+                PeriodId = period.Id,
+                AsOf = period.EndAt ?? period.UpdatedAt,
+                DynamicLabel = i % 2 == 0 ? "fragile" : "ambiguous",
+                RelationshipStatus = i % 2 == 0 ? "uncertain_warming" : "mixed_signal",
+                AmbiguityScore = 0.62f,
+                ExternalPressureScore = 0.55f + (i * 0.05f),
+                Confidence = 0.58f,
+                InitiativeScore = 0.45f,
+                ResponsivenessScore = 0.49f,
+                OpennessScore = 0.42f,
+                WarmthScore = 0.48f,
+                ReciprocityScore = 0.47f,
+                AvoidanceRiskScore = 0.41f,
+                EscalationReadinessScore = 0.36f,
+                SourceMessageId = null,
+                SourceSessionId = null
+            }, ct);
+        }
+
+        for (var i = 0; i < createdPeriods.Count - 1; i++)
+        {
+            _ = await _periodRepository.CreateTransitionAsync(new PeriodTransition
+            {
+                FromPeriodId = createdPeriods[i].Id,
+                ToPeriodId = createdPeriods[i + 1].Id,
+                TransitionType = i % 2 == 0 ? "warming_to_ambiguous" : "ambiguity_shift",
+                Summary = "Transition seeded for A/B candidate miner smoke.",
+                IsResolved = i % 2 == 1,
+                Confidence = 0.66f,
+                SourceType = "smoke",
+                SourceId = "ops_ab_candidates"
+            }, ct);
+        }
+
+        foreach (var period in createdPeriods.Take(4))
+        {
+            var strategy = await _strategyDraftRepository.CreateStrategyRecordAsync(new StrategyRecord
+            {
+                CaseId = caseId,
+                ChatId = chatId,
+                PeriodId = period.Id,
+                StrategyConfidence = 0.61f,
+                RecommendedGoal = "maintain low-pressure contact",
+                WhyNotOthers = "Avoid escalation due to ambiguity and pressure risk.",
+                MicroStep = "Send short warm check-in and wait for reciprocity.",
+                SourceMessageId = null,
+                SourceSessionId = null
+            }, ct);
+
+            var draft = await _strategyDraftRepository.CreateDraftRecordAsync(new DraftRecord
+            {
+                StrategyRecordId = strategy.Id,
+                MainDraft = "Hey, no rush from my side, just checking in warmly.",
+                AltDraft1 = "If timing works, we can keep this easy and short.",
+                AltDraft2 = "No pressure, I appreciate staying in touch.",
+                StyleNotes = "brief warm low-pressure",
+                Confidence = 0.62f
+            }, ct);
+
+            _ = await _strategyDraftRepository.CreateDraftOutcomeAsync(new DraftOutcome
+            {
+                DraftId = draft.Id,
+                StrategyRecordId = strategy.Id,
+                OutcomeLabel = "mixed",
+                UserOutcomeLabel = "unclear",
+                SystemOutcomeLabel = "neutral",
+                OutcomeConfidence = 0.55f,
+                MatchScore = 0.73f,
+                MatchedBy = "smoke_seed",
+                Notes = "seeded for miner chain artifacts"
+            }, ct);
+        }
+
+        foreach (var period in createdPeriods.Take(3))
+        {
+            _ = await _offlineEventRepository.CreateOfflineEventAsync(new OfflineEvent
+            {
+                CaseId = caseId,
+                ChatId = chatId,
+                PeriodId = period.Id,
+                TimestampStart = period.StartAt.AddHours(5),
+                TimestampEnd = period.StartAt.AddHours(7),
+                EventType = "meeting",
+                Title = "Short in-person meetup",
+                UserSummary = "Context adds ambiguity and pacing considerations.",
+                EvidenceRefsJson = "[\"offline:smoke-meetup\"]",
+                SourceType = "smoke",
+                SourceId = "ops_ab_candidates"
+            }, ct);
         }
     }
 }

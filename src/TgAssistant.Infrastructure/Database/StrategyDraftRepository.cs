@@ -152,7 +152,7 @@ public class StrategyDraftRepository : IStrategyDraftRepository
             UserOutcomeLabel = outcome.UserOutcomeLabel,
             SystemOutcomeLabel = outcome.SystemOutcomeLabel,
             OutcomeConfidence = outcome.OutcomeConfidence,
-            LearningSignalsJson = outcome.LearningSignalsJson,
+            LearningSignalsJson = string.IsNullOrWhiteSpace(outcome.LearningSignalsJson) ? "{}" : outcome.LearningSignalsJson,
             Notes = outcome.Notes,
             SourceSessionId = outcome.SourceSessionId,
             SourceMessageId = outcome.SourceMessageId,

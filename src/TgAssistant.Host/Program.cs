@@ -9,6 +9,7 @@ using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
+using TgAssistant.Host.Launch;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
@@ -63,6 +64,7 @@ try
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
     var externalArchiveImportArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-import-file=", StringComparison.OrdinalIgnoreCase));
@@ -96,6 +98,7 @@ try
         "--stage5-smoke",
         "--budget-smoke",
         "--eval-smoke",
+        "--launch-smoke",
         "--external-archive-smoke",
         "--competing-context-smoke"
     };
@@ -294,6 +297,7 @@ try
             services.AddSingleton<IEvalHarnessService, EvalHarnessService>();
             services.AddSingleton<BudgetVerificationService>();
             services.AddSingleton<EvalVerificationService>();
+            services.AddSingleton<LaunchReadinessVerificationService>();
             services.AddSingleton<IExternalArchiveImportContractValidator, ExternalArchiveImportContractValidator>();
             services.AddSingleton<IExternalArchiveProvenanceWeightingService, ExternalArchiveProvenanceWeightingService>();
             services.AddSingleton<IExternalArchiveLinkagePlanner, ExternalArchiveLinkagePlanner>();
@@ -533,6 +537,17 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<EvalVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Eval smoke run requested via --eval-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runLaunchSmoke)
+        {
+            var hostedServices = scope.ServiceProvider.GetServices<IHostedService>().Select(x => x.GetType().Name).OrderBy(x => x).ToList();
+            Log.Information("Runtime wiring check (launch-smoke) passed. Hosted services resolved: {Count}", hostedServices.Count);
+
+            var verificationService = scope.ServiceProvider.GetRequiredService<LaunchReadinessVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Launch smoke run requested via --launch-smoke. Exiting after successful verification.");
             return;
         }
 

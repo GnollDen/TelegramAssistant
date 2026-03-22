@@ -201,6 +201,11 @@ public class WebSearchVerificationService
             throw new InvalidOperationException("Search smoke failed: seeded artifacts are missing in /search.");
         }
 
+        if (!searchPage.Html.Contains("/outcomes?", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Search smoke failed: outcome-chain deep links are missing in /search.");
+        }
+
         var filtered = await _webRouteRenderer.RenderAsync($"/search?q={token}&objectType=conflict_record", request, ct)
             ?? throw new InvalidOperationException("Search smoke failed: filtered /search route did not resolve.");
         if (!filtered.Html.Contains("conflict_record", StringComparison.OrdinalIgnoreCase)

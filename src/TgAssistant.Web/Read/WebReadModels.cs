@@ -157,6 +157,7 @@ public class ClarificationQuestionReadModel
 
 public class StrategyReadModel
 {
+    public Guid RecordId { get; set; }
     public float Confidence { get; set; }
     public string PrimarySummary { get; set; } = string.Empty;
     public string PrimaryPurpose { get; set; } = string.Empty;
@@ -219,6 +220,37 @@ public class DraftOutcomeReadModel
     public List<string> LearningSignals { get; set; } = [];
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+public class OutcomeTrailReadModel
+{
+    public int TotalOutcomesScanned { get; set; }
+    public int MissingDraftCount { get; set; }
+    public int MissingStrategyCount { get; set; }
+    public List<OutcomeChainItemReadModel> Items { get; set; } = [];
+}
+
+public class OutcomeChainItemReadModel
+{
+    public Guid OutcomeId { get; set; }
+    public DateTime OutcomeCreatedAt { get; set; }
+    public Guid? StrategyRecordId { get; set; }
+    public DateTime? StrategyCreatedAt { get; set; }
+    public string StrategySummary { get; set; } = string.Empty;
+    public Guid DraftId { get; set; }
+    public DateTime? DraftCreatedAt { get; set; }
+    public string DraftSnippet { get; set; } = string.Empty;
+    public long? ActualMessageId { get; set; }
+    public string? ActualMessageSnippet { get; set; }
+    public long? FollowUpMessageId { get; set; }
+    public string? FollowUpMessageSnippet { get; set; }
+    public float? MatchScore { get; set; }
+    public string MatchedBy { get; set; } = string.Empty;
+    public string OutcomeLabel { get; set; } = string.Empty;
+    public string? UserOutcomeLabel { get; set; }
+    public string? SystemOutcomeLabel { get; set; }
+    public float? OutcomeConfidence { get; set; }
+    public List<string> LearningSignals { get; set; } = [];
 }
 
 public class OfflineEventsReadModel

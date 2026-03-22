@@ -13,6 +13,7 @@ namespace TgAssistant.Telegram.Listener;
 public class TelegramListenerService : BackgroundService
 {
     private readonly TelegramSettings _settings;
+    private readonly BackfillSettings _backfillSettings;
     private readonly MediaSettings _mediaSettings;
     private readonly IMessageQueue _queue;
     private readonly IMessageRepository _messageRepository;
@@ -22,12 +23,14 @@ public class TelegramListenerService : BackgroundService
 
     public TelegramListenerService(
         IOptions<TelegramSettings> settings,
+        IOptions<BackfillSettings> backfillSettings,
         IOptions<MediaSettings> mediaSettings,
         IMessageQueue queue,
         IMessageRepository messageRepository,
         ILogger<TelegramListenerService> logger)
     {
         _settings = settings.Value;
+        _backfillSettings = backfillSettings.Value;
         _mediaSettings = mediaSettings.Value;
         _queue = queue;
         _messageRepository = messageRepository;
@@ -36,6 +39,12 @@ public class TelegramListenerService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_backfillSettings.Enabled)
+        {
+            _logger.LogInformation("Telegram listener skipped because history backfill mode is enabled.");
+            return;
+        }
+
         _logger.LogInformation("Telegram listener starting...");
         _logger.LogInformation("Monitoring {Count} chats: {Chats}",
             _settings.MonitoredChatIds.Count,

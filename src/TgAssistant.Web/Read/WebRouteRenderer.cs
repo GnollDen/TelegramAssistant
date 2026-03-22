@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace TgAssistant.Web.Read;
 
@@ -19,8 +20,12 @@ public class WebRouteRenderer : IWebRouteRenderer
         "/clarifications",
         "/strategy",
         "/drafts-reviews",
+        "/outcomes",
         "/offline-events",
-        "/review"
+        "/review",
+        "/ops-budget",
+        "/ops-eval",
+        "/ops-ab-candidates"
     ];
 
     private readonly IWebReadService _webReadService;
@@ -53,7 +58,9 @@ public class WebRouteRenderer : IWebRouteRenderer
                 Title = "Dashboard",
                 Html = RenderDashboard(
                     await _webReadService.GetDashboardAsync(request, ct),
-                    await _webOpsService.GetRecentChangesAsync(request, 6, ct))
+                    await _webOpsService.GetRecentChangesAsync(request, 6, ct),
+                    await _webOpsService.GetBudgetOperationalStateAsync(ct),
+                    await _webOpsService.GetEvalRunsAsync(limit: 3, ct: ct))
             },
             "/search" => new WebRenderResult { Route = path, Title = "Search", Html = RenderSearch(await ExecuteSearchAsync(request, query, ct)) },
             "/dossier" => new WebRenderResult { Route = path, Title = "Dossier", Html = RenderDossier(await _webSearchService.GetDossierAsync(request, 30, ct)) },
@@ -70,10 +77,14 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/clarifications" => new WebRenderResult { Route = path, Title = "Clarifications", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
             "/strategy" => new WebRenderResult { Route = path, Title = "Strategy", Html = RenderStrategy(await _webReadService.GetStrategyAsync(request, ct)) },
             "/drafts-reviews" => new WebRenderResult { Route = path, Title = "Drafts / Reviews", Html = RenderDraftsReviews(await _webReadService.GetDraftsReviewsAsync(request, ct)) },
+            "/outcomes" => new WebRenderResult { Route = path, Title = "Outcome Trail", Html = RenderOutcomeTrail(await ExecuteOutcomeTrailReadAsync(request, query, ct)) },
             "/offline-events" => new WebRenderResult { Route = path, Title = "Offline Events", Html = RenderOfflineEvents(await _webReadService.GetOfflineEventsAsync(request, ct)) },
             "/review" => new WebRenderResult { Route = path, Title = "Review", Html = RenderReviewBoard(await _webReviewService.GetBoardAsync(request, ct), request) },
             "/review-action" => new WebRenderResult { Route = path, Title = "Review Action", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request) },
             "/review-edit-period" => new WebRenderResult { Route = path, Title = "Edit Period", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request) },
+            "/ops-budget" => new WebRenderResult { Route = path, Title = "Ops Budget", Html = RenderOpsBudget(await ExecuteOpsBudgetReadAsync(query, ct), query) },
+            "/ops-eval" => new WebRenderResult { Route = path, Title = "Ops Eval", Html = RenderOpsEval(await ExecuteOpsEvalReadAsync(query, ct), query) },
+            "/ops-ab-candidates" => new WebRenderResult { Route = path, Title = "Ops A/B Candidates", Html = RenderOpsAbCandidates(await ExecuteOpsAbCandidatesReadAsync(request, query, ct), query) },
             _ => null
         };
     }
@@ -201,13 +212,113 @@ public class WebRouteRenderer : IWebRouteRenderer
         }, ct);
     }
 
-    private static string RenderDashboard(DashboardReadModel model, RecentChangesReadModel recentChanges)
+    private async Task<EvalRunsReadModel> ExecuteOpsEvalReadAsync(IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        var limit = 10;
+        if (int.TryParse(GetQuery(query, "limit"), out var parsedLimit))
+        {
+            limit = Math.Clamp(parsedLimit, 1, 30);
+        }
+
+        Guid? runId = null;
+        var runIdRaw = EmptyToNull(GetQuery(query, "runId"));
+        if (!string.IsNullOrWhiteSpace(runIdRaw) && Guid.TryParse(runIdRaw, out var parsedRunId))
+        {
+            runId = parsedRunId;
+        }
+
+        return await _webOpsService.GetEvalRunsAsync(
+            runName: EmptyToNull(GetQuery(query, "runName")),
+            runId: runId,
+            limit: limit,
+            ct: ct);
+    }
+
+    private async Task<BudgetOperationalReadModel> ExecuteOpsBudgetReadAsync(IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        var model = await _webOpsService.GetBudgetOperationalStateAsync(ct);
+        var stateFilter = EmptyToNull(GetQuery(query, "state"));
+        var pathFilter = EmptyToNull(GetQuery(query, "path"));
+        if (string.IsNullOrWhiteSpace(stateFilter) && string.IsNullOrWhiteSpace(pathFilter))
+        {
+            return model;
+        }
+
+        var filtered = model.States
+            .Where(x => MatchesBudgetStateFilter(x, stateFilter))
+            .Where(x => string.IsNullOrWhiteSpace(pathFilter)
+                        || x.PathKey.Contains(pathFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return BuildBudgetAggregate(filtered, model.GeneratedAtUtc);
+    }
+
+    private async Task<AbScenarioCandidatePoolReadModel> ExecuteOpsAbCandidatesReadAsync(
+        WebReadRequest request,
+        IReadOnlyDictionary<string, string> query,
+        CancellationToken ct)
+    {
+        var target = 30;
+        if (int.TryParse(GetQuery(query, "target"), out var parsedTarget))
+        {
+            target = Math.Clamp(parsedTarget, 20, 40);
+        }
+
+        return await _webOpsService.GetAbScenarioCandidatesAsync(
+            request,
+            targetCount: target,
+            bucket: EmptyToNull(GetQuery(query, "bucket")),
+            ct: ct);
+    }
+
+    private async Task<OutcomeTrailReadModel> ExecuteOutcomeTrailReadAsync(
+        WebReadRequest request,
+        IReadOnlyDictionary<string, string> query,
+        CancellationToken ct)
+    {
+        var model = await _webReadService.GetOutcomeTrailAsync(request, ct);
+        var strategyRecordId = ParseGuidQuery(query, "strategyRecordId");
+        var draftId = ParseGuidQuery(query, "draftId");
+        var outcomeId = ParseGuidQuery(query, "outcomeId");
+
+        if (!strategyRecordId.HasValue && !draftId.HasValue && !outcomeId.HasValue)
+        {
+            return model;
+        }
+
+        var filteredItems = model.Items
+            .Where(x => !strategyRecordId.HasValue || x.StrategyRecordId == strategyRecordId.Value)
+            .Where(x => !draftId.HasValue || x.DraftId == draftId.Value)
+            .Where(x => !outcomeId.HasValue || x.OutcomeId == outcomeId.Value)
+            .ToList();
+
+        return new OutcomeTrailReadModel
+        {
+            TotalOutcomesScanned = model.TotalOutcomesScanned,
+            MissingDraftCount = model.MissingDraftCount,
+            MissingStrategyCount = model.MissingStrategyCount,
+            Items = filteredItems
+        };
+    }
+
+    private static string RenderDashboard(
+        DashboardReadModel model,
+        RecentChangesReadModel recentChanges,
+        BudgetOperationalReadModel budgetModel,
+        EvalRunsReadModel evalModel)
     {
         var sb = CreateShell("Dashboard");
         sb.AppendLine("<h1>Dashboard</h1>");
         sb.AppendLine($"<section><h2>Current State</h2><p><strong>{E(model.CurrentState.DynamicLabel)}</strong> / {E(model.CurrentState.RelationshipStatus)} (conf {model.CurrentState.Confidence:0.00})</p></section>");
         sb.AppendLine($"<section><h2>Next Step</h2><p>{E(model.Strategy.PrimarySummary)}</p><p>micro-step: {E(model.Strategy.MicroStep)}</p></section>");
         sb.AppendLine($"<section><h2>Open Clarifications</h2><p>open: {model.Clarifications.OpenCount}</p></section>");
+        sb.AppendLine("<section><h2>Ops Visibility</h2>");
+        sb.AppendLine($"<p>budget health: <strong>{E(budgetModel.OperationalStatus)}</strong></p>");
+        sb.AppendLine($"<p>budget paths: total={budgetModel.TotalPaths}, active={budgetModel.ActivePaths}, degraded={budgetModel.DegradedPaths}, paused={budgetModel.PausedPaths}, quota-blocked={budgetModel.QuotaBlockedPaths}</p>");
+        sb.AppendLine($"<p>eval health: <strong>{E(evalModel.OperationalStatus)}</strong></p>");
+        sb.AppendLine($"<p>latest eval runs: total={evalModel.TotalRuns}, passed={evalModel.PassedRuns}, failed={evalModel.FailedRuns}, comparable-series={evalModel.Comparisons.Count}</p>");
+        sb.AppendLine("<p><a href='/ops-budget'>Open budget view</a> | <a href='/ops-budget?state=quota_blocked'>Quota-blocked paths</a> | <a href='/ops-budget?state=hard_paused'>Paused paths</a> | <a href='/ops-eval'>Open eval view</a> | <a href='/ops-eval?status=failed'>Failed eval runs</a> | <a href='/ops-eval?compare=1'>Run comparisons</a> | <a href='/ops-ab-candidates'>A/B scenario candidates</a></p>");
+        sb.AppendLine("</section>");
         sb.AppendLine("<section><h2>Recent Changes</h2>");
         foreach (var evt in recentChanges.Items.Take(5))
         {
@@ -309,10 +420,18 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("History");
         sb.AppendLine("<h1>History / Activity</h1>");
+        sb.AppendLine("<p><a href='/outcomes'>Outcome trail</a> | <a href='/ops-budget'>Budget visibility</a> | <a href='/ops-eval'>Eval visibility</a></p>");
+        sb.AppendLine("<p><a href='/history?action=comparison_completed'>Experiment comparisons</a> | <a href='/history?objectType=draft_outcome'>Outcome events</a> | <a href='/history?objectType=inbox_item'>Inbox events</a></p>");
         foreach (var evt in model.Events)
         {
             var trailLink = $"/history-object?objectType={UrlEncode(evt.ObjectType)}&objectId={UrlEncode(evt.ObjectId)}";
-            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.ObjectType)} | {E(evt.Action)} | <a href='{E(trailLink)}'>trail</a></div>");
+            var chainLink = BuildOutcomeFocusLink(evt.ObjectType, evt.ObjectId);
+            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.ObjectType)} | {E(evt.Action)} | <a href='{E(trailLink)}'>trail</a>{RenderOptionalLink(chainLink, "outcome-chain")}</div>");
+        }
+
+        if (model.Events.Count == 0)
+        {
+            sb.AppendLine("<p>No history events yet for this filter.</p>");
         }
 
         return CloseShell(sb);
@@ -327,6 +446,17 @@ public class WebRouteRenderer : IWebRouteRenderer
         foreach (var evt in model.Events.OrderByDescending(x => x.CreatedAt))
         {
             sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.Action)} | {E(evt.Summary)}</div>");
+        }
+
+        if (TryBuildOutcomeTrailLink(model.ObjectType, out var linkedRoute))
+        {
+            var focused = BuildOutcomeFocusLink(model.ObjectType, model.ObjectId) ?? linkedRoute;
+            sb.AppendLine($"<p><a href='{E(focused)}'>open linked outcome trail</a></p>");
+        }
+
+        if (model.Events.Count == 0)
+        {
+            sb.AppendLine("<p>No object history events found yet.</p>");
         }
 
         sb.AppendLine($"<p>case={request.CaseId}, chat={request.ChatId}</p>");
@@ -482,6 +612,7 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Strategy");
         sb.AppendLine("<h1>Strategy</h1>");
+        sb.AppendLine($"<p>record: {E(model.RecordId.ToString())}</p>");
         sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
         sb.AppendLine($"<h2>Primary</h2><p>{E(model.PrimarySummary)}</p><p>purpose: {E(model.PrimaryPurpose)}</p>");
         sb.AppendLine($"<p>risks: {E(string.Join(", ", model.PrimaryRisks))}</p>");
@@ -498,6 +629,9 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
 
         sb.AppendLine($"<h2>Why Not</h2><p>{E(model.WhyNotNotes)}</p>");
+        var strategyTrail = $"/history-object?objectType=strategy_record&objectId={UrlEncode(model.RecordId.ToString())}";
+        var chainFocus = $"/outcomes?strategyRecordId={UrlEncode(model.RecordId.ToString())}";
+        sb.AppendLine($"<p><a href='{E(chainFocus)}'>Open outcome trail for this strategy</a> | <a href='{E(strategyTrail)}'>strategy history trail</a></p>");
         return CloseShell(sb);
     }
 
@@ -512,6 +646,13 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p>alt 1: {E(model.LatestDraft.AltDraft1 ?? "-")}</p>");
             sb.AppendLine($"<p>alt 2: {E(model.LatestDraft.AltDraft2 ?? "-")}</p>");
             sb.AppendLine($"<p>style: {E(model.LatestDraft.StyleNotes ?? "-")}</p>");
+            var draftTrail = $"/history-object?objectType=draft_record&objectId={UrlEncode(model.LatestDraft.Id.ToString())}";
+            var draftChain = $"/outcomes?draftId={UrlEncode(model.LatestDraft.Id.ToString())}";
+            sb.AppendLine($"<p><a href='{E(draftTrail)}'>draft history trail</a> | <a href='{E(draftChain)}'>outcome chain for draft</a></p>");
+        }
+        else
+        {
+            sb.AppendLine("<p>No drafts yet. Generate or import a draft to build an outcome chain.</p>");
         }
 
         if (model.LatestReview != null)
@@ -522,15 +663,75 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p>safer rewrite: {E(model.LatestReview.SaferRewrite)}</p>");
             sb.AppendLine($"<p>more natural rewrite: {E(model.LatestReview.NaturalRewrite)}</p>");
         }
+        else
+        {
+            sb.AppendLine("<p>No review snapshot yet.</p>");
+        }
 
         if (model.LatestOutcome != null)
         {
             sb.AppendLine($"<h2>Latest Outcome ({model.LatestOutcome.CreatedAt:yyyy-MM-dd HH:mm})</h2>");
             sb.AppendLine($"<p>strategy: {E(model.LatestOutcome.StrategyRecordId?.ToString() ?? "-")} | draft: {E(model.LatestOutcome.DraftId.ToString())}</p>");
             sb.AppendLine($"<p>actual message: {E(model.LatestOutcome.ActualMessageId?.ToString() ?? "-")} | follow-up: {E(model.LatestOutcome.FollowUpMessageId?.ToString() ?? "-")}</p>");
-            sb.AppendLine($"<p>label: {E(model.LatestOutcome.OutcomeLabel)} (user={E(model.LatestOutcome.UserOutcomeLabel ?? "-")}, system={E(model.LatestOutcome.SystemOutcomeLabel ?? "-")}, conf={(model.LatestOutcome.OutcomeConfidence ?? 0f):0.00})</p>");
+            sb.AppendLine($"<p>user outcome: {E(model.LatestOutcome.UserOutcomeLabel ?? "-")} | system outcome: {E(model.LatestOutcome.SystemOutcomeLabel ?? "-")}</p>");
+            sb.AppendLine($"<p>final merged outcome: {E(model.LatestOutcome.OutcomeLabel)} | conf={(model.LatestOutcome.OutcomeConfidence ?? 0f):0.00}</p>");
             sb.AppendLine($"<p>match: {(model.LatestOutcome.MatchScore ?? 0f):0.00} via {E(model.LatestOutcome.MatchedBy)}</p>");
-            sb.AppendLine($"<p>signals: {E(string.Join("; ", model.LatestOutcome.LearningSignals))}</p>");
+            sb.AppendLine($"<p>signals: {E(model.LatestOutcome.LearningSignals.Count == 0 ? "no learning signals captured yet" : string.Join("; ", model.LatestOutcome.LearningSignals))}</p>");
+            var outcomeTrail = $"/history-object?objectType=draft_outcome&objectId={UrlEncode(model.LatestOutcome.Id.ToString())}";
+            var chainFocus = $"/outcomes?outcomeId={UrlEncode(model.LatestOutcome.Id.ToString())}";
+            sb.AppendLine($"<p><a href='{E(outcomeTrail)}'>outcome history trail</a> | <a href='{E(chainFocus)}'>focused chain view</a></p>");
+        }
+        else
+        {
+            sb.AppendLine("<p>No outcome recorded yet for latest draft/strategy chain.</p>");
+        }
+
+        sb.AppendLine("<p><a href='/outcomes'>Open full outcome trail</a></p>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderOutcomeTrail(OutcomeTrailReadModel model)
+    {
+        var sb = CreateShell("Outcome Trail");
+        sb.AppendLine("<h1>Outcome Trail</h1>");
+        sb.AppendLine("<p>Chain visibility: strategy -> draft -> actual action -> outcome.</p>");
+        sb.AppendLine($"<p>scanned outcomes: {model.TotalOutcomesScanned} | rendered chain items: {model.Items.Count}</p>");
+        if (model.MissingDraftCount > 0 || model.MissingStrategyCount > 0)
+        {
+            sb.AppendLine($"<p>integrity warnings: missing_draft={model.MissingDraftCount}, missing_strategy={model.MissingStrategyCount}. Some outcomes are not fully linkable yet.</p>");
+        }
+
+        foreach (var item in model.Items)
+        {
+            var strategyId = item.StrategyRecordId?.ToString() ?? "-";
+            var strategyTrail = item.StrategyRecordId.HasValue
+                ? $"/history-object?objectType=strategy_record&objectId={UrlEncode(item.StrategyRecordId.Value.ToString())}"
+                : string.Empty;
+            var draftTrail = $"/history-object?objectType=draft_record&objectId={UrlEncode(item.DraftId.ToString())}";
+            var outcomeTrail = $"/history-object?objectType=draft_outcome&objectId={UrlEncode(item.OutcomeId.ToString())}";
+            var strategyFocus = item.StrategyRecordId.HasValue
+                ? $"/outcomes?strategyRecordId={UrlEncode(item.StrategyRecordId.Value.ToString())}"
+                : string.Empty;
+            var draftFocus = $"/outcomes?draftId={UrlEncode(item.DraftId.ToString())}";
+
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>Outcome {E(item.OutcomeId.ToString())}</h3>");
+            sb.AppendLine($"<p>time: {item.OutcomeCreatedAt:yyyy-MM-dd HH:mm} | final merged outcome: {E(item.OutcomeLabel)} | confidence: {(item.OutcomeConfidence ?? 0f):0.00}</p>");
+            sb.AppendLine($"<p>user outcome: {E(item.UserOutcomeLabel ?? "-")} | system outcome: {E(item.SystemOutcomeLabel ?? "-")}</p>");
+            sb.AppendLine($"<p><strong>strategy</strong>: {E(strategyId)} | {E(item.StrategySummary)} {RenderOptionalLink(strategyTrail, "history")} {RenderOptionalLink(strategyFocus, "focus")}</p>");
+            sb.AppendLine($"<p><strong>draft</strong>: {E(item.DraftId.ToString())} | {E(item.DraftSnippet)} | <a href='{E(draftTrail)}'>history</a> | <a href='{E(draftFocus)}'>focus</a></p>");
+            sb.AppendLine($"<p><strong>actual action</strong>: {E(item.ActualMessageId?.ToString() ?? "-")} | {E(item.ActualMessageSnippet ?? "-")}</p>");
+            sb.AppendLine($"<p><strong>follow-up</strong>: {E(item.FollowUpMessageId?.ToString() ?? "-")} | {E(item.FollowUpMessageSnippet ?? "-")}</p>");
+            sb.AppendLine($"<p><strong>matching</strong>: {(item.MatchScore ?? 0f):0.00} via {E(item.MatchedBy)}</p>");
+            sb.AppendLine($"<p><strong>learning signals</strong>: {E(item.LearningSignals.Count == 0 ? "none" : string.Join("; ", item.LearningSignals))}</p>");
+            sb.AppendLine($"<p><a href='{E(outcomeTrail)}'>outcome history</a></p>");
+            sb.AppendLine("</article>");
+        }
+
+        if (model.Items.Count == 0)
+        {
+            sb.AppendLine("<p>No outcome chain items matched this view yet.</p>");
+            sb.AppendLine("<p>Use <a href='/strategy'>strategy</a>, <a href='/drafts-reviews'>drafts/reviews</a>, or <a href='/history'>history</a> to inspect related chain components.</p>");
         }
 
         return CloseShell(sb);
@@ -602,6 +803,192 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
+    private static string RenderOpsBudget(BudgetOperationalReadModel model, IReadOnlyDictionary<string, string> query)
+    {
+        var sb = CreateShell("Ops Budget");
+        var stateFilter = EmptyToNull(GetQuery(query, "state"));
+        var pathFilter = EmptyToNull(GetQuery(query, "path"));
+        sb.AppendLine("<h1>Ops Budget</h1>");
+        sb.AppendLine($"<p>generated: {model.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss} UTC</p>");
+        sb.AppendLine($"<p>ops status: <strong>{E(model.OperationalStatus)}</strong></p>");
+        sb.AppendLine($"<p>paths: total={model.TotalPaths}, active={model.ActivePaths}, degraded={model.DegradedPaths}, paused={model.PausedPaths}, hard-paused={model.HardPausedPaths}, quota-blocked={model.QuotaBlockedPaths}</p>");
+        sb.AppendLine($"<p>filters: state={E(stateFilter ?? "-")} path={E(pathFilter ?? "-")}</p>");
+        sb.AppendLine("<p><a href='/ops-budget'>All paths</a> | <a href='/ops-budget?state=quota_blocked'>Quota-blocked</a> | <a href='/ops-budget?state=hard_paused'>Hard paused</a> | <a href='/ops-budget?state=soft_limited'>Degraded</a> | <a href='/ops-budget?state=active'>Active</a></p>");
+
+        foreach (var row in model.States)
+        {
+            var mode = row.VisibilityMode;
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>{E(row.PathKey)}</h3>");
+            sb.AppendLine($"<p>modality={E(row.Modality)} | state={E(row.State)} | mode={E(mode)} | updated={row.UpdatedAt:yyyy-MM-dd HH:mm:ss} UTC</p>");
+            sb.AppendLine($"<p>reason: {E(row.Reason)}</p>");
+            if (row.Details.Count > 0)
+            {
+                sb.AppendLine("<p>details:</p>");
+                RenderCompactPairs(row.Details, sb);
+            }
+
+            sb.AppendLine("</article>");
+        }
+
+        if (model.States.Count == 0)
+        {
+            sb.AppendLine("<p>No budget operational states found.</p>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderOpsEval(EvalRunsReadModel model, IReadOnlyDictionary<string, string> query)
+    {
+        var statusFilter = EmptyToNull(GetQuery(query, "status"));
+        var compareOnly = string.Equals(GetQuery(query, "compare"), "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(GetQuery(query, "compare"), "true", StringComparison.OrdinalIgnoreCase);
+        var runs = model.Runs
+            .Where(x => statusFilter == null
+                        || statusFilter.Equals("all", StringComparison.OrdinalIgnoreCase)
+                        || (statusFilter.Equals("passed", StringComparison.OrdinalIgnoreCase) && x.Passed)
+                        || (statusFilter.Equals("failed", StringComparison.OrdinalIgnoreCase) && !x.Passed))
+            .ToList();
+
+        var sb = CreateShell("Ops Eval");
+        sb.AppendLine("<h1>Ops Eval</h1>");
+        sb.AppendLine($"<p>generated: {model.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss} UTC</p>");
+        sb.AppendLine($"<p>ops status: <strong>{E(model.OperationalStatus)}</strong></p>");
+        sb.AppendLine($"<p>runs: total={model.TotalRuns}, passed={model.PassedRuns}, failed={model.FailedRuns}, comparisons={model.Comparisons.Count}</p>");
+        sb.AppendLine($"<p>filter: status={E(statusFilter ?? "all")} compareOnly={compareOnly}</p>");
+        sb.AppendLine("<p><a href='/ops-eval'>All runs</a> | <a href='/ops-eval?status=failed'>Failed runs</a> | <a href='/ops-eval?status=passed'>Passed runs</a> | <a href='/ops-eval?compare=1'>Comparisons</a></p>");
+
+        if (model.Comparisons.Count > 0)
+        {
+            sb.AppendLine("<section><h2>Run Comparisons</h2>");
+            foreach (var comparison in model.Comparisons)
+            {
+                var currentLink = $"/ops-eval?runId={UrlEncode(comparison.CurrentRunId.ToString())}";
+                var previousLink = $"/ops-eval?runId={UrlEncode(comparison.PreviousRunId.ToString())}";
+                sb.AppendLine("<article>");
+                sb.AppendLine($"<h3>{E(comparison.RunName)} | {E(comparison.StatusTransition)}</h3>");
+                sb.AppendLine($"<p>status changed: {comparison.StatusChanged}</p>");
+                sb.AppendLine($"<p>scenario pass-rate: {(comparison.PreviousScenarioPassRate * 100):0.0}% -> {(comparison.CurrentScenarioPassRate * 100):0.0}% (delta {(comparison.ScenarioPassRateDelta * 100):+0.0;-0.0;0.0}pp)</p>");
+                sb.AppendLine($"<p>duration: {comparison.PreviousDurationSeconds}s -> {comparison.CurrentDurationSeconds}s (delta {comparison.DurationDeltaSeconds:+#;-#;0}s)</p>");
+                sb.AppendLine($"<p><a href='{E(currentLink)}'>open current</a> | <a href='{E(previousLink)}'>open previous</a></p>");
+                sb.AppendLine("</article>");
+            }
+
+            sb.AppendLine("</section>");
+        }
+
+        if (!compareOnly)
+        {
+            sb.AppendLine("<section><h2>Latest Runs</h2>");
+            foreach (var run in runs)
+            {
+                var status = run.Passed ? "PASS" : "FAIL";
+                var details = $"/ops-eval?runId={UrlEncode(run.RunId.ToString())}";
+                var experimentTrail = run.LinkedExperimentRunId.HasValue
+                    ? $"/history-object?objectType=eval_experiment_run&objectId={UrlEncode(run.LinkedExperimentRunId.Value.ToString())}"
+                    : string.Empty;
+                sb.AppendLine("<article>");
+                sb.AppendLine($"<h3>{E(run.RunName)} | {status} | kind={E(run.RunKind)}</h3>");
+                sb.AppendLine($"<p>run={E(run.RunId.ToString())}</p>");
+                sb.AppendLine($"<p>started={run.StartedAt:yyyy-MM-dd HH:mm:ss} UTC, finished={run.FinishedAt:yyyy-MM-dd HH:mm:ss} UTC, duration={run.DurationSeconds}s</p>");
+                sb.AppendLine($"<p>scenarios: total={run.ScenarioCount}, passed={run.ScenarioPassed}, failed={run.ScenarioFailed}</p>");
+                sb.AppendLine($"<p>summary: {E(run.Summary)}</p>");
+                if (run.Metrics.Count > 0)
+                {
+                    sb.AppendLine("<p>metrics:</p>");
+                    RenderCompactPairs(run.Metrics.Take(8), sb);
+                }
+
+                sb.AppendLine($"<p><a href='{E(details)}'>open scenario results</a>{RenderOptionalLink(experimentTrail, "experiment trail")}</p>");
+                sb.AppendLine("</article>");
+            }
+
+            if (runs.Count == 0)
+            {
+                sb.AppendLine("<p>No eval runs found for current filter.</p>");
+            }
+
+            sb.AppendLine("</section>");
+        }
+
+        if (model.SelectedRun != null)
+        {
+            var selected = model.SelectedRun;
+            sb.AppendLine("<section><h2>Selected Run Scenarios</h2>");
+            sb.AppendLine($"<p>run={E(selected.RunId.ToString())} | {E(selected.RunName)} | {(selected.Passed ? "PASS" : "FAIL")} | kind={E(selected.RunKind)}</p>");
+            foreach (var scenario in model.SelectedScenarios)
+            {
+                sb.AppendLine("<article>");
+                sb.AppendLine($"<h3>{E(scenario.ScenarioName)} | {(scenario.Passed ? "PASS" : "FAIL")}</h3>");
+                sb.AppendLine($"<p>created={scenario.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC</p>");
+                sb.AppendLine($"<p>{E(scenario.Summary)}</p>");
+                if (scenario.Metrics.Count > 0)
+                {
+                    sb.AppendLine("<p>metrics:</p>");
+                    RenderCompactPairs(scenario.Metrics.Take(8), sb);
+                }
+
+                sb.AppendLine("</article>");
+            }
+
+            if (model.SelectedScenarios.Count == 0)
+            {
+                sb.AppendLine("<p>No scenario results for selected run.</p>");
+            }
+
+            sb.AppendLine("</section>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderOpsAbCandidates(AbScenarioCandidatePoolReadModel model, IReadOnlyDictionary<string, string> query)
+    {
+        var bucket = EmptyToNull(GetQuery(query, "bucket"));
+        var target = EmptyToNull(GetQuery(query, "target")) ?? model.RequestedCount.ToString();
+        var asJson = string.Equals(GetQuery(query, "format"), "json", StringComparison.OrdinalIgnoreCase);
+
+        var sb = CreateShell("Ops A/B Candidates");
+        sb.AppendLine("<h1>Ops A/B Scenario Candidates</h1>");
+        sb.AppendLine("<p>Semi-automatic candidate miner output for bootstrap dataset; final 8-10 scenarios remain human-selected.</p>");
+        sb.AppendLine($"<p>generated: {model.GeneratedAtUtc:yyyy-MM-dd HH:mm:ss} UTC</p>");
+        sb.AppendLine($"<p>requested={model.RequestedCount}, produced={model.TotalCandidates}, bucket_filter={E(model.BucketFilter ?? "all")}</p>");
+        sb.AppendLine($"<p>buckets: state={model.StateCandidates}, strategy_draft={model.StrategyDraftCandidates}, counterexample={model.CounterexampleCandidates}</p>");
+        sb.AppendLine($"<p><a href='/ops-ab-candidates?target=30'>default</a> | <a href='/ops-ab-candidates?bucket=state&target=30'>state</a> | <a href='/ops-ab-candidates?bucket=strategy_draft&target=30'>strategy_draft</a> | <a href='/ops-ab-candidates?bucket=counterexample&target=30'>counterexample</a> | <a href='/ops-ab-candidates?target={E(target)}&bucket={E(bucket ?? string.Empty)}&format=json'>json</a></p>");
+
+        if (asJson)
+        {
+            var json = JsonSerializer.Serialize(model, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });
+            sb.AppendLine("<section><h2>JSON</h2>");
+            sb.AppendLine($"<pre>{E(json)}</pre>");
+            sb.AppendLine("</section>");
+            return CloseShell(sb);
+        }
+
+        foreach (var candidate in model.Candidates)
+        {
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>{E(candidate.Title)}</h3>");
+            sb.AppendLine($"<p>candidate_id={E(candidate.CandidateId)} | bucket={E(candidate.Bucket)}</p>");
+            sb.AppendLine($"<p>date_range={candidate.DateRange.From:yyyy-MM-dd}..{candidate.DateRange.To:yyyy-MM-dd} | chats={E(string.Join(", ", candidate.ChatIds))}</p>");
+            sb.AppendLine($"<p>message_count={candidate.MessageCount} | session_count={candidate.SessionCount}</p>");
+            sb.AppendLine($"<p>why_selected: {E(candidate.WhySelected)}</p>");
+            sb.AppendLine($"<p>risk_of_misread: {E(candidate.RiskOfMisread)}</p>");
+            sb.AppendLine($"<p>suggested_expected_state: {E(candidate.SuggestedExpectedState)}</p>");
+            sb.AppendLine($"<p>suggested_expected_risks: {E(string.Join(", ", candidate.SuggestedExpectedRisks))}</p>");
+            sb.AppendLine($"<p>source_artifacts: periods={candidate.SourceArtifacts.PeriodIds.Count}, transitions={candidate.SourceArtifacts.TransitionIds.Count}, unresolved={candidate.SourceArtifacts.UnresolvedTransitionIds.Count}, conflicts={candidate.SourceArtifacts.ConflictIds.Count}, clarifications={candidate.SourceArtifacts.ClarificationIds.Count}, snapshots={candidate.SourceArtifacts.StateSnapshotIds.Count}, strategies={candidate.SourceArtifacts.StrategyRecordIds.Count}, drafts={candidate.SourceArtifacts.DraftRecordIds.Count}, outcomes={candidate.SourceArtifacts.OutcomeIds.Count}, offline={candidate.SourceArtifacts.OfflineEventIds.Count}, network_nodes={candidate.SourceArtifacts.NetworkNodeIds.Count}, network_edges={candidate.SourceArtifacts.NetworkEdgeIds.Count}</p>");
+            sb.AppendLine("</article>");
+        }
+
+        if (model.Candidates.Count == 0)
+        {
+            sb.AppendLine("<p>No candidates found for current filter. Try /ops-ab-candidates?target=30 without bucket filter.</p>");
+        }
+
+        return CloseShell(sb);
+    }
+
     private static string RenderProfileSubject(ProfileSubjectReadModel subject)
     {
         var sb = new StringBuilder();
@@ -622,6 +1009,14 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderPeriod(TimelinePeriodReadModel period)
     {
         return $"<article><h3>{E(period.Label)}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "now")}, conf={period.InterpretationConfidence:0.00}, open_q={period.OpenQuestionsCount}</p><p>{E(period.Summary)}</p><p>evidence: {E(string.Join("; ", period.EvidenceHooks))}</p></article>";
+    }
+
+    private static void RenderCompactPairs(IEnumerable<KeyValuePair<string, string>> pairs, StringBuilder sb)
+    {
+        foreach (var pair in pairs)
+        {
+            sb.AppendLine($"<div>{E(pair.Key)}: {E(pair.Value)}</div>");
+        }
     }
 
     private static (string Path, Dictionary<string, string> Query) ParseRoute(string route)
@@ -679,6 +1074,17 @@ public class WebRouteRenderer : IWebRouteRenderer
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    private static Guid? ParseGuidQuery(IReadOnlyDictionary<string, string> query, string key)
+    {
+        var raw = EmptyToNull(GetQuery(query, key));
+        if (string.IsNullOrWhiteSpace(raw) || !Guid.TryParse(raw, out var parsed))
+        {
+            return null;
+        }
+
+        return parsed;
+    }
+
     private static StringBuilder CreateShell(string title)
     {
         var sb = new StringBuilder();
@@ -686,7 +1092,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
         sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;max-width:980px;margin:20px auto;padding:0 12px;color:#1f2937}nav a{margin-right:10px}section,article{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin:10px 0}h1,h2,h3{margin:6px 0}</style>");
         sb.AppendLine("</head><body>");
-        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Inbox</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a></nav>");
+        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Inbox</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/outcomes'>Outcomes</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a><a href='/ops-budget'>Ops Budget</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B Candidates</a></nav>");
         return sb;
     }
 
@@ -694,6 +1100,98 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         sb.AppendLine("</body></html>");
         return sb.ToString();
+    }
+
+    private static string RenderOptionalLink(string? href, string label)
+    {
+        return string.IsNullOrWhiteSpace(href)
+            ? string.Empty
+            : $"| <a href='{E(href)}'>{E(label)}</a>";
+    }
+
+    private static bool TryBuildOutcomeTrailLink(string objectType, out string route)
+    {
+        route = string.Empty;
+        if (string.IsNullOrWhiteSpace(objectType))
+        {
+            return false;
+        }
+
+        var normalized = objectType.Trim().ToLowerInvariant();
+        if (normalized is "strategy_record" or "draft_record" or "draft_outcome")
+        {
+            route = "/outcomes";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string? BuildOutcomeFocusLink(string objectType, string objectId)
+    {
+        if (string.IsNullOrWhiteSpace(objectType) || string.IsNullOrWhiteSpace(objectId))
+        {
+            return null;
+        }
+
+        var normalizedType = objectType.Trim().ToLowerInvariant();
+        return normalizedType switch
+        {
+            "strategy_record" => $"/outcomes?strategyRecordId={UrlEncode(objectId)}",
+            "draft_record" => $"/outcomes?draftId={UrlEncode(objectId)}",
+            "draft_outcome" => $"/outcomes?outcomeId={UrlEncode(objectId)}",
+            _ => null
+        };
+    }
+
+    private static bool MatchesBudgetStateFilter(BudgetOperationalStateReadModel state, string? stateFilter)
+    {
+        if (string.IsNullOrWhiteSpace(stateFilter))
+        {
+            return true;
+        }
+
+        var normalized = stateFilter.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "quota_blocked" => state.IsQuotaBlocked,
+            "hard_paused" => state.IsHardPaused,
+            "paused" => state.IsPaused,
+            "soft_limited" or "degraded" => state.IsDegraded,
+            "active" => !state.IsPaused && !state.IsDegraded,
+            _ => state.State.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static BudgetOperationalReadModel BuildBudgetAggregate(IReadOnlyCollection<BudgetOperationalStateReadModel> states, DateTime generatedAtUtc)
+    {
+        var stateList = states
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToList();
+        var paused = stateList.Count(x => x.IsPaused);
+        var degraded = stateList.Count(x => x.IsDegraded);
+        var quotaBlocked = stateList.Count(x => x.IsQuotaBlocked);
+        var hardPaused = stateList.Count(x => x.IsHardPaused);
+        var status = quotaBlocked > 0
+            ? "quota_blocked"
+            : paused > 0
+                ? "paused"
+                : degraded > 0
+                    ? "degraded"
+                    : "active";
+
+        return new BudgetOperationalReadModel
+        {
+            GeneratedAtUtc = generatedAtUtc,
+            OperationalStatus = status,
+            TotalPaths = stateList.Count,
+            PausedPaths = paused,
+            HardPausedPaths = hardPaused,
+            QuotaBlockedPaths = quotaBlocked,
+            DegradedPaths = degraded,
+            ActivePaths = stateList.Count(x => !x.IsPaused && !x.IsDegraded),
+            States = stateList
+        };
     }
 
     private static string UrlEncode(string value) => Uri.EscapeDataString(value ?? string.Empty);
