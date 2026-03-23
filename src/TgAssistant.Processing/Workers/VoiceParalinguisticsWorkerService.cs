@@ -58,6 +58,16 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
             _settings.Model,
             _settings.BatchSize,
             _settings.MaxParallel);
+        DateTime? minCreatedAtUtc = null;
+        if (_settings.RealtimeOnlyNewMessages)
+        {
+            minCreatedAtUtc = DateTime.UtcNow.AddSeconds(-Math.Max(0, _settings.RealtimeOnlyLookbackSeconds));
+            _logger.LogInformation(
+                "Voice paralinguistics realtime-only mode is enabled. processing_source={Source}, created_after_utc={CreatedAfterUtc}, lookback_seconds={LookbackSeconds}",
+                MessageSource.Realtime,
+                minCreatedAtUtc,
+                Math.Max(0, _settings.RealtimeOnlyLookbackSeconds));
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -80,7 +90,10 @@ public class VoiceParalinguisticsWorkerService : BackgroundService
                     continue;
                 }
 
-                var batch = (await _messageRepository.GetPendingVoiceParalinguisticsAsync(_settings.BatchSize, stoppingToken))
+                var batch = (await _messageRepository.GetPendingVoiceParalinguisticsAsync(
+                        _settings.BatchSize,
+                        minCreatedAtUtc,
+                        stoppingToken))
                     .Where(message => !IsMessageBackedOff(message.Id))
                     .ToList();
                 if (batch.Count == 0)

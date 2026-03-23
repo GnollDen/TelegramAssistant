@@ -77,6 +77,8 @@ services:
       Media__ArchiveVisionModel: ${MEDIA_ARCHIVE_VISION_MODEL:-qwen/qwen2.5-vl-72b-instruct}
       Media__AudioModel: ${MEDIA_AUDIO_MODEL:-openai/gpt-audio-mini}
       VoiceParalinguistics__Enabled: ${VOICE_PARALINGUISTICS_ENABLED:-true}
+      VoiceParalinguistics__RealtimeOnlyNewMessages: ${VOICE_PARALINGUISTICS_REALTIME_ONLY_NEW_MESSAGES:-true}
+      VoiceParalinguistics__RealtimeOnlyLookbackSeconds: ${VOICE_PARALINGUISTICS_REALTIME_ONLY_LOOKBACK_SECONDS:-30}
       VoiceParalinguistics__TranscriptionEnabled: ${VOICE_PARALINGUISTICS_TRANSCRIPTION_ENABLED:-true}
       VoiceParalinguistics__DeleteSourceAudioAfterProcessing: ${VOICE_PARALINGUISTICS_DELETE_SOURCE_AUDIO_AFTER_PROCESSING:-true}
       VoiceParalinguistics__PollIntervalSeconds: ${VOICE_PARALINGUISTICS_POLL_INTERVAL_SECONDS:-10}
