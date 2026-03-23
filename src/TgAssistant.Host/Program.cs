@@ -11,6 +11,7 @@ using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
 using TgAssistant.Host.Stage5Repair;
+using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
@@ -139,263 +140,21 @@ try
         return;
     }
 
+    var runtimeRoleSelection = new RuntimeRoleSelection(RuntimeWorkloadRole.All, "default", "all");
+
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
         .ConfigureServices((context, services) =>
         {
             var config = context.Configuration;
+            runtimeRoleSelection = RuntimeRoleParser.Parse(args, config);
+            services.AddTelegramAssistantCompositionRoot(config, runtimeRoleSelection);
 
-            services.Configure<TelegramSettings>(config.GetSection(TelegramSettings.Section));
-            services.Configure<RedisSettings>(config.GetSection(RedisSettings.Section));
-            services.Configure<DatabaseSettings>(config.GetSection(DatabaseSettings.Section));
-            services.Configure<GeminiSettings>(config.GetSection(GeminiSettings.Section));
-            services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
-            services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
-            services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
-            services.Configure<VoiceParalinguisticsSettings>(config.GetSection(VoiceParalinguisticsSettings.Section));
-            services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
-            services.Configure<BackfillSettings>(config.GetSection(BackfillSettings.Section));
-            services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
-            services.Configure<AggregationSettings>(config.GetSection(AggregationSettings.Section));
-            services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
-            services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
-            services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
-            services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
-            services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
-            services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
-            services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
-            services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
-
-            services.PostConfigure<TelegramSettings>(s =>
-            {
-                if (string.IsNullOrWhiteSpace(s.MonitoredChats))
-                {
-                    return;
-                }
-
-                var needsParse = s.MonitoredChatIds.Count == 0 || s.MonitoredChatIds.All(id => id <= 0);
-                if (!needsParse)
-                {
-                    s.MonitoredChatIds = s.MonitoredChatIds.Where(id => id > 0).Distinct().ToList();
-                    return;
-                }
-
-                s.MonitoredChatIds = s.MonitoredChats
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(raw => long.TryParse(raw.Trim(), out var id) ? id : 0)
-                    .Where(id => id > 0)
-                    .Distinct()
-                    .ToList();
-            });
-
-            services.PostConfigure<BackfillSettings>(s =>
-            {
-                var parsed = s.ChatIds
-                    .Where(id => id > 0)
-                    .ToList();
-
-                var raw = config.GetSection(BackfillSettings.Section).GetValue<string>("ChatIds");
-                if (!string.IsNullOrWhiteSpace(raw))
-                {
-                    parsed.AddRange(raw
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(value => long.TryParse(value.Trim(), out var id) ? id : 0)
-                        .Where(id => id > 0));
-                }
-
-                s.ChatIds = parsed.Distinct().ToList();
-            });
-
-            services.AddSingleton<IConnectionMultiplexer>(_ =>
-                ConnectionMultiplexer.Connect(
-                    config.GetSection(RedisSettings.Section).GetValue<string>("ConnectionString") ?? "localhost:6379"));
-
-            services.AddSingleton<RedisMessageQueue>();
-            services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
-
-            services.AddDbContextFactory<TgAssistantDbContext>(opt =>
-            {
-                var cs = config.GetSection(DatabaseSettings.Section).GetValue<string>("ConnectionString")
-                         ?? "Host=localhost;Database=tgassistant;Username=tgassistant;Password=changeme";
-                opt.UseNpgsql(cs);
-            });
-
-            services.AddSingleton<DatabaseInitializer>();
-
-            // Data layer (EF Core)
-            services.AddSingleton<IMessageRepository, MessageRepository>();
-            services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
-            services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
-            services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();
-            services.AddSingleton<IAnalysisStateRepository, AnalysisStateRepository>();
-            services.AddSingleton<IMessageExtractionRepository, MessageExtractionRepository>();
-            services.AddSingleton<IIntelligenceRepository, IntelligenceRepository>();
-            services.AddSingleton<IExtractionErrorRepository, ExtractionErrorRepository>();
-            services.AddSingleton<IEntityRepository, EntityRepository>();
-            services.AddSingleton<IEntityAliasRepository, EntityAliasRepository>();
-            services.AddSingleton<IEntityMergeRepository, EntityMergeRepository>();
-            services.AddSingleton<IEntityMergeCommandRepository, EntityMergeCommandRepository>();
-            services.AddSingleton<IStage5MetricsRepository, Stage5MetricsRepository>();
-            services.AddSingleton<IAnalysisUsageRepository, AnalysisUsageRepository>();
-            services.AddSingleton<ICommunicationEventRepository, CommunicationEventRepository>();
-            services.AddSingleton<IEmbeddingRepository, EmbeddingRepository>();
-            services.AddSingleton<IMaintenanceRepository, MaintenanceRepository>();
-            services.AddSingleton<IFactReviewCommandRepository, FactReviewCommandRepository>();
-            services.AddSingleton<IFactRepository, FactRepository>();
-            services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
-            services.AddSingleton<ISummaryRepository, SummaryRepository>();
-            services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
-            services.AddSingleton<IChatSessionRepository, ChatSessionRepository>();
-            services.AddSingleton<IPeriodRepository, PeriodRepository>();
-            services.AddSingleton<IClarificationRepository, ClarificationRepository>();
-            services.AddSingleton<IOfflineEventRepository, OfflineEventRepository>();
-            services.AddSingleton<IStateProfileRepository, StateProfileRepository>();
-            services.AddSingleton<IStrategyDraftRepository, StrategyDraftRepository>();
-            services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
-            services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
-            services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
-            services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
-            services.AddSingleton<IEvalRepository, EvalRepository>();
-            services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();
-            services.AddSingleton<FoundationDomainVerificationService>();
-            services.AddSingleton<IClarificationAnswerApplier, ClarificationAnswerApplier>();
-            services.AddSingleton<IClarificationDependencyResolver, ClarificationDependencyResolver>();
-            services.AddSingleton<IRecomputeTargetPlanner, RecomputeTargetPlanner>();
-            services.AddSingleton<IClarificationOrchestrator, ClarificationOrchestrator>();
-            services.AddSingleton<ClarificationOrchestrationVerificationService>();
-            services.AddSingleton<IPeriodBoundaryDetector, PeriodBoundaryDetector>();
-            services.AddSingleton<ITimelineAssembler, TimelineAssembler>();
-            services.AddSingleton<ITransitionBuilder, TransitionBuilder>();
-            services.AddSingleton<IPeriodEvidenceAssembler, PeriodEvidenceAssembler>();
-            services.AddSingleton<IPeriodProposalService, PeriodProposalService>();
-            services.AddSingleton<IPeriodizationService, PeriodizationService>();
-            services.AddSingleton<PeriodizationVerificationService>();
-            services.AddSingleton<IStateScoreCalculator, StateScoreCalculator>();
-            services.AddSingleton<IStateConfidenceEvaluator, StateConfidenceEvaluator>();
-            services.AddSingleton<IDynamicLabelMapper, DynamicLabelMapper>();
-            services.AddSingleton<IRelationshipStatusMapper, RelationshipStatusMapper>();
-            services.AddSingleton<ICurrentStateEngine, CurrentStateEngine>();
-            services.AddSingleton<StateEngineVerificationService>();
-            services.AddSingleton<IProfileTraitExtractor, ProfileTraitExtractor>();
-            services.AddSingleton<IPairProfileSynthesizer, PairProfileSynthesizer>();
-            services.AddSingleton<IProfileConfidenceEvaluator, ProfileConfidenceEvaluator>();
-            services.AddSingleton<IPatternSynthesisService, PatternSynthesisService>();
-            services.AddSingleton<IProfileEngine, ProfileEngine>();
-            services.AddSingleton<ProfileEngineVerificationService>();
-            services.AddSingleton<IStrategyOptionGenerator, StrategyOptionGenerator>();
-            services.AddSingleton<IStrategyRiskEvaluator, StrategyRiskEvaluator>();
-            services.AddSingleton<IStrategyRanker, StrategyRanker>();
-            services.AddSingleton<IStrategyConfidenceEvaluator, StrategyConfidenceEvaluator>();
-            services.AddSingleton<IMicroStepPlanner, MicroStepPlanner>();
-            services.AddSingleton<IStrategyEngine, StrategyEngine>();
-            services.AddSingleton<StrategyEngineVerificationService>();
-            services.AddSingleton<IDraftGenerator, DraftGenerator>();
-            services.AddSingleton<IDraftStyleAdapter, DraftStyleAdapter>();
-            services.AddSingleton<IDraftStrategyChecker, DraftStrategyChecker>();
-            services.AddSingleton<IDraftPackagingService, DraftPackagingService>();
-            services.AddSingleton<IDraftEngine, DraftEngine>();
-            services.AddSingleton<DraftEngineVerificationService>();
-            services.AddSingleton<IDraftRiskAssessor, DraftRiskAssessor>();
-            services.AddSingleton<IDraftStrategyFitChecker, DraftStrategyFitChecker>();
-            services.AddSingleton<ISaferRewriteGenerator, SaferRewriteGenerator>();
-            services.AddSingleton<INaturalRewriteGenerator, NaturalRewriteGenerator>();
-            services.AddSingleton<IDraftReviewEngine, DraftReviewEngine>();
-            services.AddSingleton<DraftReviewVerificationService>();
-            services.AddSingleton<IBotCommandService, BotCommandService>();
-            services.AddSingleton<BotCommandVerificationService>();
-            services.AddSingleton<IWebReadService, WebReadService>();
-            services.AddSingleton<IWebReviewService, WebReviewService>();
-            services.AddSingleton<IWebOpsService, WebOpsService>();
-            services.AddSingleton<IWebSearchService, WebSearchService>();
-            services.AddSingleton<IWebRouteRenderer, WebRouteRenderer>();
-            services.AddSingleton<WebReadVerificationService>();
-            services.AddSingleton<WebReviewVerificationService>();
-            services.AddSingleton<WebOpsVerificationService>();
-            services.AddSingleton<WebSearchVerificationService>();
-            services.AddSingleton<INodeRoleResolver, NodeRoleResolver>();
-            services.AddSingleton<IInfluenceEdgeBuilder, InfluenceEdgeBuilder>();
-            services.AddSingleton<IInformationFlowBuilder, InformationFlowBuilder>();
-            services.AddSingleton<INetworkScoringService, NetworkScoringService>();
-            services.AddSingleton<INetworkGraphService, NetworkGraphService>();
-            services.AddSingleton<NetworkVerificationService>();
-            services.AddSingleton<IDraftActionMatcher, DraftActionMatcher>();
-            services.AddSingleton<IObservedOutcomeRecorder, ObservedOutcomeRecorder>();
-            services.AddSingleton<ILearningSignalBuilder, LearningSignalBuilder>();
-            services.AddSingleton<IOutcomeService, OutcomeService>();
-            services.AddSingleton<OutcomeVerificationService>();
-            services.AddSingleton<IBudgetGuardrailService, BudgetGuardrailService>();
-            services.AddSingleton<IEvalHarnessService, EvalHarnessService>();
-            services.AddSingleton<BudgetVerificationService>();
-            services.AddSingleton<EvalVerificationService>();
-            services.AddSingleton<LaunchReadinessVerificationService>();
-            services.AddSingleton<IExternalArchiveImportContractValidator, ExternalArchiveImportContractValidator>();
-            services.AddSingleton<IExternalArchiveProvenanceWeightingService, ExternalArchiveProvenanceWeightingService>();
-            services.AddSingleton<IExternalArchiveLinkagePlanner, ExternalArchiveLinkagePlanner>();
-            services.AddSingleton<IExternalArchivePreparationService, ExternalArchivePreparationService>();
-            services.AddSingleton<IExternalArchiveIngestionService, ExternalArchiveIngestionService>();
-            services.AddSingleton<ExternalArchiveVerificationService>();
-            services.AddSingleton<ICompetingContextInterpretationService, CompetingContextInterpretationService>();
-            services.AddSingleton<ICompetingContextRuntimeService, CompetingContextRuntimeService>();
-            services.AddSingleton<CompetingContextVerificationService>();
-
-            services.AddHttpClient<IMediaProcessor, TgAssistant.Processing.Media.OpenRouterMediaProcessor>();
-            services.AddHttpClient<IVoiceParalinguisticsAnalyzer, TgAssistant.Processing.Media.OpenRouterVoiceParalinguisticsAnalyzer>();
-
-            var claudeBaseUrl = config.GetSection(ClaudeSettings.Section).GetValue<string>("BaseUrl") ?? "https://openrouter.ai";
-            var claudeApiKey = config.GetSection(ClaudeSettings.Section).GetValue<string>("ApiKey") ?? string.Empty;
-            var analysisTimeoutSeconds = config.GetSection(AnalysisSettings.Section).GetValue<int>("HttpTimeoutSeconds");
-            services.AddHttpClient<OpenRouterAnalysisService>("analysis", client =>
-            {
-                client.BaseAddress = new Uri(claudeBaseUrl);
-                if (!string.IsNullOrWhiteSpace(claudeApiKey))
-                {
-                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", claudeApiKey);
-                }
-
-                client.Timeout = TimeSpan.FromSeconds(Math.Max(30, analysisTimeoutSeconds));
-            });
-            services.AddHttpClient<ITextEmbeddingGenerator, OpenRouterEmbeddingService>("embedding", client =>
-            {
-                client.BaseAddress = new Uri(claudeBaseUrl);
-                if (!string.IsNullOrWhiteSpace(claudeApiKey))
-                {
-                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", claudeApiKey);
-                }
-
-                client.Timeout = TimeSpan.FromSeconds(60);
-            });
-            services.AddHttpClient<Neo4jSyncWorkerService>();
-            services.AddSingleton<ExtractionSchemaValidator>();
-            services.AddSingleton<MessageContentBuilder>();
-            services.AddSingleton<AnalysisContextBuilder>();
-            services.AddSingleton<SummaryHistoricalRetrievalService>();
-            services.AddSingleton<Stage5VerificationService>();
-            services.AddSingleton<ExtractionApplier>();
-            services.AddSingleton<ExpensivePassResolver>();
-            services.AddSingleton<IBotChatService, BotChatService>();
-
-            services.AddSingleton<TelegramDesktopArchiveParser>();
-
-            services.AddHostedService<TelegramListenerService>();
-            services.AddHostedService<TelegramBotHostedService>();
-            services.AddHostedService<HistoryBackfillService>();
-            services.AddHostedService<BatchWorkerService>();
-            services.AddHostedService<ArchiveImportWorkerService>();
-            services.AddHostedService<ArchiveMediaProcessorService>();
-            services.AddHostedService<VoiceParalinguisticsWorkerService>();
-            services.AddHostedService<EditDiffAnalysisWorkerService>();
-            services.AddHostedService<AnalysisWorkerService>();
-            services.AddHostedService<DialogSummaryWorkerService>();
-            services.AddHostedService<EntityEmbeddingWorkerService>();
-            services.AddHostedService<FactEmbeddingBackfillWorkerService>();
-            services.AddHostedService<Neo4jSyncWorkerService>();
-            services.AddHostedService<EntityMergeCandidateWorkerService>();
-            services.AddHostedService<EntityMergeCommandWorkerService>();
-            services.AddHostedService<FactReviewCommandWorkerService>();
-            // Temporarily disabled: daily cold-path crystallization adds extra chat/embedding traffic during Stage5 runs.
-            // services.AddHostedService<DailyKnowledgeCrystallizationWorkerService>();
-            services.AddHostedService<Stage5MetricsWorkerService>();
-            services.AddHostedService<MaintenanceWorkerService>();
+            Log.Information(
+                "Runtime role selection resolved: roles={Roles}, source={Source}, raw={RawValue}",
+                runtimeRoleSelection.Roles,
+                runtimeRoleSelection.Source,
+                runtimeRoleSelection.RawValue);
         });
 
     var host = builder.Build();
@@ -668,6 +427,7 @@ try
                 result.AuditPath);
             return;
         }
+
         if (!string.IsNullOrWhiteSpace(externalArchiveImportFile))
         {
             if (!File.Exists(externalArchiveImportFile))
