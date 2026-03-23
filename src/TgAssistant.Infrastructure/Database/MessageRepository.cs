@@ -852,16 +852,23 @@ public class MessageRepository : IMessageRepository
         return rows.Select(ToDomain).ToList();
     }
 
-    public async Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, CancellationToken ct = default)
+    public async Task<List<Message>> GetPendingVoiceParalinguisticsAsync(int limit, DateTime? minCreatedAtUtc = null, CancellationToken ct = default)
     {
         var voiceTypes = new short[] { (short)MediaType.Voice, (short)MediaType.VideoNote, (short)MediaType.Video };
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var rows = await db.Messages
+        var query = db.Messages
             .AsNoTracking()
-            .Where(x => x.ProcessingStatus == (short)ProcessingStatus.Processed
+            .Where(x => x.Source == (short)MessageSource.Realtime
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
                         && voiceTypes.Contains(x.MediaType)
                         && x.MediaPath != null
-                        && x.MediaParalinguisticsJson == null)
+                        && x.MediaParalinguisticsJson == null);
+        if (minCreatedAtUtc.HasValue)
+        {
+            query = query.Where(x => x.CreatedAt >= minCreatedAtUtc.Value);
+        }
+
+        var rows = await query
             .OrderBy(x => x.Timestamp)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
