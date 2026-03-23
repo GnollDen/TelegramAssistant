@@ -945,7 +945,37 @@ public class BotChatService : IBotChatService
 
         public static string BuildPostToolInstruction()
         {
-            return "You just received the raw dossier from the database tool. You MUST list ALL facts, events, and relationships found in the tool result. Do not omit, truncate, or overly summarize them. Present a complete and detailed profile. If `meta.has_more` is true, briefly state that more data exists and suggest narrowing the request by category or timeframe before summarizing the returned slice.";
+            return """
+                You are in post-tool synthesis mode.
+                Tool messages contain raw JSON from get_entity_dossier/get_relationships and are the only source of truth.
+
+                Your task: produce a clean human-readable final answer based on tool data.
+                Do not output raw JSON. Do not copy/paste tool payload blocks, keys, braces, or arrays.
+                Do not say "tool output", "json", or "database dump" in the final answer.
+
+                Required output structure (always use all sections):
+                1) Confirmed facts
+                2) Relationships
+                3) Notable events
+                4) Uncertainties and data limits
+
+                Synthesis rules:
+                - Keep high recall: include all distinct material facts from tool results, but merge duplicates and near-duplicates.
+                - Group facts by meaning (for example: identity/profile, work/finance, health/lifestyle, preferences, plans/timeline).
+                - Within each group, prioritize current and higher-confidence items first. Mark outdated or low-confidence items explicitly.
+                - For relationships, group by type and direction; include related entity and confidence/status when available.
+                - For events, present concise timeline-style bullets (newest first when timestamps exist).
+                - If no data for a section, state that explicitly in one short line.
+
+                Truncation and completeness rules:
+                - If tool payload indicates meta.has_more=true, say that the returned slice is partial and suggest narrowing by category or timeframe.
+                - If tool payload indicates tool_result_truncated, clearly mark the response as partial and list what is still reliable from the visible slice.
+                - If tool error/missing entity appears, report that clearly and avoid fabricated details.
+
+                Safety rules:
+                - Do not hallucinate details outside tool messages and already provided conversation context.
+                - Prefer concise synthesized bullets over verbatim extraction.
+                """;
         }
 
         private static string BuildFactsBlock(IReadOnlyCollection<Fact> facts)
