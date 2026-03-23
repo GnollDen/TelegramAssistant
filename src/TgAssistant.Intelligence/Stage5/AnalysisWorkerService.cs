@@ -1888,6 +1888,9 @@ public partial class AnalysisWorkerService : BackgroundService
                 {
                     continue;
                 }
+                var extractedByMessageId = await _extractionRepository.GetCheapJsonByMessageIdsAsync(
+                    chatMessages.Select(x => x.Id).ToArray(),
+                    leaseCt);
 
                 var allSessions = SplitByGap(chatMessages, gap, Math.Max(1, _settings.EpisodicShortSessionMergeThreshold));
                 var sessions = applySessionCap
@@ -1916,6 +1919,9 @@ public partial class AnalysisWorkerService : BackgroundService
                     var existing = existingByIndex.GetValueOrDefault(sessionIndex);
                     var sessionStart = session.First().Timestamp;
                     var sessionEnd = session.Last().Timestamp;
+                    var pendingRealtimeWithoutExtraction = session
+                        .Where(x => x.Source == MessageSource.Realtime)
+                        .Count(x => !extractedByMessageId.ContainsKey(x.Id));
                     if (!applySessionCap && existing != null)
                     {
                         if (i == 0 && sessionStart > existing.StartDate)
@@ -1938,6 +1944,15 @@ public partial class AnalysisWorkerService : BackgroundService
                         && string.Equals(existing.Summary ?? string.Empty, summary, StringComparison.Ordinal)
                         && existing.IsFinalized == isFinalized)
                     {
+                        if (existing.IsAnalyzed && pendingRealtimeWithoutExtraction > 0)
+                        {
+                            await _chatSessionRepository.MarkNeedsAnalysisAsync([existing.Id], leaseCt);
+                            _logger.LogInformation(
+                                "Stage5 reopened analyzed session due to realtime messages without extraction: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}",
+                                chatId,
+                                sessionIndex,
+                                pendingRealtimeWithoutExtraction);
+                        }
                         continue;
                     }
 

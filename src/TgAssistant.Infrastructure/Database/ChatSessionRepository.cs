@@ -221,6 +221,32 @@ public class ChatSessionRepository : IChatSessionRepository
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task MarkNeedsAnalysisAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default)
+    {
+        if (sessionIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.ChatSessions
+            .Where(x => sessionIds.Contains(x.Id))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var row in rows)
+        {
+            row.IsAnalyzed = false;
+            row.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task MarkFinalizedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default)
     {
         if (sessionIds.Count == 0)
