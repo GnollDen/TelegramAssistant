@@ -21,6 +21,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private const string SessionSkipCounterPrefix = "stage5:skip:msg";
     private const int SessionSkipQuarantineThreshold = 3;
     private const string SessionSkipQuarantineReason = "session_limit_skipped_more_than_3_times";
+    private const int SessionSkipQuarantineRecoveryAgeHours = 6;
     private const int UncappedSessionSliceFetchWindowSessions = 200;
     private const string CheapPromptId = "stage5_cheap_extract_v10";
     private const string ExpensivePromptId = "stage5_expensive_reason_v5";
@@ -50,6 +51,12 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly ILogger<AnalysisWorkerService> _logger;
     private readonly string _phaseOwnerId = $"stage5_worker:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly DateTime? _archiveCutoffUtc;
+    private long _stage5PhaseGuardDeniedCount;
+    private long _sliceBuildPhaseGuardDeniedCount;
+    private long _phaseGuardRecoveryAppliedCount;
+    private long _phaseLeaseRenewDeniedCount;
+    private long _stage5PhaseReleaseMismatchCount;
+    private long _sliceBuildPhaseReleaseMismatchCount;
 
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
@@ -163,6 +170,15 @@ public partial class AnalysisWorkerService : BackgroundService
                 }
 
                 var processedSessions = await ProcessSessionFirstPassAsync(stoppingToken);
+                var recoveredFromQuarantine = await RecoverSessionSkipQuarantineAsync(stoppingToken);
+                if (recoveredFromQuarantine > 0)
+                {
+                    _logger.LogInformation(
+                        "Stage5 quarantine recovery pass done: recovered={Recovered}, reason={Reason}, min_age_h={MinAgeHours}",
+                        recoveredFromQuarantine,
+                        SessionSkipQuarantineReason,
+                        SessionSkipQuarantineRecoveryAgeHours);
+                }
 
                 var reanalysis = ApplyArchiveScope(
                     await _messageRepository.GetNeedsReanalysisAsync(GetFetchLimit(), stoppingToken),
@@ -228,6 +244,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     }
 
                     _logger.LogInformation("Stage5 reanalysis pass done: processed={Count}", handledMessages);
+                    await LogStage5OperationalSignalsAsync(stoppingToken);
                     await DelayBetweenBatchesAsync(stoppingToken);
                     continue;
                 }
@@ -235,10 +252,12 @@ public partial class AnalysisWorkerService : BackgroundService
                 var seededMessages = await SeedSessionsFromProcessedBacklogAsync(stoppingToken);
                 if (processedSessions > 0 || seededMessages > 0)
                 {
+                    await LogStage5OperationalSignalsAsync(stoppingToken);
                     await DelayBetweenBatchesAsync(stoppingToken);
                     continue;
                 }
 
+                await LogStage5OperationalSignalsAsync(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(_settings.PollIntervalSeconds), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -1563,6 +1582,39 @@ public partial class AnalysisWorkerService : BackgroundService
         return Task.Delay(BatchThrottleDelay, ct);
     }
 
+    private async Task<int> RecoverSessionSkipQuarantineAsync(CancellationToken ct)
+    {
+        var staleBeforeUtc = DateTime.UtcNow.AddHours(-SessionSkipQuarantineRecoveryAgeHours);
+        var limit = Math.Max(1, GetFetchLimit());
+        return await _extractionRepository.ReleaseQuarantineForRetryAsync(
+            SessionSkipQuarantineReason,
+            staleBeforeUtc,
+            limit,
+            ct);
+    }
+
+    private async Task LogStage5OperationalSignalsAsync(CancellationToken ct)
+    {
+        var staleBefore = DateTime.UtcNow.AddMinutes(-Math.Max(1, _settings.SessionAnalysisMinIdleMinutes));
+        var pendingSessionsQueue = await _chatSessionRepository.CountPendingAnalysisSessionsAsync(staleBefore, ct);
+        var reanalysisBacklog = await _messageRepository.CountNeedsReanalysisProcessedAsync(ct);
+        var quarantineMetrics = await _extractionRepository.GetQuarantineMetricsAsync(
+            DateTime.UtcNow.AddHours(-SessionSkipQuarantineRecoveryAgeHours),
+            ct);
+        _logger.LogInformation(
+            "Stage5 operational signals: pending_sessions_queue={PendingSessionsQueue}, reanalysis_backlog={ReanalysisBacklog}, quarantine_total={QuarantineTotal}, quarantine_stuck={QuarantineStuck}, phase_guard_denied_stage5={Stage5Deny}, phase_guard_denied_slice_build={SliceBuildDeny}, phase_guard_recovery_applied={RecoveryApplied}, phase_lease_renew_denied={LeaseRenewDenied}, phase_release_mismatch_stage5={Stage5ReleaseMismatch}, phase_release_mismatch_slice_build={SliceBuildReleaseMismatch}",
+            pendingSessionsQueue,
+            reanalysisBacklog,
+            quarantineMetrics.Total,
+            quarantineMetrics.Stuck,
+            Interlocked.Read(ref _stage5PhaseGuardDeniedCount),
+            Interlocked.Read(ref _sliceBuildPhaseGuardDeniedCount),
+            Interlocked.Read(ref _phaseGuardRecoveryAppliedCount),
+            Interlocked.Read(ref _phaseLeaseRenewDeniedCount),
+            Interlocked.Read(ref _stage5PhaseReleaseMismatchCount),
+            Interlocked.Read(ref _sliceBuildPhaseReleaseMismatchCount));
+    }
+
     private async Task WaitForOpenRouterRecoveryAsync(CancellationToken ct)
     {
         var pausedSinceUtc = DateTime.UtcNow;
@@ -2829,8 +2881,18 @@ public partial class AnalysisWorkerService : BackgroundService
             ct: ct);
         if (decision.Allowed)
         {
+            if (decision.RecoveryApplied)
+            {
+                Interlocked.Increment(ref _phaseGuardRecoveryAppliedCount);
+            }
             return true;
         }
+
+        if (decision.RecoveryApplied)
+        {
+            Interlocked.Increment(ref _phaseGuardRecoveryAppliedCount);
+        }
+        Interlocked.Increment(ref _stage5PhaseGuardDeniedCount);
 
         _logger.LogWarning(
             "Stage5 phase guard blocked processing: chat_id={ChatId}, requested_phase={RequestedPhase}, current_phase={CurrentPhase}, deny_code={DenyCode}, deny_reason={DenyReason}",
@@ -2859,6 +2921,8 @@ public partial class AnalysisWorkerService : BackgroundService
         {
             return true;
         }
+
+        Interlocked.Increment(ref _stage5PhaseReleaseMismatchCount);
 
         await _extractionErrorRepository.LogAsync(
             stage: "stage5_phase_release_mismatch",
@@ -2894,8 +2958,18 @@ public partial class AnalysisWorkerService : BackgroundService
             ct: ct);
         if (decision.Allowed)
         {
+            if (decision.RecoveryApplied)
+            {
+                Interlocked.Increment(ref _phaseGuardRecoveryAppliedCount);
+            }
             return true;
         }
+
+        if (decision.RecoveryApplied)
+        {
+            Interlocked.Increment(ref _phaseGuardRecoveryAppliedCount);
+        }
+        Interlocked.Increment(ref _sliceBuildPhaseGuardDeniedCount);
 
         _logger.LogWarning(
             "Slice-build phase guard blocked processing: chat_id={ChatId}, requested_phase={RequestedPhase}, current_phase={CurrentPhase}, deny_code={DenyCode}, deny_reason={DenyReason}",
@@ -2924,6 +2998,8 @@ public partial class AnalysisWorkerService : BackgroundService
         {
             return true;
         }
+
+        Interlocked.Increment(ref _sliceBuildPhaseReleaseMismatchCount);
 
         await _extractionErrorRepository.LogAsync(
             stage: "slice_build_phase_release_mismatch",
@@ -3030,6 +3106,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     _phaseOwnerId,
                     renewDecision.DenyCode,
                     renewDecision.DenyReason);
+                Interlocked.Increment(ref _phaseLeaseRenewDeniedCount);
                 if (!leaseLostCts.IsCancellationRequested)
                 {
                     leaseLostCts.Cancel();

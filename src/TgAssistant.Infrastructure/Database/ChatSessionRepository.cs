@@ -275,4 +275,51 @@ public class ChatSessionRepository : IChatSessionRepository
 
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<long> CountPendingAnalysisSessionsAsync(DateTime staleBeforeUtc, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.ChatSessions
+            .AsNoTracking()
+            .LongCountAsync(
+                x => !x.IsAnalyzed
+                     && !x.IsFinalized
+                     && x.ChatId < SyntheticSmokeChatIdMin
+                     && x.LastMessageAt <= staleBeforeUtc,
+                ct);
+    }
+
+    public async Task<bool> TryUpdateSummaryIfShapeUnchangedAsync(
+        Guid sessionId,
+        long chatId,
+        int sessionIndex,
+        DateTime expectedStartDate,
+        DateTime expectedEndDate,
+        DateTime expectedLastMessageAt,
+        string summary,
+        CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.ChatSessions.FirstOrDefaultAsync(
+            x => x.Id == sessionId
+                 && x.ChatId == chatId
+                 && x.SessionIndex == sessionIndex,
+            ct);
+        if (row == null)
+        {
+            return false;
+        }
+
+        if (row.StartDate != expectedStartDate
+            || row.EndDate != expectedEndDate
+            || row.LastMessageAt != expectedLastMessageAt)
+        {
+            return false;
+        }
+
+        row.Summary = summary ?? string.Empty;
+        row.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 }
