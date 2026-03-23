@@ -174,6 +174,7 @@ services:
       Analysis__EditDiffBatchSize: ${ANALYSIS_EDIT_DIFF_BATCH_SIZE:-20}
       Analysis__EditDiffPollIntervalSeconds: ${ANALYSIS_EDIT_DIFF_POLL_INTERVAL_SECONDS:-5}
       Analysis__EditDiffMaxTokens: ${ANALYSIS_EDIT_DIFF_MAX_TOKENS:-320}
+      Analysis__HotSessionGapMinutes: ${ANALYSIS_HOT_SESSION_GAP_MINUTES:-30}
       Analysis__EpisodicSessionGapMinutes: ${ANALYSIS_EPISODIC_SESSION_GAP_MINUTES:-120}
       Analysis__EpisodicMaxSessionsPerChat: ${ANALYSIS_EPISODIC_MAX_SESSIONS_PER_CHAT:-0}
       Analysis__EnableTestModeSessionCap: ${ANALYSIS_ENABLE_TEST_MODE_SESSION_CAP:-false}

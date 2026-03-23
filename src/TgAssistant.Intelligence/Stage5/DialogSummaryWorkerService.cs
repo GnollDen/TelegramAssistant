@@ -329,7 +329,9 @@ public class DialogSummaryWorkerService : BackgroundService
                 continue;
             }
 
-            var sessions = SplitByGap(chatMessages, TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicSessionGapMinutes)))
+            var hotSessionGap = TimeSpan.FromMinutes(Math.Max(1, _settings.HotSessionGapMinutes));
+            var allowShortSessionMerge = ShouldApplyShortSessionMerge(chatMessages, hotSessionGap);
+            var sessions = SplitByGap(chatMessages, hotSessionGap, allowShortSessionMerge)
                 .Take(sessionLimit)
                 .ToList();
                 var existingByIndex = existingSessionsByChat.GetValueOrDefault(chatId)?
@@ -618,7 +620,24 @@ public class DialogSummaryWorkerService : BackgroundService
         }
     }
 
-    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan? gapOverride = null)
+    private static bool ShouldApplyShortSessionMerge(List<Message> messages, TimeSpan hotSessionGap)
+    {
+        if (messages.Count == 0)
+        {
+            return false;
+        }
+
+        if (messages.All(x => x.Source == MessageSource.Archive))
+        {
+            return true;
+        }
+
+        var lastTimestamp = messages.Max(x => x.Timestamp);
+        var coldCutoff = DateTime.UtcNow - hotSessionGap;
+        return lastTimestamp <= coldCutoff;
+    }
+
+    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan? gapOverride = null, bool allowShortSessionMerge = false)
     {
         var gap = gapOverride ?? TimeSpan.FromMinutes(Math.Max(1, _settings.SummarySessionGapMinutes));
         var shortThreshold = Math.Max(1, _settings.EpisodicShortSessionMergeThreshold);
@@ -638,7 +657,7 @@ public class DialogSummaryWorkerService : BackgroundService
             var delta = message.Timestamp - current[^1].Timestamp;
             if (delta > gap)
             {
-                var shouldSplit = current.Count >= shortThreshold || delta > maxBridgeGap;
+                var shouldSplit = !allowShortSessionMerge || current.Count >= shortThreshold || delta > maxBridgeGap;
                 if (shouldSplit)
                 {
                     result.Add(current);

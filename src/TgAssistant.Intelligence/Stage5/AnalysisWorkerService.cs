@@ -1863,7 +1863,7 @@ public partial class AnalysisWorkerService : BackgroundService
         var fetchLimit = Math.Max(
             500,
             Math.Max(GetFetchLimit(), Math.Max(1, _settings.SummaryDayMaxMessages) * fetchWindowSessions));
-        var gap = TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicSessionGapMinutes));
+        var hotSessionGap = TimeSpan.FromMinutes(Math.Max(1, _settings.HotSessionGapMinutes));
 
         foreach (var chatId in chatIds)
         {
@@ -1892,7 +1892,12 @@ public partial class AnalysisWorkerService : BackgroundService
                     chatMessages.Select(x => x.Id).ToArray(),
                     leaseCt);
 
-                var allSessions = SplitByGap(chatMessages, gap, Math.Max(1, _settings.EpisodicShortSessionMergeThreshold));
+                var allowShortSessionMerge = ShouldApplyShortSessionMerge(chatMessages, hotSessionGap);
+                var allSessions = SplitByGap(
+                    chatMessages,
+                    hotSessionGap,
+                    Math.Max(1, _settings.EpisodicShortSessionMergeThreshold),
+                    allowShortSessionMerge);
                 var sessions = applySessionCap
                     ? allSessions.Take(configuredSessionLimit).ToList()
                     : allSessions;
@@ -2019,7 +2024,25 @@ public partial class AnalysisWorkerService : BackgroundService
         return 0;
     }
 
-    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan gap, int shortThreshold)
+    private bool ShouldApplyShortSessionMerge(List<Message> messages, TimeSpan hotSessionGap)
+    {
+        if (messages.Count == 0)
+        {
+            return false;
+        }
+
+        // Merge short sessions only on safe cold/archive path to avoid breaking hot-tail runtime slicing.
+        if (messages.All(x => x.Source == MessageSource.Archive))
+        {
+            return true;
+        }
+
+        var lastTimestamp = messages.Max(x => x.Timestamp);
+        var coldCutoff = DateTime.UtcNow - hotSessionGap;
+        return lastTimestamp <= coldCutoff;
+    }
+
+    private List<List<Message>> SplitByGap(List<Message> messages, TimeSpan gap, int shortThreshold, bool allowShortSessionMerge)
     {
         var maxBridgeGap = TimeSpan.FromMinutes(Math.Max(1, _settings.EpisodicShortSessionMaxBridgeGapMinutes));
         var ordered = messages.OrderBy(x => x.Timestamp).ThenBy(x => x.Id).ToList();
@@ -2037,7 +2060,7 @@ public partial class AnalysisWorkerService : BackgroundService
             var delta = message.Timestamp - current[^1].Timestamp;
             if (delta > gap)
             {
-                var shouldSplit = current.Count >= shortThreshold || delta > maxBridgeGap;
+                var shouldSplit = !allowShortSessionMerge || current.Count >= shortThreshold || delta > maxBridgeGap;
                 if (shouldSplit)
                 {
                     result.Add(current);
