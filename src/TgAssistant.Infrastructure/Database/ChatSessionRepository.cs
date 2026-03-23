@@ -7,6 +7,7 @@ namespace TgAssistant.Infrastructure.Database;
 
 public class ChatSessionRepository : IChatSessionRepository
 {
+    private const long SyntheticSmokeChatIdMin = 9_000_000_000_000L;
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
     public ChatSessionRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
@@ -139,6 +140,7 @@ public class ChatSessionRepository : IChatSessionRepository
             .AsNoTracking()
             .Where(x => !x.IsAnalyzed
                         && !x.IsFinalized
+                        && x.ChatId < SyntheticSmokeChatIdMin
                         && x.LastMessageAt <= staleBeforeUtc)
             .OrderBy(x => x.LastMessageAt)
             .ThenBy(x => x.ChatId)
@@ -168,6 +170,7 @@ public class ChatSessionRepository : IChatSessionRepository
         var rows = await db.ChatSessions
             .AsNoTracking()
             .Where(x => x.IsAnalyzed
+                        && x.ChatId < SyntheticSmokeChatIdMin
                         && (x.LastMessageAt <= staleBeforeUtc || string.IsNullOrWhiteSpace(x.Summary)))
             .Where(x => !x.IsFinalized || string.IsNullOrWhiteSpace(x.Summary))
             .OrderBy(x => x.ChatId)
