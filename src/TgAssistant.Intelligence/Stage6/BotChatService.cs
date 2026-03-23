@@ -13,6 +13,11 @@ namespace TgAssistant.Intelligence.Stage6;
 public class BotChatService : IBotChatService
 {
     private const int DefaultFactLimit = 10;
+    private const int SessionSummaryPromptLimit = 3;
+    private const int SessionSummaryCharsLimit = 260;
+    private const int PromptLocalWindowLinesLimit = 12;
+    private const int PromptFallbackMessagesLimit = 12;
+    private const int PromptMessageCharsLimit = 220;
     private const int ReplyMaxTokens = 4000;
     private const int MaxToolCallsPerTurn = 3;
     private const int MaxToolResultChars = 8000;
@@ -123,7 +128,8 @@ public class BotChatService : IBotChatService
             DefaultFactLimit,
             CancellationToken.None);
 
-        var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(facts);
+        var localContext = await BuildLocalChatContextAsync(transportChatId, sourceMessageId, ct);
+        var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(localContext, facts);
         var model = ResolveReplyModel();
         diagnostics.ResolvedModel = model;
         var messages = new List<OpenRouterMessage>
@@ -791,12 +797,150 @@ public class BotChatService : IBotChatService
 
     private static readonly JsonSerializerOptions JsonOptions = ExtractionSerializationOptions.SnakeCase;
 
+    private async Task<BotChatLocalContext> BuildLocalChatContextAsync(
+        long? transportChatId,
+        long? sourceMessageId,
+        CancellationToken ct)
+    {
+        if (!transportChatId.HasValue || transportChatId.Value <= 0)
+        {
+            return BotChatLocalContext.Empty;
+        }
+
+        var chatId = transportChatId.Value;
+        var recentSessionSummaries = await BuildRecentSessionSummariesAsync(chatId, ct);
+        var localMessages = await BuildPromptLocalMessagesAsync(chatId, sourceMessageId, ct);
+
+        return new BotChatLocalContext(
+            chatId,
+            recentSessionSummaries,
+            localMessages.Messages,
+            localMessages.SourceLabel);
+    }
+
+    private async Task<List<string>> BuildRecentSessionSummariesAsync(long chatId, CancellationToken ct)
+    {
+        var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([chatId], ct);
+        var sessions = sessionsByChat.GetValueOrDefault(chatId) ?? [];
+        if (sessions.Count == 0)
+        {
+            return [];
+        }
+
+        return sessions
+            .Where(x => !string.IsNullOrWhiteSpace(x.Summary))
+            .OrderByDescending(x => x.EndDate)
+            .Take(SessionSummaryPromptLimit)
+            .OrderBy(x => x.EndDate)
+            .ThenBy(x => x.SessionIndex)
+            .Select(x =>
+            {
+                var summary = MessageContentBuilder.TruncateForContext(
+                    MessageContentBuilder.CollapseWhitespace(x.Summary),
+                    SessionSummaryCharsLimit);
+                return $"[session {x.SessionIndex}, {x.StartDate:yyyy-MM-dd}..{x.EndDate:yyyy-MM-dd}] {summary}";
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+    }
+
+    private async Task<(List<string> Messages, string SourceLabel)> BuildPromptLocalMessagesAsync(
+        long chatId,
+        long? sourceMessageId,
+        CancellationToken ct)
+    {
+        if (sourceMessageId.HasValue && sourceMessageId.Value > 0)
+        {
+            var source = await _messageRepository.GetByIdAsync(sourceMessageId.Value, ct);
+            if (source != null && source.ChatId == chatId)
+            {
+                var sourceWindow = await _messageRepository.GetChatWindowAroundAsync(
+                    chatId,
+                    sourceMessageId.Value,
+                    PromptLocalWindowLinesLimit / 2,
+                    PromptLocalWindowLinesLimit / 2,
+                    ct);
+                var sourceWindowLines = FormatPromptMessageLines(sourceWindow, sourceMessageId.Value);
+                if (sourceWindowLines.Count > 0)
+                {
+                    return (sourceWindowLines, $"source_window(message_id={sourceMessageId.Value})");
+                }
+            }
+        }
+
+        var recentMessages = await _messageRepository.GetProcessedByChatAsync(chatId, PromptFallbackMessagesLimit, ct);
+        var recentLines = FormatPromptMessageLines(recentMessages, null);
+        return (recentLines, "recent_processed_fallback");
+    }
+
+    private static List<string> FormatPromptMessageLines(IReadOnlyCollection<Message> messages, long? sourceMessageId)
+    {
+        if (messages.Count == 0)
+        {
+            return [];
+        }
+
+        return messages
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
+            .Select(message =>
+            {
+                var sender = string.IsNullOrWhiteSpace(message.SenderName)
+                    ? $"user:{message.SenderId}"
+                    : message.SenderName.Trim();
+                var semantic = MessageContentBuilder.TruncateForContext(
+                    MessageContentBuilder.CollapseWhitespace(MessageContentBuilder.BuildSemanticContent(message)),
+                    PromptMessageCharsLimit);
+                if (string.IsNullOrWhiteSpace(semantic))
+                {
+                    return null;
+                }
+
+                var marker = sourceMessageId.HasValue && message.Id == sourceMessageId.Value ? "*" : "-";
+                return $"{marker}[{message.Timestamp:MM-dd HH:mm}] {sender}: {semantic}";
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Take(PromptLocalWindowLinesLimit)
+            .ToList()!;
+    }
+
+    private sealed record BotChatLocalContext(
+        long ChatId,
+        IReadOnlyList<string> SessionSummaries,
+        IReadOnlyList<string> LocalMessages,
+        string LocalMessagesSource)
+    {
+        public static BotChatLocalContext Empty { get; } = new(0, [], [], string.Empty);
+
+        public bool HasChatContext => ChatId > 0;
+    }
+
     private static class BotChatPromptBuilder
     {
-        public static string BuildSystemPrompt(IReadOnlyCollection<Fact> facts)
+        public static string BuildSystemPrompt(BotChatLocalContext localContext, IReadOnlyCollection<Fact> facts)
         {
+            var localContextBlock = BuildLocalContextBlock(localContext);
             var factsBlock = BuildFactsBlock(facts);
-            return $"You are an AI personal assistant for Rinat. Use provided context facts and tool results to answer accurately. If the user asks for a dossier, profile, or full information about a person, you MUST call the get_entity_dossier tool. Do not try to answer from memory or context alone. If a requested entity is not found, say that clearly and suggest the closest known context. Be concise and direct. Context:\n{factsBlock}";
+            return $$"""
+                You are an AI personal assistant for Rinat.
+                Use the provided chat context and memory context to answer accurately and chat-aware.
+                Chat context is already included below. Do not claim you cannot see the chat or ask the user to send chat history again.
+                Do not answer with phrases like "не вижу чат", "пришлите чат", "нет данных", "I can't see the chat", or "this is the first message in chat" when chat context block is present.
+                If context is partial, answer in this format:
+                - in available context, we can see: X
+                - not visible in current context: Y
+                - to improve accuracy, clarify: Z
+                If the user asks for a dossier, profile, or full information about a person, you MUST call the get_entity_dossier tool.
+                Do not fabricate missing facts. Keep the answer concise and direct.
+
+                [chat_context]
+                {{localContextBlock}}
+                [/chat_context]
+
+                [supplementary_memory_similar_facts]
+                {{factsBlock}}
+                [/supplementary_memory_similar_facts]
+                """;
         }
 
         public static string BuildPostToolInstruction()
@@ -825,6 +969,48 @@ public class BotChatService : IBotChatService
                     .Append(" (confidence=")
                     .Append(fact.Confidence.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))
                     .AppendLine(")");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string BuildLocalContextBlock(BotChatLocalContext localContext)
+        {
+            if (!localContext.HasChatContext)
+            {
+                return "chat_id=unknown\nsession_summaries: unavailable\nlocal_messages: unavailable";
+            }
+
+            var sb = new StringBuilder();
+            sb.Append("chat_id=").AppendLine(localContext.ChatId.ToString());
+            sb.AppendLine("session_summaries:");
+            if (localContext.SessionSummaries.Count == 0)
+            {
+                sb.AppendLine("- none");
+            }
+            else
+            {
+                foreach (var summary in localContext.SessionSummaries)
+                {
+                    sb.Append("- ").AppendLine(summary);
+                }
+            }
+
+            sb.Append("local_messages_source=").AppendLine(
+                string.IsNullOrWhiteSpace(localContext.LocalMessagesSource)
+                    ? "unknown"
+                    : localContext.LocalMessagesSource);
+            sb.AppendLine("local_messages:");
+            if (localContext.LocalMessages.Count == 0)
+            {
+                sb.AppendLine("- none");
+            }
+            else
+            {
+                foreach (var line in localContext.LocalMessages)
+                {
+                    sb.AppendLine(line);
+                }
             }
 
             return sb.ToString().TrimEnd();
