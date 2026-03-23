@@ -321,6 +321,28 @@ public partial class AnalysisWorkerService : BackgroundService
                     continue;
                 }
 
+                var extractionByMessageId = await _extractionRepository.GetCheapJsonByMessageIdsAsync(
+                    sessionMessages.Select(x => x.Id).ToArray(),
+                    leaseCt);
+                var quarantinedMessageIds = await _extractionRepository.GetQuarantinedMessageIdsAsync(
+                    sessionMessages.Select(x => x.Id).ToArray(),
+                    leaseCt);
+                var actionableMissingArtifacts = CountActionableMissingSessionArtifacts(
+                    sessionMessages,
+                    extractionByMessageId,
+                    quarantinedMessageIds);
+                if (!string.IsNullOrWhiteSpace(session.Summary) && actionableMissingArtifacts == 0)
+                {
+                    _logger.LogInformation(
+                        "Stage5 session-first hard stop: skipping stale pending session already covered by artifacts. chat_id={ChatId}, session_index={SessionIndex}, messages={MessageCount}",
+                        session.ChatId,
+                        session.SessionIndex,
+                        sessionMessages.Count);
+                    maxAnalyzedSessionEndMs = await MarkSessionAnalyzedAndAdvanceWatermarkAsync(session, maxAnalyzedSessionEndMs, leaseCt);
+                    analyzedSessionsCount++;
+                    continue;
+                }
+
                 var chunkResult = await ProcessSessionInChunksAsync(session, sessionMessages, leaseCt);
                 if (chunkResult.BalanceIssueDetected)
                 {
@@ -1927,6 +1949,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     var pendingRealtimeWithoutExtraction = session
                         .Where(x => x.Source == MessageSource.Realtime)
                         .Count(x => !extractedByMessageId.ContainsKey(x.Id));
+                    var shouldReopenForPendingRealtimeArtifacts = existing?.IsAnalyzed == true && pendingRealtimeWithoutExtraction > 0;
                     if (!applySessionCap && existing != null)
                     {
                         if (i == 0 && sessionStart > existing.StartDate)
@@ -1949,7 +1972,7 @@ public partial class AnalysisWorkerService : BackgroundService
                         && string.Equals(existing.Summary ?? string.Empty, summary, StringComparison.Ordinal)
                         && existing.IsFinalized == isFinalized)
                     {
-                        if (existing.IsAnalyzed && pendingRealtimeWithoutExtraction > 0)
+                        if (shouldReopenForPendingRealtimeArtifacts)
                         {
                             await _chatSessionRepository.MarkNeedsAnalysisAsync([existing.Id], leaseCt);
                             _logger.LogInformation(
@@ -1961,6 +1984,16 @@ public partial class AnalysisWorkerService : BackgroundService
                         continue;
                     }
 
+                    if (shouldReopenForPendingRealtimeArtifacts)
+                    {
+                        await _chatSessionRepository.MarkNeedsAnalysisAsync([existing!.Id], leaseCt);
+                        _logger.LogInformation(
+                            "Stage5 reopened analyzed session due to realtime messages without extraction after session-boundary update: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}",
+                            chatId,
+                            sessionIndex,
+                            pendingRealtimeWithoutExtraction);
+                    }
+
                     await _chatSessionRepository.UpsertAsync(new ChatSession
                     {
                         Id = existing?.Id ?? Guid.Empty,
@@ -1970,7 +2003,10 @@ public partial class AnalysisWorkerService : BackgroundService
                         EndDate = sessionEnd,
                         LastMessageAt = sessionEnd,
                         Summary = summary,
-                        IsFinalized = isFinalized
+                        IsFinalized = isFinalized,
+                        IsAnalyzed = shouldReopenForPendingRealtimeArtifacts
+                            ? false
+                            : (existing?.IsAnalyzed ?? false)
                     }, leaseCt);
                 }
             }
@@ -2022,6 +2058,51 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         return 0;
+    }
+
+    private static int CountActionableMissingSessionArtifacts(
+        IReadOnlyCollection<Message> sessionMessages,
+        IReadOnlyDictionary<long, string> extractionByMessageId,
+        IReadOnlyCollection<long> quarantinedMessageIds)
+    {
+        if (sessionMessages.Count == 0)
+        {
+            return 0;
+        }
+
+        var coveredTelegramMessageIds = sessionMessages
+            .Where(message => message.TelegramMessageId > 0 && extractionByMessageId.ContainsKey(message.Id))
+            .Select(message => message.TelegramMessageId)
+            .ToHashSet();
+        var quarantinedIds = quarantinedMessageIds.ToHashSet();
+        var missing = 0;
+
+        foreach (var message in sessionMessages)
+        {
+            if (extractionByMessageId.ContainsKey(message.Id))
+            {
+                continue;
+            }
+
+            if (quarantinedIds.Contains(message.Id))
+            {
+                continue;
+            }
+
+            if (MessageContentBuilder.IsServiceOrTechnicalNoise(message))
+            {
+                continue;
+            }
+
+            if (message.TelegramMessageId > 0 && coveredTelegramMessageIds.Contains(message.TelegramMessageId))
+            {
+                continue;
+            }
+
+            missing++;
+        }
+
+        return missing;
     }
 
     private bool ShouldApplyShortSessionMerge(List<Message> messages, TimeSpan hotSessionGap)
