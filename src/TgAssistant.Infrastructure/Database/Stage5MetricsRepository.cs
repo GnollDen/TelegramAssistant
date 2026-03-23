@@ -1,11 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
 
 public class Stage5MetricsRepository : IStage5MetricsRepository
 {
+    private static readonly TimeSpan PendingSessionIdleThreshold = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan QuarantineStuckThreshold = TimeSpan.FromHours(6);
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
     public Stage5MetricsRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
@@ -33,8 +36,29 @@ public class Stage5MetricsRepository : IStage5MetricsRepository
             .LongCountAsync(x => x.Status == 0, ct);
 
         var oneHourAgo = DateTime.UtcNow.AddHours(-1);
+        var staleBeforeUtc = DateTime.UtcNow - PendingSessionIdleThreshold;
+        var quarantineStuckBeforeUtc = DateTime.UtcNow - QuarantineStuckThreshold;
         var extractionErrors1h = await db.ExtractionErrors.AsNoTracking()
             .LongCountAsync(x => x.CreatedAt >= oneHourAgo, ct);
+        var pendingSessionsQueue = await db.ChatSessions.AsNoTracking()
+            .LongCountAsync(
+                x => !x.IsAnalyzed
+                     && !x.IsFinalized
+                     && x.LastMessageAt <= staleBeforeUtc,
+                ct);
+        var reanalysisBacklog = await db.Messages.AsNoTracking()
+            .LongCountAsync(
+                x => x.NeedsReanalysis
+                     && x.ProcessingStatus == (short)ProcessingStatus.Processed,
+                ct);
+        var quarantineTotal = await db.MessageExtractions.AsNoTracking()
+            .LongCountAsync(x => x.IsQuarantined, ct);
+        var quarantineStuck = await db.MessageExtractions.AsNoTracking()
+            .LongCountAsync(
+                x => x.IsQuarantined
+                     && x.QuarantinedAt != null
+                     && x.QuarantinedAt <= quarantineStuckBeforeUtc,
+                ct);
         var analysisUsage1h = await db.AnalysisUsageEvents.AsNoTracking()
             .Where(x => x.CreatedAt >= oneHourAgo)
             .GroupBy(_ => 1)
@@ -57,7 +81,11 @@ public class Stage5MetricsRepository : IStage5MetricsRepository
             ExtractionErrors1h = extractionErrors1h,
             AnalysisRequests1h = analysisUsage1h?.Requests ?? 0,
             AnalysisTokens1h = analysisUsage1h?.Tokens ?? 0,
-            AnalysisCostUsd1h = analysisUsage1h?.Cost ?? 0m
+            AnalysisCostUsd1h = analysisUsage1h?.Cost ?? 0m,
+            PendingSessionsQueue = pendingSessionsQueue,
+            ReanalysisBacklog = reanalysisBacklog,
+            QuarantineTotal = quarantineTotal,
+            QuarantineStuck = quarantineStuck
         };
     }
 

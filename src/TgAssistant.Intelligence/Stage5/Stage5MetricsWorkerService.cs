@@ -40,23 +40,31 @@ public class Stage5MetricsWorkerService : BackgroundService
                 var snapshot = await _metricsRepository.CaptureAsync(stoppingToken);
                 await _metricsRepository.SaveSnapshotAsync(snapshot, stoppingToken);
                 _logger.LogInformation(
-                    "Stage5 metrics snapshot: processed={Processed} extracted={Extracted} expensive_backlog={Backlog} merge_pending={MergePending} errors_1h={Errors}",
+                    "Stage5 metrics snapshot: processed={Processed} extracted={Extracted} expensive_backlog={Backlog} merge_pending={MergePending} errors_1h={Errors} pending_sessions_queue={PendingSessionsQueue} reanalysis_backlog={ReanalysisBacklog} quarantine_total={QuarantineTotal} quarantine_stuck={QuarantineStuck}",
                     snapshot.ProcessedMessages,
                     snapshot.ExtractionsTotal,
                     snapshot.ExpensiveBacklog,
                     snapshot.MergeCandidatesPending,
-                    snapshot.ExtractionErrors1h);
+                    snapshot.ExtractionErrors1h,
+                    snapshot.PendingSessionsQueue,
+                    snapshot.ReanalysisBacklog,
+                    snapshot.QuarantineTotal,
+                    snapshot.QuarantineStuck);
                 if (_previousSnapshot != null)
                 {
                     _logger.LogInformation(
-                        "Stage5 metrics delta_since_last_poll (rolling-window gauges may be negative): processed_delta={ProcessedDelta} extracted_delta={ExtractedDelta} backlog_delta={BacklogDelta} errors_1h_delta={ErrorsDelta} requests_1h_delta={RequestsDelta} tokens_1h_delta={TokensDelta} cost_1h_delta={CostDelta}",
+                        "Stage5 metrics delta_since_last_poll (rolling-window gauges may be negative): processed_delta={ProcessedDelta} extracted_delta={ExtractedDelta} backlog_delta={BacklogDelta} errors_1h_delta={ErrorsDelta} requests_1h_delta={RequestsDelta} tokens_1h_delta={TokensDelta} cost_1h_delta={CostDelta} pending_sessions_queue_delta={PendingSessionsQueueDelta} reanalysis_backlog_delta={ReanalysisBacklogDelta} quarantine_total_delta={QuarantineTotalDelta} quarantine_stuck_delta={QuarantineStuckDelta}",
                         snapshot.ProcessedMessages - _previousSnapshot.ProcessedMessages,
                         snapshot.ExtractionsTotal - _previousSnapshot.ExtractionsTotal,
                         snapshot.ExpensiveBacklog - _previousSnapshot.ExpensiveBacklog,
                         snapshot.ExtractionErrors1h - _previousSnapshot.ExtractionErrors1h,
                         snapshot.AnalysisRequests1h - _previousSnapshot.AnalysisRequests1h,
                         snapshot.AnalysisTokens1h - _previousSnapshot.AnalysisTokens1h,
-                        snapshot.AnalysisCostUsd1h - _previousSnapshot.AnalysisCostUsd1h);
+                        snapshot.AnalysisCostUsd1h - _previousSnapshot.AnalysisCostUsd1h,
+                        snapshot.PendingSessionsQueue - _previousSnapshot.PendingSessionsQueue,
+                        snapshot.ReanalysisBacklog - _previousSnapshot.ReanalysisBacklog,
+                        snapshot.QuarantineTotal - _previousSnapshot.QuarantineTotal,
+                        snapshot.QuarantineStuck - _previousSnapshot.QuarantineStuck);
                 }
 
                 _previousSnapshot = snapshot;

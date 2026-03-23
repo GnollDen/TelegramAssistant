@@ -204,23 +204,30 @@ public class DialogSummaryWorkerService : BackgroundService
                             MessageContentBuilder.CollapseWhitespace(summaryText),
                             StringComparison.Ordinal))
                     {
-                        await _chatSessionRepository.UpsertAsync(new ChatSession
-                        {
-                            Id = session.Id,
-                            ChatId = session.ChatId,
-                            SessionIndex = session.SessionIndex,
-                            StartDate = session.StartDate,
-                            EndDate = session.EndDate,
-                            LastMessageAt = session.LastMessageAt,
-                            Summary = summaryText,
-                            IsFinalized = session.IsFinalized,
-                            IsAnalyzed = session.IsAnalyzed
-                        }, stoppingToken);
-                        await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(
+                        var updated = await _chatSessionRepository.TryUpdateSummaryIfShapeUnchangedAsync(
+                            session.Id,
                             session.ChatId,
                             session.SessionIndex,
+                            session.StartDate,
+                            session.EndDate,
+                            session.LastMessageAt,
                             summaryText,
                             stoppingToken);
+                        if (updated)
+                        {
+                            await _historicalRetrievalService.UpsertSessionSummaryEmbeddingAsync(
+                                session.ChatId,
+                                session.SessionIndex,
+                                summaryText,
+                                stoppingToken);
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "Stage5 summary skipped stale session mutation due to shape change: chat_id={ChatId}, session_index={SessionIndex}",
+                                session.ChatId,
+                                session.SessionIndex);
+                        }
                     }
 
                     await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
