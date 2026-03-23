@@ -32,6 +32,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private static readonly TimeSpan OpenRouterRecoveryPollInterval = TimeSpan.FromSeconds(15);
 
     private readonly AnalysisSettings _settings;
+    private readonly ChatCoordinationSettings _coordinationSettings;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMessageExtractionRepository _extractionRepository;
@@ -39,6 +40,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly IAnalysisStateRepository _stateRepository;
     private readonly IPromptTemplateRepository _promptRepository;
     private readonly IChatSessionRepository _chatSessionRepository;
+    private readonly IChatCoordinationService _chatCoordinationService;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly ExpensivePassResolver _expensivePassResolver;
     private readonly ExtractionApplier _extractionApplier;
@@ -46,10 +48,12 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<AnalysisWorkerService> _logger;
+    private readonly string _phaseOwnerId = $"stage5_worker:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly DateTime? _archiveCutoffUtc;
 
     public AnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
+        IOptions<ChatCoordinationSettings> coordinationSettings,
         IOptions<EmbeddingSettings> embeddingSettings,
         IMessageRepository messageRepository,
         IMessageExtractionRepository extractionRepository,
@@ -57,6 +61,7 @@ public partial class AnalysisWorkerService : BackgroundService
         IAnalysisStateRepository stateRepository,
         IPromptTemplateRepository promptRepository,
         IChatSessionRepository chatSessionRepository,
+        IChatCoordinationService chatCoordinationService,
         OpenRouterAnalysisService analysisService,
         ExpensivePassResolver expensivePassResolver,
         ExtractionApplier extractionApplier,
@@ -66,6 +71,7 @@ public partial class AnalysisWorkerService : BackgroundService
         ILogger<AnalysisWorkerService> logger)
     {
         _settings = settings.Value;
+        _coordinationSettings = coordinationSettings.Value;
         _embeddingSettings = embeddingSettings.Value;
         _messageRepository = messageRepository;
         _extractionRepository = extractionRepository;
@@ -73,6 +79,7 @@ public partial class AnalysisWorkerService : BackgroundService
         _stateRepository = stateRepository;
         _promptRepository = promptRepository;
         _chatSessionRepository = chatSessionRepository;
+        _chatCoordinationService = chatCoordinationService;
         _analysisService = analysisService;
         _expensivePassResolver = expensivePassResolver;
         _extractionApplier = extractionApplier;
@@ -162,18 +169,65 @@ public partial class AnalysisWorkerService : BackgroundService
                     "reanalysis");
                 if (reanalysis.Count > 0)
                 {
-                    var reanalysisResult = await ProcessCheapBatchesAsync(reanalysis, stoppingToken);
-                    var succeededReanalysis = reanalysis
-                        .Select(x => x.Id)
-                        .Where(id => !reanalysisResult.FailedMessageIds.Contains(id));
-                    await _messageRepository.MarkNeedsReanalysisDoneAsync(succeededReanalysis, stoppingToken);
+                    var anyBalanceIssue = false;
+                    var handledMessages = 0;
+                    foreach (var byChat in reanalysis
+                                 .GroupBy(x => x.ChatId)
+                                 .OrderBy(x => x.Key))
+                    {
+                        if (!await TryAcquireStage5PhaseAsync(byChat.Key, "reanalysis_batch", stoppingToken))
+                        {
+                            continue;
+                        }
 
-                    if (reanalysisResult.BalanceIssueDetected)
+                        var leaseHeartbeat = StartPhaseLeaseHeartbeat(
+                            byChat.Key,
+                            ChatRuntimePhases.Stage5Process,
+                            "reanalysis_batch_lease_heartbeat",
+                            stoppingToken);
+                        var releaseMismatch = false;
+                        using var leaseScope = CreateLeaseLinkedTokenSource(leaseHeartbeat, stoppingToken);
+                        var leaseCt = leaseScope.Token;
+                        try
+                        {
+                            var chatMessages = byChat.ToList();
+                            var reanalysisResult = await ProcessCheapBatchesAsync(chatMessages, leaseCt);
+                            var succeededReanalysis = chatMessages
+                                .Select(x => x.Id)
+                                .Where(id => !reanalysisResult.FailedMessageIds.Contains(id));
+                            await _messageRepository.MarkNeedsReanalysisDoneAsync(succeededReanalysis, leaseCt);
+                            handledMessages += chatMessages.Count;
+                            anyBalanceIssue |= reanalysisResult.BalanceIssueDetected;
+                        }
+                        catch (OperationCanceledException) when (leaseHeartbeat.LeaseLost && !stoppingToken.IsCancellationRequested)
+                        {
+                            _logger.LogWarning(
+                                "Stage5 reanalysis workload stopped after lease loss: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}",
+                                byChat.Key,
+                                ChatRuntimePhases.Stage5Process,
+                                _phaseOwnerId);
+                        }
+                        finally
+                        {
+                            await StopPhaseLeaseHeartbeatAsync(leaseHeartbeat);
+                            releaseMismatch = !await ReleaseStage5PhaseAsync(byChat.Key, "reanalysis_batch_done", stoppingToken);
+                        }
+
+                        if (releaseMismatch)
+                        {
+                            _logger.LogWarning(
+                                "Stage5 reanalysis pass interrupted due to release mismatch escalation: chat_id={ChatId}",
+                                byChat.Key);
+                            break;
+                        }
+                    }
+
+                    if (anyBalanceIssue)
                     {
                         await WaitForOpenRouterRecoveryAsync(stoppingToken);
                     }
 
-                    _logger.LogInformation("Stage5 reanalysis pass done: processed={Count}", reanalysis.Count);
+                    _logger.LogInformation("Stage5 reanalysis pass done: processed={Count}", handledMessages);
                     await DelayBetweenBatchesAsync(stoppingToken);
                     continue;
                 }
@@ -229,50 +283,90 @@ public partial class AnalysisWorkerService : BackgroundService
                 break;
             }
 
-            var maxSessionMessages = Math.Max(500, Math.Max(_settings.SummarySessionMaxMessages * 10, _settings.SessionChunkSize * 10));
-            var sessionMessages = await _messageRepository.GetByChatAndPeriodAsync(
-                session.ChatId,
-                session.StartDate,
-                session.EndDate,
-                maxSessionMessages,
-                ct);
-            sessionMessages = ApplyArchiveScope(sessionMessages, "session_first")
-                .Where(x => x.Timestamp >= session.StartDate && x.Timestamp <= session.EndDate)
-                .OrderBy(x => x.Timestamp)
-                .ThenBy(x => x.Id)
-                .ToList();
-
-            if (sessionMessages.Count == 0)
+            if (!await TryAcquireStage5PhaseAsync(session.ChatId, "session_first_claim", ct))
             {
-                _logger.LogInformation(
-                    "Stage5 session-first skipped by archive scope: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}",
-                    session.Id,
-                    session.ChatId,
-                    session.SessionIndex);
                 continue;
             }
 
-            var chunkResult = await ProcessSessionInChunksAsync(session, sessionMessages, ct);
-            if (chunkResult.BalanceIssueDetected)
+            var leaseHeartbeat = StartPhaseLeaseHeartbeat(
+                session.ChatId,
+                ChatRuntimePhases.Stage5Process,
+                "session_first_lease_heartbeat",
+                ct);
+            var releaseMismatch = false;
+            using var leaseScope = CreateLeaseLinkedTokenSource(leaseHeartbeat, ct);
+            var leaseCt = leaseScope.Token;
+            try
             {
-                await WaitForOpenRouterRecoveryAsync(ct);
-                break;
-            }
+                var maxSessionMessages = Math.Max(500, Math.Max(_settings.SummarySessionMaxMessages * 10, _settings.SessionChunkSize * 10));
+                var sessionMessages = await _messageRepository.GetByChatAndPeriodAsync(
+                    session.ChatId,
+                    session.StartDate,
+                    session.EndDate,
+                    maxSessionMessages,
+                    leaseCt);
+                sessionMessages = ApplyArchiveScope(sessionMessages, "session_first")
+                    .Where(x => x.Timestamp >= session.StartDate && x.Timestamp <= session.EndDate)
+                    .OrderBy(x => x.Timestamp)
+                    .ThenBy(x => x.Id)
+                    .ToList();
 
-            if (chunkResult.FailedMessageIds.Count > 0)
+                if (sessionMessages.Count == 0)
+                {
+                    _logger.LogInformation(
+                        "Stage5 session-first skipped by archive scope: session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}",
+                        session.Id,
+                        session.ChatId,
+                        session.SessionIndex);
+                    continue;
+                }
+
+                var chunkResult = await ProcessSessionInChunksAsync(session, sessionMessages, leaseCt);
+                if (chunkResult.BalanceIssueDetected)
+                {
+                    await WaitForOpenRouterRecoveryAsync(leaseCt);
+                    break;
+                }
+
+                if (chunkResult.FailedMessageIds.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Stage5 session-first analysis incomplete. session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}, failed_messages={Failed}",
+                        session.Id,
+                        session.ChatId,
+                        session.SessionIndex,
+                        chunkResult.FailedMessageIds.Count);
+                    break;
+                }
+
+                await EnsureSessionSummaryAfterSliceAsync(session, sessionMessages, leaseCt);
+                maxAnalyzedSessionEndMs = await MarkSessionAnalyzedAndAdvanceWatermarkAsync(session, maxAnalyzedSessionEndMs, leaseCt);
+                analyzedSessionsCount++;
+            }
+            catch (OperationCanceledException) when (leaseHeartbeat.LeaseLost && !ct.IsCancellationRequested)
             {
                 _logger.LogWarning(
-                    "Stage5 session-first analysis incomplete. session_id={SessionId}, chat_id={ChatId}, session_index={SessionIndex}, failed_messages={Failed}",
-                    session.Id,
+                    "Stage5 session-first workload stopped after lease loss: chat_id={ChatId}, session_index={SessionIndex}, phase={Phase}, owner_id={OwnerId}",
                     session.ChatId,
                     session.SessionIndex,
-                    chunkResult.FailedMessageIds.Count);
+                    ChatRuntimePhases.Stage5Process,
+                    _phaseOwnerId);
                 break;
             }
+            finally
+            {
+                await StopPhaseLeaseHeartbeatAsync(leaseHeartbeat);
+                releaseMismatch = !await ReleaseStage5PhaseAsync(session.ChatId, "session_first_done", ct);
+            }
 
-            await EnsureSessionSummaryAfterSliceAsync(session, sessionMessages, ct);
-            maxAnalyzedSessionEndMs = await MarkSessionAnalyzedAndAdvanceWatermarkAsync(session, maxAnalyzedSessionEndMs, ct);
-            analyzedSessionsCount++;
+            if (releaseMismatch)
+            {
+                _logger.LogWarning(
+                    "Stage5 session-first pass interrupted due to release mismatch escalation: chat_id={ChatId}, session_index={SessionIndex}",
+                    session.ChatId,
+                    session.SessionIndex);
+                break;
+            }
         }
 
         if (analyzedSessionsCount > 0)
@@ -1773,76 +1867,114 @@ public partial class AnalysisWorkerService : BackgroundService
 
         foreach (var chatId in chatIds)
         {
-            var chatMessages = await _messageRepository.GetProcessedByChatAsync(chatId, fetchLimit, ct);
-            chatMessages = ApplyArchiveScope(chatMessages, "session_slice_build");
-            if (chatMessages.Count == 0)
+            if (!await TryAcquireSliceBuildPhaseAsync(chatId, "session_slice_build_claim", ct))
             {
                 continue;
             }
 
-            var allSessions = SplitByGap(chatMessages, gap, Math.Max(1, _settings.EpisodicShortSessionMergeThreshold));
-            var sessions = applySessionCap
-                ? allSessions.Take(configuredSessionLimit).ToList()
-                : allSessions;
-            var existingSessions = existingByChat.GetValueOrDefault(chatId)?
-                .OrderBy(x => x.SessionIndex)
-                .ToList() ?? [];
-            var existingByIndex = existingSessions.ToDictionary(x => x.SessionIndex);
-            var windowStart = sessions.Count > 0 && sessions[0].Count > 0
-                ? sessions[0][0].Timestamp
-                : DateTime.MinValue;
-            var baseSessionIndex = applySessionCap
-                ? 0
-                : ResolveWindowBaseSessionIndex(existingSessions, windowStart);
-
-            for (var i = 0; i < sessions.Count; i++)
+            var leaseHeartbeat = StartPhaseLeaseHeartbeat(
+                chatId,
+                ChatRuntimePhases.SliceBuild,
+                "session_slice_build_lease_heartbeat",
+                ct);
+            var releaseMismatch = false;
+            using var leaseScope = CreateLeaseLinkedTokenSource(leaseHeartbeat, ct);
+            var leaseCt = leaseScope.Token;
+            try
             {
-                var session = sessions[i];
-                if (session.Count == 0)
+                var chatMessages = await _messageRepository.GetProcessedByChatAsync(chatId, fetchLimit, leaseCt);
+                chatMessages = ApplyArchiveScope(chatMessages, "session_slice_build");
+                if (chatMessages.Count == 0)
                 {
                     continue;
                 }
 
-                var sessionIndex = baseSessionIndex + i;
-                var existing = existingByIndex.GetValueOrDefault(sessionIndex);
-                var sessionStart = session.First().Timestamp;
-                var sessionEnd = session.Last().Timestamp;
-                if (!applySessionCap && existing != null)
+                var allSessions = SplitByGap(chatMessages, gap, Math.Max(1, _settings.EpisodicShortSessionMergeThreshold));
+                var sessions = applySessionCap
+                    ? allSessions.Take(configuredSessionLimit).ToList()
+                    : allSessions;
+                var existingSessions = existingByChat.GetValueOrDefault(chatId)?
+                    .OrderBy(x => x.SessionIndex)
+                    .ToList() ?? [];
+                var existingByIndex = existingSessions.ToDictionary(x => x.SessionIndex);
+                var windowStart = sessions.Count > 0 && sessions[0].Count > 0
+                    ? sessions[0][0].Timestamp
+                    : DateTime.MinValue;
+                var baseSessionIndex = applySessionCap
+                    ? 0
+                    : ResolveWindowBaseSessionIndex(existingSessions, windowStart);
+
+                for (var i = 0; i < sessions.Count; i++)
                 {
-                    if (i == 0 && sessionStart > existing.StartDate)
+                    var session = sessions[i];
+                    if (session.Count == 0)
                     {
-                        sessionStart = existing.StartDate;
+                        continue;
                     }
 
-                    if (i == sessions.Count - 1 && sessionEnd < existing.EndDate)
+                    var sessionIndex = baseSessionIndex + i;
+                    var existing = existingByIndex.GetValueOrDefault(sessionIndex);
+                    var sessionStart = session.First().Timestamp;
+                    var sessionEnd = session.Last().Timestamp;
+                    if (!applySessionCap && existing != null)
                     {
-                        sessionEnd = existing.EndDate;
+                        if (i == 0 && sessionStart > existing.StartDate)
+                        {
+                            sessionStart = existing.StartDate;
+                        }
+
+                        if (i == sessions.Count - 1 && sessionEnd < existing.EndDate)
+                        {
+                            sessionEnd = existing.EndDate;
+                        }
                     }
-                }
 
-                var summary = existing?.Summary ?? string.Empty;
-                var isFinalized = existing?.IsFinalized ?? false;
-                if (existing != null
-                    && existing.StartDate == sessionStart
-                    && existing.EndDate == sessionEnd
-                    && existing.LastMessageAt == sessionEnd
-                    && string.Equals(existing.Summary ?? string.Empty, summary, StringComparison.Ordinal)
-                    && existing.IsFinalized == isFinalized)
-                {
-                    continue;
-                }
+                    var summary = existing?.Summary ?? string.Empty;
+                    var isFinalized = existing?.IsFinalized ?? false;
+                    if (existing != null
+                        && existing.StartDate == sessionStart
+                        && existing.EndDate == sessionEnd
+                        && existing.LastMessageAt == sessionEnd
+                        && string.Equals(existing.Summary ?? string.Empty, summary, StringComparison.Ordinal)
+                        && existing.IsFinalized == isFinalized)
+                    {
+                        continue;
+                    }
 
-                await _chatSessionRepository.UpsertAsync(new ChatSession
-                {
-                    Id = existing?.Id ?? Guid.Empty,
-                    ChatId = chatId,
-                    SessionIndex = sessionIndex,
-                    StartDate = sessionStart,
-                    EndDate = sessionEnd,
-                    LastMessageAt = sessionEnd,
-                    Summary = summary,
-                    IsFinalized = isFinalized
-                }, ct);
+                    await _chatSessionRepository.UpsertAsync(new ChatSession
+                    {
+                        Id = existing?.Id ?? Guid.Empty,
+                        ChatId = chatId,
+                        SessionIndex = sessionIndex,
+                        StartDate = sessionStart,
+                        EndDate = sessionEnd,
+                        LastMessageAt = sessionEnd,
+                        Summary = summary,
+                        IsFinalized = isFinalized
+                    }, leaseCt);
+                }
+            }
+            catch (OperationCanceledException) when (leaseHeartbeat.LeaseLost && !ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Slice-build workload stopped after lease loss: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}",
+                    chatId,
+                    ChatRuntimePhases.SliceBuild,
+                    _phaseOwnerId);
+                break;
+            }
+            finally
+            {
+                await StopPhaseLeaseHeartbeatAsync(leaseHeartbeat);
+                releaseMismatch = !await ReleaseSliceBuildPhaseAsync(chatId, "session_slice_build_done", ct);
+            }
+
+            if (releaseMismatch)
+            {
+                _logger.LogWarning(
+                    "Slice-build pass interrupted due to release mismatch escalation: chat_id={ChatId}",
+                    chatId);
+                break;
             }
         }
     }
@@ -2471,5 +2603,275 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         return false;
+    }
+
+    private async Task<bool> TryAcquireStage5PhaseAsync(long chatId, string reason, CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return true;
+        }
+
+        var decision = await _chatCoordinationService.TryAcquirePhaseAsync(
+            chatId,
+            ChatRuntimePhases.Stage5Process,
+            _phaseOwnerId,
+            reason,
+            ct: ct);
+        if (decision.Allowed)
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Stage5 phase guard blocked processing: chat_id={ChatId}, requested_phase={RequestedPhase}, current_phase={CurrentPhase}, deny_code={DenyCode}, deny_reason={DenyReason}",
+            chatId,
+            decision.RequestedPhase,
+            decision.CurrentPhase,
+            decision.DenyCode,
+            decision.DenyReason);
+        return false;
+    }
+
+    private async Task<bool> ReleaseStage5PhaseAsync(long chatId, string reason, CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return true;
+        }
+
+        var releaseResult = await _chatCoordinationService.ReleasePhaseAsync(
+            chatId,
+            ChatRuntimePhases.Stage5Process,
+            _phaseOwnerId,
+            reason,
+            ct.IsCancellationRequested ? CancellationToken.None : ct);
+        if (releaseResult.Released)
+        {
+            return true;
+        }
+
+        await _extractionErrorRepository.LogAsync(
+            stage: "stage5_phase_release_mismatch",
+            reason: releaseResult.OwnershipMismatch
+                ? "stage5 release denied by ownership mismatch"
+                : "stage5 release denied",
+            payload: $"chat_id={chatId};phase={ChatRuntimePhases.Stage5Process};owner_id={_phaseOwnerId};current_phase={releaseResult.CurrentPhase};current_owner={releaseResult.CurrentOwnerId}",
+            ct: CancellationToken.None);
+        _logger.LogError(
+            "Stage5 phase release escalation: chat_id={ChatId}, requested_phase={RequestedPhase}, owner_id={OwnerId}, ownership_mismatch={OwnershipMismatch}, current_phase={CurrentPhase}, current_owner={CurrentOwner}, current_lease_expires_at_utc={LeaseExpiresAtUtc}",
+            chatId,
+            ChatRuntimePhases.Stage5Process,
+            _phaseOwnerId,
+            releaseResult.OwnershipMismatch,
+            releaseResult.CurrentPhase,
+            releaseResult.CurrentOwnerId,
+            releaseResult.CurrentLeaseExpiresAtUtc);
+        return false;
+    }
+
+    private async Task<bool> TryAcquireSliceBuildPhaseAsync(long chatId, string reason, CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return true;
+        }
+
+        var decision = await _chatCoordinationService.TryAcquirePhaseAsync(
+            chatId,
+            ChatRuntimePhases.SliceBuild,
+            _phaseOwnerId,
+            reason,
+            ct: ct);
+        if (decision.Allowed)
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Slice-build phase guard blocked processing: chat_id={ChatId}, requested_phase={RequestedPhase}, current_phase={CurrentPhase}, deny_code={DenyCode}, deny_reason={DenyReason}",
+            chatId,
+            decision.RequestedPhase,
+            decision.CurrentPhase,
+            decision.DenyCode,
+            decision.DenyReason);
+        return false;
+    }
+
+    private async Task<bool> ReleaseSliceBuildPhaseAsync(long chatId, string reason, CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return true;
+        }
+
+        var releaseResult = await _chatCoordinationService.ReleasePhaseAsync(
+            chatId,
+            ChatRuntimePhases.SliceBuild,
+            _phaseOwnerId,
+            reason,
+            ct.IsCancellationRequested ? CancellationToken.None : ct);
+        if (releaseResult.Released)
+        {
+            return true;
+        }
+
+        await _extractionErrorRepository.LogAsync(
+            stage: "slice_build_phase_release_mismatch",
+            reason: releaseResult.OwnershipMismatch
+                ? "slice_build release denied by ownership mismatch"
+                : "slice_build release denied",
+            payload: $"chat_id={chatId};phase={ChatRuntimePhases.SliceBuild};owner_id={_phaseOwnerId};current_phase={releaseResult.CurrentPhase};current_owner={releaseResult.CurrentOwnerId}",
+            ct: CancellationToken.None);
+        _logger.LogError(
+            "Slice-build phase release escalation: chat_id={ChatId}, requested_phase={RequestedPhase}, owner_id={OwnerId}, ownership_mismatch={OwnershipMismatch}, current_phase={CurrentPhase}, current_owner={CurrentOwner}, current_lease_expires_at_utc={LeaseExpiresAtUtc}",
+            chatId,
+            ChatRuntimePhases.SliceBuild,
+            _phaseOwnerId,
+            releaseResult.OwnershipMismatch,
+            releaseResult.CurrentPhase,
+            releaseResult.CurrentOwnerId,
+            releaseResult.CurrentLeaseExpiresAtUtc);
+        return false;
+    }
+
+    private PhaseLeaseHeartbeatHandle StartPhaseLeaseHeartbeat(
+        long chatId,
+        string phase,
+        string reason,
+        CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return PhaseLeaseHeartbeatHandle.None;
+        }
+
+        var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var leaseLostCts = new CancellationTokenSource();
+        var interval = ResolvePhaseLeaseRenewInterval();
+        var task = Task.Run(
+            () => RunPhaseLeaseHeartbeatLoopAsync(chatId, phase, reason, interval, heartbeatCts.Token, leaseLostCts),
+            CancellationToken.None);
+        return new PhaseLeaseHeartbeatHandle(heartbeatCts, leaseLostCts, task);
+    }
+
+    private async Task StopPhaseLeaseHeartbeatAsync(PhaseLeaseHeartbeatHandle heartbeat)
+    {
+        if (!heartbeat.IsActive)
+        {
+            return;
+        }
+
+        heartbeat.HeartbeatTokenSource!.Cancel();
+        try
+        {
+            await heartbeat.RunTask!;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            heartbeat.HeartbeatTokenSource.Dispose();
+            heartbeat.LeaseLostTokenSource?.Dispose();
+        }
+    }
+
+    private static CancellationTokenSource CreateLeaseLinkedTokenSource(PhaseLeaseHeartbeatHandle heartbeat, CancellationToken ct)
+    {
+        return heartbeat.LeaseLostTokenSource is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : CancellationTokenSource.CreateLinkedTokenSource(ct, heartbeat.LeaseLostTokenSource.Token);
+    }
+
+    private async Task RunPhaseLeaseHeartbeatLoopAsync(
+        long chatId,
+        string phase,
+        string reason,
+        TimeSpan interval,
+        CancellationToken ct,
+        CancellationTokenSource leaseLostCts)
+    {
+        using var timer = new PeriodicTimer(interval);
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                var renewDecision = await _chatCoordinationService.TryRenewPhaseLeaseAsync(
+                    chatId,
+                    phase,
+                    _phaseOwnerId,
+                    reason,
+                    ct);
+                if (renewDecision.Renewed)
+                {
+                    _logger.LogDebug(
+                        "Phase lease renewed: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}, lease_expires_at_utc={LeaseExpiresAtUtc}",
+                        chatId,
+                        phase,
+                        _phaseOwnerId,
+                        renewDecision.CurrentLeaseExpiresAtUtc);
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Phase lease renewal stopped: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}, deny_code={DenyCode}, deny_reason={DenyReason}",
+                    chatId,
+                    phase,
+                    _phaseOwnerId,
+                    renewDecision.DenyCode,
+                    renewDecision.DenyReason);
+                if (!leaseLostCts.IsCancellationRequested)
+                {
+                    leaseLostCts.Cancel();
+                }
+                break;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Phase lease heartbeat iteration failed: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}",
+                    chatId,
+                    phase,
+                    _phaseOwnerId);
+            }
+        }
+    }
+
+    private TimeSpan ResolvePhaseLeaseRenewInterval()
+    {
+        var ttl = TimeSpan.FromMinutes(Math.Max(1, _coordinationSettings.PhaseGuardLeaseTtlMinutes));
+        var seconds = Math.Max(5, ttl.TotalSeconds / 3d);
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    private sealed class PhaseLeaseHeartbeatHandle
+    {
+        public static PhaseLeaseHeartbeatHandle None { get; } = new();
+
+        public PhaseLeaseHeartbeatHandle()
+        {
+        }
+
+        public PhaseLeaseHeartbeatHandle(
+            CancellationTokenSource heartbeatTokenSource,
+            CancellationTokenSource leaseLostTokenSource,
+            Task runTask)
+        {
+            HeartbeatTokenSource = heartbeatTokenSource;
+            LeaseLostTokenSource = leaseLostTokenSource;
+            RunTask = runTask;
+        }
+
+        public CancellationTokenSource? HeartbeatTokenSource { get; }
+        public CancellationTokenSource? LeaseLostTokenSource { get; }
+        public Task? RunTask { get; }
+        public bool IsActive => HeartbeatTokenSource is not null && RunTask is not null;
+        public bool LeaseLost => LeaseLostTokenSource?.IsCancellationRequested == true;
     }
 }
