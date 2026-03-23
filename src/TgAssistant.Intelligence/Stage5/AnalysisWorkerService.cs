@@ -1913,6 +1913,9 @@ public partial class AnalysisWorkerService : BackgroundService
                 var extractedByMessageId = await _extractionRepository.GetCheapJsonByMessageIdsAsync(
                     chatMessages.Select(x => x.Id).ToArray(),
                     leaseCt);
+                var quarantinedMessageIds = await _extractionRepository.GetQuarantinedMessageIdsAsync(
+                    chatMessages.Select(x => x.Id).ToArray(),
+                    leaseCt);
 
                 var allowShortSessionMerge = ShouldApplyShortSessionMerge(chatMessages, hotSessionGap);
                 var allSessions = SplitByGap(
@@ -1933,6 +1936,9 @@ public partial class AnalysisWorkerService : BackgroundService
                 var baseSessionIndex = applySessionCap
                     ? 0
                     : ResolveWindowBaseSessionIndex(existingSessions, windowStart);
+                var maxComputedSessionIndex = sessions.Count == 0
+                    ? baseSessionIndex
+                    : baseSessionIndex + sessions.Count - 1;
 
                 for (var i = 0; i < sessions.Count; i++)
                 {
@@ -1949,7 +1955,15 @@ public partial class AnalysisWorkerService : BackgroundService
                     var pendingRealtimeWithoutExtraction = session
                         .Where(x => x.Source == MessageSource.Realtime)
                         .Count(x => !extractedByMessageId.ContainsKey(x.Id));
-                    var shouldReopenForPendingRealtimeArtifacts = existing?.IsAnalyzed == true && pendingRealtimeWithoutExtraction > 0;
+                    var actionableMissingArtifacts = CountActionableMissingSessionArtifacts(
+                        session,
+                        extractedByMessageId,
+                        quarantinedMessageIds);
+                    var shouldReopenForPendingRealtimeArtifacts =
+                        existing?.IsAnalyzed == true
+                        && existing.IsFinalized == false
+                        && actionableMissingArtifacts > 0
+                        && IsTailReopenEligible(sessionIndex, maxComputedSessionIndex, sessionEnd);
                     if (!applySessionCap && existing != null)
                     {
                         if (i == 0 && sessionStart > existing.StartDate)
@@ -1976,10 +1990,11 @@ public partial class AnalysisWorkerService : BackgroundService
                         {
                             await _chatSessionRepository.MarkNeedsAnalysisAsync([existing.Id], leaseCt);
                             _logger.LogInformation(
-                                "Stage5 reopened analyzed session due to realtime messages without extraction: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}",
+                                "Stage5 reopened analyzed session due to actionable realtime artifacts in tail window: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}, actionable_missing_artifacts={ActionableMissing}",
                                 chatId,
                                 sessionIndex,
-                                pendingRealtimeWithoutExtraction);
+                                pendingRealtimeWithoutExtraction,
+                                actionableMissingArtifacts);
                         }
                         continue;
                     }
@@ -1988,10 +2003,11 @@ public partial class AnalysisWorkerService : BackgroundService
                     {
                         await _chatSessionRepository.MarkNeedsAnalysisAsync([existing!.Id], leaseCt);
                         _logger.LogInformation(
-                            "Stage5 reopened analyzed session due to realtime messages without extraction after session-boundary update: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}",
+                            "Stage5 reopened analyzed session due to actionable realtime artifacts in tail window after session-boundary update: chat_id={ChatId}, session_index={SessionIndex}, pending_realtime_without_extraction={PendingCount}, actionable_missing_artifacts={ActionableMissing}",
                             chatId,
                             sessionIndex,
-                            pendingRealtimeWithoutExtraction);
+                            pendingRealtimeWithoutExtraction,
+                            actionableMissingArtifacts);
                     }
 
                     await _chatSessionRepository.UpsertAsync(new ChatSession
@@ -2058,6 +2074,24 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         return 0;
+    }
+
+    private bool IsTailReopenEligible(int sessionIndex, int maxSessionIndex, DateTime sessionEndUtc)
+    {
+        var lag = Math.Max(0, _coordinationSettings.TailReopenMaxSessionLag);
+        var windowHours = Math.Max(0, _coordinationSettings.TailReopenMaxWindowHours);
+        var indexGate = sessionIndex >= Math.Max(0, maxSessionIndex - lag);
+        if (!indexGate)
+        {
+            return false;
+        }
+
+        if (windowHours <= 0)
+        {
+            return true;
+        }
+
+        return sessionEndUtc >= DateTime.UtcNow.AddHours(-windowHours);
     }
 
     private static int CountActionableMissingSessionArtifacts(
