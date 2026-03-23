@@ -8,5 +8,11 @@ public interface IBotChatService
         long? sourceMessageId = null,
         long? senderId = null,
         CancellationToken ct = default);
+    Task<BotChatTurnDiagnostics> GenerateReplyWithDiagnosticsAsync(
+        string userMessage,
+        long? transportChatId = null,
+        long? sourceMessageId = null,
+        long? senderId = null,
+        CancellationToken ct = default);
     Task<string> TriggerSessionResummaryAsync(long chatId, int sessionIndex, CancellationToken ct);
 }
