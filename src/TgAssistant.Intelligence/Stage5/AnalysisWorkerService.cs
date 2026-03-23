@@ -1929,6 +1929,33 @@ public partial class AnalysisWorkerService : BackgroundService
                 var existingSessions = existingByChat.GetValueOrDefault(chatId)?
                     .OrderBy(x => x.SessionIndex)
                     .ToList() ?? [];
+
+                if (!applySessionCap && existingSessions.Count > 0)
+                {
+                    // In uncapped mode we only reslice a short tail near the latest known session.
+                    // Rebuilding a very large historical window can remap indexes and inflate session rows.
+                    var latestKnownEnd = existingSessions[^1].EndDate;
+                    var tailLookback = TimeSpan.FromMinutes(Math.Max(15, _settings.HotSessionGapMinutes * 6));
+                    var tailWindowStart = latestKnownEnd - tailLookback;
+                    chatMessages = chatMessages
+                        .Where(x => x.Timestamp >= tailWindowStart)
+                        .OrderBy(x => x.Timestamp)
+                        .ThenBy(x => x.Id)
+                        .ToList();
+                    if (chatMessages.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    allowShortSessionMerge = ShouldApplyShortSessionMerge(chatMessages, hotSessionGap);
+                    allSessions = SplitByGap(
+                        chatMessages,
+                        hotSessionGap,
+                        Math.Max(1, _settings.EpisodicShortSessionMergeThreshold),
+                        allowShortSessionMerge);
+                    sessions = allSessions;
+                }
+
                 var existingByIndex = existingSessions.ToDictionary(x => x.SessionIndex);
                 var windowStart = sessions.Count > 0 && sessions[0].Count > 0
                     ? sessions[0][0].Timestamp
@@ -1939,6 +1966,26 @@ public partial class AnalysisWorkerService : BackgroundService
                 var maxComputedSessionIndex = sessions.Count == 0
                     ? baseSessionIndex
                     : baseSessionIndex + sessions.Count - 1;
+
+                if (!applySessionCap && existingSessions.Count > 0 && sessions.Count > 0)
+                {
+                    var maxExistingSessionIndex = existingSessions[^1].SessionIndex;
+                    var maxAllowedGrowthPerPass = Math.Max(50, _coordinationSettings.TailReopenMaxSessionLag + 10);
+                    var maxAllowedSessionIndex = maxExistingSessionIndex + maxAllowedGrowthPerPass;
+                    if (maxComputedSessionIndex > maxAllowedSessionIndex)
+                    {
+                        _logger.LogWarning(
+                            "Stage5 session slicing growth guard trimmed computed session window: chat_id={ChatId}, computed_max_session_index={ComputedMax}, allowed_max_session_index={AllowedMax}, existing_max_session_index={ExistingMax}, planned_sessions={PlannedSessions}",
+                            chatId,
+                            maxComputedSessionIndex,
+                            maxAllowedSessionIndex,
+                            maxExistingSessionIndex,
+                            sessions.Count);
+                        var allowedCount = Math.Max(1, maxAllowedSessionIndex - baseSessionIndex + 1);
+                        sessions = sessions.Take(allowedCount).ToList();
+                        maxComputedSessionIndex = baseSessionIndex + sessions.Count - 1;
+                    }
+                }
 
                 for (var i = 0; i < sessions.Count; i++)
                 {
