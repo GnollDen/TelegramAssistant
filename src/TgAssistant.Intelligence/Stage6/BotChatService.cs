@@ -69,10 +69,28 @@ public class BotChatService : IBotChatService
         long? senderId = null,
         CancellationToken ct = default)
     {
+        var diagnostics = await GenerateReplyWithDiagnosticsAsync(
+            userMessage,
+            transportChatId,
+            sourceMessageId,
+            senderId,
+            ct);
+        return diagnostics.Reply;
+    }
+
+    public async Task<BotChatTurnDiagnostics> GenerateReplyWithDiagnosticsAsync(
+        string userMessage,
+        long? transportChatId = null,
+        long? sourceMessageId = null,
+        long? senderId = null,
+        CancellationToken ct = default)
+    {
         var normalizedMessage = (userMessage ?? string.Empty).Trim();
+        var diagnostics = new BotChatTurnDiagnostics();
         if (string.IsNullOrWhiteSpace(normalizedMessage))
         {
-            return "Please provide a message.";
+            diagnostics.Reply = "Please provide a message.";
+            return diagnostics;
         }
 
         var commandResult = await _botCommandService.TryHandleAsync(
@@ -83,17 +101,20 @@ public class BotChatService : IBotChatService
             ct);
         if (commandResult.Handled)
         {
-            return commandResult.Reply;
+            diagnostics.Reply = commandResult.Reply;
+            return diagnostics;
         }
 
         var embedding = await _embeddingGenerator.GenerateAsync(
             _embeddingSettings.Model,
             normalizedMessage,
             CancellationToken.None);
+        diagnostics.EmbeddingCalls = 1;
         if (embedding.Length == 0)
         {
             _logger.LogWarning("Stage6 chat embedding is empty.");
-            return "I cannot answer now because context retrieval failed.";
+            diagnostics.Reply = "I cannot answer now because context retrieval failed.";
+            return diagnostics;
         }
 
         var facts = await _factRepository.SearchSimilarFactsAsync(
@@ -104,6 +125,7 @@ public class BotChatService : IBotChatService
 
         var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(facts);
         var model = ResolveReplyModel();
+        diagnostics.ResolvedModel = model;
         var messages = new List<OpenRouterMessage>
         {
             new() { Role = "system", Content = systemPrompt },
@@ -116,9 +138,11 @@ public class BotChatService : IBotChatService
             tools,
             ReplyMaxTokens,
             CancellationToken.None);
+        diagnostics.ChatCompletionCalls++;
         var firstText = NormalizeResponseText(firstResponse.Content);
         var rawToolCalls = firstResponse.ToolCalls ?? [];
         var droppedToolCalls = Math.Max(0, rawToolCalls.Count - MaxToolCallsPerTurn);
+        diagnostics.DroppedToolCalls = droppedToolCalls;
         if (droppedToolCalls > 0)
         {
             _logger.LogWarning(
@@ -132,10 +156,12 @@ public class BotChatService : IBotChatService
         {
             if (string.IsNullOrWhiteSpace(firstText))
             {
-                return "I cannot answer based on the available context facts.";
+                diagnostics.Reply = "I cannot answer based on the available context facts.";
+                return diagnostics;
             }
 
-            return firstText.Trim();
+            diagnostics.Reply = firstText.Trim();
+            return diagnostics;
         }
 
         messages.Add(new OpenRouterMessage
@@ -150,6 +176,7 @@ public class BotChatService : IBotChatService
             string toolResult;
             var toolName = toolCall.Function.Name;
             var toolArgs = toolCall.Function.Arguments ?? "{}";
+            diagnostics.ToolCallsExecuted.Add(toolName);
             _logger.LogInformation(
                 "Executing tool {ToolName} with args: {Args}",
                 toolName,
@@ -200,16 +227,19 @@ public class BotChatService : IBotChatService
             null,
             ReplyMaxTokens,
             CancellationToken.None);
+        diagnostics.ChatCompletionCalls++;
         var reply = NormalizeResponseText(secondResponse.Content);
 
         if (string.IsNullOrWhiteSpace(reply))
         {
-            return string.IsNullOrWhiteSpace(firstText)
+            diagnostics.Reply = string.IsNullOrWhiteSpace(firstText)
                 ? "I cannot answer based on the available context facts."
                 : firstText.Trim();
+            return diagnostics;
         }
 
-        return reply.Trim();
+        diagnostics.Reply = reply.Trim();
+        return diagnostics;
     }
 
     public async Task<string> TriggerSessionResummaryAsync(long chatId, int sessionIndex, CancellationToken ct)
