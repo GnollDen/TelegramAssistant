@@ -272,15 +272,22 @@ public partial class AnalysisWorkerService : BackgroundService
 
         var analyzedSessionsCount = 0;
         var maxAnalyzedSessionEndMs = 0L;
+        var sequentiallyBlockedChatIds = new HashSet<long>();
         foreach (var session in sessions)
         {
+            if (sequentiallyBlockedChatIds.Contains(session.ChatId))
+            {
+                continue;
+            }
+
             if (!await CanProcessSessionSequentiallyAsync(session, ct))
             {
                 _logger.LogInformation(
-                    "Stage5 session-first paused to preserve strict order: chat_id={ChatId}, session_index={SessionIndex}",
+                    "Stage5 session-first skipped blocked chat to preserve strict order locally: chat_id={ChatId}, session_index={SessionIndex}",
                     session.ChatId,
                     session.SessionIndex);
-                break;
+                sequentiallyBlockedChatIds.Add(session.ChatId);
+                continue;
             }
 
             if (!await TryAcquireStage5PhaseAsync(session.ChatId, "session_first_claim", ct))
@@ -318,6 +325,8 @@ public partial class AnalysisWorkerService : BackgroundService
                         session.Id,
                         session.ChatId,
                         session.SessionIndex);
+                    maxAnalyzedSessionEndMs = await MarkSessionAnalyzedAndAdvanceWatermarkAsync(session, maxAnalyzedSessionEndMs, leaseCt);
+                    analyzedSessionsCount++;
                     continue;
                 }
 
