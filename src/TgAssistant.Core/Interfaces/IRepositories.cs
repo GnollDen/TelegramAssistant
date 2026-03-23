@@ -18,6 +18,7 @@ public interface IMessageRepository
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
+    Task<long> CountNeedsReanalysisProcessedAsync(CancellationToken ct = default);
     Task<List<EditDiffCandidate>> GetPendingEditDiffCandidatesAsync(int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<Dictionary<long, Message>> GetByTelegramMessageIdsAsync(
@@ -166,6 +167,16 @@ public interface IChatSessionRepository
     Task MarkAnalyzedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
     Task MarkNeedsAnalysisAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
     Task MarkFinalizedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
+    Task<long> CountPendingAnalysisSessionsAsync(DateTime staleBeforeUtc, CancellationToken ct = default);
+    Task<bool> TryUpdateSummaryIfShapeUnchangedAsync(
+        Guid sessionId,
+        long chatId,
+        int sessionIndex,
+        DateTime expectedStartDate,
+        DateTime expectedEndDate,
+        DateTime expectedLastMessageAt,
+        string summary,
+        CancellationToken ct = default);
 }
 
 public interface IPromptTemplateRepository
@@ -185,6 +196,12 @@ public interface IMessageExtractionRepository
 {
     Task UpsertCheapAsync(long messageId, string cheapJson, bool needsExpensive, CancellationToken ct = default);
     Task QuarantineMessagesAsync(IReadOnlyCollection<long> messageIds, string reason, CancellationToken ct = default);
+    Task<int> ReleaseQuarantineForRetryAsync(
+        string reason,
+        DateTime quarantinedBeforeUtc,
+        int limit,
+        CancellationToken ct = default);
+    Task<QuarantineMetrics> GetQuarantineMetricsAsync(DateTime stuckBeforeUtc, CancellationToken ct = default);
     Task<HashSet<long>> GetQuarantinedMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<Dictionary<long, string>> GetCheapJsonByMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<List<MessageExtractionRecord>> GetExpensiveBacklogAsync(int limit, CancellationToken ct = default);
@@ -574,6 +591,16 @@ public class Stage5MetricsSnapshot
     public long AnalysisRequests1h { get; set; }
     public long AnalysisTokens1h { get; set; }
     public decimal AnalysisCostUsd1h { get; set; }
+    public long PendingSessionsQueue { get; set; }
+    public long ReanalysisBacklog { get; set; }
+    public long QuarantineTotal { get; set; }
+    public long QuarantineStuck { get; set; }
+}
+
+public sealed class QuarantineMetrics
+{
+    public long Total { get; set; }
+    public long Stuck { get; set; }
 }
 
 public class MaintenanceCleanupRequest

@@ -626,12 +626,24 @@ public class MessageRepository : IMessageRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.Messages
             .AsNoTracking()
-            .Where(x => x.NeedsReanalysis)
+            .Where(x => x.NeedsReanalysis
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed)
             .OrderBy(x => x.Id)
             .Take(Math.Max(1, limit))
             .ToListAsync(ct);
 
         return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<long> CountNeedsReanalysisProcessedAsync(CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.Messages
+            .AsNoTracking()
+            .LongCountAsync(
+                x => x.NeedsReanalysis
+                     && x.ProcessingStatus == (short)ProcessingStatus.Processed,
+                ct);
     }
 
     public async Task<List<EditDiffCandidate>> GetPendingEditDiffCandidatesAsync(int limit, CancellationToken ct = default)

@@ -200,6 +200,82 @@ public class MessageExtractionRepository : IMessageExtractionRepository
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int> ReleaseQuarantineForRetryAsync(
+        string reason,
+        DateTime quarantinedBeforeUtc,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var safeReason = string.IsNullOrWhiteSpace(reason) ? "manual_quarantine" : reason.Trim();
+        var safeLimit = Math.Max(1, limit);
+        var safeQuarantinedBeforeUtc = DateTime.SpecifyKind(quarantinedBeforeUtc, DateTimeKind.Utc);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync(ct);
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            WITH eligible AS (
+                SELECT me.message_id
+                FROM message_extractions me
+                JOIN messages m ON m.id = me.message_id
+                WHERE COALESCE(me.is_quarantined, FALSE) = TRUE
+                  AND COALESCE(me.quarantine_reason, '') = @reason
+                  AND me.quarantined_at IS NOT NULL
+                  AND me.quarantined_at <= @quarantined_before_utc
+                  AND m.processing_status = @processed_status
+                ORDER BY me.quarantined_at ASC, me.message_id ASC
+                LIMIT @limit
+            ),
+            upd_extractions AS (
+                UPDATE message_extractions me
+                SET is_quarantined = FALSE,
+                    quarantine_reason = NULL,
+                    quarantined_at = NULL,
+                    updated_at = NOW()
+                FROM eligible e
+                WHERE me.message_id = e.message_id
+                RETURNING me.message_id
+            )
+            UPDATE messages m
+            SET needs_reanalysis = TRUE,
+                processed_at = NOW()
+            FROM upd_extractions u
+            WHERE m.id = u.message_id;
+            """;
+        cmd.Parameters.AddWithValue("reason", safeReason);
+        cmd.Parameters.AddWithValue("quarantined_before_utc", safeQuarantinedBeforeUtc);
+        cmd.Parameters.AddWithValue("processed_status", (short)ProcessingStatus.Processed);
+        cmd.Parameters.AddWithValue("limit", safeLimit);
+        return await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<QuarantineMetrics> GetQuarantineMetricsAsync(DateTime stuckBeforeUtc, CancellationToken ct = default)
+    {
+        var safeStuckBeforeUtc = DateTime.SpecifyKind(stuckBeforeUtc, DateTimeKind.Utc);
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var total = await db.MessageExtractions
+            .AsNoTracking()
+            .LongCountAsync(x => x.IsQuarantined, ct);
+        var stuck = await db.MessageExtractions
+            .AsNoTracking()
+            .LongCountAsync(
+                x => x.IsQuarantined
+                     && x.QuarantinedAt != null
+                     && x.QuarantinedAt <= safeStuckBeforeUtc,
+                ct);
+        return new QuarantineMetrics
+        {
+            Total = total,
+            Stuck = stuck
+        };
+    }
+
     public async Task<HashSet<long>> GetQuarantinedMessageIdsAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
     {
         if (messageIds.Count == 0)
