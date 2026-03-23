@@ -12,36 +12,67 @@ namespace TgAssistant.Telegram.Listener;
 
 public class TelegramListenerService : BackgroundService
 {
+    private static readonly TimeSpan NoEligibleChatsRetryDelay = TimeSpan.FromSeconds(15);
+
     private readonly TelegramSettings _settings;
     private readonly BackfillSettings _backfillSettings;
+    private readonly ChatCoordinationSettings _coordinationSettings;
     private readonly MediaSettings _mediaSettings;
     private readonly IMessageQueue _queue;
     private readonly IMessageRepository _messageRepository;
+    private readonly IChatCoordinationService _chatCoordinationService;
     private readonly ILogger<TelegramListenerService> _logger;
     private Client? _client;
+    private DateTime _lastEligibilityRefreshUtc = DateTime.MinValue;
+    private DateTime _lastCoordinationHeartbeatLogUtc = DateTime.MinValue;
+    private HashSet<long> _realtimeEligibleChats = new();
     private readonly Dictionary<long, string> _userNameCache = new();
+    private readonly SemaphoreSlim _eligibilityLock = new(1, 1);
 
     public TelegramListenerService(
         IOptions<TelegramSettings> settings,
         IOptions<BackfillSettings> backfillSettings,
+        IOptions<ChatCoordinationSettings> coordinationSettings,
         IOptions<MediaSettings> mediaSettings,
         IMessageQueue queue,
         IMessageRepository messageRepository,
+        IChatCoordinationService chatCoordinationService,
         ILogger<TelegramListenerService> logger)
     {
         _settings = settings.Value;
         _backfillSettings = backfillSettings.Value;
+        _coordinationSettings = coordinationSettings.Value;
         _mediaSettings = mediaSettings.Value;
         _queue = queue;
         _messageRepository = messageRepository;
+        _chatCoordinationService = chatCoordinationService;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_coordinationSettings.Enabled)
+        {
+            await RefreshRealtimeEligibleChatsAsync(force: true, stoppingToken);
+        }
+
         if (_backfillSettings.Enabled)
         {
-            _logger.LogInformation("Telegram listener skipped because history backfill mode is enabled.");
+            _logger.LogInformation("Telegram listener skipped because history backfill mode is enabled (single-session conflict prevention).");
+            return;
+        }
+
+        while (!stoppingToken.IsCancellationRequested && _coordinationSettings.Enabled && _realtimeEligibleChats.Count == 0)
+        {
+            _logger.LogInformation(
+                "Telegram listener waiting: no realtime-eligible chats yet. monitored={MonitoredCount}",
+                _settings.MonitoredChatIds.Count);
+            await Task.Delay(NoEligibleChatsRetryDelay, stoppingToken);
+            await RefreshRealtimeEligibleChatsAsync(force: true, stoppingToken);
+        }
+
+        if (stoppingToken.IsCancellationRequested)
+        {
             return;
         }
 
@@ -49,6 +80,13 @@ public class TelegramListenerService : BackgroundService
         _logger.LogInformation("Monitoring {Count} chats: {Chats}",
             _settings.MonitoredChatIds.Count,
             string.Join(", ", _settings.MonitoredChatIds));
+        if (_coordinationSettings.Enabled)
+        {
+            _logger.LogInformation(
+                "Realtime-eligible chats {Count}: {Chats}",
+                _realtimeEligibleChats.Count,
+                _realtimeEligibleChats.Count == 0 ? "<none>" : string.Join(", ", _realtimeEligibleChats));
+        }
 
         _client = new Client(ConfigProvider);
         _client.OnUpdates += OnUpdates;
@@ -56,7 +94,20 @@ public class TelegramListenerService : BackgroundService
         var user = await _client.LoginUserIfNeeded();
         _logger.LogInformation("Logged in as {Name} (ID: {Id})", user.first_name, user.id);
 
-        await Task.Delay(Timeout.Infinite, stoppingToken);
+        var heartbeatTask = _coordinationSettings.Enabled
+            ? RunCoordinationHeartbeatLoopAsync(stoppingToken)
+            : Task.CompletedTask;
+        try
+        {
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            await heartbeatTask;
+        }
     }
 
     private string? ConfigProvider(string what)
@@ -143,6 +194,8 @@ public class TelegramListenerService : BackgroundService
 
         if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
             return;
+        if (!await IsChatRealtimeEligibleAsync(chatId))
+            return;
 
         var senderId = message.from_id is PeerUser fromPeer ? fromPeer.user_id : 0;
         var senderName = ResolveSenderName(senderId);
@@ -226,6 +279,10 @@ public class TelegramListenerService : BackgroundService
                     {
                         continue;
                     }
+                    if (!await IsChatRealtimeEligibleAsync(resolvedChatId))
+                    {
+                        continue;
+                    }
 
                     var raw = BuildDeleteTombstone(msgId, resolvedChatId);
                     await _queue.EnqueueAsync(raw);
@@ -241,6 +298,8 @@ public class TelegramListenerService : BackgroundService
         }
 
         if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
+            return;
+        if (!await IsChatRealtimeEligibleAsync(chatId))
             return;
 
         foreach (var msgId in messageIds)
@@ -290,6 +349,8 @@ public class TelegramListenerService : BackgroundService
         }
 
         if (_settings.MonitoredChatIds.Count > 0 && !_settings.MonitoredChatIds.Contains(chatId))
+            return;
+        if (!await IsChatRealtimeEligibleAsync(chatId))
             return;
 
         var reactions = react.reactions?.results?
@@ -388,5 +449,84 @@ public class TelegramListenerService : BackgroundService
     {
         _client?.Dispose();
         base.Dispose();
+    }
+
+    private async Task<bool> IsChatRealtimeEligibleAsync(long chatId)
+    {
+        if (!_coordinationSettings.Enabled)
+        {
+            return true;
+        }
+
+        await RefreshRealtimeEligibleChatsAsync(force: false, CancellationToken.None);
+        return _realtimeEligibleChats.Contains(chatId);
+    }
+
+    private async Task RefreshRealtimeEligibleChatsAsync(bool force, CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (!force && now - _lastEligibilityRefreshUtc < TimeSpan.FromSeconds(_coordinationSettings.ListenerEligibilityRefreshSeconds))
+        {
+            return;
+        }
+
+        await _eligibilityLock.WaitAsync(ct);
+        try
+        {
+            now = DateTime.UtcNow;
+            if (!force && now - _lastEligibilityRefreshUtc < TimeSpan.FromSeconds(_coordinationSettings.ListenerEligibilityRefreshSeconds))
+            {
+                return;
+            }
+
+            _realtimeEligibleChats = await _chatCoordinationService.ResolveRealtimeEligibleChatIdsAsync(
+                _settings.MonitoredChatIds,
+                _backfillSettings.ChatIds,
+                _backfillSettings.Enabled,
+                _coordinationSettings.HandoverPendingExtractionThreshold,
+                ct);
+            await _chatCoordinationService.TouchRealtimeHeartbeatAsync(_realtimeEligibleChats, ct);
+            _lastEligibilityRefreshUtc = now;
+        }
+        finally
+        {
+            _eligibilityLock.Release();
+        }
+    }
+
+    private async Task RunCoordinationHeartbeatLoopAsync(CancellationToken ct)
+    {
+        var intervalSeconds = Math.Max(5, _coordinationSettings.ListenerEligibilityRefreshSeconds);
+        var interval = TimeSpan.FromSeconds(intervalSeconds);
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(interval, ct);
+                await RefreshRealtimeEligibleChatsAsync(force: true, ct);
+
+                var now = DateTime.UtcNow;
+                if (now - _lastCoordinationHeartbeatLogUtc >= TimeSpan.FromMinutes(5))
+                {
+                    _logger.LogInformation(
+                        "Coordination heartbeat refreshed for listener process. realtime_eligible_chats={EligibleCount}",
+                        _realtimeEligibleChats.Count);
+                    _lastCoordinationHeartbeatLogUtc = now;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Coordination heartbeat loop failed; retrying.");
+            }
+        }
     }
 }
