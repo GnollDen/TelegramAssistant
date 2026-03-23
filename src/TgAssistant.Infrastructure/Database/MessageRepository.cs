@@ -44,28 +44,40 @@ public class MessageRepository : IMessageRepository
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var unique = items
-            .GroupBy(x => new { x.Source, x.ChatId, x.TelegramMessageId })
-            .Select(g => g.First())
+            .GroupBy(x => new { x.ChatId, x.TelegramMessageId })
+            .Select(g => SelectPreferredIncoming(g))
             .ToList();
 
-        var sourceKeys = unique.Select(x => (short)x.Source).Distinct().ToList();
         var chatKeys = unique.Select(x => x.ChatId).Distinct().ToList();
+        var telegramKeys = unique.Select(x => x.TelegramMessageId).Distinct().ToList();
 
         var existing = await db.Messages
-            .Where(x => sourceKeys.Contains(x.Source) && chatKeys.Contains(x.ChatId))
+            .Where(x => chatKeys.Contains(x.ChatId) && telegramKeys.Contains(x.TelegramMessageId))
             .ToListAsync(ct);
 
-        var existingMap = existing.ToDictionary(
-            x => $"{x.Source}:{x.ChatId}:{x.TelegramMessageId}",
-            x => x,
-            StringComparer.Ordinal);
+        var existingMap = existing
+            .GroupBy(x => BuildDedupKey(x.ChatId, x.TelegramMessageId), StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => SelectCanonicalExisting(g),
+                StringComparer.Ordinal);
+
+        var duplicateGroups = existing.Count - existingMap.Count;
+        if (duplicateGroups > 0)
+        {
+            _logger.LogWarning(
+                "Detected pre-existing cross-source duplicates in messages table for incoming save scope: duplicate_rows={DuplicateRows}, scoped_keys={ScopedKeys}",
+                duplicateGroups,
+                existingMap.Count);
+        }
 
         var updatedAndMarkedForReanalysis = 0;
         foreach (var msg in unique)
         {
-            var key = $"{(short)msg.Source}:{msg.ChatId}:{msg.TelegramMessageId}";
+            var key = BuildDedupKey(msg.ChatId, msg.TelegramMessageId);
             if (existingMap.TryGetValue(key, out var current))
             {
+                PromoteSourceIfNeeded(current, msg);
                 if (ShouldUpdateExisting(current, msg))
                 {
                     ApplyUpdate(current, msg);
@@ -108,6 +120,35 @@ public class MessageRepository : IMessageRepository
         }
         _logger.LogDebug("Saved batch of {Count} messages", unique.Count);
         return unique.Count;
+    }
+
+    private static string BuildDedupKey(long chatId, long telegramMessageId)
+        => $"{chatId}:{telegramMessageId}";
+
+    private static Message SelectPreferredIncoming(IEnumerable<Message> group)
+    {
+        return group
+            .OrderByDescending(x => x.Source == MessageSource.Realtime)
+            .ThenByDescending(x => x.EditTimestamp ?? DateTime.MinValue)
+            .ThenByDescending(x => x.Text?.Length ?? 0)
+            .First();
+    }
+
+    private static DbMessage SelectCanonicalExisting(IEnumerable<DbMessage> group)
+    {
+        return group
+            .OrderByDescending(x => x.Source == (short)MessageSource.Realtime)
+            .ThenByDescending(x => x.EditTimestamp ?? DateTime.MinValue)
+            .ThenByDescending(x => x.Id)
+            .First();
+    }
+
+    private static void PromoteSourceIfNeeded(DbMessage current, Message incoming)
+    {
+        if (current.Source == (short)MessageSource.Archive && incoming.Source == MessageSource.Realtime)
+        {
+            current.Source = (short)MessageSource.Realtime;
+        }
     }
 
     private static bool ShouldUpdateExisting(DbMessage current, Message incoming)
