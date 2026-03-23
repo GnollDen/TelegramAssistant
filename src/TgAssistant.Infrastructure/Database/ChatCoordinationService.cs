@@ -112,7 +112,7 @@ public class ChatCoordinationService : IChatCoordinationService
             {
                 row.State = ChatCoordinationStates.RealtimeActive;
                 row.Reason = "handover_completed";
-                row.RealtimeActivatedAt ??= now;
+                row.RealtimeActivatedAt = now;
                 row.UpdatedAt = now;
             }
             else
@@ -206,7 +206,7 @@ public class ChatCoordinationService : IChatCoordinationService
         {
             row.State = ChatCoordinationStates.RealtimeActive;
             row.Reason = "handover_completed";
-            row.RealtimeActivatedAt ??= now;
+            row.RealtimeActivatedAt = now;
             row.UpdatedAt = now;
         }
         else
