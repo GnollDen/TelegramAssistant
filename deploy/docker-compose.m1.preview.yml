@@ -1,0 +1,53 @@
+version: "3.9"
+
+# Preview-only M1 workload split template.
+# Not used by default deployment path.
+services:
+  tga-ingest:
+    image: ghcr.io/example/telegramassistant:latest
+    container_name: tga-ingest-preview
+    profiles: ["m1-preview"]
+    network_mode: "host"
+    env_file:
+      - ../.env
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=ingest,ops"]
+    restart: unless-stopped
+
+  tga-stage5:
+    image: ghcr.io/example/telegramassistant:latest
+    container_name: tga-stage5-preview
+    profiles: ["m1-preview"]
+    network_mode: "host"
+    env_file:
+      - ../.env
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=stage5,maintenance"]
+    restart: unless-stopped
+
+  tga-stage6:
+    image: ghcr.io/example/telegramassistant:latest
+    container_name: tga-stage6-preview
+    profiles: ["m1-preview"]
+    network_mode: "host"
+    env_file:
+      - ../.env
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=stage6"]
+    restart: unless-stopped
+
+  tga-web:
+    image: ghcr.io/example/telegramassistant:latest
+    container_name: tga-web-preview
+    profiles: ["m1-preview"]
+    network_mode: "host"
+    env_file:
+      - ../.env
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=web,ops"]
+    restart: unless-stopped
+
+  tga-mcp:
+    image: ghcr.io/example/telegramassistant-mcp:latest
+    container_name: tga-mcp-preview
+    profiles: ["m1-preview"]
+    env_file:
+      - ../.env
+    depends_on: []
+    restart: unless-stopped
