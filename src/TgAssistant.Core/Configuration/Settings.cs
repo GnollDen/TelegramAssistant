@@ -80,6 +80,8 @@ public class VoiceParalinguisticsSettings
 {
     public const string Section = "VoiceParalinguistics";
     public bool Enabled { get; set; } = true;
+    public bool RealtimeOnlyNewMessages { get; set; } = true;
+    public int RealtimeOnlyLookbackSeconds { get; set; } = 30;
     public bool TranscriptionEnabled { get; set; } = true;
     public bool DeleteSourceAudioAfterProcessing { get; set; } = true;
     public int PollIntervalSeconds { get; set; } = 2;
