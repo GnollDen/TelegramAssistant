@@ -164,6 +164,7 @@ public interface IChatSessionRepository
     Task<List<ChatSession>> GetPendingAnalysisSessionsAsync(DateTime staleBeforeUtc, int limit, CancellationToken ct = default);
     Task<Dictionary<long, List<ChatSession>>> GetPendingAggregationCandidatesAsync(DateTime staleBeforeUtc, CancellationToken ct = default);
     Task MarkAnalyzedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
+    Task MarkNeedsAnalysisAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
     Task MarkFinalizedAsync(IReadOnlyCollection<Guid> sessionIds, CancellationToken ct = default);
 }
 
