@@ -1,0 +1,94 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using TgAssistant.Core.Configuration;
+
+namespace TgAssistant.Host.Startup;
+
+public static partial class ServiceRegistrationExtensions
+{
+    public static IServiceCollection AddTelegramAssistantSettings(this IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<TelegramSettings>(config.GetSection(TelegramSettings.Section));
+        services.Configure<RedisSettings>(config.GetSection(RedisSettings.Section));
+        services.Configure<DatabaseSettings>(config.GetSection(DatabaseSettings.Section));
+        services.Configure<GeminiSettings>(config.GetSection(GeminiSettings.Section));
+        services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
+        services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
+        services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
+        services.Configure<VoiceParalinguisticsSettings>(config.GetSection(VoiceParalinguisticsSettings.Section));
+        services.Configure<ArchiveImportSettings>(config.GetSection(ArchiveImportSettings.Section));
+        services.Configure<BackfillSettings>(config.GetSection(BackfillSettings.Section));
+        services.Configure<ChatCoordinationSettings>(config.GetSection(ChatCoordinationSettings.Section));
+        services.Configure<RiskyOperationSafetySettings>(config.GetSection(RiskyOperationSafetySettings.Section));
+        services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
+        services.Configure<AggregationSettings>(config.GetSection(AggregationSettings.Section));
+        services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
+        services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
+        services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
+        services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
+        services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
+        services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
+        services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
+        services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
+
+        services.PostConfigure<TelegramSettings>(s =>
+        {
+            if (string.IsNullOrWhiteSpace(s.MonitoredChats))
+            {
+                return;
+            }
+
+            var needsParse = s.MonitoredChatIds.Count == 0 || s.MonitoredChatIds.All(id => id <= 0);
+            if (!needsParse)
+            {
+                s.MonitoredChatIds = s.MonitoredChatIds.Where(id => id > 0).Distinct().ToList();
+                return;
+            }
+
+            s.MonitoredChatIds = s.MonitoredChats
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(raw => long.TryParse(raw.Trim(), out var id) ? id : 0)
+                .Where(id => id > 0)
+                .Distinct()
+                .ToList();
+        });
+
+        services.PostConfigure<BackfillSettings>(s =>
+        {
+            var parsed = s.ChatIds
+                .Where(id => id > 0)
+                .ToList();
+
+            var raw = config.GetSection(BackfillSettings.Section).GetValue<string>("ChatIds");
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                parsed.AddRange(raw
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(value => long.TryParse(value.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0));
+            }
+
+            s.ChatIds = parsed.Distinct().ToList();
+        });
+
+        services.PostConfigure<ChatCoordinationSettings>(s =>
+        {
+            s.HandoverPendingExtractionThreshold = Math.Max(0, s.HandoverPendingExtractionThreshold);
+            s.ListenerEligibilityRefreshSeconds = Math.Max(5, s.ListenerEligibilityRefreshSeconds);
+            s.DowntimeCatchupThresholdMinutes = Math.Max(1, s.DowntimeCatchupThresholdMinutes);
+            s.TailReopenMaxSessionLag = Math.Max(1, s.TailReopenMaxSessionLag);
+            s.TailReopenMaxWindowHours = Math.Max(1, s.TailReopenMaxWindowHours);
+        });
+
+        services.PostConfigure<RiskyOperationSafetySettings>(s =>
+        {
+            s.BackupFreshnessHours = Math.Max(1, s.BackupFreshnessHours);
+            s.IntegrityWriteVolumeWarningThreshold = Math.Max(1, s.IntegrityWriteVolumeWarningThreshold);
+            s.IntegrityWriteVolumeUnsafeThreshold = Math.Max(
+                s.IntegrityWriteVolumeWarningThreshold,
+                s.IntegrityWriteVolumeUnsafeThreshold);
+        });
+
+        return services;
+    }
+}
