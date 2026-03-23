@@ -22,33 +22,36 @@ public class HistoryBackfillService : BackgroundService
     private readonly BackfillSettings _settings;
     private readonly TelegramSettings _telegramSettings;
     private readonly MediaSettings _mediaSettings;
+    private readonly ChatCoordinationSettings _coordinationSettings;
     private readonly IMessageQueue _messageQueue;
     private readonly IMessageRepository _messageRepository;
+    private readonly IChatCoordinationService _chatCoordinationService;
     private readonly ILogger<HistoryBackfillService> _logger;
+    private readonly string _phaseOwnerId = $"history_backfill:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     public HistoryBackfillService(
         IOptions<BackfillSettings> settings,
         IOptions<TelegramSettings> telegramSettings,
         IOptions<MediaSettings> mediaSettings,
+        IOptions<ChatCoordinationSettings> coordinationSettings,
         IMessageQueue messageQueue,
         IMessageRepository messageRepository,
+        IChatCoordinationService chatCoordinationService,
         ILogger<HistoryBackfillService> logger)
     {
         _settings = settings.Value;
         _telegramSettings = telegramSettings.Value;
         _mediaSettings = mediaSettings.Value;
+        _coordinationSettings = coordinationSettings.Value;
         _messageQueue = messageQueue;
         _messageRepository = messageRepository;
+        _chatCoordinationService = chatCoordinationService;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_settings.Enabled)
-        {
-            _logger.LogInformation("History backfill is disabled");
-            return;
-        }
+        var recoveryMode = false;
 
         if (!TryParseSinceDate(_settings.SinceDate, out var sinceUtc))
         {
@@ -58,15 +61,48 @@ public class HistoryBackfillService : BackgroundService
             sinceUtc = new DateTime(2026, 3, 7, 0, 0, 0, DateTimeKind.Utc);
         }
 
-        var targetChatIds = ResolveTargetChatIds();
-        if (targetChatIds.Count == 0)
+        IReadOnlyList<long> targetChatIds;
+        if (_settings.Enabled)
         {
-            _logger.LogWarning("History backfill enabled, but no target chats resolved");
+            targetChatIds = ResolveTargetChatIds();
+        }
+        else if (_coordinationSettings.Enabled && _coordinationSettings.AutoRecoveryCatchupEnabled)
+        {
+            targetChatIds = await ResolveDowntimeRecoveryTargetsAsync(stoppingToken);
+            recoveryMode = targetChatIds.Count > 0;
+            if (!recoveryMode)
+            {
+                _logger.LogInformation("History backfill is disabled and no downtime-recovery catch-up is required");
+                return;
+            }
+        }
+        else
+        {
+            _logger.LogInformation("History backfill is disabled");
             return;
         }
 
+        if (targetChatIds.Count == 0)
+        {
+            _logger.LogWarning(
+                "History backfill {Mode} but no target chats resolved",
+                recoveryMode ? "downtime-recovery mode is enabled" : "is enabled");
+            return;
+        }
+
+        if (_coordinationSettings.Enabled)
+        {
+            await _chatCoordinationService.EnsureStatesAsync(
+                _telegramSettings.MonitoredChatIds,
+                targetChatIds,
+                backfillEnabled: true,
+                _coordinationSettings.HandoverPendingExtractionThreshold,
+                stoppingToken);
+        }
+
         _logger.LogInformation(
-            "Starting history backfill from {SinceDate} for {ChatCount} chats: {ChatIds}",
+            "Starting history backfill ({Mode}) from {SinceDate} for {ChatCount} chats: {ChatIds}",
+            recoveryMode ? "downtime_recovery" : "normal",
             sinceUtc,
             targetChatIds.Count,
             string.Join(", ", targetChatIds));
@@ -92,21 +128,285 @@ public class HistoryBackfillService : BackgroundService
 
             try
             {
-                await BackfillChatAsync(client, chatId, inputPeer, sinceUtc, stoppingToken);
+                if (_coordinationSettings.Enabled && _coordinationSettings.PhaseGuardsEnabled)
+                {
+                    var phaseDecision = await _chatCoordinationService.TryAcquirePhaseAsync(
+                        chatId,
+                        ChatRuntimePhases.BackfillIngest,
+                        _phaseOwnerId,
+                        reason: "history_backfill_start",
+                        ct: stoppingToken);
+                    if (!phaseDecision.Allowed)
+                    {
+                        _logger.LogWarning(
+                            "Backfill skipped by phase guard: chat_id={ChatId}, requested_phase={RequestedPhase}, current_phase={CurrentPhase}, deny_code={DenyCode}, deny_reason={DenyReason}",
+                            chatId,
+                            phaseDecision.RequestedPhase,
+                            phaseDecision.CurrentPhase,
+                            phaseDecision.DenyCode,
+                            phaseDecision.DenyReason);
+                        continue;
+                    }
+                }
+
+                var leaseHeartbeat = StartPhaseLeaseHeartbeat(
+                    chatId,
+                    ChatRuntimePhases.BackfillIngest,
+                    "history_backfill_lease_heartbeat",
+                    stoppingToken);
+                var releaseMismatch = false;
+                var leaseLost = false;
+                using var leaseScope = CreateLeaseLinkedTokenSource(leaseHeartbeat, stoppingToken);
+                var leaseCt = leaseScope.Token;
+                if (_coordinationSettings.Enabled)
+                {
+                    await _chatCoordinationService.MarkBackfillStartedAsync(chatId, leaseCt);
+                }
+
+                try
+                {
+                    await BackfillChatAsync(client, chatId, inputPeer, sinceUtc, leaseCt);
+
+                    if (_coordinationSettings.Enabled)
+                    {
+                        await _chatCoordinationService.MarkBackfillCompletedAsync(
+                            chatId,
+                            _coordinationSettings.HandoverPendingExtractionThreshold,
+                            leaseCt);
+                    }
+                }
+                catch (OperationCanceledException) when (leaseHeartbeat.LeaseLost && !stoppingToken.IsCancellationRequested)
+                {
+                    leaseLost = true;
+                    if (_coordinationSettings.Enabled)
+                    {
+                        await _chatCoordinationService.MarkBackfillDegradedAsync(
+                            chatId,
+                            "backfill_phase_lease_lost",
+                            CancellationToken.None);
+                    }
+
+                    _logger.LogWarning(
+                        "Backfill workload stopped after lease loss: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}",
+                        chatId,
+                        ChatRuntimePhases.BackfillIngest,
+                        _phaseOwnerId);
+                }
+                finally
+                {
+                    await StopPhaseLeaseHeartbeatAsync(leaseHeartbeat);
+                    if (_coordinationSettings.Enabled && _coordinationSettings.PhaseGuardsEnabled)
+                    {
+                        releaseMismatch = !await ReleaseBackfillPhaseAsync(chatId, "history_backfill_end", stoppingToken);
+                    }
+                }
+
+                if (leaseLost)
+                {
+                    continue;
+                }
+
+                if (releaseMismatch)
+                {
+                    if (_coordinationSettings.Enabled)
+                    {
+                        await _chatCoordinationService.MarkBackfillDegradedAsync(
+                            chatId,
+                            "backfill_phase_release_mismatch",
+                            CancellationToken.None);
+                    }
+
+                    _logger.LogError(
+                        "Backfill chat marked degraded due to phase release mismatch escalation: chat_id={ChatId}",
+                        chatId);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                if (_coordinationSettings.Enabled)
+                {
+                    await _chatCoordinationService.MarkBackfillDegradedAsync(
+                        chatId,
+                        "backfill_interrupted_before_handover",
+                        CancellationToken.None);
+                }
+
                 _logger.LogInformation("History backfill cancelled while processing chat {ChatId}", chatId);
                 break;
             }
             catch (Exception ex)
             {
+                if (_coordinationSettings.Enabled)
+                {
+                    await _chatCoordinationService.MarkBackfillDegradedAsync(
+                        chatId,
+                        $"backfill_failed:{ex.GetType().Name}",
+                        CancellationToken.None);
+                }
+
                 _logger.LogError(ex, "History backfill failed for chat {ChatId}", chatId);
             }
         }
 
         _logger.LogInformation(
-            "History backfill complete. Set Backfill__Enabled=false to disable one-shot backfill on next start");
+            "History backfill complete. Mode={Mode}. Set Backfill__Enabled=false to disable one-shot backfill on next start",
+            recoveryMode ? "downtime_recovery" : "normal");
+    }
+
+    private PhaseLeaseHeartbeatHandle StartPhaseLeaseHeartbeat(
+        long chatId,
+        string phase,
+        string reason,
+        CancellationToken ct)
+    {
+        if (!_coordinationSettings.Enabled || !_coordinationSettings.PhaseGuardsEnabled || chatId <= 0)
+        {
+            return PhaseLeaseHeartbeatHandle.None;
+        }
+
+        var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var leaseLostCts = new CancellationTokenSource();
+        var interval = ResolvePhaseLeaseRenewInterval();
+        var task = Task.Run(
+            () => RunPhaseLeaseHeartbeatLoopAsync(chatId, phase, reason, interval, heartbeatCts.Token, leaseLostCts),
+            CancellationToken.None);
+        return new PhaseLeaseHeartbeatHandle(heartbeatCts, leaseLostCts, task);
+    }
+
+    private async Task StopPhaseLeaseHeartbeatAsync(PhaseLeaseHeartbeatHandle heartbeat)
+    {
+        if (!heartbeat.IsActive)
+        {
+            return;
+        }
+
+        heartbeat.HeartbeatTokenSource!.Cancel();
+        try
+        {
+            await heartbeat.RunTask!;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            heartbeat.HeartbeatTokenSource.Dispose();
+            heartbeat.LeaseLostTokenSource?.Dispose();
+        }
+    }
+
+    private static CancellationTokenSource CreateLeaseLinkedTokenSource(PhaseLeaseHeartbeatHandle heartbeat, CancellationToken ct)
+    {
+        return heartbeat.LeaseLostTokenSource is null
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : CancellationTokenSource.CreateLinkedTokenSource(ct, heartbeat.LeaseLostTokenSource.Token);
+    }
+
+    private async Task<bool> ReleaseBackfillPhaseAsync(long chatId, string reason, CancellationToken ct)
+    {
+        var result = await _chatCoordinationService.ReleasePhaseAsync(
+            chatId,
+            ChatRuntimePhases.BackfillIngest,
+            _phaseOwnerId,
+            reason: reason,
+            ct: ct.IsCancellationRequested ? CancellationToken.None : ct);
+        if (result.Released)
+        {
+            return true;
+        }
+
+        _logger.LogError(
+            "Backfill phase release escalation: chat_id={ChatId}, requested_phase={RequestedPhase}, owner_id={OwnerId}, ownership_mismatch={OwnershipMismatch}, current_phase={CurrentPhase}, current_owner={CurrentOwner}, current_lease_expires_at_utc={LeaseExpiresAtUtc}",
+            chatId,
+            ChatRuntimePhases.BackfillIngest,
+            _phaseOwnerId,
+            result.OwnershipMismatch,
+            result.CurrentPhase,
+            result.CurrentOwnerId,
+            result.CurrentLeaseExpiresAtUtc);
+        return false;
+    }
+
+    private async Task RunPhaseLeaseHeartbeatLoopAsync(
+        long chatId,
+        string phase,
+        string reason,
+        TimeSpan interval,
+        CancellationToken ct,
+        CancellationTokenSource leaseLostCts)
+    {
+        using var timer = new PeriodicTimer(interval);
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            try
+            {
+                var renewDecision = await _chatCoordinationService.TryRenewPhaseLeaseAsync(
+                    chatId,
+                    phase,
+                    _phaseOwnerId,
+                    reason,
+                    ct);
+                if (renewDecision.Renewed)
+                {
+                    _logger.LogDebug(
+                        "Backfill lease renewed: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}, lease_expires_at_utc={LeaseExpiresAtUtc}",
+                        chatId,
+                        phase,
+                        _phaseOwnerId,
+                        renewDecision.CurrentLeaseExpiresAtUtc);
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Backfill lease renewal stopped: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}, deny_code={DenyCode}, deny_reason={DenyReason}",
+                    chatId,
+                    phase,
+                    _phaseOwnerId,
+                    renewDecision.DenyCode,
+                    renewDecision.DenyReason);
+                if (!leaseLostCts.IsCancellationRequested)
+                {
+                    leaseLostCts.Cancel();
+                }
+                break;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Backfill lease heartbeat iteration failed: chat_id={ChatId}, phase={Phase}, owner_id={OwnerId}",
+                    chatId,
+                    phase,
+                    _phaseOwnerId);
+            }
+        }
+    }
+
+    private TimeSpan ResolvePhaseLeaseRenewInterval()
+    {
+        var ttl = TimeSpan.FromMinutes(Math.Max(1, _coordinationSettings.PhaseGuardLeaseTtlMinutes));
+        var seconds = Math.Max(5, ttl.TotalSeconds / 3d);
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    private async Task<IReadOnlyList<long>> ResolveDowntimeRecoveryTargetsAsync(CancellationToken ct)
+    {
+        var states = await _chatCoordinationService.EnsureStatesAsync(
+            _telegramSettings.MonitoredChatIds,
+            _settings.ChatIds,
+            backfillEnabled: false,
+            _coordinationSettings.HandoverPendingExtractionThreshold,
+            ct);
+
+        return states.Values
+            .Where(x => !string.Equals(x.State, ChatCoordinationStates.RealtimeActive, StringComparison.Ordinal))
+            .Select(x => x.ChatId)
+            .Distinct()
+            .ToList();
     }
 
     private async Task<Dictionary<long, InputPeer>> ResolvePeerMapAsync(
@@ -555,5 +855,30 @@ public class HistoryBackfillService : BackgroundService
     {
         Console.Write("Enter Telegram verification code: ");
         return Console.ReadLine() ?? string.Empty;
+    }
+
+    private sealed class PhaseLeaseHeartbeatHandle
+    {
+        public static PhaseLeaseHeartbeatHandle None { get; } = new();
+
+        public PhaseLeaseHeartbeatHandle()
+        {
+        }
+
+        public PhaseLeaseHeartbeatHandle(
+            CancellationTokenSource heartbeatTokenSource,
+            CancellationTokenSource leaseLostTokenSource,
+            Task runTask)
+        {
+            HeartbeatTokenSource = heartbeatTokenSource;
+            LeaseLostTokenSource = leaseLostTokenSource;
+            RunTask = runTask;
+        }
+
+        public CancellationTokenSource? HeartbeatTokenSource { get; }
+        public CancellationTokenSource? LeaseLostTokenSource { get; }
+        public Task? RunTask { get; }
+        public bool IsActive => HeartbeatTokenSource is not null && RunTask is not null;
+        public bool LeaseLost => LeaseLostTokenSource?.IsCancellationRequested == true;
     }
 }

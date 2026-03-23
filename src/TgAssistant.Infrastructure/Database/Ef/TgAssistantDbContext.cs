@@ -53,6 +53,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDependencyLink> DependencyLinks => Set<DbDependencyLink>();
     public DbSet<DbDomainReviewEvent> DomainReviewEvents => Set<DbDomainReviewEvent>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
+    public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
+    public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
+    public DbSet<DbBackupEvidenceRecord> BackupEvidenceRecords => Set<DbBackupEvidenceRecord>();
     public DbSet<DbEvalRun> EvalRuns => Set<DbEvalRun>();
     public DbSet<DbEvalScenarioResult> EvalScenarioResults => Set<DbEvalScenarioResult>();
     public DbSet<DbExternalArchiveImportBatch> ExternalArchiveImportBatches => Set<DbExternalArchiveImportBatch>();
@@ -920,6 +923,64 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.DetailsJson).HasColumnName("details_json").HasColumnType("jsonb");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.State, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbChatCoordinationState>(e =>
+        {
+            e.ToTable("ops_chat_coordination_states");
+            e.HasKey(x => x.ChatId);
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.State).HasColumnName("state");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.LastBackfillStartedAt).HasColumnName("last_backfill_started_at");
+            e.Property(x => x.LastBackfillCompletedAt).HasColumnName("last_backfill_completed_at");
+            e.Property(x => x.HandoverReadyAt).HasColumnName("handover_ready_at");
+            e.Property(x => x.RealtimeActivatedAt).HasColumnName("realtime_activated_at");
+            e.Property(x => x.LastListenerSeenAt).HasColumnName("last_listener_seen_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.State, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbChatPhaseGuard>(e =>
+        {
+            e.ToTable("ops_chat_phase_guards");
+            e.HasKey(x => x.ChatId);
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.ActivePhase).HasColumnName("active_phase");
+            e.Property(x => x.OwnerId).HasColumnName("owner_id");
+            e.Property(x => x.PhaseReason).HasColumnName("phase_reason");
+            e.Property(x => x.ActiveSince).HasColumnName("active_since");
+            e.Property(x => x.LeaseExpiresAt).HasColumnName("lease_expires_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.Property(x => x.LastRequestedPhase).HasColumnName("last_requested_phase");
+            e.Property(x => x.LastObservedPhase).HasColumnName("last_observed_phase");
+            e.Property(x => x.LastDenyCode).HasColumnName("last_deny_code");
+            e.Property(x => x.LastDenyReason).HasColumnName("last_deny_reason");
+            e.Property(x => x.LastDeniedAt).HasColumnName("last_denied_at");
+            e.Property(x => x.LastRecoveryAt).HasColumnName("last_recovery_at");
+            e.Property(x => x.LastRecoveryFromOwnerId).HasColumnName("last_recovery_from_owner_id");
+            e.Property(x => x.LastRecoveryCode).HasColumnName("last_recovery_code");
+            e.Property(x => x.LastRecoveryReason).HasColumnName("last_recovery_reason");
+            e.Property(x => x.TailReopenWindowFromUtc).HasColumnName("tail_reopen_window_from_utc");
+            e.Property(x => x.TailReopenWindowToUtc).HasColumnName("tail_reopen_window_to_utc");
+            e.Property(x => x.TailReopenOperator).HasColumnName("tail_reopen_operator");
+            e.Property(x => x.TailReopenAuditId).HasColumnName("tail_reopen_audit_id");
+            e.HasIndex(x => new { x.ActivePhase, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbBackupEvidenceRecord>(e =>
+        {
+            e.ToTable("ops_backup_evidence_records");
+            e.HasKey(x => x.BackupId);
+            e.Property(x => x.BackupId).HasColumnName("backup_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.Scope).HasColumnName("scope");
+            e.Property(x => x.ArtifactUri).HasColumnName("artifact_uri");
+            e.Property(x => x.Checksum).HasColumnName("checksum");
+            e.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc");
+            e.Property(x => x.RecordedBy).HasColumnName("recorded_by");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.HasIndex(x => x.CreatedAtUtc);
         });
 
         modelBuilder.Entity<DbEvalRun>(e =>

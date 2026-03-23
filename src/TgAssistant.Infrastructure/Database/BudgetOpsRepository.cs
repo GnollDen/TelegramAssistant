@@ -18,30 +18,21 @@ public class BudgetOpsRepository : IBudgetOpsRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var pathKey = state.PathKey.Trim();
-        var row = await db.BudgetOperationalStates.FirstOrDefaultAsync(x => x.PathKey == pathKey, ct);
-        if (row == null)
-        {
-            row = new DbBudgetOperationalState
-            {
-                PathKey = pathKey,
-                Modality = state.Modality,
-                State = state.State,
-                Reason = state.Reason,
-                DetailsJson = string.IsNullOrWhiteSpace(state.DetailsJson) ? "{}" : state.DetailsJson,
-                UpdatedAt = state.UpdatedAt == default ? DateTime.UtcNow : state.UpdatedAt
-            };
-            db.BudgetOperationalStates.Add(row);
-        }
-        else
-        {
-            row.Modality = state.Modality;
-            row.State = state.State;
-            row.Reason = state.Reason;
-            row.DetailsJson = string.IsNullOrWhiteSpace(state.DetailsJson) ? "{}" : state.DetailsJson;
-            row.UpdatedAt = state.UpdatedAt == default ? DateTime.UtcNow : state.UpdatedAt;
-        }
+        var detailsJson = string.IsNullOrWhiteSpace(state.DetailsJson) ? "{}" : state.DetailsJson;
+        var updatedAt = state.UpdatedAt == default ? DateTime.UtcNow : state.UpdatedAt;
 
-        await db.SaveChangesAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            insert into ops_budget_operational_states (path_key, modality, state, reason, details_json, updated_at)
+            values ({pathKey}, {state.Modality}, {state.State}, {state.Reason}, {detailsJson}::jsonb, {updatedAt})
+            on conflict (path_key) do update set
+                modality = excluded.modality,
+                state = excluded.state,
+                reason = excluded.reason,
+                details_json = excluded.details_json,
+                updated_at = excluded.updated_at
+            """,
+            ct);
     }
 
     public async Task<BudgetOperationalState?> GetBudgetOperationalStateAsync(string pathKey, CancellationToken ct = default)

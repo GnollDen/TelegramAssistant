@@ -472,6 +472,55 @@ public interface IEvalRepository
     Task<List<EvalRunResult>> GetRecentRunsAsync(int limit = 20, CancellationToken ct = default);
 }
 
+public interface IChatCoordinationService
+{
+    Task<Dictionary<long, ChatCoordinationState>> EnsureStatesAsync(
+        IReadOnlyCollection<long> monitoredChatIds,
+        IReadOnlyCollection<long> backfillChatIds,
+        bool backfillEnabled,
+        int handoverPendingExtractionThreshold,
+        CancellationToken ct = default);
+    Task<HashSet<long>> ResolveRealtimeEligibleChatIdsAsync(
+        IReadOnlyCollection<long> monitoredChatIds,
+        IReadOnlyCollection<long> backfillChatIds,
+        bool backfillEnabled,
+        int handoverPendingExtractionThreshold,
+        CancellationToken ct = default);
+    Task MarkBackfillStartedAsync(long chatId, CancellationToken ct = default);
+    Task MarkBackfillCompletedAsync(
+        long chatId,
+        int handoverPendingExtractionThreshold,
+        CancellationToken ct = default);
+    Task MarkBackfillDegradedAsync(long chatId, string reason, CancellationToken ct = default);
+    Task TouchRealtimeHeartbeatAsync(IReadOnlyCollection<long> realtimeChatIds, CancellationToken ct = default);
+    Task<ChatPhaseGuardDecision> TryAcquirePhaseAsync(
+        long chatId,
+        string requestedPhase,
+        string ownerId,
+        string? reason = null,
+        DateTime? reopenWindowFromUtc = null,
+        DateTime? reopenWindowToUtc = null,
+        string? reopenOperator = null,
+        string? reopenAuditId = null,
+        CancellationToken ct = default);
+    Task<ChatPhaseLeaseRenewDecision> TryRenewPhaseLeaseAsync(
+        long chatId,
+        string phase,
+        string ownerId,
+        string? reason = null,
+        CancellationToken ct = default);
+    Task<ChatPhaseReleaseResult> ReleasePhaseAsync(
+        long chatId,
+        string phase,
+        string ownerId,
+        string? reason = null,
+        CancellationToken ct = default);
+    Task RecordBackupEvidenceAsync(
+        BackupMetadataEvidence evidence,
+        string recordedBy,
+        CancellationToken ct = default);
+}
+
 public class EntityMergeCandidate
 {
     public long Id { get; set; }

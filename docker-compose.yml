@@ -102,6 +102,22 @@ services:
       Backfill__Enabled: ${BACKFILL_ENABLED:-false}
       Backfill__SinceDate: ${BACKFILL_SINCE_DATE:-2026-03-07}
       Backfill__ChatIds: ${BACKFILL_CHAT_IDS:-}
+      ChatCoordination__Enabled: ${CHAT_COORDINATION_ENABLED:-true}
+      ChatCoordination__PhaseGuardsEnabled: ${CHAT_COORDINATION_PHASE_GUARDS_ENABLED:-true}
+      ChatCoordination__PhaseGuardLeaseTtlMinutes: ${CHAT_COORDINATION_PHASE_GUARD_LEASE_TTL_MINUTES:-30}
+      ChatCoordination__HandoverPendingExtractionThreshold: ${CHAT_COORDINATION_HANDOVER_PENDING_EXTRACTIONS_THRESHOLD:-100}
+      ChatCoordination__ListenerEligibilityRefreshSeconds: ${CHAT_COORDINATION_LISTENER_ELIGIBILITY_REFRESH_SECONDS:-60}
+      ChatCoordination__AutoRecoveryCatchupEnabled: ${CHAT_COORDINATION_AUTO_RECOVERY_CATCHUP_ENABLED:-true}
+      ChatCoordination__DowntimeCatchupThresholdMinutes: ${CHAT_COORDINATION_DOWNTIME_CATCHUP_THRESHOLD_MINUTES:-30}
+      ChatCoordination__EnforceGlobalBackfillExclusivity: ${CHAT_COORDINATION_ENFORCE_GLOBAL_BACKFILL_EXCLUSIVITY:-false}
+      ChatCoordination__TailReopenMaxSessionLag: ${CHAT_COORDINATION_TAIL_REOPEN_MAX_SESSION_LAG:-3}
+      ChatCoordination__TailReopenMaxWindowHours: ${CHAT_COORDINATION_TAIL_REOPEN_MAX_WINDOW_HOURS:-24}
+      RiskyOperationSafety__Enabled: ${RISKY_OPERATION_SAFETY_ENABLED:-true}
+      RiskyOperationSafety__RequireBackupEvidenceForRepairApply: ${RISKY_OPERATION_SAFETY_REQUIRE_BACKUP_FOR_REPAIR_APPLY:-true}
+      RiskyOperationSafety__BackupFreshnessHours: ${RISKY_OPERATION_SAFETY_BACKUP_FRESHNESS_HOURS:-6}
+      RiskyOperationSafety__IntegrityWriteVolumeWarningThreshold: ${RISKY_OPERATION_SAFETY_WRITE_VOLUME_WARNING_THRESHOLD:-1500}
+      RiskyOperationSafety__IntegrityWriteVolumeUnsafeThreshold: ${RISKY_OPERATION_SAFETY_WRITE_VOLUME_UNSAFE_THRESHOLD:-5000}
+      RiskyOperationSafety__AllowWarningApplyWithoutOverride: ${RISKY_OPERATION_SAFETY_ALLOW_WARNING_APPLY_WITHOUT_OVERRIDE:-false}
       Analysis__Enabled: ${ANALYSIS_ENABLED:-false}
       Analysis__ArchiveOnlyMode: ${ANALYSIS_ARCHIVE_ONLY_MODE:-false}
       Analysis__ArchiveCutoffUtc: ${ANALYSIS_ARCHIVE_CUTOFF_UTC:-}
