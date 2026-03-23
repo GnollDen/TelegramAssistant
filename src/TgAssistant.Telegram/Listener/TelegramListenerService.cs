@@ -459,6 +459,12 @@ public class TelegramListenerService : BackgroundService
         }
 
         await RefreshRealtimeEligibleChatsAsync(force: false, CancellationToken.None);
+        if (_realtimeEligibleChats.Contains(chatId))
+        {
+            return true;
+        }
+
+        await RefreshRealtimeEligibleChatsAsync(force: true, CancellationToken.None);
         return _realtimeEligibleChats.Contains(chatId);
     }
 
