@@ -710,6 +710,55 @@ public class DbBudgetOperationalState
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbChatCoordinationState
+{
+    public long ChatId { get; set; }
+    public string State { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public DateTime? LastBackfillStartedAt { get; set; }
+    public DateTime? LastBackfillCompletedAt { get; set; }
+    public DateTime? HandoverReadyAt { get; set; }
+    public DateTime? RealtimeActivatedAt { get; set; }
+    public DateTime? LastListenerSeenAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbChatPhaseGuard
+{
+    public long ChatId { get; set; }
+    public string? ActivePhase { get; set; }
+    public string? OwnerId { get; set; }
+    public string? PhaseReason { get; set; }
+    public DateTime? ActiveSince { get; set; }
+    public DateTime? LeaseExpiresAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? LastRequestedPhase { get; set; }
+    public string? LastObservedPhase { get; set; }
+    public string? LastDenyCode { get; set; }
+    public string? LastDenyReason { get; set; }
+    public DateTime? LastDeniedAt { get; set; }
+    public DateTime? LastRecoveryAt { get; set; }
+    public string? LastRecoveryFromOwnerId { get; set; }
+    public string? LastRecoveryCode { get; set; }
+    public string? LastRecoveryReason { get; set; }
+    public DateTime? TailReopenWindowFromUtc { get; set; }
+    public DateTime? TailReopenWindowToUtc { get; set; }
+    public string? TailReopenOperator { get; set; }
+    public string? TailReopenAuditId { get; set; }
+}
+
+public class DbBackupEvidenceRecord
+{
+    public string BackupId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public string Scope { get; set; } = string.Empty;
+    public string ArtifactUri { get; set; } = string.Empty;
+    public string Checksum { get; set; } = string.Empty;
+    public DateTime RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string MetadataJson { get; set; } = "{}";
+}
+
 public class DbEvalRun
 {
     public Guid Id { get; set; }

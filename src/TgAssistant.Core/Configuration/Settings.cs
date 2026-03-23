@@ -117,6 +117,32 @@ public class BackfillSettings
     public List<long> ChatIds { get; set; } = new();
 }
 
+public class ChatCoordinationSettings
+{
+    public const string Section = "ChatCoordination";
+    public bool Enabled { get; set; } = true;
+    public bool PhaseGuardsEnabled { get; set; } = true;
+    public int PhaseGuardLeaseTtlMinutes { get; set; } = 30;
+    public int HandoverPendingExtractionThreshold { get; set; } = 100;
+    public int ListenerEligibilityRefreshSeconds { get; set; } = 60;
+    public bool AutoRecoveryCatchupEnabled { get; set; } = true;
+    public int DowntimeCatchupThresholdMinutes { get; set; } = 30;
+    public bool EnforceGlobalBackfillExclusivity { get; set; } = false;
+    public int TailReopenMaxSessionLag { get; set; } = 3;
+    public int TailReopenMaxWindowHours { get; set; } = 24;
+}
+
+public class RiskyOperationSafetySettings
+{
+    public const string Section = "RiskyOperationSafety";
+    public bool Enabled { get; set; } = true;
+    public bool RequireBackupEvidenceForRepairApply { get; set; } = true;
+    public int BackupFreshnessHours { get; set; } = 6;
+    public int IntegrityWriteVolumeUnsafeThreshold { get; set; } = 5000;
+    public int IntegrityWriteVolumeWarningThreshold { get; set; } = 1500;
+    public bool AllowWarningApplyWithoutOverride { get; set; } = false;
+}
+
 public class AnalysisSettings
 {
     public const string Section = "Analysis";

@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
+using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
@@ -67,6 +68,35 @@ try
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
+    var runStage5ScopedRepairApply = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair-apply", StringComparison.OrdinalIgnoreCase));
+    if (runStage5ScopedRepairApply && !runStage5ScopedRepair)
+    {
+        throw new InvalidOperationException(
+            "--stage5-scoped-repair-apply requires --stage5-scoped-repair. Refusing to continue in normal runtime mode.");
+    }
+    var stage5ScopedRepairChatArg = args.FirstOrDefault(arg => arg.StartsWith("--stage5-scoped-repair-chat-id=", StringComparison.OrdinalIgnoreCase));
+    var stage5ScopedRepairAuditDirArg = args.FirstOrDefault(arg => arg.StartsWith("--stage5-scoped-repair-audit-dir=", StringComparison.OrdinalIgnoreCase));
+    var stage5ScopedRepairChatId = stage5ScopedRepairChatArg is null
+        ? 885574984L
+        : long.TryParse(stage5ScopedRepairChatArg["--stage5-scoped-repair-chat-id=".Length..], out var parsedChatId)
+            ? parsedChatId
+            : 0L;
+    var stage5ScopedRepairAuditDir = stage5ScopedRepairAuditDirArg is null
+        ? null
+        : stage5ScopedRepairAuditDirArg["--stage5-scoped-repair-audit-dir=".Length..];
+    var riskBackupIdArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-id=", StringComparison.OrdinalIgnoreCase));
+    var riskBackupCreatedAtArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-created-at-utc=", StringComparison.OrdinalIgnoreCase));
+    var riskBackupScopeArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-scope=", StringComparison.OrdinalIgnoreCase));
+    var riskBackupArtifactArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-artifact-uri=", StringComparison.OrdinalIgnoreCase));
+    var riskBackupChecksumArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-checksum=", StringComparison.OrdinalIgnoreCase));
+    var riskOperatorArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-operator=", StringComparison.OrdinalIgnoreCase));
+    var riskReasonArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-reason=", StringComparison.OrdinalIgnoreCase));
+    var riskAuditIdArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-audit-id=", StringComparison.OrdinalIgnoreCase));
+    var riskOverrideOperatorArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-override-operator=", StringComparison.OrdinalIgnoreCase));
+    var riskOverrideReasonArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-override-reason=", StringComparison.OrdinalIgnoreCase));
+    var riskOverrideApprovalTokenArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-override-approval-token=", StringComparison.OrdinalIgnoreCase));
+    var riskOverrideAuditIdArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-override-audit-id=", StringComparison.OrdinalIgnoreCase));
     var externalArchiveImportArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-import-file=", StringComparison.OrdinalIgnoreCase));
     var externalArchiveActorArg = args.FirstOrDefault(arg => arg.StartsWith("--external-archive-actor=", StringComparison.OrdinalIgnoreCase));
     var externalArchiveImportFile = externalArchiveImportArg is null
@@ -567,6 +597,77 @@ try
             return;
         }
 
+        if (runStage5ScopedRepair)
+        {
+            if (stage5ScopedRepairChatId <= 0)
+            {
+                throw new InvalidOperationException("Invalid --stage5-scoped-repair-chat-id value.");
+            }
+
+            BackupMetadataEvidence? backupEvidence = null;
+            if (riskBackupIdArg is not null
+                || riskBackupCreatedAtArg is not null
+                || riskBackupScopeArg is not null
+                || riskBackupArtifactArg is not null
+                || riskBackupChecksumArg is not null)
+            {
+                if (riskBackupCreatedAtArg is null)
+                {
+                    throw new InvalidOperationException("Missing --risk-backup-created-at-utc for provided backup metadata.");
+                }
+
+                var backupCreatedRaw = riskBackupCreatedAtArg["--risk-backup-created-at-utc=".Length..];
+                if (!DateTime.TryParse(
+                        backupCreatedRaw,
+                        null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                        out var parsedBackupCreatedAtUtc))
+                {
+                    throw new InvalidOperationException("Invalid --risk-backup-created-at-utc value. Expected ISO-8601 UTC.");
+                }
+
+                backupEvidence = new BackupMetadataEvidence
+                {
+                    BackupId = riskBackupIdArg is null ? string.Empty : riskBackupIdArg["--risk-backup-id=".Length..],
+                    CreatedAtUtc = parsedBackupCreatedAtUtc,
+                    Scope = riskBackupScopeArg is null ? string.Empty : riskBackupScopeArg["--risk-backup-scope=".Length..],
+                    ArtifactUri = riskBackupArtifactArg is null ? string.Empty : riskBackupArtifactArg["--risk-backup-artifact-uri=".Length..],
+                    Checksum = riskBackupChecksumArg is null ? string.Empty : riskBackupChecksumArg["--risk-backup-checksum=".Length..]
+                };
+            }
+
+            var runOptions = new Stage5ScopedRepairExecutionOptions
+            {
+                BackupEvidence = backupEvidence,
+                OperatorIdentity = riskOperatorArg is null ? string.Empty : riskOperatorArg["--risk-operator=".Length..],
+                OperatorReason = riskReasonArg is null ? "stage5_scoped_repair_apply" : riskReasonArg["--risk-reason=".Length..],
+                AuditId = riskAuditIdArg is null ? string.Empty : riskAuditIdArg["--risk-audit-id=".Length..],
+                Override = new RiskOperationOverride
+                {
+                    OperatorIdentity = riskOverrideOperatorArg is null ? string.Empty : riskOverrideOperatorArg["--risk-override-operator=".Length..],
+                    Reason = riskOverrideReasonArg is null ? string.Empty : riskOverrideReasonArg["--risk-override-reason=".Length..],
+                    ApprovalToken = riskOverrideApprovalTokenArg is null ? string.Empty : riskOverrideApprovalTokenArg["--risk-override-approval-token=".Length..],
+                    AuditId = riskOverrideAuditIdArg is null ? string.Empty : riskOverrideAuditIdArg["--risk-override-audit-id=".Length..]
+                }
+            };
+
+            var repairCommand = scope.ServiceProvider.GetRequiredService<Stage5ScopedRepairCommand>();
+            var result = await repairCommand.RunAsync(
+                stage5ScopedRepairChatId,
+                runStage5ScopedRepairApply,
+                stage5ScopedRepairAuditDir,
+                runOptions,
+                CancellationToken.None);
+            Log.Information(
+                "Stage5 scoped repair command completed: mode={Mode}, chat_id={ChatId}, trusted_restore={TrustedRestore}, dual_migrations={DualMigrations}, orphan_placeholders={OrphanPlaceholders}, audit={AuditPath}",
+                runStage5ScopedRepairApply ? "apply" : "dry-run",
+                result.Summary.ChatId,
+                result.Summary.Plan.TrustedSessionIndexes.Count,
+                result.Summary.Plan.DualSourceMigrations.Count,
+                result.Summary.Plan.OrphanPlaceholderMessageIds.Count,
+                result.AuditPath);
+            return;
+        }
         if (!string.IsNullOrWhiteSpace(externalArchiveImportFile))
         {
             if (!File.Exists(externalArchiveImportFile))
