@@ -210,6 +210,7 @@ public class AnalysisSettings
     public int EditDiffBatchSize { get; set; } = 20;
     public int EditDiffPollIntervalSeconds { get; set; } = 5;
     public int EditDiffMaxTokens { get; set; } = 320;
+    public int HotSessionGapMinutes { get; set; } = 30;
     public int EpisodicSessionGapMinutes { get; set; } = 120;
     public int EpisodicMaxSessionsPerChat { get; set; } = 0;
     public bool EnableTestModeSessionCap { get; set; } = false;
