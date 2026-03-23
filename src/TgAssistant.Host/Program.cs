@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
+using TgAssistant.Host.Stage6Ab;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
@@ -71,6 +72,7 @@ try
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepairApply = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair-apply", StringComparison.OrdinalIgnoreCase));
+    var runStage6LightAb = args.Any(arg => string.Equals(arg, "--stage6-light-ab-run", StringComparison.OrdinalIgnoreCase));
     if (runStage5ScopedRepairApply && !runStage5ScopedRepair)
     {
         throw new InvalidOperationException(
@@ -86,6 +88,22 @@ try
     var stage5ScopedRepairAuditDir = stage5ScopedRepairAuditDirArg is null
         ? null
         : stage5ScopedRepairAuditDirArg["--stage5-scoped-repair-audit-dir=".Length..];
+    var stage6LightAbCasesFileArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-cases-file=", StringComparison.OrdinalIgnoreCase));
+    var stage6LightAbOutputDirArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-output-dir=", StringComparison.OrdinalIgnoreCase));
+    var stage6LightAbPassLabelArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-pass-label=", StringComparison.OrdinalIgnoreCase));
+    var stage6LightAbModelOverrideArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-model-override=", StringComparison.OrdinalIgnoreCase));
+    var stage6LightAbCasesFile = stage6LightAbCasesFileArg is null
+        ? string.Empty
+        : stage6LightAbCasesFileArg["--stage6-light-ab-cases-file=".Length..];
+    var stage6LightAbOutputDir = stage6LightAbOutputDirArg is null
+        ? string.Empty
+        : stage6LightAbOutputDirArg["--stage6-light-ab-output-dir=".Length..];
+    var stage6LightAbPassLabel = stage6LightAbPassLabelArg is null
+        ? "pass"
+        : stage6LightAbPassLabelArg["--stage6-light-ab-pass-label=".Length..];
+    var stage6LightAbModelOverride = stage6LightAbModelOverrideArg is null
+        ? string.Empty
+        : stage6LightAbModelOverrideArg["--stage6-light-ab-model-override=".Length..];
     var riskBackupIdArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-id=", StringComparison.OrdinalIgnoreCase));
     var riskBackupCreatedAtArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-created-at-utc=", StringComparison.OrdinalIgnoreCase));
     var riskBackupScopeArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-scope=", StringComparison.OrdinalIgnoreCase));
@@ -425,6 +443,29 @@ try
                 result.Summary.Plan.DualSourceMigrations.Count,
                 result.Summary.Plan.OrphanPlaceholderMessageIds.Count,
                 result.AuditPath);
+            return;
+        }
+
+        if (runStage6LightAb)
+        {
+            var command = scope.ServiceProvider.GetRequiredService<Stage6LightAbRunCommand>();
+            var result = await command.RunAsync(
+                stage6LightAbCasesFile,
+                stage6LightAbOutputDir,
+                stage6LightAbPassLabel,
+                stage6LightAbModelOverride,
+                CancellationToken.None);
+            Log.Information(
+                "Stage6 light A/B command completed: pass={PassLabel}, model={Model}, total_cases={TotalCases}, failed={FailedCases}, chat_calls={ChatCalls}, embedding_calls={EmbeddingCalls}, tool_calls={ToolCalls}, artifact={ArtifactPath}, usage_csv={UsageCsv}",
+                result.Summary.PassLabel,
+                result.Summary.ModelResolved,
+                result.Summary.TotalCases,
+                result.Summary.FailedCases,
+                result.Summary.TotalChatCalls,
+                result.Summary.TotalEmbeddingCalls,
+                result.Summary.TotalToolCalls,
+                result.ArtifactPath,
+                result.UsageCsvPath);
             return;
         }
 
