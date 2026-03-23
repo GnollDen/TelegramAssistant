@@ -18,6 +18,8 @@ namespace TgAssistant.Processing.Archive;
 public class HistoryBackfillService : BackgroundService
 {
     private const int HistoryBatchSize = 100;
+    private const int HandoverFreshnessTailSampleSize = 40;
+    private const int HandoverFreshnessMaxPasses = 3;
 
     private readonly BackfillSettings _settings;
     private readonly TelegramSettings _telegramSettings;
@@ -166,6 +168,7 @@ public class HistoryBackfillService : BackgroundService
                 try
                 {
                     await BackfillChatAsync(client, chatId, inputPeer, sinceUtc, leaseCt);
+                    await EnsureFreshTailBeforeHandoverAsync(client, chatId, inputPeer, leaseCt);
 
                     if (_coordinationSettings.Enabled)
                     {
@@ -544,6 +547,92 @@ public class HistoryBackfillService : BackgroundService
             enqueued,
             skippedExisting,
             skippedOld);
+    }
+
+    private async Task EnsureFreshTailBeforeHandoverAsync(
+        Client client,
+        long chatId,
+        InputPeer inputPeer,
+        CancellationToken ct)
+    {
+        var totalQueued = 0;
+        for (var pass = 1; pass <= HandoverFreshnessMaxPasses; pass++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var history = await client.Messages_GetHistory(
+                inputPeer,
+                offset_id: 0,
+                offset_date: DateTime.UtcNow,
+                add_offset: 0,
+                limit: HandoverFreshnessTailSampleSize,
+                max_id: 0,
+                min_id: 0,
+                hash: 0);
+
+            var tailMessages = history.Messages
+                .OfType<TlMessage>()
+                .Where(x => x.id > 0)
+                .OrderBy(x => EnsureUtc(x.date))
+                .ThenBy(x => x.id)
+                .ToList();
+            if (tailMessages.Count == 0)
+            {
+                return;
+            }
+
+            var candidateIds = tailMessages
+                .Select(x => (long)x.id)
+                .Distinct()
+                .ToList();
+            var existing = await _messageRepository.GetByTelegramMessageIdsAsync(
+                chatId,
+                MessageSource.Realtime,
+                candidateIds,
+                ct);
+
+            var missing = tailMessages
+                .Where(x => !existing.ContainsKey(x.id))
+                .ToList();
+            if (missing.Count == 0)
+            {
+                if (totalQueued > 0)
+                {
+                    _logger.LogInformation(
+                        "Backfill handoff freshness guard converged: chat_id={ChatId}, queued_tail_messages={QueuedTailMessages}, passes={Passes}",
+                        chatId,
+                        totalQueued,
+                        pass);
+                }
+
+                return;
+            }
+
+            foreach (var message in missing)
+            {
+                var raw = await BuildRawMessageAsync(client, chatId, history, message, ct);
+                await _messageQueue.EnqueueAsync(raw, ct);
+            }
+
+            totalQueued += missing.Count;
+            _logger.LogWarning(
+                "Backfill handoff freshness guard queued missing tail messages before realtime handoff: chat_id={ChatId}, pass={Pass}, missing_count={MissingCount}, newest_tail_message_id={NewestTailMessageId}",
+                chatId,
+                pass,
+                missing.Count,
+                tailMessages[^1].id);
+
+            if (pass < HandoverFreshnessMaxPasses)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            }
+        }
+
+        _logger.LogWarning(
+            "Backfill handoff freshness guard reached max passes with active tail churn; proceeding after queueing latest known tail messages: chat_id={ChatId}, queued_tail_messages={QueuedTailMessages}, max_passes={MaxPasses}",
+            chatId,
+            totalQueued,
+            HandoverFreshnessMaxPasses);
     }
 
     private async Task<RawTelegramMessage> BuildRawMessageAsync(
