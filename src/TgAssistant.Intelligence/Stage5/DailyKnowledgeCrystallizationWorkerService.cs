@@ -12,7 +12,6 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
 {
-    private const string DailyAggregatePromptId = "stage5_daily_aggregate_v1";
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(1);
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -222,7 +221,7 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         var model = string.IsNullOrWhiteSpace(_settings.SummaryModel)
             ? _settings.ExpensiveModel
             : _settings.SummaryModel;
-        var promptTemplate = await GetPromptAsync(DailyAggregatePromptId, FinalSummarySystemPrompt, ct);
+        var promptTemplate = await GetPromptAsync(Stage5PromptCatalog.DailyAggregate, ct);
         var userPrompt = BuildFinalizationPrompt(chatId, day, sessions, claims);
 
         try
@@ -352,30 +351,24 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptAsync(CancellationToken ct)
     {
-        var existing = await _promptRepository.GetByIdAsync(DailyAggregatePromptId, ct);
-        if (existing != null)
+        var contract = Stage5PromptCatalog.DailyAggregate;
+        var existing = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        var managed = contract.ToTemplate();
+        if (existing != null &&
+            string.Equals(existing.Version, managed.Version, StringComparison.Ordinal) &&
+            string.Equals(existing.Checksum, managed.Checksum, StringComparison.Ordinal) &&
+            string.Equals(existing.SystemPrompt, managed.SystemPrompt, StringComparison.Ordinal))
         {
             return;
         }
 
-        await _promptRepository.UpsertAsync(new PromptTemplate
-        {
-            Id = DailyAggregatePromptId,
-            Name = "Stage5 Daily Aggregate v1",
-            Description = "Cold path final daily crystallization prompt",
-            SystemPrompt = FinalSummarySystemPrompt
-        }, ct);
+        await _promptRepository.UpsertAsync(managed, ct);
     }
 
-    private async Task<PromptTemplate> GetPromptAsync(string id, string fallback, CancellationToken ct)
+    private async Task<PromptTemplate> GetPromptAsync(ManagedPromptTemplate contract, CancellationToken ct)
     {
-        var prompt = await _promptRepository.GetByIdAsync(id, ct);
-        return prompt ?? new PromptTemplate
-        {
-            Id = id,
-            Name = id,
-            SystemPrompt = fallback
-        };
+        var prompt = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        return prompt ?? contract.ToTemplate();
     }
 
     private async Task<long> ResolveBoundaryMessageIdAsync(long chatId, DateTime pivotUtc, bool preferMin, CancellationToken ct)
@@ -404,17 +397,4 @@ public class DailyKnowledgeCrystallizationWorkerService : BackgroundService
         return (dayStartUtc, dayEndUtc);
     }
 
-    private const string FinalSummarySystemPrompt = """
-You are a nightly memory crystallization module.
-Return ONLY JSON object: {"summary":"..."}.
-
-Task:
-- merge episodic summaries and key claims into one final daily dossier summary
-- keep durable facts, commitments, plan/status changes, conflicts, contacts, finance/work/health/location updates
-- remove noise and duplicates
-- preserve names as in source
-- structure output as coherent day narrative with key outcomes and unresolved items
-- write in Russian only (Cyrillic)
-- no markdown, no extra fields
-""";
 }

@@ -15,13 +15,15 @@ public static class ExtractionValidator
             return false;
         }
 
-        return ValidateExtractionRecord(item, out error);
+        var messageSemantic = MessageContentBuilder.BuildSemanticContent(message);
+        var enforceRussianOutput = ExtractionSemanticContract.IsLikelyRussianText(messageSemantic);
+        return ValidateExtractionRecord(item, out error, enforceRussianOutput);
     }
 
     /// <summary>
     /// Validates extraction record shape and limits.
     /// </summary>
-    public static bool ValidateExtractionRecord(ExtractionItem item, out string? error)
+    public static bool ValidateExtractionRecord(ExtractionItem item, out string? error, bool enforceRussianOutput = false)
     {
         if (item.Entities.Count > 20 ||
             item.Observations.Count > 30 ||
@@ -43,6 +45,12 @@ public static class ExtractionValidator
                 return false;
             }
 
+            if (!ExtractionSemanticContract.AllowedEntityTypes.Contains(entity.Type))
+            {
+                error = "invalid_entity_type";
+                return false;
+            }
+
             if (!HasTrustOrConfidence(entity.TrustFactor, entity.Confidence))
             {
                 error = "entity_missing_trust_or_confidence";
@@ -61,6 +69,26 @@ public static class ExtractionValidator
                 error = "invalid_observation_payload";
                 return false;
             }
+
+            if (!ExtractionSemanticContract.IsSnakeCase(observation.Type))
+            {
+                error = "invalid_observation_type";
+                return false;
+            }
+
+            if (!IsValid01(observation.Confidence))
+            {
+                error = "observation_invalid_confidence";
+                return false;
+            }
+
+            if (enforceRussianOutput &&
+                !HasCyrillicOrEmpty(observation.Value) &&
+                !HasCyrillicOrEmpty(observation.Evidence))
+            {
+                error = "observation_non_russian_output";
+                return false;
+            }
         }
 
         foreach (var claim in item.Claims)
@@ -76,9 +104,41 @@ public static class ExtractionValidator
                 return false;
             }
 
+            if (!ExtractionSemanticContract.AllowedClaimTypes.Contains(claim.ClaimType))
+            {
+                error = "invalid_claim_type";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.AllowedCategories.Contains(claim.Category))
+            {
+                error = "invalid_claim_category";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.IsSnakeCase(claim.Key))
+            {
+                error = "invalid_claim_key_format";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.IsAllowedKey(claim.Category, claim.Key))
+            {
+                error = "invalid_claim_key";
+                return false;
+            }
+
             if (!IsValid01(claim.Confidence))
             {
                 error = "claim_invalid_confidence";
+                return false;
+            }
+
+            if (enforceRussianOutput &&
+                !HasCyrillicOrEmpty(claim.Value) &&
+                !HasCyrillicOrEmpty(claim.Evidence))
+            {
+                error = "claim_non_russian_output";
                 return false;
             }
         }
@@ -94,9 +154,33 @@ public static class ExtractionValidator
                 return false;
             }
 
+            if (!ExtractionSemanticContract.AllowedCategories.Contains(fact.Category))
+            {
+                error = "invalid_fact_category";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.IsSnakeCase(fact.Key))
+            {
+                error = "invalid_fact_key_format";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.IsAllowedKey(fact.Category, fact.Key))
+            {
+                error = "invalid_fact_key";
+                return false;
+            }
+
             if (!HasTrustOrConfidence(fact.TrustFactor, fact.Confidence))
             {
                 error = "fact_missing_trust_or_confidence";
+                return false;
+            }
+
+            if (enforceRussianOutput && !HasCyrillicOrEmpty(fact.Value))
+            {
+                error = "fact_non_russian_output";
                 return false;
             }
         }
@@ -108,6 +192,18 @@ public static class ExtractionValidator
                 !IsReasonableText(relationship.Type, 64))
             {
                 error = "invalid_relationship_payload";
+                return false;
+            }
+
+            if (!ExtractionSemanticContract.AllowedRelationshipTypes.Contains(relationship.Type))
+            {
+                error = "invalid_relationship_type";
+                return false;
+            }
+
+            if (!IsValid01(relationship.Confidence))
+            {
+                error = "relationship_invalid_confidence";
                 return false;
             }
         }
@@ -123,6 +219,26 @@ public static class ExtractionValidator
                 error = "invalid_event_payload";
                 return false;
             }
+
+            if (!ExtractionSemanticContract.IsSnakeCase(evt.Type))
+            {
+                error = "invalid_event_type";
+                return false;
+            }
+
+            if (!IsValid01(evt.Confidence))
+            {
+                error = "event_invalid_confidence";
+                return false;
+            }
+
+            if (enforceRussianOutput &&
+                !HasCyrillicOrEmpty(evt.Summary) &&
+                !HasCyrillicOrEmpty(evt.Sentiment))
+            {
+                error = "event_non_russian_output";
+                return false;
+            }
         }
 
         foreach (var signal in item.ProfileSignals)
@@ -135,6 +251,37 @@ public static class ExtractionValidator
                 error = "invalid_profile_signal_payload";
                 return false;
             }
+
+            if (!ExtractionSemanticContract.IsSnakeCase(signal.Trait) ||
+                !ExtractionSemanticContract.IsSnakeCase(signal.Direction))
+            {
+                error = "invalid_profile_signal_semantics";
+                return false;
+            }
+
+            if (!IsValid01(signal.Confidence))
+            {
+                error = "profile_signal_invalid_confidence";
+                return false;
+            }
+
+            if (enforceRussianOutput && !HasCyrillicOrEmpty(signal.Evidence))
+            {
+                error = "profile_signal_non_russian_output";
+                return false;
+            }
+        }
+
+        if (item.RequiresExpensive && string.IsNullOrWhiteSpace(item.Reason))
+        {
+            error = "requires_expensive_without_reason";
+            return false;
+        }
+
+        if (enforceRussianOutput && !HasCyrillicOrEmpty(item.Reason))
+        {
+            error = "reason_non_russian_output";
+            return false;
         }
 
         error = null;
@@ -167,6 +314,11 @@ public static class ExtractionValidator
 
     private static bool IsValid01(float value)
     {
-        return value > 0f && value <= 1f;
+        return value >= 0f && value <= 1f;
+    }
+
+    private static bool HasCyrillicOrEmpty(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) || ExtractionSemanticContract.IsLikelyRussianText(value);
     }
 }

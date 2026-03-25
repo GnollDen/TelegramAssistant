@@ -574,7 +574,7 @@ public class OpenRouterAnalysisService
         if (!_schemaValidator.TryParseBatch(json, out var parsed, out var error))
         {
             _logger.LogWarning("Stage5 schema validation failed: {Reason}", error ?? "invalid_schema");
-            return new ExtractionBatchResult();
+            throw new InvalidDataException($"stage5_schema_validation_failed:{error ?? "invalid_schema"}");
         }
 
         return parsed;

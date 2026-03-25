@@ -73,7 +73,7 @@ public static class ExtractionRefiner
             .Select(entity => new ExtractionEntity
             {
                 Name = NormalizeRequired(entity.Name),
-                Type = string.IsNullOrWhiteSpace(entity.Type) ? "Person" : NormalizeRequired(entity.Type),
+                Type = string.IsNullOrWhiteSpace(entity.Type) ? "Person" : NormalizeEntityType(entity.Type),
                 Confidence = Clamp01(entity.Confidence),
                 TrustFactor = ResolveTrustFactor(entity.TrustFactor, entity.Confidence),
                 NeedsClarification = entity.NeedsClarification
@@ -87,7 +87,7 @@ public static class ExtractionRefiner
             .Select(observation => new ExtractionObservation
             {
                 SubjectName = NormalizeRequired(observation.SubjectName),
-                Type = NormalizeRequired(observation.Type),
+                Type = NormalizeEnumToken(observation.Type),
                 ObjectName = NormalizeOptional(observation.ObjectName),
                 Value = NormalizeOptional(observation.Value),
                 Evidence = NormalizeOptional(observation.Evidence),
@@ -103,9 +103,9 @@ public static class ExtractionRefiner
             .Select(claim => new ExtractionClaim
             {
                 EntityName = NormalizeRequired(claim.EntityName),
-                ClaimType = string.IsNullOrWhiteSpace(claim.ClaimType) ? "fact" : NormalizeRequired(claim.ClaimType),
-                Category = string.IsNullOrWhiteSpace(claim.Category) ? "general" : NormalizeRequired(claim.Category),
-                Key = NormalizeRequired(claim.Key),
+                ClaimType = string.IsNullOrWhiteSpace(claim.ClaimType) ? "fact" : NormalizeEnumToken(claim.ClaimType),
+                Category = string.IsNullOrWhiteSpace(claim.Category) ? "general" : NormalizeEnumToken(claim.Category),
+                Key = NormalizeEnumToken(claim.Key),
                 Value = NormalizeRequired(claim.Value),
                 Evidence = NormalizeOptional(claim.Evidence),
                 Confidence = Clamp01(claim.Confidence)
@@ -122,8 +122,8 @@ public static class ExtractionRefiner
             .Select(fact => new ExtractionFact
             {
                 EntityName = NormalizeRequired(fact.EntityName),
-                Category = string.IsNullOrWhiteSpace(fact.Category) ? "general" : NormalizeRequired(fact.Category),
-                Key = NormalizeRequired(fact.Key),
+                Category = string.IsNullOrWhiteSpace(fact.Category) ? "general" : NormalizeEnumToken(fact.Category),
+                Key = NormalizeEnumToken(fact.Key),
                 Value = NormalizeRequired(fact.Value),
                 Confidence = Clamp01(fact.Confidence),
                 TrustFactor = ResolveTrustFactor(fact.TrustFactor, fact.Confidence),
@@ -142,7 +142,7 @@ public static class ExtractionRefiner
             {
                 FromEntityName = NormalizeRequired(relationship.FromEntityName),
                 ToEntityName = NormalizeRequired(relationship.ToEntityName),
-                Type = NormalizeRequired(relationship.Type),
+                Type = NormalizeRequired(relationship.Type).ToLowerInvariant(),
                 Confidence = Clamp01(relationship.Confidence)
             })
             .Where(relationship => relationship.FromEntityName.Length > 0 &&
@@ -155,7 +155,7 @@ public static class ExtractionRefiner
                           !string.IsNullOrWhiteSpace(evt.SubjectName))
             .Select(evt => new ExtractionEvent
             {
-                Type = NormalizeRequired(evt.Type),
+                Type = NormalizeEnumToken(evt.Type),
                 SubjectName = NormalizeRequired(evt.SubjectName),
                 ObjectName = NormalizeOptional(evt.ObjectName),
                 Sentiment = NormalizeOptional(evt.Sentiment),
@@ -171,8 +171,8 @@ public static class ExtractionRefiner
             .Select(signal => new ExtractionProfileSignal
             {
                 SubjectName = NormalizeRequired(signal.SubjectName),
-                Trait = NormalizeRequired(signal.Trait),
-                Direction = string.IsNullOrWhiteSpace(signal.Direction) ? "neutral" : NormalizeRequired(signal.Direction),
+                Trait = NormalizeEnumToken(signal.Trait),
+                Direction = string.IsNullOrWhiteSpace(signal.Direction) ? "neutral" : NormalizeEnumToken(signal.Direction),
                 Evidence = NormalizeOptional(signal.Evidence),
                 Confidence = Clamp01(signal.Confidence)
             })
@@ -216,6 +216,51 @@ public static class ExtractionRefiner
     private static string NormalizeRequired(string value)
     {
         return MessageContentBuilder.CollapseWhitespace(value).Trim();
+    }
+
+    private static string NormalizeEnumToken(string value)
+    {
+        var normalized = NormalizeRequired(value)
+            .ToLowerInvariant()
+            .Replace('-', '_')
+            .Replace(' ', '_');
+        while (normalized.Contains("__", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeEntityType(string value)
+    {
+        var normalized = NormalizeRequired(value);
+        if (normalized.Equals("person", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Person";
+        }
+
+        if (normalized.Equals("organization", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Organization";
+        }
+
+        if (normalized.Equals("place", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Place";
+        }
+
+        if (normalized.Equals("pet", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Pet";
+        }
+
+        if (normalized.Equals("event", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Event";
+        }
+
+        return normalized;
     }
 
     private static string? NormalizeOptional(string? value)

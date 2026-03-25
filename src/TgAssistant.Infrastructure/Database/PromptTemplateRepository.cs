@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Core.Prompts;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -28,6 +29,8 @@ public class PromptTemplateRepository : IPromptTemplateRepository
             Id = row.Id,
             Name = row.Name,
             Description = row.Description,
+            Version = row.Version,
+            Checksum = row.Checksum,
             SystemPrompt = row.SystemPrompt,
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
@@ -38,6 +41,12 @@ public class PromptTemplateRepository : IPromptTemplateRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var now = DateTime.UtcNow;
+        var normalizedPrompt = PromptTemplateChecksum.Normalize(template.SystemPrompt);
+        var normalizedVersion = string.IsNullOrWhiteSpace(template.Version) ? "v1" : template.Version.Trim();
+        var normalizedChecksum = string.IsNullOrWhiteSpace(template.Checksum)
+            ? PromptTemplateChecksum.Compute(normalizedPrompt)
+            : template.Checksum.Trim().ToUpperInvariant();
+
         var existing = await db.PromptTemplates.FirstOrDefaultAsync(x => x.Id == template.Id, ct);
         if (existing == null)
         {
@@ -46,25 +55,50 @@ public class PromptTemplateRepository : IPromptTemplateRepository
                 Id = template.Id,
                 Name = template.Name,
                 Description = template.Description,
-                SystemPrompt = template.SystemPrompt,
+                Version = normalizedVersion,
+                Checksum = normalizedChecksum,
+                SystemPrompt = normalizedPrompt,
                 CreatedAt = now,
                 UpdatedAt = now
             });
+            template.CreatedAt = now;
+            template.UpdatedAt = now;
         }
         else
         {
+            var existingVersion = string.IsNullOrWhiteSpace(existing.Version) ? "v1" : existing.Version;
+            var existingChecksum = string.IsNullOrWhiteSpace(existing.Checksum)
+                ? PromptTemplateChecksum.Compute(existing.SystemPrompt)
+                : existing.Checksum;
+            var changed = !string.Equals(existing.Name, template.Name, StringComparison.Ordinal) ||
+                          !string.Equals(existing.Description, template.Description, StringComparison.Ordinal) ||
+                          !string.Equals(existingVersion, normalizedVersion, StringComparison.Ordinal) ||
+                          !string.Equals(existingChecksum, normalizedChecksum, StringComparison.Ordinal) ||
+                          !string.Equals(existing.SystemPrompt, normalizedPrompt, StringComparison.Ordinal);
+            if (!changed)
+            {
+                template.CreatedAt = existing.CreatedAt;
+                template.UpdatedAt = existing.UpdatedAt;
+                template.Version = existingVersion;
+                template.Checksum = existingChecksum;
+                template.SystemPrompt = existing.SystemPrompt;
+                return template;
+            }
+
             existing.Name = template.Name;
             existing.Description = template.Description;
-            existing.SystemPrompt = template.SystemPrompt;
+            existing.Version = normalizedVersion;
+            existing.Checksum = normalizedChecksum;
+            existing.SystemPrompt = normalizedPrompt;
             existing.UpdatedAt = now;
+            template.CreatedAt = existing.CreatedAt;
+            template.UpdatedAt = now;
         }
 
         await db.SaveChangesAsync(ct);
-        template.UpdatedAt = now;
-        if (template.CreatedAt == default)
-        {
-            template.CreatedAt = now;
-        }
+        template.Version = normalizedVersion;
+        template.Checksum = normalizedChecksum;
+        template.SystemPrompt = normalizedPrompt;
 
         return template;
     }
