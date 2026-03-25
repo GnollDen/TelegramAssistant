@@ -17,8 +17,9 @@ public class RedisSettings
     public const string Section = "Redis";
     public string ConnectionString { get; set; } = string.Empty;
     public string StreamName { get; set; } = "tg-messages";
+    public string DeadLetterStreamName { get; set; } = "tg-messages-dlq";
     public string ConsumerGroup { get; set; } = "batch-workers";
-    public string ConsumerName { get; set; } = "worker-1";
+    public string ConsumerName { get; set; } = "worker";
     public bool EnablePendingReclaim { get; set; } = true;
     public int PendingReclaimIntervalSeconds { get; set; } = 30;
     public int PendingMinIdleSeconds { get; set; } = 60;

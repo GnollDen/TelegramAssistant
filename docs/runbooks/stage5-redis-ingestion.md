@@ -1,6 +1,6 @@
 # Stage5 Redis Ingestion and PEL Reclaim Runbook
 
-Last updated: 2026-03-17.
+Last updated: 2026-03-25.
 
 ## Scope
 
@@ -9,7 +9,8 @@ Use this runbook when realtime ingestion stalls, Redis pending grows, or reclaim
 Defaults used by runtime:
 - stream: `tg-messages`
 - consumer group: `batch-workers`
-- consumer: `worker-1`
+- consumer: runtime-unique (`{Redis__ConsumerName}-{machine}-{pid}`, base default `worker`)
+- malformed entry DLQ stream: `tg-messages-dlq`
 
 ## 1) Fast checks
 
@@ -30,7 +31,9 @@ docker exec -i tga-redis redis-cli XPENDING tg-messages batch-workers
 Check pending by consumer:
 
 ```bash
-docker exec -i tga-redis redis-cli XPENDING tg-messages batch-workers - + 50 worker-1
+docker exec -i tga-redis redis-cli XINFO CONSUMERS tg-messages batch-workers
+# then pick active consumer name from output, for example:
+docker exec -i tga-redis redis-cli XPENDING tg-messages batch-workers - + 50 worker-<machine>-<pid>
 ```
 
 ## 2) Validate reclaim configuration in app
@@ -42,7 +45,9 @@ docker exec -i tga-app /bin/sh -lc 'env | sort | rg "^Redis__"'
 ```
 
 Key settings:
+- `Redis__ConsumerName` (base consumer name, default `worker`; runtime appends machine/pid)
 - `Redis__EnablePendingReclaim=true`
+- `Redis__DeadLetterStreamName` (default `tg-messages-dlq`)
 - `Redis__PendingReclaimIntervalSeconds` (default `30`)
 - `Redis__PendingMinIdleSeconds` (default `60`)
 - `Redis__PendingReclaimBatchSize` (default `100`)
@@ -56,6 +61,8 @@ Key settings:
   - consumer crashes before `XACK`, or batch worker is blocked.
 - Pending mostly on one dead consumer:
   - reclaim should move entries after `PendingMinIdleSeconds`; if not, verify group/stream names and idle threshold.
+- Repeated malformed entries in logs:
+  - entries are sent to DLQ and `XACK`'d from main stream; inspect `tg-messages-dlq` for payload and reason.
 
 ## 4) Controlled recovery
 

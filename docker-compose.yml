@@ -52,7 +52,9 @@ services:
       Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
       Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       Redis__ConnectionString: "127.0.0.1:6379"
+      Redis__ConsumerName: ${REDIS_CONSUMER_NAME:-worker}
       Redis__EnablePendingReclaim: ${REDIS_ENABLE_PENDING_RECLAIM:-true}
+      Redis__DeadLetterStreamName: ${REDIS_DEAD_LETTER_STREAM_NAME:-tg-messages-dlq}
       Redis__PendingReclaimIntervalSeconds: ${REDIS_PENDING_RECLAIM_INTERVAL_SECONDS:-30}
       Redis__PendingMinIdleSeconds: ${REDIS_PENDING_MIN_IDLE_SECONDS:-60}
       Redis__PendingReclaimBatchSize: ${REDIS_PENDING_RECLAIM_BATCH_SIZE:-100}
