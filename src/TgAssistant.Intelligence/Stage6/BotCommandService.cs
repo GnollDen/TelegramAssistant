@@ -34,6 +34,10 @@ public class BotCommandService : IBotCommandService
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
     private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IClarificationRepository _clarificationRepository;
+    private readonly IStage6UserContextRepository _stage6UserContextRepository;
+    private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly ILogger<BotCommandService> _logger;
 
     public BotCommandService(
@@ -51,6 +55,10 @@ public class BotCommandService : IBotCommandService
         IStrategyDraftRepository strategyDraftRepository,
         IStage6ArtifactRepository stage6ArtifactRepository,
         IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
+        IStage6CaseRepository stage6CaseRepository,
+        IClarificationRepository clarificationRepository,
+        IStage6UserContextRepository stage6UserContextRepository,
+        IDomainReviewEventRepository domainReviewEventRepository,
         ILogger<BotCommandService> logger)
     {
         _botSettings = botSettings.Value;
@@ -67,6 +75,10 @@ public class BotCommandService : IBotCommandService
         _strategyDraftRepository = strategyDraftRepository;
         _stage6ArtifactRepository = stage6ArtifactRepository;
         _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
+        _stage6CaseRepository = stage6CaseRepository;
+        _clarificationRepository = clarificationRepository;
+        _stage6UserContextRepository = stage6UserContextRepository;
+        _domainReviewEventRepository = domainReviewEventRepository;
         _logger = logger;
     }
 
@@ -92,8 +104,14 @@ public class BotCommandService : IBotCommandService
                 "/next" => (true, await HandleNextAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/draft" => (true, await HandleDraftAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/review" => (true, await HandleReviewAsync(args, transportChatId, sourceMessageId, senderId, ct)),
+                "/cases" => (true, await HandleCasesAsync(args, transportChatId, ct)),
+                "/case" => (true, await HandleCaseAsync(args, transportChatId, ct)),
                 "/gaps" => (true, await HandleGapsAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/answer" => (true, await HandleAnswerAsync(args, transportChatId, sourceMessageId, senderId, ct)),
+                "/resolve" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Resolved, "resolve", ct)),
+                "/reject" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Rejected, "reject", ct)),
+                "/refresh" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Ready, "refresh", ct)),
+                "/annotate" => (true, await HandleAnnotateAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/timeline" => (true, await HandleTimelineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/offline" => (true, await HandleOfflineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/help" => (true, BuildHelp()),
@@ -314,6 +332,242 @@ public class BotCommandService : IBotCommandService
         return sb.ToString().Trim();
     }
 
+    private async Task<string> HandleCasesAsync(string args, long? transportChatId, CancellationToken ct)
+    {
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var queueArgs = ParseCaseQueueArgs(commandArgs);
+        var scopedCases = await LoadScopedCasesAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
+        var filtered = ApplyCaseStatusFilter(scopedCases, queueArgs.StatusFilter)
+            .Take(queueArgs.Limit)
+            .ToList();
+
+        if (filtered.Count == 0)
+        {
+            return queueArgs.StatusFilter.Equals("active", StringComparison.OrdinalIgnoreCase)
+                ? "No active Stage 6 cases in this scope. Clarification intake stays on /gaps and /answer."
+                : $"No Stage 6 cases matched status='{queueArgs.StatusFilter}'.";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"cases: shown={filtered.Count} | active={scopedCases.Count(x => IsActiveCaseStatus(x.Status))} | needs_input={scopedCases.Count(IsNeedsInputCase)} | ready={scopedCases.Count(x => x.Status == Stage6CaseStatuses.Ready)}");
+        sb.AppendLine("clarification stays primary in bot: use /gaps or /answer first for needs-user-input items.");
+        foreach (var item in filtered)
+        {
+            var summary = SummarizeCase(item, 88);
+            var primaryAction = IsNeedsInputCase(item) ? "answer" : "case";
+            sb.AppendLine($"{item.Id} | {item.Status} | {item.Priority} | {item.CaseType} | {summary} | primary={primaryAction}");
+        }
+
+        sb.AppendLine("detail: /case <stage6-case-id>");
+        return sb.ToString().Trim();
+    }
+
+    private async Task<string> HandleCaseAsync(string args, long? transportChatId, CancellationToken ct)
+    {
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var target = ParseStage6CaseTarget(commandArgs);
+        var caseRecord = target.Stage6CaseId.HasValue
+            ? await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct)
+            : (await LoadScopedCasesAsync(scope.Value.CaseId, scope.Value.ChatId, ct)).FirstOrDefault(x => IsActiveCaseStatus(x.Status));
+        if (caseRecord == null)
+        {
+            return target.Stage6CaseId.HasValue
+                ? "Stage 6 case not found in current scope."
+                : "No active Stage 6 case to show. Use /cases all for closed items.";
+        }
+
+        var clarificationQuestion = await TryGetLinkedClarificationQuestionAsync(caseRecord, ct);
+        var evidenceRefs = ParseJsonList(caseRecord.EvidenceRefsJson, 4);
+        var targetArtifactTypes = ParseJsonList(caseRecord.TargetArtifactTypesJson, 6);
+        var sb = new StringBuilder();
+        sb.AppendLine($"case: {caseRecord.Id}");
+        sb.AppendLine($"type: {caseRecord.CaseType} ({caseRecord.CaseSubtype ?? "-"})");
+        sb.AppendLine($"status: {caseRecord.Status} | priority: {caseRecord.Priority} | conf: {(caseRecord.Confidence ?? 0f):0.00}");
+        sb.AppendLine($"evidence summary: {BuildCaseEvidenceSummary(caseRecord)}");
+        sb.AppendLine($"evidence refs: {(evidenceRefs.Count == 0 ? "none recorded" : string.Join(" | ", evidenceRefs))}");
+        if (clarificationQuestion != null)
+        {
+            sb.AppendLine($"question: {clarificationQuestion.QuestionText}");
+            sb.AppendLine($"question status: {clarificationQuestion.Status} | options: {FormatOptions(clarificationQuestion.AnswerOptionsJson)}");
+        }
+
+        sb.AppendLine($"targets: {(targetArtifactTypes.Count == 0 ? "none recorded" : string.Join(", ", targetArtifactTypes))}");
+        sb.AppendLine($"source: {caseRecord.SourceObjectType}:{caseRecord.SourceObjectId}");
+        sb.AppendLine($"updated: {caseRecord.UpdatedAt:yyyy-MM-dd HH:mm} UTC");
+        if (clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress")
+        {
+            sb.AppendLine($"primary action: /answer {clarificationQuestion.Id} | <your answer>");
+            sb.AppendLine($"secondary: /annotate {caseRecord.Id} | <note> | /reject {caseRecord.Id} [reason] | /refresh {caseRecord.Id} [reason]");
+        }
+        else
+        {
+            sb.AppendLine($"actions: /resolve {caseRecord.Id} [reason] | /reject {caseRecord.Id} [reason] | /refresh {caseRecord.Id} [reason] | /annotate {caseRecord.Id} | <note>");
+        }
+
+        return sb.ToString().Trim();
+    }
+
+    private async Task<string> HandleCaseStatusActionAsync(
+        string args,
+        long? transportChatId,
+        long? sourceMessageId,
+        long? senderId,
+        string nextStatus,
+        string action,
+        CancellationToken ct)
+    {
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var target = ParseStage6CaseTarget(commandArgs);
+        if (!target.Stage6CaseId.HasValue)
+        {
+            return $"Usage: /{action} <stage6-case-id>{(action == "refresh" ? " [reason]" : " [reason]")}";
+        }
+
+        var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
+        if (caseRecord == null)
+        {
+            return "Stage 6 case not found in current scope.";
+        }
+
+        var actor = BuildActor(senderId);
+        var reason = string.IsNullOrWhiteSpace(target.Text) ? $"telegram_{action}" : target.Text;
+        var clarificationQuestion = await TryGetLinkedClarificationQuestionAsync(caseRecord, ct);
+        if (action.Equals("refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            return await RefreshCaseAsync(caseRecord, clarificationQuestion, scope.Value.ChatId, actor, reason, ct);
+        }
+
+        if (action.Equals("resolve", StringComparison.OrdinalIgnoreCase))
+        {
+            if (clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress")
+            {
+                return $"Clarification intake remains primary. Use /answer {clarificationQuestion.Id} | <your answer> before resolving case {caseRecord.Id}.";
+            }
+
+            if (clarificationQuestion != null && clarificationQuestion.Status.Equals("answered", StringComparison.OrdinalIgnoreCase))
+            {
+                var resolvedQuestion = await _clarificationRepository.UpdateQuestionWorkflowAsync(
+                    clarificationQuestion.Id,
+                    "resolved",
+                    clarificationQuestion.Priority,
+                    actor,
+                    reason,
+                    ct);
+                return resolvedQuestion
+                    ? $"Resolved clarification case {caseRecord.Id} after recorded answer."
+                    : $"Failed to resolve clarification case {caseRecord.Id}.";
+            }
+        }
+
+        if (action.Equals("reject", StringComparison.OrdinalIgnoreCase) && clarificationQuestion != null)
+        {
+            var rejectedQuestion = await _clarificationRepository.UpdateQuestionWorkflowAsync(
+                clarificationQuestion.Id,
+                "rejected",
+                clarificationQuestion.Priority,
+                actor,
+                reason,
+                ct);
+            return rejectedQuestion
+                ? $"Rejected clarification case {caseRecord.Id}. Reopen with /refresh {caseRecord.Id} if new evidence arrives."
+                : $"Failed to reject clarification case {caseRecord.Id}.";
+        }
+
+        if (caseRecord.Status.Equals(nextStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Stage 6 case {caseRecord.Id} is already {nextStatus}.";
+        }
+
+        var updated = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, nextStatus, actor, reason, ct);
+        if (!updated)
+        {
+            return $"Failed to {action} case {caseRecord.Id}.";
+        }
+
+        return action.Equals("resolve", StringComparison.OrdinalIgnoreCase)
+            ? $"Resolved Stage 6 case {caseRecord.Id}."
+            : $"Rejected Stage 6 case {caseRecord.Id}.";
+    }
+
+    private async Task<string> HandleAnnotateAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
+    {
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var target = ParseStage6CaseTarget(commandArgs);
+        if (!target.Stage6CaseId.HasValue || string.IsNullOrWhiteSpace(target.Text))
+        {
+            return "Usage: /annotate <stage6-case-id> | <context note>";
+        }
+
+        var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
+        if (caseRecord == null)
+        {
+            return "Stage 6 case not found in current scope.";
+        }
+
+        var clarificationQuestion = await TryGetLinkedClarificationQuestionAsync(caseRecord, ct);
+        var actor = BuildActor(senderId);
+        var note = target.Text.Trim();
+        _ = await _stage6UserContextRepository.CreateAsync(new Stage6UserContextEntry
+        {
+            Stage6CaseId = caseRecord.Id,
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId ?? scope.Value.ChatId,
+            SourceKind = UserContextSourceKinds.OperatorAnnotation,
+            ClarificationQuestionId = clarificationQuestion?.Id,
+            ContentText = note,
+            StructuredPayloadJson = JsonSerializer.Serialize(new
+            {
+                case_type = caseRecord.CaseType,
+                case_status = caseRecord.Status
+            }),
+            AppliesToRefsJson = JsonSerializer.Serialize(BuildContextRefs(caseRecord)),
+            EnteredVia = "bot",
+            UserReportedCertainty = 1f,
+            SourceType = "telegram_operator",
+            SourceId = "/annotate",
+            SourceMessageId = sourceMessageId,
+            SourceSessionId = null,
+            ConflictsWithRefsJson = "[]",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        _ = await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
+        {
+            ObjectType = "stage6_case",
+            ObjectId = caseRecord.Id.ToString(),
+            Action = "operator_annotate",
+            NewValueRef = JsonSerializer.Serialize(new { note }),
+            Reason = "bot_annotation",
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var suffix = clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress"
+            ? $" Clarification answer path stays /answer {clarificationQuestion.Id} | <your answer>."
+            : string.Empty;
+        return $"annotation saved for case {caseRecord.Id}.{suffix}".Trim();
+    }
+
     private async Task<string> HandleGapsAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
     {
         var (scope, _, scopeError) = ResolveScopeFromArgs(args, transportChatId);
@@ -341,7 +595,7 @@ public class BotCommandService : IBotCommandService
                 try
                 {
                     var persisted = JsonSerializer.Deserialize<BotClarificationStateArtifact>(clarificationArtifact.PayloadJson);
-                    if (persisted != null)
+                    if (persisted != null && HasClarificationEvidenceContext(persisted))
                     {
                         _ = await _stage6ArtifactRepository.TouchReusedAsync(clarificationArtifact.Id, DateTime.UtcNow, ct);
                         return BuildGapsReply(persisted);
@@ -362,12 +616,27 @@ public class BotCommandService : IBotCommandService
             return "No open clarification gaps right now. If uncertainty remains, run /state or /timeline then ask /gaps again.";
         }
 
+        var linkedCase = (await _stage6CaseRepository.GetCasesAsync(scope.Value.CaseId, ct: ct))
+            .Where(x => x.ChatId == null || x.ChatId == scope.Value.ChatId)
+            .Where(x => x.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+                        && x.SourceObjectId.Equals(top.Question.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.UpdatedAt)
+            .FirstOrDefault();
+        var linkedEvidenceRefs = linkedCase == null ? [] : ParseJsonList(linkedCase.EvidenceRefsJson, 4);
+        var evidenceSummary = linkedCase == null
+            ? "question-derived evidence only"
+            : linkedEvidenceRefs.Count == 0
+                ? BuildCaseEvidenceSummary(linkedCase)
+                : $"{BuildCaseEvidenceSummary(linkedCase)} | refs: {string.Join(" | ", linkedEvidenceRefs)}";
+
         var options = ParseJsonList(top.Question.AnswerOptionsJson, 4);
         var artifactPayload = new BotClarificationStateArtifact
         {
             QuestionId = top.Question.Id,
+            Stage6CaseId = linkedCase?.Id,
             QuestionText = top.Question.QuestionText,
             WhyItMatters = top.Question.WhyItMatters,
+            EvidenceSummary = evidenceSummary,
             Priority = top.Question.Priority,
             Status = top.Question.Status,
             Options = options,
@@ -797,10 +1066,15 @@ public class BotCommandService : IBotCommandService
     private static string BuildGapsReply(BotClarificationStateArtifact artifact)
     {
         var sb = new StringBuilder();
+        sb.AppendLine($"evidence summary: {artifact.EvidenceSummary}");
         sb.AppendLine($"question: {artifact.QuestionText}");
         sb.AppendLine($"why it matters: {artifact.WhyItMatters}");
         sb.AppendLine($"priority: {artifact.Priority} | status: {artifact.Status}");
         sb.AppendLine($"options: {(artifact.Options.Count == 0 ? "free text" : string.Join(" | ", artifact.Options))}");
+        if (artifact.Stage6CaseId.HasValue)
+        {
+            sb.AppendLine($"case detail: /case {artifact.Stage6CaseId}");
+        }
         sb.AppendLine($"answer path: /answer {artifact.QuestionId} | <your answer>  (or /answer <your answer> for top question)");
         if (artifact.IsDependencyBlocked)
         {
@@ -871,16 +1145,387 @@ public class BotCommandService : IBotCommandService
         return (string.IsNullOrWhiteSpace(tone) ? null : tone, string.IsNullOrWhiteSpace(notes) ? null : notes);
     }
 
+    private async Task<List<Stage6CaseRecord>> LoadScopedCasesAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var records = await _stage6CaseRepository.GetCasesAsync(caseId, ct: ct);
+        return records
+            .Where(x => x.ChatId == null || x.ChatId == chatId)
+            .OrderByDescending(GetCaseSortScore)
+            .ThenByDescending(x => x.UpdatedAt)
+            .ToList();
+    }
+
+    private async Task<Stage6CaseRecord?> LoadScopedCaseAsync(Guid stage6CaseId, CaseScope scope, CancellationToken ct)
+    {
+        var record = await _stage6CaseRepository.GetByIdAsync(stage6CaseId, ct);
+        if (record == null || record.ScopeCaseId != scope.CaseId)
+        {
+            return null;
+        }
+
+        if (record.ChatId.HasValue && record.ChatId.Value != scope.ChatId)
+        {
+            return null;
+        }
+
+        return record;
+    }
+
+    private async Task<ClarificationQuestion?> TryGetLinkedClarificationQuestionAsync(Stage6CaseRecord record, CancellationToken ct)
+    {
+        if (!record.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParse(record.SourceObjectId, out var questionId))
+        {
+            return null;
+        }
+
+        return await _clarificationRepository.GetQuestionByIdAsync(questionId, ct);
+    }
+
+    private async Task<string> RefreshCaseAsync(
+        Stage6CaseRecord caseRecord,
+        ClarificationQuestion? clarificationQuestion,
+        long fallbackChatId,
+        string actor,
+        string reason,
+        CancellationToken ct)
+    {
+        var artifactTypes = ResolveRefreshArtifactTypes(caseRecord);
+        var staleCount = 0;
+        var chatId = caseRecord.ChatId ?? fallbackChatId;
+        if (chatId > 0)
+        {
+            foreach (var artifactType in artifactTypes)
+            {
+                var current = await _stage6ArtifactRepository.GetCurrentAsync(
+                    caseRecord.ScopeCaseId,
+                    chatId,
+                    artifactType,
+                    Stage6ArtifactTypes.ChatScope(chatId),
+                    ct);
+                if (current == null)
+                {
+                    continue;
+                }
+
+                if (await _stage6ArtifactRepository.MarkStaleAsync(current.Id, reason, DateTime.UtcNow, ct))
+                {
+                    staleCount++;
+                }
+            }
+        }
+
+        var reopened = false;
+        if (clarificationQuestion != null && clarificationQuestion.Status is "resolved" or "rejected" or "answered")
+        {
+            reopened = await _clarificationRepository.UpdateQuestionWorkflowAsync(
+                clarificationQuestion.Id,
+                "open",
+                clarificationQuestion.Priority,
+                actor,
+                reason,
+                ct);
+        }
+        else if (caseRecord.Status is Stage6CaseStatuses.Resolved or Stage6CaseStatuses.Rejected or Stage6CaseStatuses.Stale)
+        {
+            reopened = await _stage6CaseRepository.UpdateStatusAsync(
+                caseRecord.Id,
+                IsClarificationCaseType(caseRecord.CaseType) ? Stage6CaseStatuses.NeedsUserInput : Stage6CaseStatuses.Ready,
+                actor,
+                reason,
+                ct);
+        }
+
+        _ = await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
+        {
+            ObjectType = "stage6_case",
+            ObjectId = caseRecord.Id.ToString(),
+            Action = "operator_refresh",
+            NewValueRef = JsonSerializer.Serialize(new
+            {
+                stale_count = staleCount,
+                artifact_types = artifactTypes,
+                reopened
+            }),
+            Reason = reason,
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var nextStep = artifactTypes.Count == 0
+            ? "no linked artifacts were recorded"
+            : $"stale artifacts={staleCount}/{artifactTypes.Count} ({string.Join(", ", artifactTypes)})";
+        if (clarificationQuestion != null)
+        {
+            var answerPath = reopened || clarificationQuestion.Status is "open" or "in_progress"
+                ? $" Primary intake stays /answer {clarificationQuestion.Id} | <your answer>."
+                : string.Empty;
+            return $"refresh applied for case {caseRecord.Id}: {nextStep}; reopened={(reopened ? "yes" : "no")}.{answerPath}".Trim();
+        }
+
+        return $"refresh applied for case {caseRecord.Id}: {nextStep}; reopened={(reopened ? "yes" : "no")}.";
+    }
+
+    private static CaseQueueArgs ParseCaseQueueArgs(string args)
+    {
+        var result = new CaseQueueArgs();
+        if (string.IsNullOrWhiteSpace(args))
+        {
+            return result;
+        }
+
+        var statusFilter = result.StatusFilter;
+        var limit = result.Limit;
+        var tokens = args.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var token in tokens)
+        {
+            if (token.Equals("all", StringComparison.OrdinalIgnoreCase))
+            {
+                statusFilter = "all";
+                continue;
+            }
+
+            if (token.StartsWith("status=", StringComparison.OrdinalIgnoreCase))
+            {
+                statusFilter = NormalizeCaseQueueStatusFilter(token[7..]);
+                continue;
+            }
+
+            if (token.StartsWith("limit=", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(token[6..], out var parsedLimit))
+            {
+                limit = Math.Clamp(parsedLimit, 1, 20);
+            }
+        }
+
+        return new CaseQueueArgs
+        {
+            StatusFilter = statusFilter,
+            Limit = limit
+        };
+    }
+
+    private static IEnumerable<Stage6CaseRecord> ApplyCaseStatusFilter(IEnumerable<Stage6CaseRecord> cases, string filter)
+    {
+        return filter switch
+        {
+            "all" => cases,
+            "active" => cases.Where(x => IsActiveCaseStatus(x.Status)),
+            _ => cases.Where(x => x.Status.Equals(filter, StringComparison.OrdinalIgnoreCase))
+        };
+    }
+
+    private static string NormalizeCaseQueueStatusFilter(string raw)
+    {
+        var normalized = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "all" => "all",
+            "active" or "open" => "active",
+            "needs_input" or "needs-user-input" or "needs_user_input" => Stage6CaseStatuses.NeedsUserInput,
+            "ready" => Stage6CaseStatuses.Ready,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            "new" => Stage6CaseStatuses.New,
+            _ => "active"
+        };
+    }
+
+    private static Stage6CaseTarget ParseStage6CaseTarget(string args)
+    {
+        var text = (args ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return new Stage6CaseTarget();
+        }
+
+        var pipeIndex = text.IndexOf('|');
+        if (pipeIndex >= 0)
+        {
+            var head = text[..pipeIndex].Trim();
+            var tail = text[(pipeIndex + 1)..].Trim();
+            return Guid.TryParse(head, out var stage6CaseId)
+                ? new Stage6CaseTarget { Stage6CaseId = stage6CaseId, Text = tail }
+                : new Stage6CaseTarget { Text = text };
+        }
+
+        var firstSpace = text.IndexOf(' ');
+        if (firstSpace < 0)
+        {
+            return Guid.TryParse(text, out var stage6CaseId)
+                ? new Stage6CaseTarget { Stage6CaseId = stage6CaseId }
+                : new Stage6CaseTarget { Text = text };
+        }
+
+        var idPart = text[..firstSpace].Trim();
+        var remainder = text[(firstSpace + 1)..].Trim();
+        return Guid.TryParse(idPart, out var parsedStage6CaseId)
+            ? new Stage6CaseTarget { Stage6CaseId = parsedStage6CaseId, Text = remainder }
+            : new Stage6CaseTarget { Text = text };
+    }
+
+    private static bool HasClarificationEvidenceContext(BotClarificationStateArtifact artifact)
+    {
+        return !string.IsNullOrWhiteSpace(artifact.EvidenceSummary) || artifact.Stage6CaseId.HasValue;
+    }
+
+    private static bool IsActiveCaseStatus(string status)
+    {
+        return status is Stage6CaseStatuses.New or Stage6CaseStatuses.Ready or Stage6CaseStatuses.NeedsUserInput;
+    }
+
+    private static bool IsClarificationCaseType(string caseType)
+    {
+        return caseType is Stage6CaseTypes.NeedsInput
+            or Stage6CaseTypes.ClarificationMissingData
+            or Stage6CaseTypes.ClarificationAmbiguity
+            or Stage6CaseTypes.ClarificationEvidenceInterpretationConflict
+            or Stage6CaseTypes.ClarificationNextStepBlocked;
+    }
+
+    private static bool IsNeedsInputCase(Stage6CaseRecord record)
+    {
+        return record.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase)
+            && IsClarificationCaseType(record.CaseType);
+    }
+
+    private static int GetCaseSortScore(Stage6CaseRecord record)
+    {
+        var score = 0;
+        if (IsNeedsInputCase(record))
+        {
+            score += 500;
+        }
+
+        score += record.Priority switch
+        {
+            "blocking" => 300,
+            "important" => 200,
+            _ => 100
+        };
+
+        score += record.Status switch
+        {
+            Stage6CaseStatuses.NeedsUserInput => 80,
+            Stage6CaseStatuses.Ready => 60,
+            Stage6CaseStatuses.New => 40,
+            Stage6CaseStatuses.Stale => 20,
+            _ => 0
+        };
+
+        score += record.CaseType.Equals(Stage6CaseTypes.Risk, StringComparison.OrdinalIgnoreCase) ? 40 : 0;
+        score += (int)Math.Round(Math.Clamp(record.Confidence ?? 0f, 0f, 1f) * 20f);
+        return score;
+    }
+
+    private static string SummarizeCase(Stage6CaseRecord record, int limit)
+    {
+        var summary = string.IsNullOrWhiteSpace(record.QuestionText)
+            ? record.ReasonSummary
+            : record.QuestionText;
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            summary = record.CaseType;
+        }
+
+        summary = summary.Trim();
+        return summary.Length <= limit
+            ? summary
+            : $"{summary[..limit].TrimEnd()}...";
+    }
+
+    private static string BuildCaseEvidenceSummary(Stage6CaseRecord record)
+    {
+        if (!string.IsNullOrWhiteSpace(record.ReasonSummary))
+        {
+            return record.ReasonSummary.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(record.QuestionText))
+        {
+            return record.QuestionText.Trim();
+        }
+
+        return "No evidence summary recorded.";
+    }
+
+    private static string FormatOptions(string? json)
+    {
+        var options = ParseJsonList(json, 4);
+        return options.Count == 0 ? "free text" : string.Join(" | ", options);
+    }
+
+    private static List<string> ResolveRefreshArtifactTypes(Stage6CaseRecord record)
+    {
+        var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in ParseJsonList(record.TargetArtifactTypesJson, 12))
+        {
+            switch (token.Trim().ToLowerInvariant())
+            {
+                case "state":
+                case "status":
+                case "current_state":
+                    mapped.Add(Stage6ArtifactTypes.CurrentState);
+                    break;
+                case "strategy":
+                    mapped.Add(Stage6ArtifactTypes.Strategy);
+                    break;
+                case "draft":
+                    mapped.Add(Stage6ArtifactTypes.Draft);
+                    break;
+                case "review":
+                    mapped.Add(Stage6ArtifactTypes.Review);
+                    break;
+                case "clarification":
+                case "clarification_state":
+                    mapped.Add(Stage6ArtifactTypes.ClarificationState);
+                    break;
+                case "dossier":
+                    mapped.Add(Stage6ArtifactTypes.Dossier);
+                    break;
+            }
+        }
+
+        if (IsClarificationCaseType(record.CaseType))
+        {
+            mapped.Add(Stage6ArtifactTypes.ClarificationState);
+        }
+
+        return mapped.ToList();
+    }
+
+    private static List<string> BuildContextRefs(Stage6CaseRecord record)
+    {
+        var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            $"stage6_case:{record.Id}"
+        };
+        foreach (var artifactType in ResolveRefreshArtifactTypes(record))
+        {
+            refs.Add($"stage6_artifact_type:{artifactType}");
+        }
+
+        return refs.ToList();
+    }
+
     private static string BuildHelp()
     {
         return string.Join('\n',
             "scope: set BotChat defaults or pass case=<id> chat=<id> in command",
+            "clarification intake first: /gaps then /answer",
             "/state - current state summary",
             "/next - ranked next-move strategy",
             "/draft [tone=...] [notes] - main + softer + more direct alternatives",
             "/review <text> - risk review with safer/natural rewrites",
-            "/gaps - top clarification question",
+            "/cases [status=active|all|needs_user_input|ready|resolved|rejected|stale] [limit=n] - operator queue",
+            "/case [stage6-case-id] - case details; defaults to top active case",
+            "/gaps - top clarification question with evidence summary",
             "/answer <text> or /answer <question-id> | <text>",
+            "/resolve <stage6-case-id> [reason] - resolve case",
+            "/reject <stage6-case-id> [reason] - reject case",
+            "/refresh <stage6-case-id> [reason] - stale linked artifacts / reopen case",
+            "/annotate <stage6-case-id> | <text> - add operator context note",
             "/timeline - current and prior periods",
             "/offline <summary> - log offline event");
     }
@@ -888,12 +1533,26 @@ public class BotCommandService : IBotCommandService
     private sealed class BotClarificationStateArtifact
     {
         public Guid QuestionId { get; set; }
+        public Guid? Stage6CaseId { get; set; }
         public string QuestionText { get; set; } = string.Empty;
         public string WhyItMatters { get; set; } = string.Empty;
+        public string EvidenceSummary { get; set; } = string.Empty;
         public string Priority { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public List<string> Options { get; set; } = [];
         public bool IsDependencyBlocked { get; set; }
+    }
+
+    private sealed class CaseQueueArgs
+    {
+        public string StatusFilter { get; init; } = "active";
+        public int Limit { get; init; } = 8;
+    }
+
+    private sealed class Stage6CaseTarget
+    {
+        public Guid? Stage6CaseId { get; init; }
+        public string Text { get; init; } = string.Empty;
     }
 
     private static string BuildActor(long? senderId)

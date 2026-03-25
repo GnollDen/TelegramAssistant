@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using TgAssistant.Core.Models;
 
 namespace TgAssistant.Web.Read;
 
@@ -67,7 +68,13 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/view/blocking" => new WebRenderResult { Route = path, Title = "Saved View: Blocking", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "blocking", 40, ct)) },
             "/view/current-period" => new WebRenderResult { Route = path, Title = "Saved View: Current Period", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "current-period", 10, ct)) },
             "/view/conflicts" => new WebRenderResult { Route = path, Title = "Saved View: Conflicts", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "conflicts", 40, ct)) },
-            "/inbox" => new WebRenderResult { Route = path, Title = "Inbox", Html = RenderInbox(await ExecuteInboxReadAsync(request, query, ct), request) },
+            "/queue" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
+            "/inbox" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
+            "/case-detail" => new WebRenderResult { Route = path, Title = "Case Detail", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request) },
+            "/artifact-detail" => new WebRenderResult { Route = path, Title = "Artifact Detail", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request) },
+            "/case-action" => new WebRenderResult { Route = path, Title = "Case Action", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request) },
+            "/clarification-answer" => new WebRenderResult { Route = path, Title = "Clarification Answer", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request) },
+            "/artifact-action" => new WebRenderResult { Route = path, Title = "Artifact Action", Html = RenderArtifactAction(await ExecuteArtifactActionAsync(request, query, ct), request) },
             "/history" => new WebRenderResult { Route = path, Title = "History", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
             "/history-object" => new WebRenderResult { Route = path, Title = "Object History", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
             "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
@@ -107,21 +114,99 @@ public class WebRouteRenderer : IWebRouteRenderer
             ct: ct);
     }
 
-    private async Task<InboxReadModel> ExecuteInboxReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    private async Task<Stage6CaseQueueReadModel> ExecuteCaseQueueReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
     {
-        bool? blocking = null;
-        if (bool.TryParse(GetQuery(query, "blocking"), out var parsedBlocking))
+        return await _webOpsService.GetCaseQueueAsync(
+            request,
+            status: EmptyToNull(GetQuery(query, "status")) ?? "active",
+            priority: EmptyToNull(GetQuery(query, "priority")),
+            caseType: EmptyToNull(GetQuery(query, "caseType")),
+            artifactType: EmptyToNull(GetQuery(query, "artifactType")),
+            query: EmptyToNull(GetQuery(query, "q")),
+            ct: ct);
+    }
+
+    private async Task<Stage6CaseDetailReadModel> ExecuteCaseDetailReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        if (!Guid.TryParse(GetQuery(query, "caseId"), out var caseId))
         {
-            blocking = parsedBlocking;
+            return new Stage6CaseDetailReadModel
+            {
+                Exists = false,
+                ReasonSummary = "Missing or invalid caseId."
+            };
         }
 
-        return await _webOpsService.GetInboxAsync(
-            request,
-            group: EmptyToNull(GetQuery(query, "group")),
-            status: EmptyToNull(GetQuery(query, "status")) ?? "open",
-            priority: EmptyToNull(GetQuery(query, "priority")),
-            blocking: blocking,
-            ct: ct);
+        return await _webOpsService.GetCaseDetailAsync(request, caseId, ct);
+    }
+
+    private async Task<Stage6ArtifactDetailReadModel> ExecuteArtifactDetailReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        var artifactType = EmptyToNull(GetQuery(query, "artifactType")) ?? Stage6ArtifactTypes.ClarificationState;
+        return await _webOpsService.GetArtifactDetailAsync(request, artifactType, ct);
+    }
+
+    private async Task<WebStage6CaseActionResult> ExecuteCaseActionAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        if (!Guid.TryParse(GetQuery(query, "caseId"), out var caseId))
+        {
+            return new WebStage6CaseActionResult
+            {
+                Success = false,
+                Stage6CaseId = Guid.Empty,
+                Action = EmptyToNull(GetQuery(query, "action")) ?? "unknown",
+                Message = "Missing or invalid caseId."
+            };
+        }
+
+        return await _webOpsService.ApplyCaseActionAsync(new WebStage6CaseActionRequest
+        {
+            ScopeCaseId = request.CaseId,
+            ChatId = request.ChatId,
+            Stage6CaseId = caseId,
+            Action = EmptyToNull(GetQuery(query, "action")) ?? string.Empty,
+            Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
+            Reason = EmptyToNull(GetQuery(query, "reason")),
+            Note = EmptyToNull(GetQuery(query, "note"))
+        }, ct);
+    }
+
+    private async Task<WebStage6ClarificationAnswerResult> ExecuteClarificationAnswerAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        if (!Guid.TryParse(GetQuery(query, "caseId"), out var caseId))
+        {
+            return new WebStage6ClarificationAnswerResult
+            {
+                Success = false,
+                Stage6CaseId = Guid.Empty,
+                Message = "Missing or invalid caseId."
+            };
+        }
+
+        return await _webOpsService.ApplyClarificationAnswerAsync(new WebStage6ClarificationAnswerRequest
+        {
+            ScopeCaseId = request.CaseId,
+            ChatId = request.ChatId,
+            Stage6CaseId = caseId,
+            AnswerType = EmptyToNull(GetQuery(query, "answerType")) ?? "text",
+            AnswerValue = EmptyToNull(GetQuery(query, "answer")) ?? string.Empty,
+            MarkResolved = !string.Equals(EmptyToNull(GetQuery(query, "markResolved")), "false", StringComparison.OrdinalIgnoreCase),
+            Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
+            Reason = EmptyToNull(GetQuery(query, "reason"))
+        }, ct);
+    }
+
+    private async Task<WebStage6ArtifactActionResult> ExecuteArtifactActionAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
+    {
+        return await _webOpsService.ApplyArtifactActionAsync(new WebStage6ArtifactActionRequest
+        {
+            ScopeCaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ArtifactType = EmptyToNull(GetQuery(query, "artifactType")) ?? string.Empty,
+            Action = EmptyToNull(GetQuery(query, "action")) ?? string.Empty,
+            Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
+            Reason = EmptyToNull(GetQuery(query, "reason"))
+        }, ct);
     }
 
     private async Task<HistoryReadModel> ExecuteHistoryReadAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
@@ -422,6 +507,262 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
 
         sb.AppendLine("</section>");
+    }
+
+    private static string RenderCaseQueue(Stage6CaseQueueReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Case Queue");
+        sb.AppendLine("<h1>Stage 6 Queue</h1>");
+        sb.AppendLine($"<p>visible={model.VisibleCases} of total={model.TotalCases} | needs-input={model.NeedsInputCases} | ready={model.ReadyCases} | stale={model.StaleCases} | resolved={model.ResolvedCases}</p>");
+        sb.AppendLine("<section><h2>Filters</h2>");
+        sb.AppendLine("<form method='get' action='/inbox'>");
+        sb.AppendLine($"<label>status <input name='status' value='{E(model.StatusFilter)}'></label> ");
+        sb.AppendLine($"<label>priority <input name='priority' value='{E(model.PriorityFilter ?? string.Empty)}'></label> ");
+        sb.AppendLine($"<label>caseType <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}'></label> ");
+        sb.AppendLine($"<label>artifactType <input name='artifactType' value='{E(model.ArtifactTypeFilter ?? string.Empty)}'></label> ");
+        sb.AppendLine($"<label>q <input name='q' value='{E(model.Query ?? string.Empty)}'></label> ");
+        sb.AppendLine("<button type='submit'>apply</button>");
+        sb.AppendLine("</form>");
+        sb.AppendLine("<p>common filters: <a href='/inbox?status=active'>active</a> | <a href='/inbox?status=needs_user_input'>needs input</a> | <a href='/inbox?status=ready'>ready</a> | <a href='/inbox?priority=blocking'>blocking</a> | <a href='/inbox?artifactType=current_state'>state work</a> | <a href='/inbox?artifactType=draft'>draft work</a> | <a href='/inbox?status=all'>all</a></p>");
+        sb.AppendLine("</section>");
+
+        foreach (var item in model.Cases.Take(80))
+        {
+            var objectTrail = $"/history-object?objectType={UrlEncode(item.SourceObjectType)}&objectId={UrlEncode(item.SourceObjectId)}";
+            var detailLink = $"/case-detail?caseId={item.Id}";
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(item.CaseType)}</a> | {E(item.Priority)} | {E(item.Status)}</h3>");
+            sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
+            if (!string.IsNullOrWhiteSpace(item.QuestionText))
+            {
+                sb.AppendLine($"<p>question: {E(item.QuestionText)}</p>");
+            }
+            sb.AppendLine($"<p>confidence={FormatConfidence(item.Confidence)} evidence_refs={item.EvidenceCount} updated={E(item.UpdatedAt.ToString("u"))}</p>");
+            sb.AppendLine($"<p>source=<a href='{E(objectTrail)}'>{E(item.SourceObjectType)}:{E(item.SourceObjectId)}</a></p>");
+            sb.AppendLine($"<p>targets: {(item.TargetArtifactTypes.Count == 0 ? "-" : E(string.Join(", ", item.TargetArtifactTypes)))}</p>");
+            var detailActions = new List<string> { $"<a href='{E(detailLink)}'>open case</a>" };
+            if (item.TargetArtifactTypes.Count > 0)
+            {
+                var artifactLink = $"/artifact-detail?artifactType={UrlEncode(item.TargetArtifactTypes[0])}";
+                detailActions.Add($"<a href='{E(artifactLink)}'>open artifact</a>");
+            }
+            if (item.NeedsAnswer)
+            {
+                detailActions.Add("needs answer");
+            }
+            sb.AppendLine($"<p>{string.Join(" | ", detailActions)}</p>");
+            sb.AppendLine("</article>");
+        }
+
+        if (model.Cases.Count == 0)
+        {
+            sb.AppendLine("<p>No Stage 6 cases matched the current filter.</p>");
+        }
+
+        return CloseShell(sb);
+    }
+
+    private static string RenderCaseDetail(Stage6CaseDetailReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Case Detail");
+        sb.AppendLine("<h1>Case Detail</h1>");
+        if (!model.Exists)
+        {
+            sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
+            return CloseShell(sb);
+        }
+
+        sb.AppendLine($"<p>id={model.Id}</p>");
+        sb.AppendLine($"<p>type={E(model.CaseType)} subtype={E(model.CaseSubtype ?? "-")} status={E(model.Status)} priority={E(model.Priority)} conf={FormatConfidence(model.Confidence)}</p>");
+        sb.AppendLine($"<p>reason: {E(model.ReasonSummary)}</p>");
+        if (!string.IsNullOrWhiteSpace(model.QuestionText))
+        {
+            sb.AppendLine($"<p>question: {E(model.QuestionText)}</p>");
+        }
+        sb.AppendLine($"<p>response: mode={E(model.ResponseMode ?? "-")} channel_hint={E(model.ResponseChannelHint ?? "-")}</p>");
+        sb.AppendLine($"<p>source: {E(model.SourceObjectType)}:{E(model.SourceObjectId)} {(!string.IsNullOrWhiteSpace(model.SourceLink) ? $"<a href='{E(model.SourceLink)}'>trail</a>" : string.Empty)}</p>");
+        if (!string.IsNullOrWhiteSpace(model.SourceSummary))
+        {
+            sb.AppendLine($"<p>source summary: {E(model.SourceSummary)}</p>");
+        }
+        sb.AppendLine($"<p>updated={E(model.UpdatedAt.ToString("u"))}</p>");
+        sb.AppendLine($"<p>evidence-first summary: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
+
+        sb.AppendLine("<section><h2>Evidence First Context</h2>");
+        foreach (var evidence in model.Evidence.Take(12))
+        {
+            var link = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>open</a>";
+            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | ref={E(evidence.Reference)}{link}</div>");
+        }
+        if (model.Evidence.Count == 0)
+        {
+            sb.AppendLine("<p>No explicit evidence refs. Case reason is shown as fallback.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Artifacts</h2>");
+        foreach (var artifact in model.Artifacts)
+        {
+            var detailLink = $"/artifact-detail?artifactType={UrlEncode(artifact.ArtifactType)}";
+            var refreshLink = $"/artifact-action?artifactType={UrlEncode(artifact.ArtifactType)}&action=refresh";
+            sb.AppendLine($"<div>{E(artifact.ArtifactType)} | status={E(artifact.Status)} | reason={E(artifact.Reason ?? "-")} | conf={E(artifact.ConfidenceLabel ?? "-")} | {E(artifact.Summary)} | <a href='{E(detailLink)}'>detail</a> | <a href='{E(refreshLink)}'>refresh</a></div>");
+        }
+        if (model.Artifacts.Count == 0)
+        {
+            sb.AppendLine("<p>No target artifacts for this case.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Context Notes</h2>");
+        foreach (var entry in model.ContextEntries)
+        {
+            sb.AppendLine($"<div>{E(entry.SourceKind)} via {E(entry.EnteredVia)} | certainty={entry.UserReportedCertainty:0.00} | {E(entry.ContentText)}</div>");
+        }
+        if (model.ContextEntries.Count == 0)
+        {
+            sb.AppendLine("<p>No web or bot context notes linked yet.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Actions</h2>");
+        var resolve = $"/case-action?caseId={model.Id}&action=resolve";
+        var reject = $"/case-action?caseId={model.Id}&action=reject";
+        var refresh = $"/case-action?caseId={model.Id}&action=refresh";
+        sb.AppendLine($"<p><a href='{E(resolve)}'>resolve</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(refresh)}'>refresh</a></p>");
+        sb.AppendLine("<form method='get' action='/case-action'>");
+        sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
+        sb.AppendLine("<input type='hidden' name='action' value='annotate'>");
+        sb.AppendLine("<label>annotation <input name='note' value=''></label> ");
+        sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
+        sb.AppendLine("<button type='submit'>save note</button>");
+        sb.AppendLine("</form>");
+        if (model.Clarification != null)
+        {
+            sb.AppendLine("<h3>Clarification</h3>");
+            sb.AppendLine($"<p>{E(model.Clarification.QuestionText)}</p>");
+            sb.AppendLine($"<p>why it matters: {E(model.Clarification.WhyItMatters)}</p>");
+            sb.AppendLine($"<p>question_type={E(model.Clarification.QuestionType)} priority={E(model.Clarification.Priority)} status={E(model.Clarification.Status)}</p>");
+            if (model.Clarification.AnswerOptions.Count > 0)
+            {
+                sb.AppendLine($"<p>answer options: {E(string.Join(", ", model.Clarification.AnswerOptions))}</p>");
+            }
+            if (model.Clarification.Answers.Count > 0)
+            {
+                sb.AppendLine("<p>prior answers:</p>");
+                foreach (var answer in model.Clarification.Answers)
+                {
+                    sb.AppendLine($"<div>{answer.CreatedAt:yyyy-MM-dd HH:mm} | conf={answer.AnswerConfidence:0.00} | {E(answer.AnswerValue)}</div>");
+                }
+            }
+            sb.AppendLine("<form method='get' action='/clarification-answer'>");
+            sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
+            sb.AppendLine("<label>answer <input name='answer' value=''></label> ");
+            sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
+            sb.AppendLine("<button type='submit'>submit answer</button>");
+            sb.AppendLine("</form>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>History</h2>");
+        foreach (var evt in model.History.Take(20))
+        {
+            sb.AppendLine($"<div>{E(evt.TimestampLabel)} | {E(evt.Action)} | {E(evt.Summary)}</div>");
+        }
+        sb.AppendLine("</section>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderArtifactDetail(Stage6ArtifactDetailReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Artifact Detail");
+        sb.AppendLine($"<h1>Artifact Detail: {E(model.ArtifactType)}</h1>");
+        sb.AppendLine($"<p>status={E(model.Status)} reason={E(model.Reason ?? "-")}</p>");
+        sb.AppendLine($"<p>summary={E(model.Summary)}</p>");
+        sb.AppendLine($"<p>confidence={E(model.ConfidenceLabel ?? "-")} payload={E(model.PayloadObjectType ?? "-")}:{E(model.PayloadObjectId ?? "-")}</p>");
+        sb.AppendLine($"<p>generated={E(model.GeneratedAt?.ToString("u") ?? "-")} refreshed={E(model.RefreshedAt?.ToString("u") ?? "-")} latest_evidence={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
+        var refreshLink = $"/artifact-action?artifactType={UrlEncode(model.ArtifactType)}&action=refresh";
+        sb.AppendLine($"<p><a href='{E(refreshLink)}'>refresh artifact</a></p>");
+        sb.AppendLine("<section><h2>Evidence Summary</h2>");
+        foreach (var evidence in model.Evidence.Take(12))
+        {
+            sb.AppendLine($"<div>{E(evidence.Title)} | {E(evidence.Summary)}</div>");
+        }
+        if (model.Evidence.Count == 0)
+        {
+            sb.AppendLine("<p>No evidence stamp details available.</p>");
+        }
+        sb.AppendLine("</section>");
+        sb.AppendLine("<section><h2>Linked Cases</h2>");
+        foreach (var item in model.LinkedCases)
+        {
+            var link = $"/case-detail?caseId={item.Id}";
+            sb.AppendLine($"<div><a href='{E(link)}'>{item.Id}</a> | {E(item.CaseType)} | {E(item.Status)} | {E(item.ReasonSummary)}</div>");
+        }
+        if (model.LinkedCases.Count == 0)
+        {
+            sb.AppendLine("<p>No linked active cases.</p>");
+        }
+        sb.AppendLine("</section>");
+        sb.AppendLine("<section><h2>Payload</h2>");
+        sb.AppendLine($"<pre>{E(model.PayloadJson)}</pre>");
+        sb.AppendLine("</section>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderCaseAction(WebStage6CaseActionResult result, WebReadRequest request)
+    {
+        var sb = CreateShell("Case Action");
+        sb.AppendLine("<h1>Case Action</h1>");
+        sb.AppendLine($"<p>success={result.Success} action={E(result.Action)} case={result.Stage6CaseId}</p>");
+        sb.AppendLine($"<p>{E(result.Message)}</p>");
+        if (result.RefreshedArtifactTypes.Count > 0)
+        {
+            sb.AppendLine($"<p>refreshed artifacts: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
+        }
+        if (result.Stage6CaseId != Guid.Empty)
+        {
+            sb.AppendLine($"<p><a href='/case-detail?caseId={result.Stage6CaseId}'>back to case detail</a></p>");
+        }
+        return CloseShell(sb);
+    }
+
+    private static string RenderClarificationAnswer(WebStage6ClarificationAnswerResult result, WebReadRequest request)
+    {
+        var sb = CreateShell("Clarification Answer");
+        sb.AppendLine("<h1>Clarification Answer</h1>");
+        sb.AppendLine($"<p>success={result.Success} case={result.Stage6CaseId} question={E(result.QuestionId?.ToString() ?? "-")}</p>");
+        sb.AppendLine($"<p>{E(result.Message)}</p>");
+        if (!string.IsNullOrWhiteSpace(result.QuestionText))
+        {
+            sb.AppendLine($"<p>question: {E(result.QuestionText)}</p>");
+            sb.AppendLine($"<p>answer: {E(result.AnswerValue)}</p>");
+        }
+        if (result.RecomputeTargets.Count > 0)
+        {
+            sb.AppendLine($"<p>recompute targets: {E(string.Join(", ", result.RecomputeTargets))}</p>");
+        }
+        if (result.RefreshedArtifactTypes.Count > 0)
+        {
+            sb.AppendLine($"<p>artifacts marked stale: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
+        }
+        if (result.Stage6CaseId != Guid.Empty)
+        {
+            sb.AppendLine($"<p><a href='/case-detail?caseId={result.Stage6CaseId}'>back to case detail</a></p>");
+        }
+        return CloseShell(sb);
+    }
+
+    private static string RenderArtifactAction(WebStage6ArtifactActionResult result, WebReadRequest request)
+    {
+        var sb = CreateShell("Artifact Action");
+        sb.AppendLine("<h1>Artifact Action</h1>");
+        sb.AppendLine($"<p>success={result.Success} action={E(result.Action)} artifact={E(result.ArtifactType)}</p>");
+        sb.AppendLine($"<p>{E(result.Message)}</p>");
+        if (!string.IsNullOrWhiteSpace(result.ArtifactType))
+        {
+            sb.AppendLine($"<p><a href='/artifact-detail?artifactType={UrlEncode(result.ArtifactType)}'>open artifact detail</a></p>");
+        }
+        return CloseShell(sb);
     }
 
     private static string RenderInbox(InboxReadModel model, WebReadRequest request)
@@ -1184,7 +1525,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
         sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;max-width:980px;margin:20px auto;padding:0 12px;color:#1f2937}nav a{margin-right:10px}section,article{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin:10px 0}h1,h2,h3{margin:6px 0}</style>");
         sb.AppendLine("</head><body>");
-        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Inbox</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/outcomes'>Outcomes</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a><a href='/ops-budget'>Ops Budget</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B Candidates</a></nav>");
+        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Queue</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/outcomes'>Outcomes</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a><a href='/ops-budget'>Ops Budget</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B Candidates</a></nav>");
         return sb;
     }
 
@@ -1287,5 +1628,6 @@ public class WebRouteRenderer : IWebRouteRenderer
     }
 
     private static string UrlEncode(string value) => Uri.EscapeDataString(value ?? string.Empty);
+    private static string FormatConfidence(float? value) => value.HasValue ? value.Value.ToString("0.00") : "-";
     private static string E(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
 }

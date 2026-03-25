@@ -23,6 +23,10 @@ public class InboxItemReadModel
     public string Summary { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public DateTime UpdatedAt { get; set; }
+    public float? Confidence { get; set; }
+    public string ReasonSummary { get; set; } = string.Empty;
+    public string? ClarificationKind { get; set; }
+    public string? ResponseChannelHint { get; set; }
 }
 
 public class HistoryReadModel
@@ -195,4 +199,212 @@ public class AbScenarioSourceArtifactsReadModel
     public List<Guid> OfflineEventIds { get; set; } = [];
     public List<string> NetworkNodeIds { get; set; } = [];
     public List<string> NetworkEdgeIds { get; set; } = [];
+}
+
+public class Stage6CaseQueueReadModel
+{
+    public string StatusFilter { get; set; } = "active";
+    public string? PriorityFilter { get; set; }
+    public string? CaseTypeFilter { get; set; }
+    public string? ArtifactTypeFilter { get; set; }
+    public string? Query { get; set; }
+    public int TotalCases { get; set; }
+    public int VisibleCases { get; set; }
+    public int NeedsInputCases { get; set; }
+    public int ReadyCases { get; set; }
+    public int StaleCases { get; set; }
+    public int ResolvedCases { get; set; }
+    public List<Stage6CaseQueueItemReadModel> Cases { get; set; } = [];
+}
+
+public class Stage6CaseQueueItemReadModel
+{
+    public Guid Id { get; set; }
+    public string CaseType { get; set; } = string.Empty;
+    public string? CaseSubtype { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public float? Confidence { get; set; }
+    public string ReasonSummary { get; set; } = string.Empty;
+    public string? QuestionText { get; set; }
+    public string SourceObjectType { get; set; } = string.Empty;
+    public string SourceObjectId { get; set; } = string.Empty;
+    public DateTime UpdatedAt { get; set; }
+    public bool NeedsAnswer { get; set; }
+    public string? ResponseMode { get; set; }
+    public int EvidenceCount { get; set; }
+    public List<string> TargetArtifactTypes { get; set; } = [];
+}
+
+public class Stage6CaseDetailReadModel
+{
+    public bool Exists { get; set; }
+    public Guid Id { get; set; }
+    public string CaseType { get; set; } = string.Empty;
+    public string? CaseSubtype { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public float? Confidence { get; set; }
+    public string ReasonSummary { get; set; } = string.Empty;
+    public string? QuestionText { get; set; }
+    public string? ClarificationKind { get; set; }
+    public string? ResponseMode { get; set; }
+    public string? ResponseChannelHint { get; set; }
+    public string SourceObjectType { get; set; } = string.Empty;
+    public string SourceObjectId { get; set; } = string.Empty;
+    public string SourceSummary { get; set; } = string.Empty;
+    public string? SourceLink { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public List<string> SubjectRefs { get; set; } = [];
+    public List<string> ReopenTriggers { get; set; } = [];
+    public List<Stage6EvidenceReadModel> Evidence { get; set; } = [];
+    public List<Stage6ArtifactSummaryReadModel> Artifacts { get; set; } = [];
+    public List<Stage6ContextEntryReadModel> ContextEntries { get; set; } = [];
+    public List<ActivityEventReadModel> History { get; set; } = [];
+    public ClarificationQuestionDetailReadModel? Clarification { get; set; }
+}
+
+public class ClarificationQuestionDetailReadModel
+{
+    public Guid QuestionId { get; set; }
+    public string QuestionText { get; set; } = string.Empty;
+    public string WhyItMatters { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public string QuestionType { get; set; } = string.Empty;
+    public List<string> AnswerOptions { get; set; } = [];
+    public List<ClarificationAnswerDetailReadModel> Answers { get; set; } = [];
+}
+
+public class ClarificationAnswerDetailReadModel
+{
+    public Guid Id { get; set; }
+    public string AnswerType { get; set; } = string.Empty;
+    public string AnswerValue { get; set; } = string.Empty;
+    public float AnswerConfidence { get; set; }
+    public string SourceClass { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Stage6EvidenceReadModel
+{
+    public string Reference { get; set; } = string.Empty;
+    public string SourceClass { get; set; } = "system_inference";
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? Link { get; set; }
+    public DateTime? TimestampUtc { get; set; }
+}
+
+public class Stage6ArtifactSummaryReadModel
+{
+    public string ArtifactType { get; set; } = string.Empty;
+    public bool Exists { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public string? ConfidenceLabel { get; set; }
+    public DateTime? GeneratedAt { get; set; }
+    public DateTime? RefreshedAt { get; set; }
+    public string? PayloadObjectType { get; set; }
+    public string? PayloadObjectId { get; set; }
+}
+
+public class Stage6ContextEntryReadModel
+{
+    public Guid Id { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public string ContentText { get; set; } = string.Empty;
+    public string EnteredVia { get; set; } = string.Empty;
+    public float UserReportedCertainty { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public List<string> AppliesToRefs { get; set; } = [];
+}
+
+public class Stage6ArtifactDetailReadModel
+{
+    public string ArtifactType { get; set; } = string.Empty;
+    public bool Exists { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string? ConfidenceLabel { get; set; }
+    public string? PayloadObjectType { get; set; }
+    public string? PayloadObjectId { get; set; }
+    public string PayloadJson { get; set; } = "{}";
+    public string FreshnessBasisJson { get; set; } = "{}";
+    public DateTime? GeneratedAt { get; set; }
+    public DateTime? RefreshedAt { get; set; }
+    public DateTime? LatestEvidenceAtUtc { get; set; }
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public List<Stage6EvidenceReadModel> Evidence { get; set; } = [];
+    public List<Stage6CaseQueueItemReadModel> LinkedCases { get; set; } = [];
+}
+
+public class WebStage6CaseActionRequest
+{
+    public long ScopeCaseId { get; set; }
+    public long ChatId { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string Actor { get; set; } = "web";
+    public string? Reason { get; set; }
+    public string? Note { get; set; }
+}
+
+public class WebStage6CaseActionResult
+{
+    public bool Success { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? Status { get; set; }
+    public List<string> RefreshedArtifactTypes { get; set; } = [];
+}
+
+public class WebStage6ClarificationAnswerRequest
+{
+    public long ScopeCaseId { get; set; }
+    public long ChatId { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public string AnswerType { get; set; } = "text";
+    public string AnswerValue { get; set; } = string.Empty;
+    public float AnswerConfidence { get; set; } = 0.8f;
+    public string SourceClass { get; set; } = "operator_web";
+    public bool MarkResolved { get; set; } = true;
+    public string Actor { get; set; } = "web";
+    public string? Reason { get; set; }
+}
+
+public class WebStage6ClarificationAnswerResult
+{
+    public bool Success { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public Guid? QuestionId { get; set; }
+    public Guid? AnswerId { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string QuestionText { get; set; } = string.Empty;
+    public string AnswerValue { get; set; } = string.Empty;
+    public List<string> RefreshedArtifactTypes { get; set; } = [];
+    public List<string> RecomputeTargets { get; set; } = [];
+}
+
+public class WebStage6ArtifactActionRequest
+{
+    public long ScopeCaseId { get; set; }
+    public long ChatId { get; set; }
+    public string ArtifactType { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string Actor { get; set; } = "web";
+    public string? Reason { get; set; }
+}
+
+public class WebStage6ArtifactActionResult
+{
+    public bool Success { get; set; }
+    public string ArtifactType { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }
