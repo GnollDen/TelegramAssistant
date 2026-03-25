@@ -29,6 +29,19 @@ public class CurrentStateReadModel
     public List<string> KeySignals { get; set; } = [];
     public List<string> MainRisks { get; set; } = [];
     public string NextMoveSummary { get; set; } = string.Empty;
+    public List<StateInsightReadModel> ObservedFacts { get; set; } = [];
+    public List<StateInsightReadModel> LikelyInterpretation { get; set; } = [];
+    public List<StateInsightReadModel> Uncertainties { get; set; } = [];
+    public List<StateInsightReadModel> MissingInformation { get; set; } = [];
+    public string OverallSignalStrength { get; set; } = "weak";
+}
+
+public class StateInsightReadModel
+{
+    public string Title { get; set; } = string.Empty;
+    public string Detail { get; set; } = string.Empty;
+    public string SignalStrength { get; set; } = "weak";
+    public string Evidence { get; set; } = string.Empty;
 }
 
 public class TimelineReadModel

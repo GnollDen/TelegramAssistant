@@ -366,10 +366,46 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Dossier");
         sb.AppendLine("<h1>Dossier</h1>");
-        RenderDossierSection(sb, "Confirmed", model.Confirmed);
-        RenderDossierSection(sb, "Hypotheses", model.Hypotheses);
-        RenderDossierSection(sb, "Conflicts", model.Conflicts);
+        if (!string.IsNullOrWhiteSpace(model.Summary))
+        {
+            sb.AppendLine($"<p>summary: {E(model.Summary)}</p>");
+        }
+
+        RenderDossierInsightSection(sb, "Observed Facts", model.ObservedFacts);
+        RenderDossierInsightSection(sb, "Relationship Read", model.RelationshipRead);
+        RenderDossierInsightSection(sb, "Notable Events", model.NotableEvents);
+        RenderDossierInsightSection(sb, "Likely Interpretation", model.LikelyInterpretation);
+        RenderDossierInsightSection(sb, "Uncertainties / Alternative Readings", model.Uncertainties);
+        RenderDossierInsightSection(sb, "Missing Information", model.MissingInformation);
+        RenderDossierInsightSection(sb, "Practical Interpretation", model.PracticalInterpretation);
+
+        if (model.ObservedFacts.Count == 0
+            && model.LikelyInterpretation.Count == 0
+            && model.Uncertainties.Count == 0
+            && model.MissingInformation.Count == 0)
+        {
+            RenderDossierSection(sb, "Confirmed", model.Confirmed);
+            RenderDossierSection(sb, "Hypotheses", model.Hypotheses);
+            RenderDossierSection(sb, "Conflicts", model.Conflicts);
+        }
+
         return CloseShell(sb);
+    }
+
+    private static void RenderDossierInsightSection(StringBuilder sb, string title, IReadOnlyCollection<DossierInsightReadModel> rows)
+    {
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var row in rows)
+        {
+            sb.AppendLine($"<div><strong>{E(row.SignalStrength)}</strong> | {E(row.Title)} | {E(row.Detail)} | evidence={E(row.Evidence)} | <a href='{E(row.Link)}'>open</a></div>");
+        }
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("<p>No items.</p>");
+        }
+
+        sb.AppendLine("</section>");
     }
 
     private static void RenderDossierSection(StringBuilder sb, string title, IReadOnlyCollection<DossierItemReadModel> rows)
@@ -470,6 +506,11 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>dynamic: <strong>{E(model.DynamicLabel)}</strong></p>");
         sb.AppendLine($"<p>status: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (alt {E(model.AlternativeStatus!)})")}</p>");
         sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
+        sb.AppendLine($"<p>overall signal strength: <strong>{E(model.OverallSignalStrength)}</strong></p>");
+        RenderStateInsightSection(sb, "Observed Facts", model.ObservedFacts);
+        RenderStateInsightSection(sb, "Likely Interpretation", model.LikelyInterpretation);
+        RenderStateInsightSection(sb, "Uncertainties / Alternative Readings", model.Uncertainties);
+        RenderStateInsightSection(sb, "Missing Information", model.MissingInformation);
         sb.AppendLine("<h2>Scores</h2>");
         foreach (var kv in model.Scores.OrderBy(x => x.Key))
         {
@@ -477,6 +518,22 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
 
         return CloseShell(sb);
+    }
+
+    private static void RenderStateInsightSection(StringBuilder sb, string title, IReadOnlyCollection<StateInsightReadModel> rows)
+    {
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var row in rows)
+        {
+            sb.AppendLine($"<div><strong>{E(row.SignalStrength)}</strong> | {E(row.Title)} | {E(row.Detail)} | evidence={E(row.Evidence)}</div>");
+        }
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("<p>No items.</p>");
+        }
+
+        sb.AppendLine("</section>");
     }
 
     private static string RenderTimeline(TimelineReadModel model)
