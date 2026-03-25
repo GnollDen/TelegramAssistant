@@ -89,6 +89,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.ProcessedAt).HasColumnName("processed_at");
             e.Property(x => x.NeedsReanalysis).HasColumnName("needs_reanalysis");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ChatId, x.TelegramMessageId }).IsUnique();
         });
 
         modelBuilder.Entity<DbArchiveImportRun>(e =>
@@ -149,6 +150,9 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.DecayClass, x.IsCurrent });
+            e.HasIndex(x => new { x.EntityId, x.Category, x.Key, x.Value })
+                .IsUnique()
+                .HasFilter("is_current = TRUE");
         });
 
         modelBuilder.Entity<DbEntityAlias>(e =>
@@ -248,6 +252,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.FromEntityId, x.ToEntityId, x.Type }).IsUnique();
         });
 
         modelBuilder.Entity<DbCommunicationEvent>(e =>
@@ -855,6 +860,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.CaseId, x.Status, x.Priority });
+            e.HasIndex(x => new { x.CaseId, x.ItemType, x.SourceObjectType, x.SourceObjectId }).IsUnique();
         });
 
         modelBuilder.Entity<DbConflictRecord>(e =>
