@@ -24,6 +24,8 @@ public class WebOpsService : IWebOpsService
     private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
     private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly IStage6UserContextRepository _stage6UserContextRepository;
+    private readonly IStage6FeedbackRepository _stage6FeedbackRepository;
+    private readonly IStage6CaseOutcomeRepository _stage6CaseOutcomeRepository;
     private readonly IClarificationOrchestrator _clarificationOrchestrator;
 
     public WebOpsService(
@@ -43,6 +45,8 @@ public class WebOpsService : IWebOpsService
         IStage6ArtifactRepository stage6ArtifactRepository,
         IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         IStage6UserContextRepository stage6UserContextRepository,
+        IStage6FeedbackRepository stage6FeedbackRepository,
+        IStage6CaseOutcomeRepository stage6CaseOutcomeRepository,
         IClarificationOrchestrator clarificationOrchestrator)
     {
         _inboxConflictRepository = inboxConflictRepository;
@@ -61,6 +65,8 @@ public class WebOpsService : IWebOpsService
         _stage6ArtifactRepository = stage6ArtifactRepository;
         _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _stage6UserContextRepository = stage6UserContextRepository;
+        _stage6FeedbackRepository = stage6FeedbackRepository;
+        _stage6CaseOutcomeRepository = stage6CaseOutcomeRepository;
         _clarificationOrchestrator = clarificationOrchestrator;
     }
 
@@ -157,6 +163,8 @@ public class WebOpsService : IWebOpsService
         var evidence = await BuildStage6EvidenceAsync(caseRecord, clarification, ct);
         var artifacts = await BuildStage6ArtifactSummariesAsync(request, ParseJsonStringArray(caseRecord.TargetArtifactTypesJson), ct);
         var contextEntries = await BuildStage6ContextEntriesAsync(request, caseRecord, ct);
+        var feedback = await BuildCaseFeedbackAsync(caseRecord.Id, ct);
+        var outcomes = await BuildCaseOutcomesAsync(caseRecord.Id, ct);
 
         return new Stage6CaseDetailReadModel
         {
@@ -183,6 +191,8 @@ public class WebOpsService : IWebOpsService
             Evidence = evidence,
             Artifacts = artifacts,
             ContextEntries = contextEntries,
+            Feedback = feedback,
+            Outcomes = outcomes,
             History = history,
             Clarification = clarification
         };
@@ -211,6 +221,7 @@ public class WebOpsService : IWebOpsService
                 FreshnessBasisJson = evidenceStamp.BasisJson,
                 LatestEvidenceAtUtc = evidenceStamp.LatestEvidenceAtUtc,
                 Evidence = BuildEvidenceFromBasis(evidenceStamp.BasisJson),
+                Feedback = await BuildArtifactFeedbackAsync(request.CaseId, request.ChatId, normalizedArtifactType, ct),
                 LinkedCases = linkedCases
             };
         }
@@ -236,6 +247,7 @@ public class WebOpsService : IWebOpsService
             SourceType = artifact.SourceType,
             SourceId = artifact.SourceId,
             Evidence = BuildEvidenceFromBasis(artifact.FreshnessBasisJson),
+            Feedback = await BuildArtifactFeedbackAsync(request.CaseId, request.ChatId, normalizedArtifactType, ct),
             LinkedCases = linkedCases
         };
     }
@@ -333,6 +345,26 @@ public class WebOpsService : IWebOpsService
             "clarification_answer_applied",
             ct);
 
+        await RecordCaseOutcomeAsync(
+            caseRecord,
+            Stage6CaseOutcomeTypes.AnsweredByUser,
+            request.MarkResolved ? Stage6CaseStatuses.Resolved : caseRecord.Status,
+            request.Actor,
+            request.Reason ?? "clarification_answer",
+            sourceChannel: "web",
+            userContextMaterial: true,
+            ct: ct);
+
+        await RecordCaseFeedbackAsync(
+            caseRecord,
+            request.IsUseful ?? true,
+            request.Reason ?? request.AnswerValue,
+            request.Actor,
+            sourceChannel: "web",
+            feedbackKind: Stage6FeedbackKinds.AcceptUseful,
+            feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
+            ct: ct);
+
         return new WebStage6ClarificationAnswerResult
         {
             Success = true,
@@ -374,6 +406,23 @@ public class WebOpsService : IWebOpsService
             [normalizedArtifactType],
             request.Reason ?? "operator_refresh_requested",
             ct);
+
+        if (refreshedArtifactTypes.Count > 0)
+        {
+            _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+            {
+                ScopeCaseId = request.ScopeCaseId,
+                ChatId = request.ChatId,
+                ArtifactType = normalizedArtifactType,
+                FeedbackKind = Stage6FeedbackKinds.RefreshRequested,
+                FeedbackDimension = Stage6FeedbackDimensions.General,
+                IsUseful = null,
+                Note = request.Reason,
+                SourceChannel = "web",
+                Actor = request.Actor,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
 
         return new WebStage6ArtifactActionResult
         {
@@ -1139,6 +1188,38 @@ public class WebOpsService : IWebOpsService
             ? await ApplyClarificationWorkflowStatusAsync(questionId, targetStatus, caseRecord.Priority, request.Actor, request.Reason ?? request.Note, ct)
             : await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, targetStatus, request.Actor, request.Reason ?? request.Note, ct);
 
+        if (success)
+        {
+            var contextMaterial = await ResolveUserContextMaterialAsync(caseRecord, ct);
+            var outcomeType = targetStatus.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)
+                ? Stage6CaseOutcomeTypes.Resolved
+                : targetStatus.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase)
+                    ? Stage6CaseOutcomeTypes.Rejected
+                    : Stage6CaseOutcomeTypes.Stale;
+
+            await RecordCaseOutcomeAsync(
+                caseRecord,
+                outcomeType,
+                targetStatus,
+                request.Actor,
+                request.Reason ?? request.Note,
+                sourceChannel: "web",
+                userContextMaterial: contextMaterial,
+                ct: ct);
+
+            var feedbackKind = ResolveFeedbackKindFromAction(targetStatus.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase) ? "resolve" : "reject", request.FeedbackKind);
+            var isUseful = request.IsUseful ?? targetStatus.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase);
+            await RecordCaseFeedbackAsync(
+                caseRecord,
+                isUseful,
+                request.Note ?? request.Reason,
+                request.Actor,
+                sourceChannel: "web",
+                feedbackKind: feedbackKind,
+                feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
+                ct: ct);
+        }
+
         return new WebStage6CaseActionResult
         {
             Success = success,
@@ -1182,6 +1263,26 @@ public class WebOpsService : IWebOpsService
         {
             _ = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, Stage6CaseStatuses.Ready, request.Actor, request.Reason, ct);
         }
+
+        await RecordCaseOutcomeAsync(
+            caseRecord,
+            Stage6CaseOutcomeTypes.Refreshed,
+            refreshedArtifactTypes.Count > 0 ? Stage6CaseStatuses.Ready : caseRecord.Status,
+            request.Actor,
+            request.Reason ?? "refresh_requested",
+            sourceChannel: "web",
+            userContextMaterial: false,
+            ct: ct);
+
+        await RecordCaseFeedbackAsync(
+            caseRecord,
+            request.IsUseful,
+            request.Note ?? request.Reason,
+            request.Actor,
+            sourceChannel: "web",
+            feedbackKind: ResolveFeedbackKindFromAction("refresh", request.FeedbackKind),
+            feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
+            ct: ct);
 
         return new WebStage6CaseActionResult
         {
@@ -1250,6 +1351,16 @@ public class WebOpsService : IWebOpsService
             CreatedAt = DateTime.UtcNow
         }, ct);
 
+        await RecordCaseFeedbackAsync(
+            caseRecord,
+            request.IsUseful,
+            note,
+            request.Actor,
+            sourceChannel: "web",
+            feedbackKind: ResolveFeedbackKindFromAction("annotate", request.FeedbackKind),
+            feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
+            ct: ct);
+
         return new WebStage6CaseActionResult
         {
             Success = true,
@@ -1305,6 +1416,111 @@ public class WebOpsService : IWebOpsService
 
         return refreshed;
     }
+
+    private async Task<List<Stage6FeedbackReadModel>> BuildCaseFeedbackAsync(Guid stage6CaseId, CancellationToken ct)
+    {
+        var rows = await _stage6FeedbackRepository.GetByCaseAsync(stage6CaseId, 40, ct);
+        return rows
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(MapFeedback)
+            .ToList();
+    }
+
+    private async Task<List<Stage6FeedbackReadModel>> BuildArtifactFeedbackAsync(long scopeCaseId, long chatId, string artifactType, CancellationToken ct)
+    {
+        var rows = await _stage6FeedbackRepository.GetByArtifactAsync(scopeCaseId, chatId, artifactType, 40, ct);
+        return rows
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(MapFeedback)
+            .ToList();
+    }
+
+    private async Task<List<Stage6CaseOutcomeReadModel>> BuildCaseOutcomesAsync(Guid stage6CaseId, CancellationToken ct)
+    {
+        var rows = await _stage6CaseOutcomeRepository.GetByCaseAsync(stage6CaseId, 40, ct);
+        return rows
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new Stage6CaseOutcomeReadModel
+            {
+                Id = x.Id,
+                OutcomeType = x.OutcomeType,
+                CaseStatusAfter = x.CaseStatusAfter,
+                UserContextMaterial = x.UserContextMaterial,
+                Note = x.Note,
+                SourceChannel = x.SourceChannel,
+                Actor = x.Actor,
+                CreatedAt = x.CreatedAt
+            })
+            .ToList();
+    }
+
+    private async Task RecordCaseFeedbackAsync(
+        Stage6CaseRecord caseRecord,
+        bool? isUseful,
+        string? note,
+        string actor,
+        string sourceChannel,
+        string feedbackKind,
+        string feedbackDimension,
+        CancellationToken ct)
+    {
+        _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId,
+            Stage6CaseId = caseRecord.Id,
+            FeedbackKind = feedbackKind,
+            FeedbackDimension = feedbackDimension,
+            IsUseful = isUseful,
+            Note = note,
+            SourceChannel = sourceChannel,
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task RecordCaseOutcomeAsync(
+        Stage6CaseRecord caseRecord,
+        string outcomeType,
+        string caseStatusAfter,
+        string actor,
+        string? note,
+        string sourceChannel,
+        bool userContextMaterial,
+        CancellationToken ct)
+    {
+        _ = await _stage6CaseOutcomeRepository.AddAsync(new Stage6CaseOutcomeRecord
+        {
+            Stage6CaseId = caseRecord.Id,
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId,
+            OutcomeType = outcomeType,
+            CaseStatusAfter = caseStatusAfter,
+            UserContextMaterial = userContextMaterial,
+            Note = note,
+            SourceChannel = sourceChannel,
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task<bool> ResolveUserContextMaterialAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
+    {
+        var rows = await _stage6UserContextRepository.GetByScopeCaseAsync(caseRecord.ScopeCaseId, 400, ct);
+        return rows.Any(x => x.Stage6CaseId == caseRecord.Id && x.CreatedAt >= caseRecord.CreatedAt);
+    }
+
+    private static Stage6FeedbackReadModel MapFeedback(Stage6FeedbackEntry row) => new()
+    {
+        Id = row.Id,
+        FeedbackKind = row.FeedbackKind,
+        FeedbackDimension = row.FeedbackDimension,
+        IsUseful = row.IsUseful,
+        Note = row.Note,
+        SourceChannel = row.SourceChannel,
+        Actor = row.Actor,
+        CreatedAt = row.CreatedAt
+    };
 
     private async Task<ClarificationQuestionDetailReadModel?> LoadClarificationDetailAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
     {
@@ -1915,6 +2131,10 @@ public class WebOpsService : IWebOpsService
     private static EvalRunReadModel MapEvalRun(EvalRunResult run)
     {
         var metrics = ParseJsonMap(run.MetricsJson);
+        if (!string.IsNullOrWhiteSpace(run.ScenarioPackKey))
+        {
+            metrics["scenario_pack_key"] = run.ScenarioPackKey;
+        }
         var scenarioCount = run.Scenarios.Count;
         var scenarioPassed = run.Scenarios.Count(x => x.Passed);
         return new EvalRunReadModel
@@ -1937,6 +2157,22 @@ public class WebOpsService : IWebOpsService
 
     private static EvalScenarioReadModel MapScenario(EvalScenarioResult result)
     {
+        var metrics = ParseJsonMap(result.MetricsJson);
+        metrics["scenario_type"] = result.ScenarioType;
+        metrics["latency_ms"] = result.LatencyMs.ToString();
+        metrics["cost_usd"] = result.CostUsd.ToString("0.######");
+        var modelSummary = ParseJsonMap(result.ModelSummaryJson);
+        if (modelSummary.Count > 0)
+        {
+            metrics["models"] = string.Join(" | ", modelSummary.Select(x => $"{x.Key}:{x.Value}"));
+        }
+
+        var feedbackSummary = ParseJsonMap(result.FeedbackSummaryJson);
+        if (feedbackSummary.Count > 0)
+        {
+            metrics["feedback"] = string.Join(" | ", feedbackSummary.Select(x => $"{x.Key}:{x.Value}"));
+        }
+
         return new EvalScenarioReadModel
         {
             Id = result.Id,
@@ -1944,7 +2180,7 @@ public class WebOpsService : IWebOpsService
             ScenarioName = result.ScenarioName,
             Passed = result.Passed,
             Summary = result.Summary,
-            Metrics = ParseJsonMap(result.MetricsJson),
+            Metrics = metrics,
             CreatedAt = result.CreatedAt
         };
     }
@@ -2137,6 +2373,46 @@ public class WebOpsService : IWebOpsService
             "annotate" => "annotate",
             _ => string.Empty
         };
+    }
+
+    private static string ResolveFeedbackKindFromAction(string action, string? explicitKind)
+    {
+        var normalizedExplicit = EmptyToNull(explicitKind)?.ToLowerInvariant();
+        if (normalizedExplicit is Stage6FeedbackKinds.AcceptUseful
+            or Stage6FeedbackKinds.RejectNotUseful
+            or Stage6FeedbackKinds.CorrectionNote
+            or Stage6FeedbackKinds.RefreshRequested)
+        {
+            return normalizedExplicit;
+        }
+
+        return action.Trim().ToLowerInvariant() switch
+        {
+            "resolve" => Stage6FeedbackKinds.AcceptUseful,
+            "reject" => Stage6FeedbackKinds.RejectNotUseful,
+            "refresh" => Stage6FeedbackKinds.RefreshRequested,
+            _ => Stage6FeedbackKinds.CorrectionNote
+        };
+    }
+
+    private static string ResolveFeedbackDimension(Stage6CaseRecord caseRecord, string? explicitDimension)
+    {
+        var normalizedExplicit = EmptyToNull(explicitDimension)?.ToLowerInvariant();
+        if (normalizedExplicit is Stage6FeedbackDimensions.General
+            or Stage6FeedbackDimensions.ClarificationUsefulness
+            or Stage6FeedbackDimensions.BehavioralUsefulness)
+        {
+            return normalizedExplicit;
+        }
+
+        if (caseRecord.CaseType.StartsWith("clarification_", StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6FeedbackDimensions.ClarificationUsefulness;
+        }
+
+        return caseRecord.CaseSubtype?.Contains("behavior", StringComparison.OrdinalIgnoreCase) == true
+            ? Stage6FeedbackDimensions.BehavioralUsefulness
+            : Stage6FeedbackDimensions.General;
     }
 
     private static string? EmptyToNull(string? value)

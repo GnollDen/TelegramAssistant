@@ -52,6 +52,16 @@ public class EvalVerificationService
             throw new InvalidOperationException("Eval smoke failed: scenario result persistence mismatch.");
         }
 
+        if (persistedScenarios.Any(x => x.LatencyMs < 0))
+        {
+            throw new InvalidOperationException("Eval smoke failed: scenario latency must be non-negative.");
+        }
+
+        if (persistedScenarios.Any(x => string.IsNullOrWhiteSpace(x.ModelSummaryJson)))
+        {
+            throw new InvalidOperationException("Eval smoke failed: scenario model summary is empty.");
+        }
+
         if (string.IsNullOrWhiteSpace(persistedRun.MetricsJson))
         {
             throw new InvalidOperationException("Eval smoke failed: run metrics are empty.");
@@ -71,6 +81,7 @@ public class EvalVerificationService
             run.Scenarios.Count);
 
         await RunExperimentSmokeAsync(ct);
+        await RunStage6PackSmokeAsync(ct);
     }
 
     private async Task RunExperimentSmokeAsync(CancellationToken ct)
@@ -183,5 +194,59 @@ public class EvalVerificationService
             comparison.ComparisonEvalRunId,
             comparison.Variants.Count,
             comparison.Passed);
+    }
+
+    private async Task RunStage6PackSmokeAsync(CancellationToken ct)
+    {
+        var comparison = await _evalHarnessService.RunExperimentComparisonAsync(new EvalExperimentRunComparisonRequest
+        {
+            ExperimentKey = "stage6_guarded_default",
+            ScenarioPackKey = "stage6_quality",
+            Actor = "eval_stage6_pack_smoke",
+            PersistComparisonRun = true,
+            RecordReviewEvent = true
+        }, ct);
+
+        if (comparison.Variants.Count < 2)
+        {
+            throw new InvalidOperationException("Eval Stage6 pack smoke failed: expected two variants.");
+        }
+
+        var variantRuns = new List<EvalRunResult>();
+        foreach (var variant in comparison.Variants)
+        {
+            var run = await _evalRepository.GetRunByIdAsync(variant.EvalRunId, ct)
+                ?? throw new InvalidOperationException($"Eval Stage6 pack smoke failed: run not found {variant.EvalRunId}.");
+            run.Scenarios = await _evalRepository.GetScenarioResultsAsync(run.RunId, ct);
+            variantRuns.Add(run);
+        }
+
+        var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "stage6_dossier_current_state_quality",
+            "stage6_draft_review_quality",
+            "stage6_clarification_usefulness",
+            "stage6_case_usefulness_noise",
+            "stage6_behavioral_usefulness"
+        };
+        var observed = variantRuns
+            .SelectMany(x => x.Scenarios)
+            .Select(x => x.ScenarioName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!required.All(observed.Contains))
+        {
+            throw new InvalidOperationException("Eval Stage6 pack smoke failed: required stage6 quality scenarios are missing.");
+        }
+
+        if (variantRuns.SelectMany(x => x.Scenarios).All(x => x.CostUsd == 0m))
+        {
+            _logger.LogWarning("Eval Stage6 pack smoke: scenario costs are zero in this environment; visibility path still verified.");
+        }
+
+        _logger.LogInformation(
+            "Eval Stage6 pack smoke passed. experiment_run_id={ExperimentRunId}, variants={Variants}, scenarios_checked={ScenarioCount}",
+            comparison.ExperimentRunId,
+            comparison.Variants.Count,
+            required.Count);
     }
 }

@@ -382,7 +382,7 @@ public class OpenRouterAnalysisService
                 }
 
                 var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
-                await LogUsageAsync(phase, request.Model, parsed?.Usage, ct);
+                await LogUsageAsync(phase, request.Model, parsed?.Usage, (int)attemptTimer.ElapsedMilliseconds, ct);
                 return parsed;
             }
             catch (Exception ex) when (attempt < maxAttempts && IsTransientCheapException(phase, ex) && !ct.IsCancellationRequested)
@@ -506,7 +506,7 @@ public class OpenRouterAnalysisService
         return BudgetErrorClassifier.IsQuotaLike(statusCode, body);
     }
 
-    private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)
+    private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, int? latencyMs, CancellationToken ct)
     {
         if (usage == null)
         {
@@ -521,6 +521,7 @@ public class OpenRouterAnalysisService
             CompletionTokens = usage.CompletionTokens ?? 0,
             TotalTokens = usage.TotalTokens ?? 0,
             CostUsd = usage.Cost ?? 0m,
+            LatencyMs = latencyMs.HasValue ? Math.Max(0, latencyMs.Value) : null,
             CreatedAt = DateTime.UtcNow
         }, ct);
     }

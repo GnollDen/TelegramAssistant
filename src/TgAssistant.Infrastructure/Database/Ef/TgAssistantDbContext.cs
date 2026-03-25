@@ -56,6 +56,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbStage6Case> Stage6Cases => Set<DbStage6Case>();
     public DbSet<DbStage6CaseLink> Stage6CaseLinks => Set<DbStage6CaseLink>();
     public DbSet<DbStage6UserContextEntry> Stage6UserContextEntries => Set<DbStage6UserContextEntry>();
+    public DbSet<DbStage6FeedbackEntry> Stage6FeedbackEntries => Set<DbStage6FeedbackEntry>();
+    public DbSet<DbStage6CaseOutcome> Stage6CaseOutcomes => Set<DbStage6CaseOutcome>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -469,6 +471,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CompletionTokens).HasColumnName("completion_tokens");
             e.Property(x => x.TotalTokens).HasColumnName("total_tokens");
             e.Property(x => x.CostUsd).HasColumnName("cost_usd");
+            e.Property(x => x.LatencyMs).HasColumnName("latency_ms");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.CreatedAt);
             e.HasIndex(x => new { x.Phase, x.Model, x.CreatedAt });
@@ -1046,6 +1049,46 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.Stage6CaseId, x.CreatedAt });
         });
 
+        modelBuilder.Entity<DbStage6FeedbackEntry>(e =>
+        {
+            e.ToTable("stage6_feedback_entries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeCaseId).HasColumnName("scope_case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.Stage6CaseId).HasColumnName("stage6_case_id");
+            e.Property(x => x.ArtifactType).HasColumnName("artifact_type");
+            e.Property(x => x.FeedbackKind).HasColumnName("feedback_kind");
+            e.Property(x => x.FeedbackDimension).HasColumnName("feedback_dimension");
+            e.Property(x => x.IsUseful).HasColumnName("is_useful");
+            e.Property(x => x.Note).HasColumnName("note");
+            e.Property(x => x.SourceChannel).HasColumnName("source_channel");
+            e.Property(x => x.Actor).HasColumnName("actor");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ScopeCaseId, x.ChatId, x.CreatedAt });
+            e.HasIndex(x => new { x.Stage6CaseId, x.CreatedAt });
+            e.HasIndex(x => new { x.ArtifactType, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbStage6CaseOutcome>(e =>
+        {
+            e.ToTable("stage6_case_outcomes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Stage6CaseId).HasColumnName("stage6_case_id");
+            e.Property(x => x.ScopeCaseId).HasColumnName("scope_case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.OutcomeType).HasColumnName("outcome_type");
+            e.Property(x => x.CaseStatusAfter).HasColumnName("case_status_after");
+            e.Property(x => x.UserContextMaterial).HasColumnName("user_context_material");
+            e.Property(x => x.Note).HasColumnName("note");
+            e.Property(x => x.SourceChannel).HasColumnName("source_channel");
+            e.Property(x => x.Actor).HasColumnName("actor");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.Stage6CaseId, x.CreatedAt });
+            e.HasIndex(x => new { x.ScopeCaseId, x.ChatId, x.CreatedAt });
+        });
+
         modelBuilder.Entity<DbBudgetOperationalState>(e =>
         {
             e.ToTable("ops_budget_operational_states");
@@ -1123,6 +1166,7 @@ public class TgAssistantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.RunName).HasColumnName("run_name");
+            e.Property(x => x.ScenarioPackKey).HasColumnName("scenario_pack_key");
             e.Property(x => x.Passed).HasColumnName("passed");
             e.Property(x => x.StartedAt).HasColumnName("started_at");
             e.Property(x => x.FinishedAt).HasColumnName("finished_at");
@@ -1137,9 +1181,14 @@ public class TgAssistantDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.ScenarioType).HasColumnName("scenario_type");
             e.Property(x => x.ScenarioName).HasColumnName("scenario_name");
             e.Property(x => x.Passed).HasColumnName("passed");
             e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.LatencyMs).HasColumnName("latency_ms");
+            e.Property(x => x.CostUsd).HasColumnName("cost_usd");
+            e.Property(x => x.ModelSummaryJson).HasColumnName("model_summary_json").HasColumnType("jsonb");
+            e.Property(x => x.FeedbackSummaryJson).HasColumnName("feedback_summary_json").HasColumnType("jsonb");
             e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => new { x.RunId, x.CreatedAt });
