@@ -11,6 +11,19 @@ These files should be treated as the current primary reference set:
 - [CASE_ID_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\CASE_ID_POLICY.md)
 - [BACKLOG_STATUS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\BACKLOG_STATUS.md)
 
+## Active Planning Pack
+
+For the current consolidated planning set, use:
+
+- [planning/README.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\README.md)
+- [planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md)
+- [planning/STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md)
+
+These are the recommended entry points for:
+- implementation order
+- Stage 6 product framing
+- current planning context
+
 ## Active Sprint Docs
 
 Active only while the sprint is in progress:
@@ -31,12 +44,21 @@ These remain active until explicitly replaced:
 - [EXTERNAL_ARCHIVE_INGESTION_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\EXTERNAL_ARCHIVE_INGESTION_POLICY.md)
 - [COMPETING_RELATIONSHIP_CONTEXT_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\COMPETING_RELATIONSHIP_CONTEXT_POLICY.md)
 
+## Operational Runbooks
+
+Use these for repeatable execution, verification, and delivery hygiene:
+
+- [dev-commit-push.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\dev-commit-push.md)
+- [post-change-verification.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\post-change-verification.md)
+- [production-stability-check.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\production-stability-check.md)
+
 ## Historical Execution Docs
 
 These are useful records, but not the best entry point for understanding the current system:
 
 - completed `SPRINT_01` through `SPRINT_18` task packs and acceptance files
 - `SPRINT_01_1_*`
+- `docs/planning/archive/*`
 - `OPS_HYGIENE_*`
 - `VPS_BASELINE_2026-03-21.md`
 - dated `OPS_*_2026-03-21.md`

@@ -1,5 +1,15 @@
 # Backlog Status
 
+## Status Note
+
+This document is historical status framing, not the authoritative sprint-start planning source.
+
+For current implementation planning and sprint order, use:
+- [planning/README.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\README.md)
+- [planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md)
+
+This file may overstate readiness relative to the active planning pack and should not be treated as the primary execution authority.
+
 ## Current Reality
 
 The project is no longer just a Stage5/Stage6 bot pipeline.
