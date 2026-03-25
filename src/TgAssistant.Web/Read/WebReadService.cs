@@ -23,6 +23,8 @@ public class WebReadService : IWebReadService
     private readonly IPeriodizationService _periodizationService;
     private readonly IDraftEngine _draftEngine;
     private readonly IDraftReviewEngine _draftReviewEngine;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
 
     public WebReadService(
         IMessageRepository messageRepository,
@@ -39,7 +41,9 @@ public class WebReadService : IWebReadService
         IProfileEngine profileEngine,
         IPeriodizationService periodizationService,
         IDraftEngine draftEngine,
-        IDraftReviewEngine draftReviewEngine)
+        IDraftReviewEngine draftReviewEngine,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService)
     {
         _messageRepository = messageRepository;
         _chatSessionRepository = chatSessionRepository;
@@ -56,6 +60,8 @@ public class WebReadService : IWebReadService
         _periodizationService = periodizationService;
         _draftEngine = draftEngine;
         _draftReviewEngine = draftReviewEngine;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
     }
 
     public async Task<DashboardReadModel> GetDashboardAsync(WebReadRequest request, CancellationToken ct = default)
@@ -102,27 +108,87 @@ public class WebReadService : IWebReadService
 
     public async Task<CurrentStateReadModel> GetCurrentStateAsync(WebReadRequest request, CancellationToken ct = default)
     {
-        var snapshot = (await _stateProfileRepository.GetStateSnapshotsByCaseAsync(request.CaseId, 30, ct))
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.CurrentState,
+            scopeKey,
+            ct);
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.CurrentState,
+            ct);
+
+        StateSnapshot? snapshot = null;
+        if (artifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale
+                && Guid.TryParse(artifact.PayloadObjectId, out var snapshotId))
+            {
+                snapshot = await _stateProfileRepository.GetStateSnapshotByIdAsync(snapshotId, ct);
+                if (snapshot != null)
+                {
+                    _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+                }
+            }
+
+            if (snapshot == null)
+            {
+                _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            }
+        }
+
+        snapshot ??= (await _stateProfileRepository.GetStateSnapshotsByCaseAsync(request.CaseId, 30, ct))
             .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
             .OrderByDescending(x => x.AsOf)
             .FirstOrDefault();
 
-        if (snapshot == null)
+        snapshot ??= (await _currentStateEngine.ComputeAsync(new CurrentStateRequest
         {
-            snapshot = (await _currentStateEngine.ComputeAsync(new CurrentStateRequest
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            Actor = request.Actor,
+            SourceType = "web_read",
+            SourceId = "current_state_page",
+            Persist = true,
+            AsOfUtc = request.AsOfUtc
+        }, ct)).Snapshot;
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.CurrentState,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = scopeKey,
+            PayloadObjectType = "state_snapshot",
+            PayloadObjectId = snapshot.Id.ToString(),
+            PayloadJson = JsonSerializer.Serialize(new
             {
-                CaseId = request.CaseId,
-                ChatId = request.ChatId,
-                Actor = request.Actor,
-                SourceType = "web_read",
-                SourceId = "current_state_page",
-                Persist = true,
-                AsOfUtc = request.AsOfUtc
-            }, ct)).Snapshot;
-        }
+                snapshot.Id,
+                snapshot.DynamicLabel,
+                snapshot.RelationshipStatus,
+                snapshot.AlternativeStatus,
+                snapshot.Confidence,
+                snapshot.AsOf
+            }, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = snapshot.CreatedAt,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = snapshot.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.CurrentState)),
+            IsStale = false,
+            SourceType = "web_read",
+            SourceId = "current_state_page",
+            SourceMessageId = snapshot.SourceMessageId,
+            SourceSessionId = snapshot.SourceSessionId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
 
         var strategy = await GetStrategyAsync(request, ct);
-
         return new CurrentStateReadModel
         {
             AsOfUtc = snapshot.AsOf,
@@ -284,6 +350,34 @@ public class WebReadService : IWebReadService
 
     public async Task<ClarificationsReadModel> GetClarificationsAsync(WebReadRequest request, CancellationToken ct = default)
     {
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.ClarificationState,
+            scopeKey,
+            ct);
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.ClarificationState,
+            ct);
+        if (artifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale)
+            {
+                var persisted = Deserialize<ClarificationsReadModel>(artifact.PayloadJson);
+                if (persisted != null)
+                {
+                    _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+                    return persisted;
+                }
+            }
+
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+        }
+
         var all = await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct);
         var filtered = all
             .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
@@ -307,32 +401,115 @@ public class WebReadService : IWebReadService
             })
             .ToList();
 
-        return new ClarificationsReadModel
+        var model = new ClarificationsReadModel
         {
             OpenCount = filtered.Count(x => x.Status.Equals("open", StringComparison.OrdinalIgnoreCase)
                 || x.Status.Equals("in_progress", StringComparison.OrdinalIgnoreCase)),
             TopQuestions = open
         };
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.ClarificationState,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = scopeKey,
+            PayloadObjectType = "clarification_state",
+            PayloadObjectId = $"{request.CaseId}:{request.ChatId}",
+            PayloadJson = JsonSerializer.Serialize(model, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = DateTime.UtcNow,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = DateTime.UtcNow.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.ClarificationState)),
+            IsStale = false,
+            SourceType = "web_read",
+            SourceId = "clarification_state_page",
+            SourceMessageId = null,
+            SourceSessionId = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        return model;
     }
 
     public async Task<StrategyReadModel> GetStrategyAsync(WebReadRequest request, CancellationToken ct = default)
     {
-        var record = (await _strategyDraftRepository.GetStrategyRecordsByCaseAsync(request.CaseId, ct))
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Strategy,
+            scopeKey,
+            ct);
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Strategy,
+            ct);
+
+        StrategyRecord? record = null;
+        if (artifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale && Guid.TryParse(artifact.PayloadObjectId, out var strategyId))
+            {
+                record = await _strategyDraftRepository.GetStrategyRecordByIdAsync(strategyId, ct);
+                if (record != null)
+                {
+                    _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+                }
+            }
+
+            if (record == null)
+            {
+                _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            }
+        }
+
+        record ??= (await _strategyDraftRepository.GetStrategyRecordsByCaseAsync(request.CaseId, ct))
             .FirstOrDefault(x => x.ChatId == null || x.ChatId == request.ChatId);
 
-        if (record == null)
+        record ??= (await _strategyEngine.RunAsync(new StrategyEngineRequest
         {
-            record = (await _strategyEngine.RunAsync(new StrategyEngineRequest
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            Actor = request.Actor,
+            SourceType = "web_read",
+            SourceId = "strategy_page",
+            Persist = true,
+            AsOfUtc = request.AsOfUtc
+        }, ct)).Record;
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Strategy,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = scopeKey,
+            PayloadObjectType = "strategy_record",
+            PayloadObjectId = record.Id.ToString(),
+            PayloadJson = JsonSerializer.Serialize(new
             {
-                CaseId = request.CaseId,
-                ChatId = request.ChatId,
-                Actor = request.Actor,
-                SourceType = "web_read",
-                SourceId = "strategy_page",
-                Persist = true,
-                AsOfUtc = request.AsOfUtc
-            }, ct)).Record;
-        }
+                record.Id,
+                record.StrategyConfidence,
+                record.RecommendedGoal,
+                record.MicroStep
+            }, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = record.CreatedAt,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = record.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Strategy)),
+            IsStale = false,
+            SourceType = "web_read",
+            SourceId = "strategy_page",
+            SourceMessageId = record.SourceMessageId,
+            SourceSessionId = record.SourceSessionId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
 
         var options = await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(record.Id, ct);
         var primary = options.FirstOrDefault(x => x.IsPrimary) ?? options.FirstOrDefault();
@@ -364,11 +541,8 @@ public class WebReadService : IWebReadService
     public async Task<DraftsReviewsReadModel> GetDraftsReviewsAsync(WebReadRequest request, CancellationToken ct = default)
     {
         var strategy = (await _strategyDraftRepository.GetStrategyRecordsByCaseAsync(request.CaseId, ct))
-            .FirstOrDefault(x => x.ChatId == null || x.ChatId == request.ChatId);
-
-        if (strategy == null)
-        {
-            strategy = (await _strategyEngine.RunAsync(new StrategyEngineRequest
+            .FirstOrDefault(x => x.ChatId == null || x.ChatId == request.ChatId)
+            ?? (await _strategyEngine.RunAsync(new StrategyEngineRequest
             {
                 CaseId = request.CaseId,
                 ChatId = request.ChatId,
@@ -378,29 +552,116 @@ public class WebReadService : IWebReadService
                 Persist = true,
                 AsOfUtc = request.AsOfUtc
             }, ct)).Record;
+
+        DraftRecord? latestDraft = null;
+        var draftArtifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Draft,
+            Stage6ArtifactTypes.ChatScope(request.ChatId),
+            ct);
+        var draftEvidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Draft,
+            ct);
+        if (draftArtifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(draftArtifact, DateTime.UtcNow, draftEvidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale && Guid.TryParse(draftArtifact.PayloadObjectId, out var draftId))
+            {
+                latestDraft = await _strategyDraftRepository.GetDraftRecordByIdAsync(draftId, ct);
+                if (latestDraft != null)
+                {
+                    _ = await _stage6ArtifactRepository.TouchReusedAsync(draftArtifact.Id, DateTime.UtcNow, ct);
+                }
+            }
+
+            if (latestDraft == null)
+            {
+                _ = await _stage6ArtifactRepository.MarkStaleAsync(draftArtifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            }
         }
 
-        var drafts = await _strategyDraftRepository.GetDraftRecordsByStrategyRecordIdAsync(strategy.Id, ct);
-        var latestDraft = drafts.OrderByDescending(x => x.CreatedAt).FirstOrDefault();
-        if (latestDraft == null)
+        latestDraft ??= (await _strategyDraftRepository.GetDraftRecordsByStrategyRecordIdAsync(strategy.Id, ct))
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        latestDraft ??= (await _draftEngine.RunAsync(new DraftEngineRequest
         {
-            latestDraft = (await _draftEngine.RunAsync(new DraftEngineRequest
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            StrategyRecordId = strategy.Id,
+            Actor = request.Actor,
+            SourceType = "web_read",
+            SourceId = "drafts_page",
+            Persist = true,
+            AsOfUtc = request.AsOfUtc
+        }, ct)).Record;
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Draft,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId),
+            PayloadObjectType = "draft_record",
+            PayloadObjectId = latestDraft.Id.ToString(),
+            PayloadJson = JsonSerializer.Serialize(new
             {
-                CaseId = request.CaseId,
-                ChatId = request.ChatId,
-                StrategyRecordId = strategy.Id,
-                Actor = request.Actor,
-                SourceType = "web_read",
-                SourceId = "drafts_page",
-                Persist = true,
-                AsOfUtc = request.AsOfUtc
-            }, ct)).Record;
-        }
+                latestDraft.Id,
+                latestDraft.MainDraft,
+                latestDraft.AltDraft1,
+                latestDraft.AltDraft2,
+                latestDraft.Confidence
+            }, JsonOptions),
+            FreshnessBasisHash = draftEvidence.BasisHash,
+            FreshnessBasisJson = draftEvidence.BasisJson,
+            GeneratedAt = latestDraft.CreatedAt,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = latestDraft.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Draft)),
+            IsStale = false,
+            SourceType = "web_read",
+            SourceId = "drafts_page",
+            SourceMessageId = latestDraft.SourceMessageId,
+            SourceSessionId = latestDraft.SourceSessionId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
 
         DraftReviewReadModel? latestReview = null;
         if (latestDraft != null)
         {
-            var review = await _draftReviewEngine.RunAsync(new DraftReviewRequest
+            var reviewArtifact = await _stage6ArtifactRepository.GetCurrentAsync(
+                request.CaseId,
+                request.ChatId,
+                Stage6ArtifactTypes.Review,
+                Stage6ArtifactTypes.ChatScope(request.ChatId),
+                ct);
+            var reviewEvidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+                request.CaseId,
+                request.ChatId,
+                Stage6ArtifactTypes.Review,
+                ct);
+            DraftReviewResult? review = null;
+            if (reviewArtifact != null)
+            {
+                var freshness = Stage6ArtifactFreshness.Evaluate(reviewArtifact, DateTime.UtcNow, reviewEvidence.LatestEvidenceAtUtc);
+                if (!freshness.IsStale)
+                {
+                    review = Deserialize<DraftReviewResult>(reviewArtifact.PayloadJson);
+                    if (review != null)
+                    {
+                        _ = await _stage6ArtifactRepository.TouchReusedAsync(reviewArtifact.Id, DateTime.UtcNow, ct);
+                    }
+                }
+
+                if (review == null)
+                {
+                    _ = await _stage6ArtifactRepository.MarkStaleAsync(reviewArtifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+                }
+            }
+
+            review ??= await _draftReviewEngine.RunAsync(new DraftReviewRequest
             {
                 CaseId = request.CaseId,
                 ChatId = request.ChatId,
@@ -408,7 +669,7 @@ public class WebReadService : IWebReadService
                 Actor = request.Actor,
                 SourceType = "web_read",
                 SourceId = "drafts_review_page",
-                Persist = false,
+                Persist = true,
                 AsOfUtc = request.AsOfUtc
             }, ct);
 
@@ -739,6 +1000,23 @@ public class WebReadService : IWebReadService
         catch (JsonException)
         {
             return [];
+        }
+    }
+
+    private static T? Deserialize<T>(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return default;
         }
     }
 

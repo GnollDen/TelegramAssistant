@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -5,12 +6,16 @@ namespace TgAssistant.Web.Read;
 
 public class WebSearchService : IWebSearchService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IMessageRepository _messageRepository;
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IPeriodRepository _periodRepository;
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IStrategyDraftRepository _strategyDraftRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
 
     public WebSearchService(
         IMessageRepository messageRepository,
@@ -18,7 +23,9 @@ public class WebSearchService : IWebSearchService
         IClarificationRepository clarificationRepository,
         IPeriodRepository periodRepository,
         IStateProfileRepository stateProfileRepository,
-        IStrategyDraftRepository strategyDraftRepository)
+        IStrategyDraftRepository strategyDraftRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService)
     {
         _messageRepository = messageRepository;
         _inboxConflictRepository = inboxConflictRepository;
@@ -26,6 +33,8 @@ public class WebSearchService : IWebSearchService
         _periodRepository = periodRepository;
         _stateProfileRepository = stateProfileRepository;
         _strategyDraftRepository = strategyDraftRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
     }
 
     public async Task<SearchReadModel> SearchAsync(
@@ -103,6 +112,35 @@ public class WebSearchService : IWebSearchService
 
     public async Task<DossierReadModel> GetDossierAsync(WebReadRequest request, int limit = 50, CancellationToken ct = default)
     {
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Dossier,
+            scopeKey,
+            ct);
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Dossier,
+            ct);
+
+        if (artifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale)
+            {
+                var persisted = Deserialize<DossierReadModel>(artifact.PayloadJson);
+                if (persisted != null)
+                {
+                    _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+                    return persisted;
+                }
+            }
+
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+        }
+
         var questions = (await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct))
             .Where(x => (x.ChatId == null || x.ChatId == request.ChatId)
                         && x.Status.Equals("resolved", StringComparison.OrdinalIgnoreCase))
@@ -165,12 +203,54 @@ public class WebSearchService : IWebSearchService
             })
             .ToList();
 
-        return new DossierReadModel
+        var model = new DossierReadModel
         {
             Confirmed = confirmed,
             Hypotheses = hypotheses,
             Conflicts = conflicts
         };
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Dossier,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = scopeKey,
+            PayloadObjectType = "dossier",
+            PayloadObjectId = $"{request.CaseId}:{request.ChatId}",
+            PayloadJson = JsonSerializer.Serialize(model, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = DateTime.UtcNow,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = DateTime.UtcNow.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Dossier)),
+            IsStale = false,
+            SourceType = "web_read",
+            SourceId = "dossier_page",
+            SourceMessageId = null,
+            SourceSessionId = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        return model;
+    }
+
+    private static T? Deserialize<T>(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     private async Task<List<SearchResultReadModel>> CollectSearchItemsAsync(WebReadRequest request, CancellationToken ct)

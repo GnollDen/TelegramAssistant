@@ -411,6 +411,19 @@ public interface IStrategyDraftRepository
     Task<List<DraftOutcome>> GetDraftOutcomesByCaseAsync(long caseId, CancellationToken ct = default);
 }
 
+public interface IStage6ArtifactRepository
+{
+    Task<Stage6ArtifactRecord> UpsertCurrentAsync(Stage6ArtifactRecord artifact, CancellationToken ct = default);
+    Task<Stage6ArtifactRecord?> GetCurrentAsync(
+        long caseId,
+        long? chatId,
+        string artifactType,
+        string scopeKey,
+        CancellationToken ct = default);
+    Task<bool> MarkStaleAsync(Guid artifactId, string reason, DateTime staleAtUtc, CancellationToken ct = default);
+    Task<bool> TouchReusedAsync(Guid artifactId, DateTime reusedAtUtc, CancellationToken ct = default);
+}
+
 public interface IInboxConflictRepository
 {
     Task<InboxItem> CreateInboxItemAsync(InboxItem item, CancellationToken ct = default);

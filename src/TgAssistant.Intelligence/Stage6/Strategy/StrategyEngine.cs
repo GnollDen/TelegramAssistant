@@ -17,6 +17,8 @@ public class StrategyEngine : IStrategyEngine
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly ICompetingContextRuntimeService _competingContextRuntimeService;
     private readonly IStrategyOptionGenerator _optionGenerator;
     private readonly IStrategyRiskEvaluator _riskEvaluator;
@@ -34,6 +36,8 @@ public class StrategyEngine : IStrategyEngine
         IStateProfileRepository stateProfileRepository,
         IStrategyDraftRepository strategyDraftRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         ICompetingContextRuntimeService competingContextRuntimeService,
         IStrategyOptionGenerator optionGenerator,
         IStrategyRiskEvaluator riskEvaluator,
@@ -50,6 +54,8 @@ public class StrategyEngine : IStrategyEngine
         _stateProfileRepository = stateProfileRepository;
         _strategyDraftRepository = strategyDraftRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _competingContextRuntimeService = competingContextRuntimeService;
         _optionGenerator = optionGenerator;
         _riskEvaluator = riskEvaluator;
@@ -170,6 +176,40 @@ public class StrategyEngine : IStrategyEngine
                 Reason = request.SourceId,
                 Actor = request.Actor,
                 CreatedAt = DateTime.UtcNow
+            }, ct);
+
+            var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+                request.CaseId,
+                request.ChatId,
+                Stage6ArtifactTypes.Strategy,
+                ct);
+            _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+            {
+                ArtifactType = Stage6ArtifactTypes.Strategy,
+                CaseId = request.CaseId,
+                ChatId = request.ChatId,
+                ScopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId),
+                PayloadObjectType = "strategy_record",
+                PayloadObjectId = record.Id.ToString(),
+                PayloadJson = JsonSerializer.Serialize(new
+                {
+                    record.Id,
+                    record.StrategyConfidence,
+                    record.RecommendedGoal,
+                    record.MicroStep
+                }, JsonOptions),
+                FreshnessBasisHash = evidence.BasisHash,
+                FreshnessBasisJson = evidence.BasisJson,
+                GeneratedAt = record.CreatedAt,
+                RefreshedAt = record.CreatedAt,
+                StaleAt = record.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Strategy)),
+                IsStale = false,
+                SourceType = request.SourceType,
+                SourceId = request.SourceId,
+                SourceMessageId = record.SourceMessageId,
+                SourceSessionId = record.SourceSessionId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             }, ct);
         }
 
