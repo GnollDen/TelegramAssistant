@@ -17,6 +17,7 @@ public class InboxConflictRepository : IInboxConflictRepository
 
     public async Task<InboxItem> CreateInboxItemAsync(InboxItem item, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var row = new DbInboxItem
         {
             Id = item.Id == Guid.Empty ? Guid.NewGuid() : item.Id,
@@ -33,17 +34,76 @@ public class InboxConflictRepository : IInboxConflictRepository
             Status = item.Status,
             LastActor = item.LastActor,
             LastReason = item.LastReason,
-            CreatedAt = item.CreatedAt == default ? DateTime.UtcNow : item.CreatedAt,
-            UpdatedAt = item.UpdatedAt == default ? DateTime.UtcNow : item.UpdatedAt
+            CreatedAt = item.CreatedAt == default ? now : item.CreatedAt,
+            UpdatedAt = item.UpdatedAt == default ? now : item.UpdatedAt
         };
 
-        await WithDbContextAsync(async db =>
+        return await WithDbContextAsync(async db =>
         {
-            db.InboxItems.Add(row);
-            await db.SaveChangesAsync(ct);
-        }, ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO domain_inbox_items (
+                    id,
+                    item_type,
+                    source_object_type,
+                    source_object_id,
+                    priority,
+                    is_blocking,
+                    title,
+                    summary,
+                    period_id,
+                    case_id,
+                    chat_id,
+                    status,
+                    last_actor,
+                    last_reason,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    {row.Id},
+                    {row.ItemType},
+                    {row.SourceObjectType},
+                    {row.SourceObjectId},
+                    {row.Priority},
+                    {row.IsBlocking},
+                    {row.Title},
+                    {row.Summary},
+                    {row.PeriodId},
+                    {row.CaseId},
+                    {row.ChatId},
+                    {row.Status},
+                    {row.LastActor},
+                    {row.LastReason},
+                    {row.CreatedAt},
+                    {row.UpdatedAt}
+                )
+                ON CONFLICT (case_id, item_type, source_object_type, source_object_id)
+                DO UPDATE
+                SET priority = EXCLUDED.priority,
+                    is_blocking = EXCLUDED.is_blocking,
+                    title = EXCLUDED.title,
+                    summary = EXCLUDED.summary,
+                    period_id = EXCLUDED.period_id,
+                    chat_id = COALESCE(EXCLUDED.chat_id, domain_inbox_items.chat_id),
+                    status = EXCLUDED.status,
+                    last_actor = EXCLUDED.last_actor,
+                    last_reason = EXCLUDED.last_reason,
+                    updated_at = EXCLUDED.updated_at;
+                """, ct);
 
-        return ToDomain(row);
+            var persisted = await db.InboxItems
+                .AsNoTracking()
+                .Where(x => x.CaseId == row.CaseId
+                            && x.ItemType == row.ItemType
+                            && x.SourceObjectType == row.SourceObjectType
+                            && x.SourceObjectId == row.SourceObjectId)
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstAsync(ct);
+
+            return ToDomain(persisted);
+        }, ct);
     }
 
     public async Task<InboxItem?> GetInboxItemByIdAsync(Guid id, CancellationToken ct = default)
@@ -72,6 +132,7 @@ public class InboxConflictRepository : IInboxConflictRepository
 
     public async Task<ConflictRecord> CreateConflictRecordAsync(ConflictRecord record, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var row = new DbConflictRecord
         {
             Id = record.Id == Guid.Empty ? Guid.NewGuid() : record.Id,
@@ -88,17 +149,89 @@ public class InboxConflictRepository : IInboxConflictRepository
             ChatId = record.ChatId,
             LastActor = record.LastActor,
             LastReason = record.LastReason,
-            CreatedAt = record.CreatedAt == default ? DateTime.UtcNow : record.CreatedAt,
-            UpdatedAt = record.UpdatedAt == default ? DateTime.UtcNow : record.UpdatedAt
+            CreatedAt = record.CreatedAt == default ? now : record.CreatedAt,
+            UpdatedAt = record.UpdatedAt == default ? now : record.UpdatedAt
         };
 
-        await WithDbContextAsync(async db =>
+        return await WithDbContextAsync(async db =>
         {
-            db.ConflictRecords.Add(row);
-            await db.SaveChangesAsync(ct);
-        }, ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO domain_conflict_records (
+                    id,
+                    conflict_type,
+                    object_a_type,
+                    object_a_id,
+                    object_b_type,
+                    object_b_id,
+                    summary,
+                    severity,
+                    status,
+                    period_id,
+                    case_id,
+                    chat_id,
+                    last_actor,
+                    last_reason,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    {row.Id},
+                    {row.ConflictType},
+                    {row.ObjectAType},
+                    {row.ObjectAId},
+                    {row.ObjectBType},
+                    {row.ObjectBId},
+                    {row.Summary},
+                    {row.Severity},
+                    {row.Status},
+                    {row.PeriodId},
+                    {row.CaseId},
+                    {row.ChatId},
+                    {row.LastActor},
+                    {row.LastReason},
+                    {row.CreatedAt},
+                    {row.UpdatedAt}
+                )
+                ON CONFLICT (
+                    case_id,
+                    conflict_type,
+                    (LEAST(object_a_type || ':' || object_a_id, object_b_type || ':' || object_b_id)),
+                    (GREATEST(object_a_type || ':' || object_a_id, object_b_type || ':' || object_b_id))
+                )
+                DO UPDATE
+                SET object_a_type = EXCLUDED.object_a_type,
+                    object_a_id = EXCLUDED.object_a_id,
+                    object_b_type = EXCLUDED.object_b_type,
+                    object_b_id = EXCLUDED.object_b_id,
+                    summary = EXCLUDED.summary,
+                    severity = EXCLUDED.severity,
+                    status = EXCLUDED.status,
+                    period_id = EXCLUDED.period_id,
+                    chat_id = COALESCE(EXCLUDED.chat_id, domain_conflict_records.chat_id),
+                    last_actor = EXCLUDED.last_actor,
+                    last_reason = EXCLUDED.last_reason,
+                    updated_at = EXCLUDED.updated_at;
+                """, ct);
 
-        return ToDomain(row);
+            var persisted = await db.ConflictRecords
+                .AsNoTracking()
+                .Where(x => x.CaseId == row.CaseId
+                            && x.ConflictType == row.ConflictType
+                            && ((x.ObjectAType == row.ObjectAType
+                                 && x.ObjectAId == row.ObjectAId
+                                 && x.ObjectBType == row.ObjectBType
+                                 && x.ObjectBId == row.ObjectBId)
+                                || (x.ObjectAType == row.ObjectBType
+                                    && x.ObjectAId == row.ObjectBId
+                                    && x.ObjectBType == row.ObjectAType
+                                    && x.ObjectBId == row.ObjectAId)))
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstAsync(ct);
+
+            return ToDomain(persisted);
+        }, ct);
     }
 
     public async Task<ConflictRecord?> GetConflictRecordByIdAsync(Guid id, CancellationToken ct = default)

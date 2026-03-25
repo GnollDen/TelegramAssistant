@@ -101,7 +101,7 @@ Use grounded facts only and keep empty arrays for low-value chatter.
                 {
                     if (cursor > 0)
                     {
-                        await _stateRepository.SetWatermarkAsync(CursorKey, 0, stoppingToken);
+                        await _stateRepository.ResetWatermarksIfExistAsync([CursorKey], stoppingToken);
                         continue;
                     }
 

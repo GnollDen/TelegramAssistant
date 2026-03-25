@@ -18,34 +18,63 @@ public class RelationshipRepository : IRelationshipRepository
     {
         return await WithDbContextAsync(async db =>
         {
-            var existing = await db.Relationships.FirstOrDefaultAsync(x => x.FromEntityId == relationship.FromEntityId && x.ToEntityId == relationship.ToEntityId && x.Type == relationship.Type, ct);
-            if (existing == null)
-            {
-                db.Relationships.Add(new DbRelationship
-                {
-                    Id = relationship.Id == Guid.Empty ? Guid.NewGuid() : relationship.Id,
-                    FromEntityId = relationship.FromEntityId,
-                    ToEntityId = relationship.ToEntityId,
-                    Type = relationship.Type,
-                    Status = (short)relationship.Status,
-                    Confidence = relationship.Confidence,
-                    ContextText = relationship.ContextText,
-                    SourceMessageId = relationship.SourceMessageId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                existing.Status = (short)relationship.Status;
-                existing.Confidence = Math.Max(existing.Confidence, relationship.Confidence);
-                existing.ContextText = relationship.ContextText ?? existing.ContextText;
-                existing.SourceMessageId = relationship.SourceMessageId ?? existing.SourceMessageId;
-                existing.UpdatedAt = DateTime.UtcNow;
-            }
+            var now = DateTime.UtcNow;
+            var rowId = relationship.Id == Guid.Empty ? Guid.NewGuid() : relationship.Id;
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO relationships (
+                    id,
+                    from_entity_id,
+                    to_entity_id,
+                    type,
+                    status,
+                    confidence,
+                    context_text,
+                    source_message_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    {rowId},
+                    {relationship.FromEntityId},
+                    {relationship.ToEntityId},
+                    {relationship.Type},
+                    {(short)relationship.Status},
+                    {relationship.Confidence},
+                    {relationship.ContextText},
+                    {relationship.SourceMessageId},
+                    {now},
+                    {now}
+                )
+                ON CONFLICT (from_entity_id, to_entity_id, type)
+                DO UPDATE
+                SET status = EXCLUDED.status,
+                    confidence = GREATEST(relationships.confidence, EXCLUDED.confidence),
+                    context_text = COALESCE(EXCLUDED.context_text, relationships.context_text),
+                    source_message_id = COALESCE(EXCLUDED.source_message_id, relationships.source_message_id),
+                    updated_at = EXCLUDED.updated_at;
+                """, ct);
 
-            await db.SaveChangesAsync(ct);
-            return relationship;
+            var persisted = await db.Relationships
+                .AsNoTracking()
+                .FirstAsync(
+                    x => x.FromEntityId == relationship.FromEntityId
+                      && x.ToEntityId == relationship.ToEntityId
+                      && x.Type == relationship.Type,
+                    ct);
+
+            return new Relationship
+            {
+                Id = persisted.Id,
+                FromEntityId = persisted.FromEntityId,
+                ToEntityId = persisted.ToEntityId,
+                Type = persisted.Type,
+                Status = (ConfidenceStatus)persisted.Status,
+                Confidence = persisted.Confidence,
+                ContextText = persisted.ContextText,
+                SourceMessageId = persisted.SourceMessageId,
+                CreatedAt = persisted.CreatedAt,
+                UpdatedAt = persisted.UpdatedAt
+            };
         }, ct);
     }
 
