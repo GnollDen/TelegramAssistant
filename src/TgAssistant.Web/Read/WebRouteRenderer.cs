@@ -673,6 +673,37 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
         sb.AppendLine($"<h2>Primary</h2><p>{E(model.PrimarySummary)}</p><p>purpose: {E(model.PrimaryPurpose)}</p>");
         sb.AppendLine($"<p>risks: {E(string.Join(", ", model.PrimaryRisks))}</p>");
+        sb.AppendLine($"<p>ethics: {E(model.EthicalContractSummary)}</p>");
+        sb.AppendLine("<h2>Observed Facts</h2>");
+        foreach (var item in model.ObservedFacts)
+        {
+            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
+        }
+
+        sb.AppendLine("<h2>Likely Interpretation</h2>");
+        foreach (var item in model.LikelyInterpretation)
+        {
+            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
+        }
+
+        sb.AppendLine("<h2>Uncertainties / Alternative Readings</h2>");
+        foreach (var item in model.Uncertainties)
+        {
+            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
+        }
+
+        sb.AppendLine("<h2>Missing Information</h2>");
+        foreach (var item in model.MissingInformation)
+        {
+            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
+        }
+
+        sb.AppendLine("<h2>Relational Patterns</h2>");
+        foreach (var pattern in model.RelationalPatterns)
+        {
+            sb.AppendLine($"<div>{E(pattern)}</div>");
+        }
+
         sb.AppendLine("<h2>Alternatives</h2>");
         foreach (var alt in model.Alternatives)
         {
@@ -700,8 +731,8 @@ public class WebRouteRenderer : IWebRouteRenderer
         {
             sb.AppendLine($"<h2>Latest Draft ({model.LatestDraft.CreatedAt:yyyy-MM-dd HH:mm})</h2>");
             sb.AppendLine($"<p>main: {E(model.LatestDraft.MainDraft)}</p>");
-            sb.AppendLine($"<p>alt 1: {E(model.LatestDraft.AltDraft1 ?? "-")}</p>");
-            sb.AppendLine($"<p>alt 2: {E(model.LatestDraft.AltDraft2 ?? "-")}</p>");
+            sb.AppendLine($"<p>softer alternative: {E(model.LatestDraft.SofterAlternative ?? model.LatestDraft.AltDraft1 ?? "-")}</p>");
+            sb.AppendLine($"<p>more direct alternative: {E(model.LatestDraft.MoreDirectAlternative ?? model.LatestDraft.AltDraft2 ?? "-")}</p>");
             sb.AppendLine($"<p>style: {E(model.LatestDraft.StyleNotes ?? "-")}</p>");
             var draftTrail = $"/history-object?objectType=draft_record&objectId={UrlEncode(model.LatestDraft.Id.ToString())}";
             var draftChain = $"/outcomes?draftId={UrlEncode(model.LatestDraft.Id.ToString())}";
@@ -1059,6 +1090,10 @@ public class WebRouteRenderer : IWebRouteRenderer
 
         sb.AppendLine($"<p>what works: {E(subject.WhatWorks)}</p>");
         sb.AppendLine($"<p>what fails: {E(subject.WhatFails)}</p>");
+        sb.AppendLine($"<p>participant patterns: {E(subject.ParticipantPatterns)}</p>");
+        sb.AppendLine($"<p>pair dynamics: {E(subject.PairDynamics)}</p>");
+        sb.AppendLine($"<p>repeated interaction modes: {E(subject.RepeatedInteractionModes)}</p>");
+        sb.AppendLine($"<p>changes over time: {E(subject.ChangesOverTime)}</p>");
         sb.AppendLine("</section>");
         return sb.ToString();
     }

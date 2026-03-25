@@ -121,6 +121,8 @@ public class DraftPackagingService : IDraftPackagingService
                 record.MainDraft,
                 record.AltDraft1,
                 record.AltDraft2,
+                softer_alternative = record.AltDraft1,
+                more_direct_alternative = record.AltDraft2,
                 record.Confidence,
                 strategy_record_id = record.StrategyRecordId
             }, JsonOptions),

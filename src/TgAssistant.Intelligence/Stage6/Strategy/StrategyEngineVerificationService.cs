@@ -461,6 +461,11 @@ public class StrategyEngineVerificationService
             throw new InvalidOperationException($"Strategy smoke ({scenario}) failed: risk tags are missing.");
         }
 
+        if (result.Options.Any(x => !x.Risk.Contains("ethical_flags", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Strategy smoke ({scenario}) failed: ethical contract flags are missing.");
+        }
+
         if (expectHorizon && result.Horizon.Count == 0)
         {
             throw new InvalidOperationException($"Strategy smoke ({scenario}) failed: horizon expected but missing.");

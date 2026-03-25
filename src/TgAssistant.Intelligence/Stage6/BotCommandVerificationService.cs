@@ -75,11 +75,12 @@ public class BotCommandVerificationService
         var nextReply = await _botChatService.GenerateReplyAsync($"/next case={caseId} chat={chatId}", chatId, null, 1, ct);
         AssertContains(nextReply, "next:", "/next");
         AssertContains(nextReply, "micro-step:", "/next");
+        AssertContains(nextReply, "ethics:", "/next");
 
         var draftReply = await _botChatService.GenerateReplyAsync($"/draft case={caseId} chat={chatId} tone=warm concise", chatId, null, 1, ct);
         AssertContains(draftReply, "main:", "/draft");
-        AssertContains(draftReply, "alt 1:", "/draft");
-        AssertContains(draftReply, "alt 2:", "/draft");
+        AssertContains(draftReply, "softer alternative:", "/draft");
+        AssertContains(draftReply, "more direct alternative:", "/draft");
 
         var reviewReply = await _botChatService.GenerateReplyAsync($"/review case={caseId} chat={chatId} Thanks for yesterday, I liked being with you", chatId, null, 1, ct);
         AssertContains(reviewReply, "assessment:", "/review");
