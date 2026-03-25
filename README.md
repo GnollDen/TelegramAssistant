@@ -42,6 +42,21 @@ docker compose build app mcp
 docker compose up -d
 ```
 
+## Web role (Sprint W1)
+- Hosted operator shell runs under runtime role `web` (or `web,ops`).
+- Required settings for `web` role:
+  - `Web:Url` (default `http://127.0.0.1:5078`)
+  - `Web:OperatorAccessToken` when `Web:RequireOperatorAccessToken=true`
+- Local start example:
+  ```bash
+  Web__OperatorAccessToken=replace_me dotnet run --project src/TgAssistant.Host -- --runtime-role=web
+  ```
+- Primary entry surfaces:
+  - `/`
+  - `/queue`
+  - `/case-detail?caseId=<guid>`
+  - `/artifact-detail?artifactType=<type>`
+
 ## MCP server (stdio + SSE)
 - MCP server source lives in `src/TgAssistant.Mcp`.
 - Transport is selected via `MCP_TRANSPORT=stdio|sse` (default in compose: `sse`).

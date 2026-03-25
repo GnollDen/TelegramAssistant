@@ -12,6 +12,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         "/dashboard",
         "/search",
         "/dossier",
+        "/queue",
         "/inbox",
         "/history",
         "/state",
