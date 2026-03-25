@@ -90,6 +90,7 @@ public class BotChatService : IBotChatService
         long? senderId = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var normalizedMessage = (userMessage ?? string.Empty).Trim();
         var diagnostics = new BotChatTurnDiagnostics();
         if (string.IsNullOrWhiteSpace(normalizedMessage))
@@ -113,7 +114,7 @@ public class BotChatService : IBotChatService
         var embedding = await _embeddingGenerator.GenerateAsync(
             _embeddingSettings.Model,
             normalizedMessage,
-            CancellationToken.None);
+            ct);
         diagnostics.EmbeddingCalls = 1;
         if (embedding.Length == 0)
         {
@@ -126,7 +127,7 @@ public class BotChatService : IBotChatService
             _embeddingSettings.Model,
             embedding,
             DefaultFactLimit,
-            CancellationToken.None);
+            ct);
 
         var localContext = await BuildLocalChatContextAsync(transportChatId, sourceMessageId, ct);
         var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(localContext, facts);
@@ -143,7 +144,7 @@ public class BotChatService : IBotChatService
             messages,
             tools,
             ReplyMaxTokens,
-            CancellationToken.None);
+            ct);
         diagnostics.ChatCompletionCalls++;
         var firstText = NormalizeResponseText(firstResponse.Content);
         var rawToolCalls = firstResponse.ToolCalls ?? [];
@@ -179,6 +180,7 @@ public class BotChatService : IBotChatService
 
         foreach (var toolCall in toolCalls)
         {
+            ct.ThrowIfCancellationRequested();
             string toolResult;
             var toolName = toolCall.Function.Name;
             var toolArgs = toolCall.Function.Arguments ?? "{}";
@@ -189,7 +191,11 @@ public class BotChatService : IBotChatService
                 toolArgs);
             try
             {
-                toolResult = await ExecuteToolCallAsync(toolCall, CancellationToken.None);
+                toolResult = await ExecuteToolCallAsync(toolCall, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -232,7 +238,7 @@ public class BotChatService : IBotChatService
             messages,
             null,
             ReplyMaxTokens,
-            CancellationToken.None);
+            ct);
         diagnostics.ChatCompletionCalls++;
         var reply = NormalizeResponseText(secondResponse.Content);
 

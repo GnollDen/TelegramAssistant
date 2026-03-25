@@ -17,10 +17,8 @@ public class OpenRouterAnalysisService
 {
     private const int CheapTransientRetryAttempts = 2;
     private const int CheapTransientRetryBaseDelayMs = 600;
-    private static readonly TimeSpan CheapBalanceCooldown = TimeSpan.FromSeconds(45);
     private const string OpenRouterRequestIdHeader = "x-request-id";
     private const int ErrorBodySnippetLimit = 260;
-    private DateTime _cheapBalancePauseUntilUtc = DateTime.MinValue;
 
     private readonly HttpClient _http;
     private readonly AnalysisSettings _analysis;
@@ -291,23 +289,6 @@ public class OpenRouterAnalysisService
                 $"Budget guardrail blocked phase '{phase}' with state '{budgetDecision.State}' ({budgetDecision.Reason}).");
         }
 
-        if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
-        {
-            var pauseUntil = _cheapBalancePauseUntilUtc;
-            if (pauseUntil > DateTime.UtcNow)
-            {
-                var cooldownLeftMs = Math.Max(0, (int)(pauseUntil - DateTime.UtcNow).TotalMilliseconds);
-                _logger.LogWarning(
-                    "OpenRouter cheap phase blocked by cooldown. model={Model}, cooldown_left_ms={CooldownLeftMs}, pause_until_utc={PauseUntilUtc}",
-                    request.Model,
-                    cooldownLeftMs,
-                    pauseUntil);
-                throw new OpenRouterBalanceException(
-                    $"OpenRouter cheap phase is in cooldown until {pauseUntil:O} due to recent balance/quota issue.",
-                    HttpStatusCode.PaymentRequired);
-            }
-        }
-
         var maxAttempts = string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase)
             ? 1 + CheapTransientRetryAttempts
             : 1;
@@ -336,15 +317,13 @@ public class OpenRouterAnalysisService
 
                         if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
                         {
-                            _cheapBalancePauseUntilUtc = DateTime.UtcNow.Add(CheapBalanceCooldown);
                             _logger.LogWarning(
-                                "OpenRouter balance/quota issue detected; enabling cheap cooldown. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}, pause_until_utc={PauseUntilUtc}",
+                                "OpenRouter balance/quota issue detected; persisted quota block applied. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
                                 phase,
                                 request.Model,
                                 (int)res.StatusCode,
                                 requestId ?? "n/a",
-                                attemptTimer.ElapsedMilliseconds,
-                                _cheapBalancePauseUntilUtc);
+                                attemptTimer.ElapsedMilliseconds);
                             _logger.LogDebug(
                                 "OpenRouter balance/quota body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
                                 phase,
