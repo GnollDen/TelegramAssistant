@@ -1336,7 +1336,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine("<p>No object history events found yet.</p>");
         }
 
-        sb.AppendLine($"<p>case={request.CaseId}, chat={request.ChatId}</p>");
+        sb.AppendLine("<details><summary>Технические детали</summary><p>Параметры scope доступны в URL этой страницы.</p></details>");
         return CloseShell(sb);
     }
 
@@ -1735,7 +1735,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>object: {E(result.ObjectType)}:{E(result.ObjectId)}</p>");
         sb.AppendLine($"<p>action: {E(result.Action)}</p>");
         sb.AppendLine($"<p>message: {E(result.Message)}</p>");
-        sb.AppendLine($"<p><a href='/review'>Back to review board</a> (case={request.CaseId}, chat={request.ChatId})</p>");
+        sb.AppendLine("<p><a href='/review'>Back to review board</a></p>");
         return CloseShell(sb);
     }
 
