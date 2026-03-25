@@ -538,6 +538,87 @@ public class WebReadService : IWebReadService
 
         var options = await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(record.Id, ct);
         var primary = options.FirstOrDefault(x => x.IsPrimary) ?? options.FirstOrDefault();
+        var primaryRisks = primary == null ? [] : ParseRiskLabels(primary.Risk);
+        var primaryEthicalFlags = primary == null ? [] : ParseEthicalFlags(primary.Risk);
+        var openQuestions = (await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .Where(x => IsOpenWorkflowStatus(x.Status))
+            .OrderByDescending(x => PriorityWeight(x.Priority))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Take(3)
+            .ToList();
+        var openConflicts = (await _inboxConflictRepository.GetConflictRecordsAsync(request.CaseId, "open", ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(3)
+            .ToList();
+        var pairProfileSnapshots = await _stateProfileRepository.GetProfileSnapshotsByCaseAsync(request.CaseId, "pair", await ResolvePairIdAsync(request.ChatId, ct), ct);
+        var pairSnapshot = pairProfileSnapshots
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        var relationalPatterns = new List<string>();
+        if (pairSnapshot != null)
+        {
+            var pairTraits = await _stateProfileRepository.GetProfileTraitsBySnapshotIdAsync(pairSnapshot.Id, ct);
+            relationalPatterns.AddRange(pairTraits
+                .Where(x => x.TraitKey is "participant_patterns" or "pair_dynamics" or "repeated_interaction_modes" or "changes_over_time")
+                .OrderByDescending(x => x.Confidence)
+                .Select(x => $"{x.TraitKey}: {x.ValueLabel}")
+                .Take(4));
+        }
+
+        var observedFacts = new List<StateInsightReadModel>
+        {
+            new()
+            {
+                Title = "Current strategy confidence",
+                Detail = $"confidence={record.StrategyConfidence:0.00}, primary={primary?.ActionType ?? "none"}",
+                SignalStrength = record.StrategyConfidence >= 0.75f ? "strong" : record.StrategyConfidence >= 0.55f ? "medium" : "weak",
+                Evidence = $"strategy_record:{record.Id}"
+            },
+            new()
+            {
+                Title = "Open uncertainty load",
+                Detail = $"open_clarifications={openQuestions.Count}, open_conflicts={openConflicts.Count}",
+                SignalStrength = openConflicts.Count > 0 ? "contradictory" : openQuestions.Count > 0 ? "medium" : "weak",
+                Evidence = "clarification_and_conflict_counts"
+            }
+        };
+
+        var likelyInterpretation = new List<StateInsightReadModel>
+        {
+            new()
+            {
+                Title = "Primary strategy interpretation",
+                Detail = primary?.Summary ?? "No primary strategy option available.",
+                SignalStrength = record.StrategyConfidence >= 0.7f ? "strong" : "medium",
+                Evidence = $"strategy_option:{primary?.ActionType ?? "none"}"
+            },
+            new()
+            {
+                Title = "Purpose framing",
+                Detail = primary?.Purpose ?? "No explicit purpose.",
+                SignalStrength = "medium",
+                Evidence = "strategy_primary_purpose"
+            }
+        };
+
+        var uncertainties = openQuestions.Select(x => new StateInsightReadModel
+        {
+            Title = $"Open clarification ({x.Priority})",
+            Detail = x.QuestionText,
+            SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "contradictory" : "weak",
+            Evidence = $"clarification_question:{x.Id}"
+        }).Take(3).ToList();
+
+        var missingInformation = openQuestions.Select(x => new StateInsightReadModel
+        {
+            Title = "Missing information",
+            Detail = x.QuestionText,
+            SignalStrength = "weak",
+            Evidence = string.IsNullOrWhiteSpace(x.WhyItMatters) ? $"clarification_question:{x.Id}" : x.WhyItMatters
+        }).Take(3).ToList();
 
         return new StrategyReadModel
         {
@@ -545,7 +626,7 @@ public class WebReadService : IWebReadService
             Confidence = record.StrategyConfidence,
             PrimarySummary = primary?.Summary ?? "No primary option",
             PrimaryPurpose = primary?.Purpose ?? string.Empty,
-            PrimaryRisks = primary == null ? [] : ParseRiskLabels(primary.Risk),
+            PrimaryRisks = primaryRisks,
             Alternatives = options
                 .Where(x => !x.IsPrimary)
                 .Take(4)
@@ -559,7 +640,13 @@ public class WebReadService : IWebReadService
                 .ToList(),
             MicroStep = record.MicroStep,
             Horizon = ParseJsonStringList(record.HorizonJson, 4),
-            WhyNotNotes = record.WhyNotOthers
+            WhyNotNotes = record.WhyNotOthers,
+            ObservedFacts = observedFacts,
+            LikelyInterpretation = likelyInterpretation,
+            Uncertainties = uncertainties,
+            MissingInformation = missingInformation,
+            RelationalPatterns = relationalPatterns,
+            EthicalContractSummary = BuildEthicalSummary(primaryRisks, primaryEthicalFlags)
         };
     }
 
@@ -637,6 +724,8 @@ public class WebReadService : IWebReadService
                 latestDraft.MainDraft,
                 latestDraft.AltDraft1,
                 latestDraft.AltDraft2,
+                softer_alternative = latestDraft.AltDraft1,
+                more_direct_alternative = latestDraft.AltDraft2,
                 latestDraft.Confidence
             }, JsonOptions),
             FreshnessBasisHash = draftEvidence.BasisHash,
@@ -718,6 +807,8 @@ public class WebReadService : IWebReadService
                 MainDraft = latestDraft.MainDraft,
                 AltDraft1 = latestDraft.AltDraft1,
                 AltDraft2 = latestDraft.AltDraft2,
+                SofterAlternative = latestDraft.AltDraft1,
+                MoreDirectAlternative = latestDraft.AltDraft2,
                 StyleNotes = latestDraft.StyleNotes,
                 Confidence = latestDraft.Confidence
             },
@@ -887,7 +978,12 @@ public class WebReadService : IWebReadService
 
         var traits = await _stateProfileRepository.GetProfileTraitsBySnapshotIdAsync(snapshot.Id, ct);
         var topTraits = traits
-            .Where(x => x.TraitKey is not "what_works" and not "what_fails")
+            .Where(x => x.TraitKey is not "what_works"
+                and not "what_fails"
+                and not "participant_patterns"
+                and not "pair_dynamics"
+                and not "repeated_interaction_modes"
+                and not "changes_over_time")
             .OrderByDescending(x => x.Confidence)
             .ThenByDescending(x => x.Stability)
             .Take(6)
@@ -904,6 +1000,14 @@ public class WebReadService : IWebReadService
             ?? "No clear pattern yet.";
         var whatFails = traits.FirstOrDefault(x => x.TraitKey == "what_fails")?.ValueLabel
             ?? "No clear anti-pattern yet.";
+        var participantPatterns = traits.FirstOrDefault(x => x.TraitKey == "participant_patterns")?.ValueLabel
+            ?? "Participant pattern not stabilized yet.";
+        var pairDynamics = traits.FirstOrDefault(x => x.TraitKey == "pair_dynamics")?.ValueLabel
+            ?? "Pair dynamics need more evidence.";
+        var repeatedInteractionModes = traits.FirstOrDefault(x => x.TraitKey == "repeated_interaction_modes")?.ValueLabel
+            ?? "Repeated interaction modes are not yet explicit.";
+        var changesOverTime = traits.FirstOrDefault(x => x.TraitKey == "changes_over_time")?.ValueLabel
+            ?? "Change-over-time signal is limited.";
 
         return new ProfileSubjectReadModel
         {
@@ -914,7 +1018,11 @@ public class WebReadService : IWebReadService
             Stability = snapshot.Stability,
             TopTraits = topTraits,
             WhatWorks = whatWorks,
-            WhatFails = whatFails
+            WhatFails = whatFails,
+            ParticipantPatterns = participantPatterns,
+            PairDynamics = pairDynamics,
+            RepeatedInteractionModes = repeatedInteractionModes,
+            ChangesOverTime = changesOverTime
         };
     }
 
@@ -931,6 +1039,12 @@ public class WebReadService : IWebReadService
         var selfSenderId = senderCounts.FirstOrDefault()?.SenderId ?? 1L;
         var otherSenderId = senderCounts.FirstOrDefault(x => x.SenderId != selfSenderId)?.SenderId ?? (selfSenderId + 1);
         return (selfSenderId, otherSenderId);
+    }
+
+    private async Task<string> ResolvePairIdAsync(long chatId, CancellationToken ct)
+    {
+        var (selfSenderId, otherSenderId) = await ResolveSelfOtherSendersAsync(chatId, ct);
+        return $"{selfSenderId}:{otherSenderId}";
     }
 
     private static TimelinePeriodReadModel ToTimelinePeriod(Period x)
@@ -1184,6 +1298,59 @@ public class WebReadService : IWebReadService
         {
             return [];
         }
+    }
+
+    private static List<string> ParseEthicalFlags(string? riskJson)
+    {
+        if (string.IsNullOrWhiteSpace(riskJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(riskJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return [];
+            }
+
+            if (!doc.RootElement.TryGetProperty("ethical_flags", out var flagsNode) || flagsNode.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return flagsNode.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Take(6)
+                .Cast<string>()
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string BuildEthicalSummary(IReadOnlyCollection<string> riskLabels, IReadOnlyCollection<string> ethicalFlags)
+    {
+        var hasHardRisk = ethicalFlags.Contains("non_manipulation_violation_risk", StringComparer.OrdinalIgnoreCase)
+            || ethicalFlags.Contains("contact_at_any_cost_risk", StringComparer.OrdinalIgnoreCase);
+        if (hasHardRisk)
+        {
+            return "Ethical contract check: caution. Primary option includes pressure/manipulation risk markers and should be reviewed before execution.";
+        }
+
+        if (ethicalFlags.Contains("clarity_dignity_aligned", StringComparer.OrdinalIgnoreCase))
+        {
+            return "Ethical contract check: aligned with clarity, dignity, and non-manipulation constraints.";
+        }
+
+        return riskLabels.Any()
+            ? "Ethical contract check: no hard violation markers, but uncertainty/pressure risks remain."
+            : "Ethical contract check: neutral baseline.";
     }
 
     private static List<string> ParseJsonStringList(string? json, int limit)

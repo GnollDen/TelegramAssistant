@@ -38,6 +38,7 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
         {
             labels.Add("premature_escalation");
             risk += 0.24f;
+            labels.Add("anxious_overreach_risk");
         }
 
         if (option.ActionType is "wait" && context.ClarificationQuestions.Any(x => x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) && x.Status.Equals("open", StringComparison.OrdinalIgnoreCase)))
@@ -58,6 +59,34 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
             risk += 0.06f;
         }
 
+        if (aggressive && (context.HighUncertainty || conflictLevel >= 0.34f))
+        {
+            labels.Add("contact_at_any_cost_risk");
+            risk += 0.12f;
+        }
+
+        var pressureSensitive = context.ProfileTraits.Any(x =>
+            x.TraitKey == "what_fails"
+            && x.ValueLabel.Contains("pressure", StringComparison.OrdinalIgnoreCase));
+        if (pressureSensitive && aggressive)
+        {
+            labels.Add("dignity_risk");
+            risk += 0.1f;
+        }
+
+        if (ContainsAny(option.Summary, "force", "demand", "push", "prove", "win")
+            || ContainsAny(option.Purpose, "retain", "hook", "control", "win"))
+        {
+            labels.Add("manipulative_gain_risk");
+            risk += 0.25f;
+        }
+
+        if (option.ActionType is "deescalate" or "clarify" or "hold_rapport" or "wait")
+        {
+            labels.Add("clarity_dignity_aligned");
+            risk = Math.Max(0.05f, risk - 0.04f);
+        }
+
         if (labels.Count == 0)
         {
             labels.Add("normal_execution_risk");
@@ -68,5 +97,15 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
             Labels = labels.ToList(),
             RiskScore = Math.Clamp(risk, 0f, 1f)
         };
+    }
+
+    private static bool ContainsAny(string? text, params string[] needles)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return needles.Any(x => text.Contains(x, StringComparison.OrdinalIgnoreCase));
     }
 }

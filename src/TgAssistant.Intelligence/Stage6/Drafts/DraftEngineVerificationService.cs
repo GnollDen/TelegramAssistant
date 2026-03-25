@@ -127,6 +127,17 @@ public class DraftEngineVerificationService
             throw new InvalidOperationException("Draft smoke failed: style shaping markers were not preserved in style notes.");
         }
 
+        if (!safeDraft.Record.StyleNotes.Contains("style_contract=avoid_preachy_avoid_service_tone_avoid_anxious_overexplaining_avoid_emotional_overfilling", StringComparison.OrdinalIgnoreCase)
+            || !conflictDraft.Record.StyleNotes.Contains("style_contract=avoid_preachy_avoid_service_tone_avoid_anxious_overexplaining_avoid_emotional_overfilling", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Draft smoke failed: personal-style contract guardrails were not recorded.");
+        }
+
+        if (!conflictDraft.Record.StyleNotes.Contains("desired_tone=more_direct", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Draft smoke failed: desired tone was not applied to draft alternatives.");
+        }
+
         if (conflictDraft.Record.MainDraft.Length <= safeDraft.Record.MainDraft.Length)
         {
             throw new InvalidOperationException("Draft smoke failed: style shaping effect on draft length was not demonstrated.");

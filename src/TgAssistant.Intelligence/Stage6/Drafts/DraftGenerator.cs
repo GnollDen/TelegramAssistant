@@ -120,8 +120,8 @@ public class DraftGenerator : IDraftGenerator
     {
         return variant switch
         {
-            1 => $"Без давления: {Shorten(summary, 120)}",
-            _ => $"Если тебе ок, можем в удобный момент вернуться к теме. {Shorten(whenToUse, 110)}"
+            1 => $"Более мягко: {Shorten(summary, 120)}",
+            _ => $"Более прямо: предлагаю коротко согласовать следующий шаг без лишних деталей. {Shorten(whenToUse, 90)}"
         };
     }
 
@@ -129,8 +129,8 @@ public class DraftGenerator : IDraftGenerator
     {
         return variant switch
         {
-            1 => $"Low-pressure version: {Shorten(summary, 120)}",
-            _ => $"If you're open, we can revisit this at a better time. {Shorten(whenToUse, 110)}"
+            1 => $"Softer version: {Shorten(summary, 120)}",
+            _ => $"More direct version: let's align on one concrete next step. {Shorten(whenToUse, 90)}"
         };
     }
 

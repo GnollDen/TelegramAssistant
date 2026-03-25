@@ -203,6 +203,7 @@ public class BotCommandService : IBotCommandService
         sb.AppendLine($"next: {primary.ActionType} — {primary.Summary}");
         sb.AppendLine($"purpose: {primary.Purpose}");
         sb.AppendLine($"risk: {ShortRisk(primary.Risk)}");
+        sb.AppendLine($"ethics: {EthicsNote(primary.Risk)}");
         sb.AppendLine($"when: {primary.WhenToUse}");
         sb.AppendLine($"micro-step: {result.MicroStep}");
 
@@ -249,8 +250,8 @@ public class BotCommandService : IBotCommandService
 
         var sb = new StringBuilder();
         sb.AppendLine($"main: {result.Record.MainDraft}");
-        sb.AppendLine($"alt 1: {result.Record.AltDraft1 ?? "-"}");
-        sb.AppendLine($"alt 2: {result.Record.AltDraft2 ?? "-"}");
+        sb.AppendLine($"softer alternative: {result.Record.AltDraft1 ?? "-"}");
+        sb.AppendLine($"more direct alternative: {result.Record.AltDraft2 ?? "-"}");
         sb.AppendLine($"why: strategy-linked draft (conf {result.Record.Confidence:0.00})");
         if (result.HasIntentConflict)
         {
@@ -829,20 +830,44 @@ public class BotCommandService : IBotCommandService
             return (null, null);
         }
 
-        var tokens = args.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        if (tokens.Count == 0)
+        var trimmed = args.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
         {
             return (null, null);
         }
 
-        var toneToken = tokens.FirstOrDefault(x => x.StartsWith("tone=", StringComparison.OrdinalIgnoreCase));
-        var tone = toneToken == null ? null : toneToken[5..].Trim();
-        if (toneToken != null)
+        string? tone = null;
+        var toneIndex = trimmed.IndexOf("tone=", StringComparison.OrdinalIgnoreCase);
+        if (toneIndex >= 0)
         {
-            tokens.Remove(toneToken);
+            var raw = trimmed[(toneIndex + 5)..].TrimStart();
+            if (raw.StartsWith('"'))
+            {
+                var closing = raw.IndexOf('"', 1);
+                if (closing > 1)
+                {
+                    tone = raw[1..closing].Trim();
+                    trimmed = (trimmed[..toneIndex] + " " + raw[(closing + 1)..]).Trim();
+                }
+                else
+                {
+                    tone = raw.Trim('"').Trim();
+                    trimmed = trimmed[..toneIndex].Trim();
+                }
+            }
+            else
+            {
+                var firstToken = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+                tone = firstToken?.Trim();
+                if (!string.IsNullOrWhiteSpace(firstToken))
+                {
+                    var removeToken = $"tone={firstToken}";
+                    trimmed = trimmed.Replace(removeToken, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+                }
+            }
         }
 
-        var notes = string.Join(' ', tokens).Trim();
+        var notes = trimmed.Replace("tone=", string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
         return (string.IsNullOrWhiteSpace(tone) ? null : tone, string.IsNullOrWhiteSpace(notes) ? null : notes);
     }
 
@@ -852,7 +877,7 @@ public class BotCommandService : IBotCommandService
             "scope: set BotChat defaults or pass case=<id> chat=<id> in command",
             "/state - current state summary",
             "/next - ranked next-move strategy",
-            "/draft [tone=...] [notes] - main draft + 2 alternatives",
+            "/draft [tone=...] [notes] - main + softer + more direct alternatives",
             "/review <text> - risk review with safer/natural rewrites",
             "/gaps - top clarification question",
             "/answer <text> or /answer <question-id> | <text>",
@@ -978,5 +1003,52 @@ public class BotCommandService : IBotCommandService
         }
 
         return $"[{period.StartAt:yyyy-MM-dd}..{end}] {period.Label}; open_q={period.OpenQuestionsCount}; conf={period.InterpretationConfidence:0.00}; {summary}";
+    }
+
+    private static string EthicsNote(string riskJson)
+    {
+        if (string.IsNullOrWhiteSpace(riskJson))
+        {
+            return "neutral baseline";
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(riskJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("ethical_flags", out var flagsNode)
+                || flagsNode.ValueKind != JsonValueKind.Array)
+            {
+                return "no explicit ethical flags";
+            }
+
+            var flags = flagsNode.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Cast<string>()
+                .ToList();
+            if (flags.Count == 0)
+            {
+                return "no explicit ethical flags";
+            }
+
+            if (flags.Any(x => x.Contains("violation", StringComparison.OrdinalIgnoreCase)
+                               || x.Contains("contact_at_any_cost", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "caution: pressure/manipulation risk detected";
+            }
+
+            if (flags.Any(x => x.Contains("clarity_dignity_aligned", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "aligned with clarity/dignity/non-manipulation";
+            }
+
+            return string.Join(", ", flags.Take(3));
+        }
+        catch (JsonException)
+        {
+            return "unreadable risk payload";
+        }
     }
 }
