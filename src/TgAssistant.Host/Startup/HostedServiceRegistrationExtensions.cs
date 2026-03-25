@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Intelligence.Stage5;
+using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Bot;
@@ -82,7 +83,11 @@ public static class HostedServiceRegistrationExtensions
         return services;
     }
 
-    private static IServiceCollection AddStage6HostedServices(this IServiceCollection services) => services;
+    private static IServiceCollection AddStage6HostedServices(this IServiceCollection services)
+    {
+        services.AddHostedService<Stage6AutoCaseGenerationWorkerService>();
+        return services;
+    }
 
     private static IServiceCollection AddWebHostedServices(this IServiceCollection services) => services;
 
