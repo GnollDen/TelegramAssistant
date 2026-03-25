@@ -132,6 +132,20 @@ public class WebReadVerificationService
             throw new InvalidOperationException("Web smoke failed: focused /outcomes empty state did not render.");
         }
 
+        var sortedInbox = await _webRouteRenderer.RenderAsync("/inbox?sortBy=updated&sortDirection=asc", request, ct)
+            ?? throw new InvalidOperationException("Web smoke failed: sorted /inbox route did not resolve.");
+        if (!sortedInbox.Html.Contains("sort=updated:asc", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Web smoke failed: queue sort marker did not render for updated/asc.");
+        }
+
+        var emptyInbox = await _webRouteRenderer.RenderAsync("/inbox?q=definitely-no-matches-for-web-smoke", request, ct)
+            ?? throw new InvalidOperationException("Web smoke failed: filtered /inbox route did not resolve.");
+        if (!emptyInbox.Html.Contains("No Results", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Web smoke failed: queue empty/no-results state did not render.");
+        }
+
         _ = rendered.Count;
     }
 

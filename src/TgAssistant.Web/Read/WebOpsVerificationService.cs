@@ -274,8 +274,16 @@ public class WebOpsVerificationService
             }
         }
 
-        var rejectPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=reject", request, ct)
+        var rejectConfirmPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=reject", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /case-action reject route did not resolve.");
+        if (string.IsNullOrWhiteSpace(rejectConfirmPage.Html)
+            || !rejectConfirmPage.Html.Contains("Confirmation Required", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: reject action did not require confirmation.");
+        }
+
+        var rejectPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=reject&confirm=1", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-action reject confirm route did not resolve.");
         if (string.IsNullOrWhiteSpace(rejectPage.Html)
             || !rejectPage.Html.Contains("success=True", StringComparison.OrdinalIgnoreCase))
         {
@@ -288,8 +296,16 @@ public class WebOpsVerificationService
             throw new InvalidOperationException("Ops web smoke failed: reject action did not persist rejected case status.");
         }
 
-        var resolvePage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=resolve", request, ct)
+        var resolveConfirmPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=resolve", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /case-action resolve route did not resolve.");
+        if (string.IsNullOrWhiteSpace(resolveConfirmPage.Html)
+            || !resolveConfirmPage.Html.Contains("Confirmation Required", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: resolve action did not require confirmation.");
+        }
+
+        var resolvePage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=resolve&confirm=1", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-action resolve confirm route did not resolve.");
         if (string.IsNullOrWhiteSpace(resolvePage.Html)
             || !resolvePage.Html.Contains("success=True", StringComparison.OrdinalIgnoreCase))
         {
@@ -314,6 +330,20 @@ public class WebOpsVerificationService
         if (stage6CaseAfterRefresh == null || !stage6CaseAfterRefresh.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: refresh action did not return case to ready status.");
+        }
+
+        var invalidCaseDetailPage = await _webRouteRenderer.RenderAsync($"/case-detail?caseId={Guid.NewGuid()}", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: invalid /case-detail route did not resolve.");
+        if (!invalidCaseDetailPage.Html.Contains("Case Not Found", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: invalid case detail state is not explicit.");
+        }
+
+        var missingArtifactPage = await _webRouteRenderer.RenderAsync("/artifact-detail?artifactType=unknown_artifact", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: missing artifact route did not resolve.");
+        if (!missingArtifactPage.Html.Contains("Artifact Unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: missing artifact state is not explicit.");
         }
 
         var answerPage = await _webRouteRenderer.RenderAsync(
@@ -412,6 +442,24 @@ public class WebOpsVerificationService
             || !failedEvalPage.Html.Contains("ops visibility prior run", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: failed eval filter is not visible.");
+        }
+
+        var repeatRoutes = new[]
+        {
+            "/inbox",
+            $"/case-detail?caseId={stage6Case.Id}",
+            $"/case-evidence?caseId={stage6Case.Id}",
+            $"/artifact-detail?artifactType={Stage6ArtifactTypes.Dossier}",
+            "/inbox?status=all"
+        };
+        foreach (var route in repeatRoutes)
+        {
+            var page = await _webRouteRenderer.RenderAsync(route, request, ct)
+                ?? throw new InvalidOperationException($"Ops web smoke failed: repeat navigation route '{route}' did not resolve.");
+            if (string.IsNullOrWhiteSpace(page.Html) || !page.Html.Contains("<h1>", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Ops web smoke failed: repeat navigation route '{route}' rendered empty content.");
+            }
         }
 
         var candidatesPage = await _webRouteRenderer.RenderAsync("/ops-ab-candidates?target=24", request, ct)
