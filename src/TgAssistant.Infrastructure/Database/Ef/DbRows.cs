@@ -741,6 +741,70 @@ public class DbStage6Artifact
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbStage6Case
+{
+    public Guid Id { get; set; }
+    public long ScopeCaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string ScopeType { get; set; } = string.Empty;
+    public string CaseType { get; set; } = string.Empty;
+    public string? CaseSubtype { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public float? Confidence { get; set; }
+    public string ReasonSummary { get; set; } = string.Empty;
+    public string? ClarificationKind { get; set; }
+    public string? QuestionText { get; set; }
+    public string? ResponseMode { get; set; }
+    public string? ResponseChannelHint { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public string SubjectRefsJson { get; set; } = "[]";
+    public string TargetArtifactTypesJson { get; set; } = "[]";
+    public string ReopenTriggerRulesJson { get; set; } = "[]";
+    public string ProvenanceJson { get; set; } = "{}";
+    public string SourceObjectType { get; set; } = string.Empty;
+    public string SourceObjectId { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? ReadyAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public DateTime? StaleAt { get; set; }
+}
+
+public class DbStage6CaseLink
+{
+    public Guid Id { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public string LinkedObjectType { get; set; } = string.Empty;
+    public string LinkedObjectId { get; set; } = string.Empty;
+    public string LinkRole { get; set; } = string.Empty;
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbStage6UserContextEntry
+{
+    public Guid Id { get; set; }
+    public Guid? Stage6CaseId { get; set; }
+    public long ScopeCaseId { get; set; }
+    public long ChatId { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public Guid? ClarificationQuestionId { get; set; }
+    public string ContentText { get; set; } = string.Empty;
+    public string? StructuredPayloadJson { get; set; }
+    public string AppliesToRefsJson { get; set; } = "[]";
+    public string EnteredVia { get; set; } = string.Empty;
+    public float UserReportedCertainty { get; set; }
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public Guid? SupersedesContextEntryId { get; set; }
+    public string ConflictsWithRefsJson { get; set; } = "[]";
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbBudgetOperationalState
 {
     public string PathKey { get; set; } = string.Empty;

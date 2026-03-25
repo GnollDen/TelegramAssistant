@@ -424,6 +424,32 @@ public interface IStage6ArtifactRepository
     Task<bool> TouchReusedAsync(Guid artifactId, DateTime reusedAtUtc, CancellationToken ct = default);
 }
 
+public interface IStage6CaseRepository
+{
+    Task<Stage6CaseRecord> UpsertAsync(Stage6CaseRecord record, CancellationToken ct = default);
+    Task<Stage6CaseRecord?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<Stage6CaseRecord?> GetBySourceAsync(
+        long scopeCaseId,
+        string caseType,
+        string sourceObjectType,
+        string sourceObjectId,
+        CancellationToken ct = default);
+    Task<List<Stage6CaseRecord>> GetCasesAsync(
+        long scopeCaseId,
+        string? status = null,
+        string? caseType = null,
+        CancellationToken ct = default);
+    Task<bool> UpdateStatusAsync(Guid id, string status, string actor, string? reason = null, CancellationToken ct = default);
+    Task<Stage6CaseLink> UpsertLinkAsync(Stage6CaseLink link, CancellationToken ct = default);
+    Task<List<Stage6CaseLink>> GetLinksAsync(Guid stage6CaseId, CancellationToken ct = default);
+}
+
+public interface IStage6UserContextRepository
+{
+    Task<Stage6UserContextEntry> CreateAsync(Stage6UserContextEntry entry, CancellationToken ct = default);
+    Task<List<Stage6UserContextEntry>> GetByScopeCaseAsync(long scopeCaseId, int limit = 200, CancellationToken ct = default);
+}
+
 public interface IInboxConflictRepository
 {
     Task<InboxItem> CreateInboxItemAsync(InboxItem item, CancellationToken ct = default);

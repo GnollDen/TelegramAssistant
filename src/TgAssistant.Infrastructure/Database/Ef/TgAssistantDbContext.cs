@@ -53,6 +53,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDependencyLink> DependencyLinks => Set<DbDependencyLink>();
     public DbSet<DbDomainReviewEvent> DomainReviewEvents => Set<DbDomainReviewEvent>();
     public DbSet<DbStage6Artifact> Stage6Artifacts => Set<DbStage6Artifact>();
+    public DbSet<DbStage6Case> Stage6Cases => Set<DbStage6Case>();
+    public DbSet<DbStage6CaseLink> Stage6CaseLinks => Set<DbStage6CaseLink>();
+    public DbSet<DbStage6UserContextEntry> Stage6UserContextEntries => Set<DbStage6UserContextEntry>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -964,6 +967,83 @@ public class TgAssistantDbContext : DbContext
                 .IsUnique()
                 .HasFilter("is_current = TRUE");
             e.HasIndex(x => new { x.CaseId, x.ChatId, x.ArtifactType, x.GeneratedAt });
+        });
+
+        modelBuilder.Entity<DbStage6Case>(e =>
+        {
+            e.ToTable("stage6_cases");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeCaseId).HasColumnName("scope_case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.ScopeType).HasColumnName("scope_type");
+            e.Property(x => x.CaseType).HasColumnName("case_type");
+            e.Property(x => x.CaseSubtype).HasColumnName("case_subtype");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.Priority).HasColumnName("priority");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.ReasonSummary).HasColumnName("reason_summary");
+            e.Property(x => x.ClarificationKind).HasColumnName("clarification_kind");
+            e.Property(x => x.QuestionText).HasColumnName("question_text");
+            e.Property(x => x.ResponseMode).HasColumnName("response_mode");
+            e.Property(x => x.ResponseChannelHint).HasColumnName("response_channel_hint");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.SubjectRefsJson).HasColumnName("subject_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.TargetArtifactTypesJson).HasColumnName("target_artifact_types_json").HasColumnType("jsonb");
+            e.Property(x => x.ReopenTriggerRulesJson).HasColumnName("reopen_trigger_rules_json").HasColumnType("jsonb");
+            e.Property(x => x.ProvenanceJson).HasColumnName("provenance_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceObjectType).HasColumnName("source_object_type");
+            e.Property(x => x.SourceObjectId).HasColumnName("source_object_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.Property(x => x.ReadyAt).HasColumnName("ready_at");
+            e.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            e.Property(x => x.RejectedAt).HasColumnName("rejected_at");
+            e.Property(x => x.StaleAt).HasColumnName("stale_at");
+            e.HasIndex(x => new { x.ScopeCaseId, x.CaseType, x.SourceObjectType, x.SourceObjectId }).IsUnique();
+            e.HasIndex(x => new { x.ScopeCaseId, x.Status, x.Priority, x.UpdatedAt });
+            e.HasIndex(x => new { x.ScopeCaseId, x.CaseType, x.Status, x.UpdatedAt });
+        });
+
+        modelBuilder.Entity<DbStage6CaseLink>(e =>
+        {
+            e.ToTable("stage6_case_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Stage6CaseId).HasColumnName("stage6_case_id");
+            e.Property(x => x.LinkedObjectType).HasColumnName("linked_object_type");
+            e.Property(x => x.LinkedObjectId).HasColumnName("linked_object_id");
+            e.Property(x => x.LinkRole).HasColumnName("link_role");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.Stage6CaseId, x.LinkedObjectType, x.LinkedObjectId, x.LinkRole }).IsUnique();
+            e.HasIndex(x => new { x.LinkedObjectType, x.LinkedObjectId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbStage6UserContextEntry>(e =>
+        {
+            e.ToTable("stage6_user_context_entries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.Stage6CaseId).HasColumnName("stage6_case_id");
+            e.Property(x => x.ScopeCaseId).HasColumnName("scope_case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.SourceKind).HasColumnName("source_kind");
+            e.Property(x => x.ClarificationQuestionId).HasColumnName("clarification_question_id");
+            e.Property(x => x.ContentText).HasColumnName("content_text");
+            e.Property(x => x.StructuredPayloadJson).HasColumnName("structured_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.AppliesToRefsJson).HasColumnName("applies_to_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.EnteredVia).HasColumnName("entered_via");
+            e.Property(x => x.UserReportedCertainty).HasColumnName("user_reported_certainty");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.SupersedesContextEntryId).HasColumnName("supersedes_context_entry_id");
+            e.Property(x => x.ConflictsWithRefsJson).HasColumnName("conflicts_with_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ScopeCaseId, x.CreatedAt });
+            e.HasIndex(x => new { x.Stage6CaseId, x.CreatedAt });
         });
 
         modelBuilder.Entity<DbBudgetOperationalState>(e =>

@@ -60,6 +60,8 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
         services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
         services.AddSingleton<IStage6ArtifactRepository, Stage6ArtifactRepository>();
+        services.AddSingleton<IStage6CaseRepository, Stage6CaseRepository>();
+        services.AddSingleton<IStage6UserContextRepository, Stage6UserContextRepository>();
         services.AddSingleton<IStage6ArtifactFreshnessService, Stage6ArtifactFreshnessService>();
         services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
         services.AddSingleton<IEvalRepository, EvalRepository>();
