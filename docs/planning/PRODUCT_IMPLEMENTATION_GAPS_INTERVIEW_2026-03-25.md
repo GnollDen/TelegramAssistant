@@ -171,6 +171,8 @@ Bot should handle:
 - `/timeline`
 - urgent items
 - quick decisions
+- primary fast clarification intake
+- short user-supplied context answers
 
 Web should handle:
 - dossier
@@ -179,6 +181,8 @@ Web should handle:
 - artifact history
 - deep review
 - richer operator controls
+- expanded clarification review
+- long-form user context, corrections, and evidence inspection
 
 ### D.2 Expected daily operator flow
 
@@ -354,6 +358,29 @@ Add to working backlog:
 - Relational pattern output contract
 - Ethical strategy contract
 - Personal style calibration contract
+- Behavioral profile contract
+- User-supplied context source contract
+
+## P1 Interactive Clarification Layer
+
+Add to working backlog:
+- system-detected missing-context cases
+- structured clarification prompts grounded in messages, dates, people, and missing evidence
+- explicit separation between:
+  - observed evidence
+  - user-reported context
+  - system inference
+- case closure/reopen rules after user answer
+- timeline/state/dossier refresh after clarification input
+
+## P2 Behavioral Context Expansion
+
+Add to working backlog:
+- behavioral profile artifact
+- use of user-supplied context in behavioral reasoning
+- contradiction handling between user report and message evidence
+- confidence rules for subjective inputs
+- strategy implications based on repeated behavioral patterns
 
 ## P1 Operator Workflow
 
