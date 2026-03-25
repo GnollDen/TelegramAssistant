@@ -1,10 +1,20 @@
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using System.Text.Json;
 
 namespace TgAssistant.Web.Read;
 
 public class WebOpsVerificationService
 {
+    private static readonly string[] W2ArtifactTypes =
+    [
+        Stage6ArtifactTypes.Dossier,
+        Stage6ArtifactTypes.CurrentState,
+        Stage6ArtifactTypes.Strategy,
+        Stage6ArtifactTypes.Draft,
+        Stage6ArtifactTypes.Review
+    ];
+
     private readonly IWebRouteRenderer _webRouteRenderer;
     private readonly IMessageRepository _messageRepository;
     private readonly IChatSessionRepository _chatSessionRepository;
@@ -17,6 +27,7 @@ public class WebOpsVerificationService
     private readonly IBudgetOpsRepository _budgetOpsRepository;
     private readonly IEvalRepository _evalRepository;
     private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
     private readonly IStage6FeedbackRepository _stage6FeedbackRepository;
     private readonly IStage6CaseOutcomeRepository _stage6CaseOutcomeRepository;
 
@@ -33,6 +44,7 @@ public class WebOpsVerificationService
         IBudgetOpsRepository budgetOpsRepository,
         IEvalRepository evalRepository,
         IStage6CaseRepository stage6CaseRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
         IStage6FeedbackRepository stage6FeedbackRepository,
         IStage6CaseOutcomeRepository stage6CaseOutcomeRepository)
     {
@@ -48,6 +60,7 @@ public class WebOpsVerificationService
         _budgetOpsRepository = budgetOpsRepository;
         _evalRepository = evalRepository;
         _stage6CaseRepository = stage6CaseRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
         _stage6FeedbackRepository = stage6FeedbackRepository;
         _stage6CaseOutcomeRepository = stage6CaseOutcomeRepository;
     }
@@ -205,11 +218,17 @@ public class WebOpsVerificationService
                 ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: clarification question did not materialize as stage6 case.");
 
+        await SeedStage6ArtifactsAsync(caseId, chatId, stage6Case, ct);
+
         var inboxPage = await _webRouteRenderer.RenderAsync("/inbox", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /inbox route did not resolve.");
         if (string.IsNullOrWhiteSpace(inboxPage.Html)
             || !inboxPage.Html.Contains("Stage 6 Queue", StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains(question.QuestionText, StringComparison.OrdinalIgnoreCase))
+            || !inboxPage.Html.Contains(question.QuestionText, StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("priority=", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("status=", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("confidence=", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("reason:", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: /inbox route does not show seeded stage6 queue items.");
         }
@@ -223,6 +242,60 @@ public class WebOpsVerificationService
             throw new InvalidOperationException("Ops web smoke failed: case detail route does not show evidence-first clarification workflow.");
         }
 
+        foreach (var artifactType in W2ArtifactTypes)
+        {
+            var artifactPage = await _webRouteRenderer.RenderAsync($"/artifact-detail?artifactType={Uri.EscapeDataString(artifactType)}", request, ct)
+                ?? throw new InvalidOperationException($"Ops web smoke failed: /artifact-detail for '{artifactType}' did not resolve.");
+            if (string.IsNullOrWhiteSpace(artifactPage.Html)
+                || !artifactPage.Html.Contains("Artifact Detail", StringComparison.OrdinalIgnoreCase)
+                || !artifactPage.Html.Contains(artifactType, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Ops web smoke failed: artifact detail for '{artifactType}' is not operator-usable.");
+            }
+        }
+
+        var rejectPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=reject", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-action reject route did not resolve.");
+        if (string.IsNullOrWhiteSpace(rejectPage.Html)
+            || !rejectPage.Html.Contains("success=True", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: reject action did not report success.");
+        }
+
+        var stage6CaseAfterReject = await _stage6CaseRepository.GetByIdAsync(stage6Case.Id, ct);
+        if (stage6CaseAfterReject == null || !stage6CaseAfterReject.Status.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: reject action did not persist rejected case status.");
+        }
+
+        var resolvePage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=resolve", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-action resolve route did not resolve.");
+        if (string.IsNullOrWhiteSpace(resolvePage.Html)
+            || !resolvePage.Html.Contains("success=True", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: resolve action did not report success.");
+        }
+
+        var stage6CaseAfterResolve = await _stage6CaseRepository.GetByIdAsync(stage6Case.Id, ct);
+        if (stage6CaseAfterResolve == null || !stage6CaseAfterResolve.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: resolve action did not persist resolved case status.");
+        }
+
+        var refreshPage = await _webRouteRenderer.RenderAsync($"/case-action?caseId={stage6Case.Id}&action=refresh", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-action refresh route did not resolve.");
+        if (string.IsNullOrWhiteSpace(refreshPage.Html)
+            || !refreshPage.Html.Contains("Case Action", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: refresh action page did not render.");
+        }
+
+        var stage6CaseAfterRefresh = await _stage6CaseRepository.GetByIdAsync(stage6Case.Id, ct);
+        if (stage6CaseAfterRefresh == null || !stage6CaseAfterRefresh.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: refresh action did not return case to ready status.");
+        }
+
         var answerPage = await _webRouteRenderer.RenderAsync(
             $"/clarification-answer?caseId={stage6Case.Id}&answer={Uri.EscapeDataString("web smoke answer")}",
             request,
@@ -233,6 +306,12 @@ public class WebOpsVerificationService
             || !answerPage.Html.Contains("web smoke answer", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: clarification answer intake route did not persist/render answer.");
+        }
+
+        var stage6CaseAfterAnswer = await _stage6CaseRepository.GetByIdAsync(stage6Case.Id, ct);
+        if (stage6CaseAfterAnswer == null || !stage6CaseAfterAnswer.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: clarification answer did not persist resolved case status.");
         }
 
         var feedbackRows = await _stage6FeedbackRepository.GetByCaseAsync(stage6Case.Id, 20, ct);
@@ -332,6 +411,58 @@ public class WebOpsVerificationService
             || !candidatesJsonPage.Html.Contains("sourceArtifacts", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: /ops-ab-candidates json output is not readable/stable.");
+        }
+    }
+
+    private async Task SeedStage6ArtifactsAsync(long caseId, long chatId, Stage6CaseRecord stage6Case, CancellationToken ct)
+    {
+        var scopeKey = Stage6ArtifactTypes.ChatScope(chatId);
+        var targetArtifactTypes = ParseJsonStringArray(stage6Case.TargetArtifactTypesJson);
+        var artifactTypes = W2ArtifactTypes
+            .Concat(targetArtifactTypes)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var artifactType in artifactTypes)
+        {
+            _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+            {
+                ArtifactType = artifactType,
+                CaseId = caseId,
+                ChatId = chatId,
+                ScopeKey = scopeKey,
+                PayloadObjectType = "ops_web_smoke",
+                PayloadObjectId = stage6Case.Id.ToString(),
+                PayloadJson = $"{{\"artifactType\":\"{artifactType}\",\"stage6CaseId\":\"{stage6Case.Id:D}\"}}",
+                FreshnessBasisHash = $"ops_web_smoke:{artifactType}",
+                FreshnessBasisJson = "{\"source\":\"ops_web_smoke\"}",
+                GeneratedAt = DateTime.UtcNow,
+                RefreshedAt = DateTime.UtcNow,
+                StaleAt = DateTime.UtcNow.AddHours(2),
+                IsStale = false,
+                SourceType = "smoke",
+                SourceId = "ops_web",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }, ct);
+        }
+    }
+
+    private static List<string> ParseJsonStringArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            var rows = JsonSerializer.Deserialize<List<string>>(json);
+            return rows?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToList() ?? [];
+        }
+        catch
+        {
+            return [];
         }
     }
 
