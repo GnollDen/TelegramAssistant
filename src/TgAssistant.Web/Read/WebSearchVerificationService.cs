@@ -230,11 +230,20 @@ public class WebSearchVerificationService
 
         var dossier = await _webRouteRenderer.RenderAsync("/dossier", request, ct)
             ?? throw new InvalidOperationException("Search smoke failed: /dossier route did not resolve.");
-        if (!dossier.Html.Contains("Confirmed", StringComparison.OrdinalIgnoreCase)
-            || !dossier.Html.Contains("Hypotheses", StringComparison.OrdinalIgnoreCase)
-            || !dossier.Html.Contains("Conflicts", StringComparison.OrdinalIgnoreCase))
+        if (!dossier.Html.Contains("Observed Facts", StringComparison.OrdinalIgnoreCase)
+            || !dossier.Html.Contains("Likely Interpretation", StringComparison.OrdinalIgnoreCase)
+            || !dossier.Html.Contains("Uncertainties / Alternative Readings", StringComparison.OrdinalIgnoreCase)
+            || !dossier.Html.Contains("Missing Information", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Search smoke failed: dossier sections are missing.");
+        }
+
+        if (!dossier.Html.Contains("strong", StringComparison.OrdinalIgnoreCase)
+            && !dossier.Html.Contains("medium", StringComparison.OrdinalIgnoreCase)
+            && !dossier.Html.Contains("weak", StringComparison.OrdinalIgnoreCase)
+            && !dossier.Html.Contains("contradictory", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Search smoke failed: dossier signal strength markers are missing.");
         }
 
         if (!dossier.Html.Contains(token, StringComparison.OrdinalIgnoreCase))
