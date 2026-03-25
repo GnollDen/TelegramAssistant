@@ -16,6 +16,7 @@ public class WebOpsVerificationService
     private readonly IOfflineEventRepository _offlineEventRepository;
     private readonly IBudgetOpsRepository _budgetOpsRepository;
     private readonly IEvalRepository _evalRepository;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
 
     public WebOpsVerificationService(
         IWebRouteRenderer webRouteRenderer,
@@ -28,7 +29,8 @@ public class WebOpsVerificationService
         IStrategyDraftRepository strategyDraftRepository,
         IOfflineEventRepository offlineEventRepository,
         IBudgetOpsRepository budgetOpsRepository,
-        IEvalRepository evalRepository)
+        IEvalRepository evalRepository,
+        IStage6CaseRepository stage6CaseRepository)
     {
         _webRouteRenderer = webRouteRenderer;
         _messageRepository = messageRepository;
@@ -41,6 +43,7 @@ public class WebOpsVerificationService
         _offlineEventRepository = offlineEventRepository;
         _budgetOpsRepository = budgetOpsRepository;
         _evalRepository = evalRepository;
+        _stage6CaseRepository = stage6CaseRepository;
     }
 
     public async Task RunAsync(CancellationToken ct = default)
@@ -172,13 +175,48 @@ public class WebOpsVerificationService
             Actor = "ops_web_smoke"
         };
 
+        var stage6Case = await _stage6CaseRepository.GetBySourceAsync(
+            caseId,
+            Stage6CaseTypes.NeedsInput,
+            "clarification_question",
+            question.Id.ToString(),
+            ct)
+            ?? await _stage6CaseRepository.GetBySourceAsync(
+                caseId,
+                Stage6CaseTypes.ClarificationMissingData,
+                "clarification_question",
+                question.Id.ToString(),
+                ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: clarification question did not materialize as stage6 case.");
+
         var inboxPage = await _webRouteRenderer.RenderAsync("/inbox", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /inbox route did not resolve.");
         if (string.IsNullOrWhiteSpace(inboxPage.Html)
-            || !inboxPage.Html.Contains("Inbox", StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains("Blocking clarification", StringComparison.OrdinalIgnoreCase))
+            || !inboxPage.Html.Contains("Stage 6 Queue", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains(question.QuestionText, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Ops web smoke failed: /inbox route does not show seeded inbox items.");
+            throw new InvalidOperationException("Ops web smoke failed: /inbox route does not show seeded stage6 queue items.");
+        }
+
+        var caseDetailPage = await _webRouteRenderer.RenderAsync($"/case-detail?caseId={stage6Case.Id}", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-detail route did not resolve.");
+        if (string.IsNullOrWhiteSpace(caseDetailPage.Html)
+            || !caseDetailPage.Html.Contains("Evidence First Context", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Clarification", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: case detail route does not show evidence-first clarification workflow.");
+        }
+
+        var answerPage = await _webRouteRenderer.RenderAsync(
+            $"/clarification-answer?caseId={stage6Case.Id}&answer={Uri.EscapeDataString("web smoke answer")}",
+            request,
+            ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /clarification-answer route did not resolve.");
+        if (string.IsNullOrWhiteSpace(answerPage.Html)
+            || !answerPage.Html.Contains("Clarification Answer", StringComparison.OrdinalIgnoreCase)
+            || !answerPage.Html.Contains("web smoke answer", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: clarification answer intake route did not persist/render answer.");
         }
 
         var historyPage = await _webRouteRenderer.RenderAsync("/history?objectType=clarification_question", request, ct)
