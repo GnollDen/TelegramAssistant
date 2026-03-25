@@ -132,6 +132,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IBudgetGuardrailService, BudgetGuardrailService>();
         services.AddSingleton<IEvalHarnessService, EvalHarnessService>();
         services.AddSingleton<BudgetVerificationService>();
+        services.AddSingleton<Stage6ExecutionDisciplineVerificationService>();
         services.AddSingleton<EvalVerificationService>();
         services.AddSingleton<LaunchReadinessVerificationService>();
         services.AddSingleton<Stage5ScopedRepairCommand>();

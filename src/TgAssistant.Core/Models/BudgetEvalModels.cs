@@ -38,6 +38,7 @@ public class BudgetPathDecision
     public decimal StageBudgetUsd { get; set; }
     public decimal ImportSpentUsd { get; set; }
     public decimal ImportBudgetUsd { get; set; }
+    public DateTime? BlockedUntilUtc { get; set; }
     public DateTime EvaluatedAt { get; set; } = DateTime.UtcNow;
 }
 

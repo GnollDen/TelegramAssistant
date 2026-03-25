@@ -55,7 +55,8 @@ public class BudgetGuardrailService : IBudgetGuardrailService
                     0m,
                     ResolveStageBudget(normalized.Modality),
                     0m,
-                    _settings.ImportBudgetUsd);
+                    _settings.ImportBudgetUsd,
+                    blockedUntilUtc);
                 return await SaveAndReturnAsync(decision, ct);
             }
         }
@@ -186,6 +187,7 @@ public class BudgetGuardrailService : IBudgetGuardrailService
             decision.StageBudgetUsd,
             decision.ImportSpentUsd,
             decision.ImportBudgetUsd,
+            blocked_until_utc = decision.BlockedUntilUtc,
             decision.EvaluatedAt
         });
 
@@ -252,7 +254,8 @@ public class BudgetGuardrailService : IBudgetGuardrailService
         decimal stageSpent,
         decimal stageBudget,
         decimal importSpent,
-        decimal importBudget)
+        decimal importBudget,
+        DateTime? blockedUntilUtc = null)
     {
         var pause = string.Equals(state, BudgetPathStates.HardPaused, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(state, BudgetPathStates.QuotaBlocked, StringComparison.OrdinalIgnoreCase);
@@ -271,6 +274,7 @@ public class BudgetGuardrailService : IBudgetGuardrailService
             StageBudgetUsd = stageBudget,
             ImportSpentUsd = importSpent,
             ImportBudgetUsd = importBudget,
+            BlockedUntilUtc = blockedUntilUtc,
             EvaluatedAt = DateTime.UtcNow
         };
     }
