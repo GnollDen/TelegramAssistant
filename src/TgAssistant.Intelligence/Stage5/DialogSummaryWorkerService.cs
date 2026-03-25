@@ -19,6 +19,7 @@ public class DialogSummaryWorkerService : BackgroundService
     private readonly AggregationSettings _aggregationSettings;
     private readonly IMessageRepository _messageRepository;
     private readonly IMessageExtractionRepository _messageExtractionRepository;
+    private readonly IPromptTemplateRepository _promptRepository;
     private readonly IChatDialogSummaryRepository _summaryRepository;
     private readonly IChatSessionRepository _chatSessionRepository;
     private readonly IAnalysisStateRepository _stateRepository;
@@ -33,6 +34,7 @@ public class DialogSummaryWorkerService : BackgroundService
         IOptions<AggregationSettings> aggregationSettings,
         IMessageRepository messageRepository,
         IMessageExtractionRepository messageExtractionRepository,
+        IPromptTemplateRepository promptRepository,
         IChatDialogSummaryRepository summaryRepository,
         IChatSessionRepository chatSessionRepository,
         IAnalysisStateRepository stateRepository,
@@ -46,6 +48,7 @@ public class DialogSummaryWorkerService : BackgroundService
         _aggregationSettings = aggregationSettings.Value;
         _messageRepository = messageRepository;
         _messageExtractionRepository = messageExtractionRepository;
+        _promptRepository = promptRepository;
         _summaryRepository = summaryRepository;
         _chatSessionRepository = chatSessionRepository;
         _stateRepository = stateRepository;
@@ -69,6 +72,7 @@ public class DialogSummaryWorkerService : BackgroundService
         }
 
         _logger.LogInformation("Stage5 summary worker started. model={Model}", _settings.SummaryModel);
+        await EnsureSummaryPromptAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -585,9 +589,10 @@ public class DialogSummaryWorkerService : BackgroundService
 
         try
         {
+            var summaryPrompt = await GetSummaryPromptAsync(ct);
             var response = await _analysisService.SummarizeDialogAsync(
                 string.IsNullOrWhiteSpace(_settings.SummaryModel) ? _settings.ExpensiveModel : _settings.SummaryModel,
-                SummaryPrompt,
+                summaryPrompt.SystemPrompt,
                 chatId,
                 scope,
                 periodStart,
@@ -808,25 +813,33 @@ public class DialogSummaryWorkerService : BackgroundService
         return session.Count > 0 && session.All(x => x.Source == MessageSource.Archive);
     }
 
+    private async Task EnsureSummaryPromptAsync(CancellationToken ct)
+    {
+        var contract = Stage5PromptCatalog.SessionSummary;
+        var existing = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        var managed = contract.ToTemplate();
+        if (existing != null &&
+            string.Equals(existing.Version, managed.Version, StringComparison.Ordinal) &&
+            string.Equals(existing.Checksum, managed.Checksum, StringComparison.Ordinal) &&
+            string.Equals(existing.SystemPrompt, managed.SystemPrompt, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _promptRepository.UpsertAsync(managed, ct);
+    }
+
+    private async Task<PromptTemplate> GetSummaryPromptAsync(CancellationToken ct)
+    {
+        var contract = Stage5PromptCatalog.SessionSummary;
+        var prompt = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        return prompt ?? contract.ToTemplate();
+    }
+
     private bool ShouldAutoFinalizeArchiveSession(DateTime sessionEndUtc)
     {
         var archiveThresholdHours = Math.Max(1, _aggregationSettings.ArchiveThresholdHours);
         return DateTime.UtcNow - sessionEndUtc >= TimeSpan.FromHours(archiveThresholdHours);
     }
 
-    private const string SummaryPrompt = """
-You are an analytical dialogue summarizer for long-term memory context.
-Return ONLY JSON object: {"summary":"..."}.
-
-Requirements:
-- summarize people, commitments, plans, schedule changes, conflicts, health/work/finance/location/contact updates
-- keep only durable, behaviorally relevant context and conversation trajectory
-- mention key named entities exactly as in messages
-- if `[PARTICIPANTS]` block is present, treat `pN` labels in message lines as participant references and resolve them to real names in summary text
-- if `[HISTORICAL_CONTEXT_HINTS]` is present, use it only as supporting continuity/disambiguation context; if it conflicts with current-session messages, trust the current session
-- avoid filler, jokes, and generic chatter unless it changes intent or relationship dynamics
-- keep it factual and concise (4-8 sentences)
-- no markdown, no extra fields
-CRITICAL: The summary MUST be in Russian. Even if the input is short or contains slang, provide a Russian response. Latin-only output is strictly forbidden.
-""";
 }

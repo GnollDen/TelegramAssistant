@@ -158,7 +158,9 @@ public class ExpensivePassResolver
                 var effective = ExtractionRefiner.FinalizeResolvedExtraction(resolved ?? candidate);
                 effective = ExtractionRefiner.RefineExtractionForMessage(effective, sourceMessage, _settings);
                 effective.MessageId = row.MessageId;
-                if (!ExtractionValidator.ValidateExtractionRecord(effective, out var validationError))
+                var enforceRussianOutput = sourceMessage != null &&
+                                           ExtractionSemanticContract.IsLikelyRussianText(MessageContentBuilder.BuildSemanticContent(sourceMessage));
+                if (!ExtractionValidator.ValidateExtractionRecord(effective, out var validationError, enforceRussianOutput))
                 {
                     _logger.LogWarning(
                         "Stage5 expensive validation rejected extraction_id={ExtractionId} message_id={MessageId}: {Reason}",
