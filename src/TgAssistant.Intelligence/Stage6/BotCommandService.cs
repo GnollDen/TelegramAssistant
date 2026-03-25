@@ -128,7 +128,7 @@ public class BotCommandService : IBotCommandService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Bot command failed. command={Command}", command);
-            return (true, $"Command failed: {command}. {ex.Message}");
+            return (true, $"Не удалось выполнить команду {command}. {ex.Message}");
         }
     }
 
@@ -221,7 +221,7 @@ public class BotCommandService : IBotCommandService
         var primary = result.Options.FirstOrDefault(x => x.IsPrimary) ?? result.Options.FirstOrDefault();
         if (primary == null)
         {
-            return "No strategy options available yet. Try /gaps first.";
+            return "Пока нет доступных стратегий. Начните с /gaps.";
         }
 
         var sb = new StringBuilder();
@@ -277,10 +277,10 @@ public class BotCommandService : IBotCommandService
         sb.AppendLine($"main: {result.Record.MainDraft}");
         sb.AppendLine($"softer alternative: {result.Record.AltDraft1 ?? "-"}");
         sb.AppendLine($"more direct alternative: {result.Record.AltDraft2 ?? "-"}");
-        sb.AppendLine($"why: strategy-linked draft (conf {result.Record.Confidence:0.00})");
+        sb.AppendLine($"почему: черновик связан со стратегией (уверенность {result.Record.Confidence:0.00})");
         if (result.HasIntentConflict)
         {
-            sb.AppendLine($"note: safer main kept due to conflict ({result.ConflictReason}).");
+            sb.AppendLine($"заметка: выбран более безопасный вариант из-за конфликта ({result.ConflictReason}).");
         }
 
         return sb.ToString().Trim();
@@ -301,7 +301,7 @@ public class BotCommandService : IBotCommandService
             var latestDraft = await GetLatestDraftAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
             if (latestDraft == null)
             {
-                return "No candidate text found. Use /review <text> or create /draft first.";
+                return "Нет текста для ревью. Используйте /review <text> или сначала создайте /draft.";
             }
 
             draftRecordId = latestDraft.Id;
@@ -326,14 +326,14 @@ public class BotCommandService : IBotCommandService
         }, ct);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"assessment: {result.Assessment}");
-        sb.AppendLine($"risks: {(result.MainRisks.Count == 0 ? "none material" : string.Join("; ", result.MainRisks))}");
+        sb.AppendLine($"оценка: {result.Assessment}");
+        sb.AppendLine($"риски: {(result.MainRisks.Count == 0 ? "существенных рисков нет" : string.Join("; ", result.MainRisks))}");
         sb.AppendLine($"labels: {(result.RiskLabels.Count == 0 ? "n/a" : string.Join(", ", result.RiskLabels))}");
-        sb.AppendLine($"safer: {result.SaferRewrite}");
-        sb.AppendLine($"more natural: {result.NaturalRewrite}");
+        sb.AppendLine($"безопаснее: {result.SaferRewrite}");
+        sb.AppendLine($"естественнее: {result.NaturalRewrite}");
         if (result.StrategyConflictDetected)
         {
-            sb.AppendLine($"note: strategy conflict detected ({result.StrategyConflictNote}).");
+            sb.AppendLine($"заметка: обнаружен конфликт со стратегией ({result.StrategyConflictNote}).");
         }
 
         return sb.ToString().Trim();
@@ -356,21 +356,21 @@ public class BotCommandService : IBotCommandService
         if (filtered.Count == 0)
         {
             return queueArgs.StatusFilter.Equals("active", StringComparison.OrdinalIgnoreCase)
-                ? "No active Stage 6 cases in this scope. Clarification intake stays on /gaps and /answer."
-                : $"No Stage 6 cases matched status='{queueArgs.StatusFilter}'.";
+                ? "В этой области пока нет активных кейсов. Начните с /gaps и затем /answer."
+                : $"Кейсы со статусом '{queueArgs.StatusFilter}' не найдены.";
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine($"cases: shown={filtered.Count} | active={scopedCases.Count(x => IsActiveCaseStatus(x.Status))} | needs_input={scopedCases.Count(IsNeedsInputCase)} | ready={scopedCases.Count(x => x.Status == Stage6CaseStatuses.Ready)}");
-        sb.AppendLine("clarification stays primary in bot: use /gaps or /answer first for needs-user-input items.");
+        sb.AppendLine($"Кейсы: показано {filtered.Count} | активных {scopedCases.Count(x => IsActiveCaseStatus(x.Status))} | требуют ответа {scopedCases.Count(IsNeedsInputCase)} | готовы {scopedCases.Count(x => x.Status == Stage6CaseStatuses.Ready)}");
+        sb.AppendLine("Для кейсов с запросом уточнений используйте сначала /gaps и /answer.");
         foreach (var item in filtered)
         {
             var summary = SummarizeCase(item, 88);
             var primaryAction = IsNeedsInputCase(item) ? "answer" : "case";
-            sb.AppendLine($"{item.Id} | {item.Status} | {item.Priority} | {item.CaseType} | {summary} | primary={primaryAction}");
+            sb.AppendLine($"{item.Id} | {item.Status} | {item.Priority} | {item.CaseType} | {summary} | действие={primaryAction}");
         }
 
-        sb.AppendLine("detail: /case <stage6-case-id>");
+        sb.AppendLine("Детали: /case <stage6-case-id>");
         return sb.ToString().Trim();
     }
 
@@ -389,8 +389,8 @@ public class BotCommandService : IBotCommandService
         if (caseRecord == null)
         {
             return target.Stage6CaseId.HasValue
-                ? "Stage 6 case not found in current scope."
-                : "No active Stage 6 case to show. Use /cases all for closed items.";
+                ? "Кейс не найден в текущей области."
+                : "Нет активного кейса для показа. Для полного списка используйте /cases all.";
         }
 
         var clarificationQuestion = await TryGetLinkedClarificationQuestionAsync(caseRecord, ct);
@@ -442,13 +442,13 @@ public class BotCommandService : IBotCommandService
         var target = ParseStage6CaseTarget(commandArgs);
         if (!target.Stage6CaseId.HasValue)
         {
-            return $"Usage: /{action} <stage6-case-id>{(action == "refresh" ? " [reason]" : " [reason]")}";
+            return $"Использование: /{action} <stage6-case-id> [причина]";
         }
 
         var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
         if (caseRecord == null)
         {
-            return "Stage 6 case not found in current scope.";
+            return "Кейс не найден в текущей области.";
         }
 
         var actor = BuildActor(senderId);
@@ -463,7 +463,7 @@ public class BotCommandService : IBotCommandService
         {
             if (clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress")
             {
-                return $"Clarification intake remains primary. Use /answer {clarificationQuestion.Id} | <your answer> before resolving case {caseRecord.Id}.";
+                return $"Сначала ответьте на уточнение: /answer {clarificationQuestion.Id} | <ваш ответ>. После этого можно закрыть кейс {caseRecord.Id}.";
             }
 
             if (clarificationQuestion != null && clarificationQuestion.Status.Equals("answered", StringComparison.OrdinalIgnoreCase))
@@ -487,10 +487,10 @@ public class BotCommandService : IBotCommandService
                         actor,
                         sourceChannel: "bot",
                         ct: ct);
-                    return $"Resolved clarification case {caseRecord.Id} after recorded answer.";
+                    return $"Кейс {caseRecord.Id} закрыт после сохраненного ответа.";
                 }
 
-                return $"Failed to resolve clarification case {caseRecord.Id}.";
+                return $"Не удалось закрыть кейс {caseRecord.Id}.";
             }
         }
 
@@ -515,21 +515,21 @@ public class BotCommandService : IBotCommandService
                     actor,
                     sourceChannel: "bot",
                     ct: ct);
-                return $"Rejected clarification case {caseRecord.Id}. Reopen with /refresh {caseRecord.Id} if new evidence arrives.";
+                return $"Кейс {caseRecord.Id} отклонен. Если появятся новые данные, используйте /refresh {caseRecord.Id}.";
             }
 
-            return $"Failed to reject clarification case {caseRecord.Id}.";
+            return $"Не удалось отклонить кейс {caseRecord.Id}.";
         }
 
         if (caseRecord.Status.Equals(nextStatus, StringComparison.OrdinalIgnoreCase))
         {
-            return $"Stage 6 case {caseRecord.Id} is already {nextStatus}.";
+            return $"Кейс {caseRecord.Id} уже имеет статус {nextStatus}.";
         }
 
         var updated = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, nextStatus, actor, reason, ct);
         if (!updated)
         {
-            return $"Failed to {action} case {caseRecord.Id}.";
+            return $"Не удалось выполнить действие '{action}' для кейса {caseRecord.Id}.";
         }
 
         if (action.Equals("resolve", StringComparison.OrdinalIgnoreCase))
@@ -560,8 +560,8 @@ public class BotCommandService : IBotCommandService
         }
 
         return action.Equals("resolve", StringComparison.OrdinalIgnoreCase)
-            ? $"Resolved Stage 6 case {caseRecord.Id}."
-            : $"Rejected Stage 6 case {caseRecord.Id}.";
+            ? $"Кейс {caseRecord.Id} закрыт."
+            : $"Кейс {caseRecord.Id} отклонен.";
     }
 
     private async Task<string> HandleAnnotateAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
@@ -575,13 +575,13 @@ public class BotCommandService : IBotCommandService
         var target = ParseStage6CaseTarget(commandArgs);
         if (!target.Stage6CaseId.HasValue || string.IsNullOrWhiteSpace(target.Text))
         {
-            return "Usage: /annotate <stage6-case-id> | <context note>";
+            return "Использование: /annotate <stage6-case-id> | <заметка>";
         }
 
         var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
         if (caseRecord == null)
         {
-            return "Stage 6 case not found in current scope.";
+            return "Кейс не найден в текущей области.";
         }
 
         var clarificationQuestion = await TryGetLinkedClarificationQuestionAsync(caseRecord, ct);
@@ -637,9 +637,9 @@ public class BotCommandService : IBotCommandService
         }, ct);
 
         var suffix = clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress"
-            ? $" Clarification answer path stays /answer {clarificationQuestion.Id} | <your answer>."
+            ? $" Основной путь остается через /answer {clarificationQuestion.Id} | <ваш ответ>."
             : string.Empty;
-        return $"annotation saved for case {caseRecord.Id}.{suffix}".Trim();
+        return $"Заметка сохранена для кейса {caseRecord.Id}.{suffix}".Trim();
     }
 
     private async Task<string> HandleFeedbackAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
@@ -653,7 +653,7 @@ public class BotCommandService : IBotCommandService
         var target = ParseStage6CaseTarget(commandArgs);
         if (!target.Stage6CaseId.HasValue)
         {
-            return "Usage: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]";
+            return "Использование: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [заметка]";
         }
 
         var segments = (target.Text ?? string.Empty)
@@ -662,13 +662,13 @@ public class BotCommandService : IBotCommandService
             .ToList();
         if (segments.Count == 0)
         {
-            return "Usage: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]";
+            return "Использование: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [заметка]";
         }
 
         var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
         if (caseRecord == null)
         {
-            return "Stage 6 case not found in current scope.";
+            return "Кейс не найден в текущей области.";
         }
 
         var kind = segments[0].Trim().ToLowerInvariant();
@@ -677,7 +677,7 @@ public class BotCommandService : IBotCommandService
             and not Stage6FeedbackKinds.CorrectionNote
             and not Stage6FeedbackKinds.RefreshRequested)
         {
-            return "feedback kind must be one of: accept_useful, reject_not_useful, correction_note, refresh_requested";
+            return "Неверный тип обратной связи. Доступно: accept_useful, reject_not_useful, correction_note, refresh_requested.";
         }
 
         var note = segments.Count > 1 ? string.Join(" | ", segments.Skip(1)) : null;
@@ -703,7 +703,7 @@ public class BotCommandService : IBotCommandService
             CreatedAt = DateTime.UtcNow
         }, ct);
 
-        return $"feedback saved for case {caseRecord.Id}: {kind}";
+        return $"Обратная связь сохранена для кейса {caseRecord.Id}: {kind}";
     }
 
     private async Task<string> HandleGapsAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
@@ -751,7 +751,7 @@ public class BotCommandService : IBotCommandService
         var top = await GetTopQuestionAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
         if (top == null)
         {
-            return "No open clarification gaps right now. If uncertainty remains, run /state or /timeline then ask /gaps again.";
+            return "Сейчас нет открытых вопросов на уточнение. Если неопределенность остается, проверьте /state или /timeline и повторите /gaps.";
         }
 
         var linkedCase = (await _stage6CaseRepository.GetCasesAsync(scope.Value.CaseId, ct: ct))
@@ -816,13 +816,13 @@ public class BotCommandService : IBotCommandService
 
         if (string.IsNullOrWhiteSpace(commandArgs))
         {
-            return "Usage: /answer <text> or /answer <question-id> | <text>";
+            return "Использование: /answer <текст> или /answer <question-id> | <текст>";
         }
 
         var (questionId, answerText) = await ResolveAnswerTargetAsync(commandArgs, scope.Value.CaseId, scope.Value.ChatId, ct);
         if (questionId == Guid.Empty || string.IsNullOrWhiteSpace(answerText))
         {
-            return "Cannot resolve answer target. Use /gaps to get current question, then /answer <question-id> | <text>.";
+            return "Не удалось определить вопрос для ответа. Используйте /gaps, затем /answer <question-id> | <текст>.";
         }
 
         var applied = await _clarificationOrchestrator.ApplyAnswerAsync(new ClarificationApplyRequest
@@ -865,9 +865,9 @@ public class BotCommandService : IBotCommandService
             .ToList();
 
         var sb = new StringBuilder();
-        sb.AppendLine($"saved answer for: {applied.Question.QuestionText}");
-        sb.AppendLine($"question status: {applied.Question.Status}");
-        sb.AppendLine($"dependency updates: {applied.DependencyUpdates.Count}");
+        sb.AppendLine($"Ответ сохранен для вопроса: {applied.Question.QuestionText}");
+        sb.AppendLine($"Статус вопроса: {applied.Question.Status}");
+        sb.AppendLine($"Обновлений зависимостей: {applied.DependencyUpdates.Count}");
         sb.AppendLine($"conflicts: {applied.Conflicts.Count}");
         sb.AppendLine($"recompute: {(layers.Count == 0 ? "none" : string.Join(", ", layers))}");
         return sb.ToString().Trim();
@@ -903,7 +903,7 @@ public class BotCommandService : IBotCommandService
 
         if (periods.Count == 0)
         {
-            return "Timeline is empty. Need more messages/events before periodization can produce periods.";
+            return "Лента периодов пока пуста. Нужно больше сообщений/событий, чтобы построить периоды.";
         }
 
         var current = periods.FirstOrDefault(x => x.IsOpen) ?? periods[0];
@@ -937,7 +937,7 @@ public class BotCommandService : IBotCommandService
         var summary = commandArgs.Trim();
         if (summary.Length == 0)
         {
-            return "Usage: /offline <what happened offline>. Example: /offline We met yesterday, tone was warmer, agreed to pause pressure.";
+            return "Использование: /offline <что произошло офлайн>. Пример: /offline Встретились вчера, разговор был спокойнее, договорились снизить давление.";
         }
 
         var title = summary.Length <= 72 ? summary : summary[..72].TrimEnd() + "...";
@@ -957,7 +957,7 @@ public class BotCommandService : IBotCommandService
             EvidenceRefsJson = "[]"
         }, ct);
 
-        return $"Offline event logged: {created.Id}. Next: run /gaps or /state to integrate impact.";
+        return $"Офлайн-событие сохранено: {created.Id}. Дальше проверьте /gaps или /state.";
     }
 
     private (CaseScope? Scope, string ArgsWithoutScope, string Error) ResolveScopeFromArgs(string args, long? transportChatId)
@@ -993,7 +993,13 @@ public class BotCommandService : IBotCommandService
         var caseId = caseIdArg ?? _botSettings.DefaultCaseId;
         if (caseId <= 0)
         {
-            return (null, string.Join(' ', remaining), "Bot case scope is not configured. Set BotChat:DefaultCaseId or pass case=<id>.");
+            var message = string.Join('\n',
+                "Не настроена рабочая область кейса для бота.",
+                "Что сделать:",
+                "1) Передайте `case=<id>` в команде (например: /gaps case=123456789 chat=123456789).",
+                "2) Или задайте постоянные значения `BotChat:DefaultCaseId` и `BotChat:DefaultChatId` в конфигурации.",
+                "Подсказка: /help");
+            return (null, string.Join(' ', remaining), message);
         }
 
         var chatId = chatIdArg ?? _botSettings.DefaultChatId;
@@ -1009,7 +1015,11 @@ public class BotCommandService : IBotCommandService
 
         if (chatId <= 0)
         {
-            return (null, string.Join(' ', remaining), "Bot chat scope is not configured. Set BotChat:DefaultChatId or pass chat=<id>.");
+            var message = string.Join('\n',
+                "Не настроен чат для рабочей области бота.",
+                "Передайте `chat=<id>` в команде или задайте `BotChat:DefaultChatId` в конфигурации.",
+                "Подсказка: /help");
+            return (null, string.Join(' ', remaining), message);
         }
 
         return (new CaseScope(caseId, chatId), string.Join(' ', remaining), string.Empty);
@@ -1223,19 +1233,19 @@ public class BotCommandService : IBotCommandService
     private static string BuildGapsReply(BotClarificationStateArtifact artifact)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"evidence summary: {artifact.EvidenceSummary}");
-        sb.AppendLine($"question: {artifact.QuestionText}");
-        sb.AppendLine($"why it matters: {artifact.WhyItMatters}");
-        sb.AppendLine($"priority: {artifact.Priority} | status: {artifact.Status}");
-        sb.AppendLine($"options: {(artifact.Options.Count == 0 ? "free text" : string.Join(" | ", artifact.Options))}");
+        sb.AppendLine($"Основание: {artifact.EvidenceSummary}");
+        sb.AppendLine($"Вопрос: {artifact.QuestionText}");
+        sb.AppendLine($"Почему это важно: {artifact.WhyItMatters}");
+        sb.AppendLine($"Приоритет: {artifact.Priority} | Статус: {artifact.Status}");
+        sb.AppendLine($"Варианты: {(artifact.Options.Count == 0 ? "свободный текст" : string.Join(" | ", artifact.Options))}");
         if (artifact.Stage6CaseId.HasValue)
         {
-            sb.AppendLine($"case detail: /case {artifact.Stage6CaseId}");
+            sb.AppendLine($"Детали кейса: /case {artifact.Stage6CaseId}");
         }
-        sb.AppendLine($"answer path: /answer {artifact.QuestionId} | <your answer>  (or /answer <your answer> for top question)");
+        sb.AppendLine($"Ответ: /answer {artifact.QuestionId} | <ваш ответ>  (или /answer <ваш ответ> для верхнего вопроса)");
         if (artifact.IsDependencyBlocked)
         {
-            sb.AppendLine("note: this question is currently dependency-blocked; answer its parent first.");
+            sb.AppendLine("Заметка: этот вопрос зависит от предыдущего, сначала ответьте на родительский.");
         }
 
         return sb.ToString().Trim();
@@ -1686,7 +1696,7 @@ public class BotCommandService : IBotCommandService
             return record.QuestionText.Trim();
         }
 
-        return "No evidence summary recorded.";
+        return "Краткое основание пока не зафиксировано.";
     }
 
     private static string FormatOptions(string? json)
@@ -1751,23 +1761,29 @@ public class BotCommandService : IBotCommandService
     private static string BuildHelp()
     {
         return string.Join('\n',
-            "scope: set BotChat defaults or pass case=<id> chat=<id> in command",
-            "clarification intake first: /gaps then /answer",
-            "/state - current state summary",
-            "/next - ranked next-move strategy",
-            "/draft [tone=...] [notes] - main + softer + more direct alternatives",
-            "/review <text> - risk review with safer/natural rewrites",
-            "/cases [status=active|all|needs_user_input|ready|resolved|rejected|stale] [limit=n] - operator queue",
-            "/case [stage6-case-id] - case details; defaults to top active case",
-            "/gaps - top clarification question with evidence summary",
-            "/answer <text> or /answer <question-id> | <text>",
-            "/resolve <stage6-case-id> [reason] - resolve case",
-            "/reject <stage6-case-id> [reason] - reject case",
-            "/refresh <stage6-case-id> [reason] - stale linked artifacts / reopen case",
-            "/annotate <stage6-case-id> | <text> - add operator context note",
-            "/feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]",
-            "/timeline - current and prior periods",
-            "/offline <summary> - log offline event");
+            "Команды оператора (RU):",
+            "Сначала область работы: задайте `BotChat:DefaultCaseId`/`BotChat:DefaultChatId` или передавайте `case=<id> chat=<id>` в команде.",
+            "",
+            "Базовый поток:",
+            "/gaps — главный вопрос на уточнение",
+            "/answer <текст> или /answer <question-id> | <текст> — сохранить ответ",
+            "/state — краткая сводка текущего состояния",
+            "/next — рекомендуемый следующий шаг",
+            "",
+            "Работа с кейсами:",
+            "/cases [status=active|all|needs_user_input|ready|resolved|rejected|stale] [limit=n]",
+            "/case [stage6-case-id] — детали кейса (по умолчанию верхний активный)",
+            "/resolve <stage6-case-id> [причина]",
+            "/reject <stage6-case-id> [причина]",
+            "/refresh <stage6-case-id> [причина] — переоткрыть/обновить артефакты",
+            "/annotate <stage6-case-id> | <заметка>",
+            "/feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [заметка]",
+            "",
+            "Дополнительно:",
+            "/draft [tone=...] [notes] — черновик ответа",
+            "/review <text> — проверка рисков и переписывание",
+            "/timeline — текущий и прошлые периоды",
+            "/offline <summary> — офлайн-событие");
     }
 
     private sealed class BotClarificationStateArtifact

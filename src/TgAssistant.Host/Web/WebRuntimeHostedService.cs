@@ -78,7 +78,7 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         app.MapGet("/", async (HttpContext context, CancellationToken ct) =>
         {
             var request = CreateReadRequest(context.Request, settings);
-            var body = "<p>Queue preview is unavailable.</p>";
+            var body = "<p>Предпросмотр очереди временно недоступен.</p>";
             try
             {
                 var queueResult = await GetRenderer().RenderAsync("/queue" + context.Request.QueryString, request, ct);
@@ -89,21 +89,21 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             }
             catch (Exception ex)
             {
-                body = $"<h2>Queue Preview Error</h2><p>{WebUtility.HtmlEncode(ex.Message)}</p>";
+                body = $"<h2>Не удалось открыть очередь</h2><p>{WebUtility.HtmlEncode(ex.Message)}</p><p>Попробуйте перейти на <a href='/queue'>/queue</a>.</p>";
             }
 
-            var html = WrapShellHtml("Operator Shell", "/", body, context.Request, settings);
+            var html = WrapShellHtml("Операторская панель", "/", body, context.Request, settings);
             return Results.Content(html, "text/html; charset=utf-8");
         });
 
         app.MapGet("/queue", async (HttpContext context, CancellationToken ct) =>
-            await RenderRouteAsync(context, settings, "/queue", "Queue", ct));
+            await RenderRouteAsync(context, settings, "/queue", "Очередь", ct));
 
         app.MapGet("/case-detail", async (HttpContext context, CancellationToken ct) =>
-            await RenderRouteAsync(context, settings, "/case-detail", "Case Detail", ct));
+            await RenderRouteAsync(context, settings, "/case-detail", "Детали кейса", ct));
 
         app.MapGet("/artifact-detail", async (HttpContext context, CancellationToken ct) =>
-            await RenderRouteAsync(context, settings, "/artifact-detail", "Artifact Detail", ct));
+            await RenderRouteAsync(context, settings, "/artifact-detail", "Детали артефакта", ct));
 
         app.MapGet("/{**route}", async (HttpContext context, string? route, CancellationToken ct) =>
         {
@@ -155,14 +155,14 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             if (result is null)
             {
                 return Results.NotFound(WrapShellHtml(
-                    "Route Not Found",
+                    "Маршрут не найден",
                     route,
-                    $"<h2>Route Not Found</h2><p>Route <code>{WebUtility.HtmlEncode(route)}</code> is not available.</p><p>Use <a href='/queue'>queue</a> or <a href='/dashboard'>dashboard</a> to continue.</p>",
+                    $"<h2>Страница недоступна</h2><p>Маршрут <code>{WebUtility.HtmlEncode(route)}</code> не поддерживается.</p><p>Перейдите в <a href='/queue'>очередь</a> или на <a href='/dashboard'>панель</a>.</p>",
                     context.Request,
                     settings));
             }
 
-            var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Operator Shell" : result.Title;
+            var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Операторская панель" : result.Title;
             var html = WrapShellHtml(title, route, result.Html, context.Request, settings);
             return Results.Content(html, "text/html; charset=utf-8");
         }
@@ -171,10 +171,10 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             _logger.LogError(ex, "Web route render failed for {Route}", route);
             var safeRoute = WebUtility.HtmlEncode(route);
             var safeError = WebUtility.HtmlEncode(ex.Message);
-            var errorHtml = $"<h2>Render Error</h2><p>Failed to render <code>{safeRoute}</code>.</p><p>{safeError}</p><p><a href='/queue'>open queue</a></p>";
+            var errorHtml = $"<h2>Результат временно недоступен</h2><p>Не удалось открыть страницу <code>{safeRoute}</code>.</p><p>{safeError}</p><p><a href='/queue'>Открыть очередь</a></p>";
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             return Results.Content(
-                WrapShellHtml("Render Error", route, errorHtml, context.Request, settings),
+                WrapShellHtml("Временная ошибка", route, errorHtml, context.Request, settings),
                 "text/html; charset=utf-8");
         }
     }
@@ -284,7 +284,7 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
     {
         var encodedHeader = WebUtility.HtmlEncode(settings.AccessHeaderName);
         return
-            $"<html><body><h1>Operator Access Required</h1><p>Provide token via header <code>{encodedHeader}</code> or query <code>access_token</code>.</p></body></html>";
+            $"<html><body><h1>Нужен доступ оператора</h1><p>Передайте токен через заголовок <code>{encodedHeader}</code> или query-параметр <code>access_token</code>.</p></body></html>";
     }
 
     private static string WrapShellHtml(string title, string activeRoute, string bodyHtml, HttpRequest request, WebSettings settings)
@@ -307,11 +307,11 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         sb.Append("nav a.active{background:#6289ca;color:#fff;border-color:#6289ca;}");
         sb.Append("main{max-width:1120px;margin:16px auto;padding:0 14px 24px;}section{background:#fff;padding:12px 14px;border-radius:10px;border:1px solid #d9e3f1;}");
         sb.Append("</style></head><body>");
-        sb.Append("<header><h1>Telegram Assistant Operator Shell</h1><nav>");
-        sb.Append(RenderNavLink(shellPath, "Shell", activeRoute == "/"));
-        sb.Append(RenderNavLink(queuePath, "Queue", activeRoute == "/queue" || activeRoute == "/inbox"));
-        sb.Append(RenderNavLink(casePath, "Case Detail", activeRoute == "/case-detail"));
-        sb.Append(RenderNavLink(artifactPath, "Artifact Detail", activeRoute == "/artifact-detail"));
+        sb.Append("<header><h1>Telegram Assistant — оператор</h1><nav>");
+        sb.Append(RenderNavLink(shellPath, "Панель", activeRoute == "/"));
+        sb.Append(RenderNavLink(queuePath, "Очередь", activeRoute == "/queue" || activeRoute == "/inbox"));
+        sb.Append(RenderNavLink(casePath, "Кейс", activeRoute == "/case-detail"));
+        sb.Append(RenderNavLink(artifactPath, "Артефакт", activeRoute == "/artifact-detail"));
         sb.Append("</nav></header><main><section>");
         sb.Append(bodyHtml);
         sb.Append("</section></main></body></html>");

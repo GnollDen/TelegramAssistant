@@ -363,14 +363,21 @@ public class WebReadService : IWebReadService
 
     public async Task<ProfilesReadModel> GetProfilesAsync(WebReadRequest request, CancellationToken ct = default)
     {
-        var (selfSenderId, otherSenderId) = await ResolveSelfOtherSendersAsync(request.ChatId, ct);
-        await EnsureProfilesAsync(request, selfSenderId, ct);
+        try
+        {
+            var (selfSenderId, otherSenderId) = await ResolveSelfOtherSendersAsync(request.ChatId, ct);
+            await EnsureProfilesAsync(request, selfSenderId, ct);
 
-        var self = await LoadProfileSubjectAsync(request, "self", selfSenderId.ToString(), ct);
-        var other = await LoadProfileSubjectAsync(request, "other", otherSenderId.ToString(), ct);
-        var pair = await LoadProfileSubjectAsync(request, "pair", $"{selfSenderId}:{otherSenderId}", ct);
+            var self = await LoadProfileSubjectAsync(request, "self", selfSenderId.ToString(), ct);
+            var other = await LoadProfileSubjectAsync(request, "other", otherSenderId.ToString(), ct);
+            var pair = await LoadProfileSubjectAsync(request, "pair", $"{selfSenderId}:{otherSenderId}", ct);
 
-        return new ProfilesReadModel { Self = self, Other = other, Pair = pair };
+            return new ProfilesReadModel { Self = self, Other = other, Pair = pair };
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("requires at least two active senders", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildInsufficientProfilesModel();
+        }
     }
 
     public async Task<ClarificationsReadModel> GetClarificationsAsync(WebReadRequest request, CancellationToken ct = default)
@@ -970,7 +977,7 @@ public class WebReadService : IWebReadService
             {
                 SubjectType = subjectType,
                 SubjectId = subjectId,
-                Summary = "No profile data",
+                Summary = "Недостаточно данных для профиля",
                 Confidence = 0,
                 Stability = 0
             };
@@ -1023,6 +1030,31 @@ public class WebReadService : IWebReadService
             PairDynamics = pairDynamics,
             RepeatedInteractionModes = repeatedInteractionModes,
             ChangesOverTime = changesOverTime
+        };
+    }
+
+    private static ProfilesReadModel BuildInsufficientProfilesModel()
+    {
+        var placeholder = new ProfileSubjectReadModel
+        {
+            SubjectType = "profile",
+            SubjectId = "-",
+            Summary = "Профиль пока недоступен: недостаточно активных участников в чате.",
+            Confidence = 0,
+            Stability = 0,
+            WhatWorks = "Соберите больше диалога минимум между двумя активными участниками.",
+            WhatFails = "Пока рано делать устойчивые выводы.",
+            ParticipantPatterns = "Недостаточно данных.",
+            PairDynamics = "Недостаточно данных.",
+            RepeatedInteractionModes = "Недостаточно данных.",
+            ChangesOverTime = "Недостаточно данных."
+        };
+
+        return new ProfilesReadModel
+        {
+            Self = placeholder,
+            Other = placeholder,
+            Pair = placeholder
         };
     }
 

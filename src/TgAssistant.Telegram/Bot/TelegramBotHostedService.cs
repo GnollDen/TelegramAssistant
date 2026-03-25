@@ -108,7 +108,7 @@ public class TelegramBotHostedService : BackgroundService
             }
             else if (normalizedText.StartsWith("/resummary", StringComparison.OrdinalIgnoreCase))
             {
-                reply = "Usage: /resummary <chat_id> <session_index>";
+                reply = "Использование: /resummary <chat_id> <session_index>";
             }
             else
             {
@@ -149,7 +149,7 @@ public class TelegramBotHostedService : BackgroundService
         var normalized = (reply ?? string.Empty).Trim();
         if (normalized.Length == 0)
         {
-            return ["I cannot provide a response right now."];
+            return ["Сейчас не удалось подготовить ответ. Попробуйте еще раз или используйте /help."];
         }
 
         if (normalized.Length <= maxLength)
