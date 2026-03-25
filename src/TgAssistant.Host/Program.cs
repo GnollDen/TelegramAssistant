@@ -199,7 +199,7 @@ try
         {
             await RuntimeHealthProbeRunner.RunReadinessCheckAsync(scope.ServiceProvider, runtimeRoleSelection, CancellationToken.None);
             Log.Information(
-                "Readiness check passed: critical dependencies and role assumptions are operational. alias_used={HealthAliasUsed}",
+                "Readiness check passed: dependency and role-contract admission checks are healthy. alias_used={HealthAliasUsed}",
                 runHealthCheck);
             return;
         }

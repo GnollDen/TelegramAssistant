@@ -40,13 +40,19 @@ public class NetworkVerificationService
         var now = DateTime.UtcNow;
         var caseId = scope.CaseId;
         var chatId = scope.ChatId;
+        var scopeSuffix = $"{caseId % 1_000_000:D6}:{chatId % 1_000_000:D6}";
+        var selfName = $"Self Network {scopeSuffix}";
+        var otherName = $"Other Network {scopeSuffix}";
+        var friendName = $"Bridge Friend {scopeSuffix}";
+        var officeName = $"Work Team {scopeSuffix}";
+        var placeName = $"Cafe Aurora {scopeSuffix}";
 
-        await SeedMessagesAsync(chatId, now, ct);
+        await SeedMessagesAsync(chatId, now, friendName, placeName, ct);
 
         var self = await _entityRepository.UpsertAsync(new Entity
         {
             Type = EntityType.Person,
-            Name = "Self Network",
+            Name = selfName,
             TelegramUserId = 1001,
             ActorKey = $"{chatId}:1001",
             IsUserConfirmed = true
@@ -54,7 +60,7 @@ public class NetworkVerificationService
         var other = await _entityRepository.UpsertAsync(new Entity
         {
             Type = EntityType.Person,
-            Name = "Other Network",
+            Name = otherName,
             TelegramUserId = 2002,
             ActorKey = $"{chatId}:2002",
             IsUserConfirmed = true
@@ -62,19 +68,19 @@ public class NetworkVerificationService
         var friend = await _entityRepository.UpsertAsync(new Entity
         {
             Type = EntityType.Person,
-            Name = "Bridge Friend",
+            Name = friendName,
             ActorKey = $"{chatId}:3003"
         }, ct);
         var office = await _entityRepository.UpsertAsync(new Entity
         {
             Type = EntityType.Organization,
-            Name = "Work Team",
+            Name = officeName,
             ActorKey = $"{chatId}:4004"
         }, ct);
         var place = await _entityRepository.UpsertAsync(new Entity
         {
             Type = EntityType.Place,
-            Name = "Cafe Aurora",
+            Name = placeName,
             ActorKey = $"{chatId}:5005"
         }, ct);
 
@@ -124,7 +130,7 @@ public class NetworkVerificationService
             HypothesisType = "network_influence",
             SubjectType = "edge",
             SubjectId = $"entity:{office.Id}->entity:{other.Id}",
-            Statement = "destabilizing influence from work context",
+            Statement = $"destabilizing influence from {officeName}",
             Confidence = 0.41f,
             Status = "open",
             SourceType = "smoke",
@@ -136,7 +142,7 @@ public class NetworkVerificationService
             CaseId = caseId,
             ChatId = chatId,
             PeriodId = period.Id,
-            QuestionText = "Is Bridge Friend reducing pressure in this period?",
+            QuestionText = $"Is {friendName} reducing pressure in this period?",
             QuestionType = "network_influence",
             Priority = "important",
             Status = "open",
@@ -151,11 +157,11 @@ public class NetworkVerificationService
             ChatId = chatId,
             PeriodId = period.Id,
             EventType = "meeting",
-            Title = "Cafe Aurora meetup with Bridge Friend",
-            UserSummary = "Bridge Friend helped de-escalate the conversation",
+            Title = $"{placeName} meetup with {friendName}",
+            UserSummary = $"{friendName} helped de-escalate the conversation",
             TimestampStart = now.AddDays(-3),
             TimestampEnd = now.AddDays(-3).AddHours(1),
-            EvidenceRefsJson = "[\"Bridge Friend\",\"Cafe Aurora\",\"de-escalation\"]",
+            EvidenceRefsJson = $"[\"{friendName}\",\"{placeName}\",\"de-escalation\"]",
             SourceType = "smoke",
             SourceId = "network"
         }, ct);
@@ -200,7 +206,7 @@ public class NetworkVerificationService
 
     }
 
-    private async Task SeedMessagesAsync(long chatId, DateTime now, CancellationToken ct)
+    private async Task SeedMessagesAsync(long chatId, DateTime now, string friendName, string placeName, CancellationToken ct)
     {
         var telegramId = 980_000_000_000L + (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() % 100_000_000L);
         var rows = new List<Message>
@@ -225,7 +231,7 @@ public class NetworkVerificationService
                 SenderName = "Other",
                 Timestamp = now.AddDays(-6).AddMinutes(2),
                 ReplyToMessageId = telegramId + 1,
-                Text = "Hard week, but Bridge Friend helped us calm down.",
+                Text = $"Hard week, but {friendName} helped us calm down.",
                 ProcessingStatus = ProcessingStatus.Processed,
                 Source = MessageSource.Archive,
                 CreatedAt = DateTime.UtcNow
@@ -238,7 +244,7 @@ public class NetworkVerificationService
                 SenderName = "Self",
                 Timestamp = now.AddDays(-5),
                 ReplyToMessageId = telegramId + 2,
-                Text = "Let's meet at Cafe Aurora again.",
+                Text = $"Let's meet at {placeName} again.",
                 ProcessingStatus = ProcessingStatus.Processed,
                 Source = MessageSource.Archive,
                 CreatedAt = DateTime.UtcNow
