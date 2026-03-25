@@ -59,6 +59,8 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
         services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
         services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
+        services.AddSingleton<IStage6ArtifactRepository, Stage6ArtifactRepository>();
+        services.AddSingleton<IStage6ArtifactFreshnessService, Stage6ArtifactFreshnessService>();
         services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
         services.AddSingleton<IEvalRepository, EvalRepository>();
         services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();

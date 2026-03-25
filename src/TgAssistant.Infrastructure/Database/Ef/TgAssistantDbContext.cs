@@ -52,6 +52,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbConflictRecord> ConflictRecords => Set<DbConflictRecord>();
     public DbSet<DbDependencyLink> DependencyLinks => Set<DbDependencyLink>();
     public DbSet<DbDomainReviewEvent> DomainReviewEvents => Set<DbDomainReviewEvent>();
+    public DbSet<DbStage6Artifact> Stage6Artifacts => Set<DbStage6Artifact>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -930,6 +931,39 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Actor).HasColumnName("actor");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => new { x.ObjectType, x.ObjectId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbStage6Artifact>(e =>
+        {
+            e.ToTable("stage6_artifacts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ArtifactType).HasColumnName("artifact_type");
+            e.Property(x => x.CaseId).HasColumnName("case_id");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PayloadObjectType).HasColumnName("payload_object_type");
+            e.Property(x => x.PayloadObjectId).HasColumnName("payload_object_id");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.FreshnessBasisHash).HasColumnName("freshness_basis_hash");
+            e.Property(x => x.FreshnessBasisJson).HasColumnName("freshness_basis_json").HasColumnType("jsonb");
+            e.Property(x => x.GeneratedAt).HasColumnName("generated_at");
+            e.Property(x => x.RefreshedAt).HasColumnName("refreshed_at");
+            e.Property(x => x.StaleAt).HasColumnName("stale_at");
+            e.Property(x => x.IsStale).HasColumnName("is_stale");
+            e.Property(x => x.StaleReason).HasColumnName("stale_reason");
+            e.Property(x => x.ReuseCount).HasColumnName("reuse_count");
+            e.Property(x => x.IsCurrent).HasColumnName("is_current");
+            e.Property(x => x.SourceType).HasColumnName("source_type");
+            e.Property(x => x.SourceId).HasColumnName("source_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ArtifactType, x.CaseId, x.ChatId, x.ScopeKey, x.IsCurrent })
+                .IsUnique()
+                .HasFilter("is_current = TRUE");
+            e.HasIndex(x => new { x.CaseId, x.ChatId, x.ArtifactType, x.GeneratedAt });
         });
 
         modelBuilder.Entity<DbBudgetOperationalState>(e =>

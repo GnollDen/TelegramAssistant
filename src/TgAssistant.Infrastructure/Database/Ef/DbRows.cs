@@ -714,6 +714,33 @@ public class DbDomainReviewEvent
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbStage6Artifact
+{
+    public Guid Id { get; set; }
+    public string ArtifactType { get; set; } = string.Empty;
+    public long CaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string? PayloadObjectType { get; set; }
+    public string? PayloadObjectId { get; set; }
+    public string PayloadJson { get; set; } = "{}";
+    public string FreshnessBasisHash { get; set; } = string.Empty;
+    public string FreshnessBasisJson { get; set; } = "{}";
+    public DateTime GeneratedAt { get; set; }
+    public DateTime? RefreshedAt { get; set; }
+    public DateTime? StaleAt { get; set; }
+    public bool IsStale { get; set; }
+    public string? StaleReason { get; set; }
+    public int ReuseCount { get; set; }
+    public bool IsCurrent { get; set; }
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbBudgetOperationalState
 {
     public string PathKey { get; set; } = string.Empty;

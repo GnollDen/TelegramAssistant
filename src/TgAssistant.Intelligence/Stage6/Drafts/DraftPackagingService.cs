@@ -11,15 +11,21 @@ public class DraftPackagingService : IDraftPackagingService
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
 
     public DraftPackagingService(
         IStrategyDraftRepository strategyDraftRepository,
         IInboxConflictRepository inboxConflictRepository,
-        IDomainReviewEventRepository domainReviewEventRepository)
+        IDomainReviewEventRepository domainReviewEventRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService)
     {
         _strategyDraftRepository = strategyDraftRepository;
         _inboxConflictRepository = inboxConflictRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
     }
 
     public async Task<DraftRecord> PersistAsync(
@@ -94,6 +100,42 @@ public class DraftPackagingService : IDraftPackagingService
             Reason = "draft_engine",
             Actor = "draft_engine",
             CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            context.CaseId,
+            context.ChatId,
+            Stage6ArtifactTypes.Draft,
+            ct);
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Draft,
+            CaseId = context.CaseId,
+            ChatId = context.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(context.ChatId),
+            PayloadObjectType = "draft_record",
+            PayloadObjectId = record.Id.ToString(),
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                record.Id,
+                record.MainDraft,
+                record.AltDraft1,
+                record.AltDraft2,
+                record.Confidence,
+                strategy_record_id = record.StrategyRecordId
+            }, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = record.CreatedAt,
+            RefreshedAt = record.CreatedAt,
+            StaleAt = record.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Draft)),
+            IsStale = false,
+            SourceType = "draft_engine",
+            SourceId = "draft_generated",
+            SourceMessageId = record.SourceMessageId,
+            SourceSessionId = record.SourceSessionId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         }, ct);
 
         return record;

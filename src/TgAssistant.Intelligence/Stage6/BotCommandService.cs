@@ -30,7 +30,10 @@ public class BotCommandService : IBotCommandService
     private readonly IPeriodRepository _periodRepository;
     private readonly IPeriodizationService _periodizationService;
     private readonly IOfflineEventRepository _offlineEventRepository;
+    private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IStrategyDraftRepository _strategyDraftRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly ILogger<BotCommandService> _logger;
 
     public BotCommandService(
@@ -44,7 +47,10 @@ public class BotCommandService : IBotCommandService
         IPeriodRepository periodRepository,
         IPeriodizationService periodizationService,
         IOfflineEventRepository offlineEventRepository,
+        IStateProfileRepository stateProfileRepository,
         IStrategyDraftRepository strategyDraftRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         ILogger<BotCommandService> logger)
     {
         _botSettings = botSettings.Value;
@@ -57,7 +63,10 @@ public class BotCommandService : IBotCommandService
         _periodRepository = periodRepository;
         _periodizationService = periodizationService;
         _offlineEventRepository = offlineEventRepository;
+        _stateProfileRepository = stateProfileRepository;
         _strategyDraftRepository = strategyDraftRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _logger = logger;
     }
 
@@ -106,48 +115,44 @@ public class BotCommandService : IBotCommandService
             return scopeError;
         }
 
-        var state = await _currentStateEngine.ComputeAsync(new CurrentStateRequest
+        var stateSnapshot = await TryGetReusableCurrentStateSnapshotAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
+        if (stateSnapshot == null)
         {
-            CaseId = scope.Value.CaseId,
-            ChatId = scope.Value.ChatId,
-            Actor = BuildActor(senderId),
-            SourceType = "telegram_command",
-            SourceId = "/state",
-            Persist = true
-        }, ct);
+            stateSnapshot = (await _currentStateEngine.ComputeAsync(new CurrentStateRequest
+            {
+                CaseId = scope.Value.CaseId,
+                ChatId = scope.Value.ChatId,
+                Actor = BuildActor(senderId),
+                SourceType = "telegram_command",
+                SourceId = "/state",
+                Persist = true
+            }, ct)).Snapshot;
+        }
 
-        var strategy = await _strategyEngine.RunAsync(new StrategyEngineRequest
-        {
-            CaseId = scope.Value.CaseId,
-            ChatId = scope.Value.ChatId,
-            Actor = BuildActor(senderId),
-            SourceType = "telegram_command",
-            SourceId = "/state-next",
-            Persist = true
-        }, ct);
+        var strategy = await TryGetReusableStrategyAsync(scope.Value.CaseId, scope.Value.ChatId, ct)
+            ?? await _strategyEngine.RunAsync(new StrategyEngineRequest
+            {
+                CaseId = scope.Value.CaseId,
+                ChatId = scope.Value.ChatId,
+                Actor = BuildActor(senderId),
+                SourceType = "telegram_command",
+                SourceId = "/state-next",
+                Persist = true
+            }, ct);
 
         var primary = strategy.Options.FirstOrDefault(x => x.IsPrimary) ?? strategy.Options.FirstOrDefault();
-        var signals = ParseJsonList(state.Snapshot.KeySignalRefsJson, 3);
-        if (signals.Count == 0)
-        {
-            signals = state.Scores.SignalRefs.Take(3).ToList();
-        }
-
-        var risks = ParseJsonList(state.Snapshot.RiskRefsJson, 3);
-        if (risks.Count == 0)
-        {
-            risks = state.Scores.RiskRefs.Take(3).ToList();
-        }
+        var signals = ParseJsonList(stateSnapshot.KeySignalRefsJson, 3);
+        var risks = ParseJsonList(stateSnapshot.RiskRefsJson, 3);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"state: {state.Snapshot.DynamicLabel} (conf {state.Snapshot.Confidence:0.00})");
-        if (!string.IsNullOrWhiteSpace(state.Snapshot.AlternativeStatus))
+        sb.AppendLine($"state: {stateSnapshot.DynamicLabel} (conf {stateSnapshot.Confidence:0.00})");
+        if (!string.IsNullOrWhiteSpace(stateSnapshot.AlternativeStatus))
         {
-            sb.AppendLine($"status: {state.Snapshot.RelationshipStatus} | alt {state.Snapshot.AlternativeStatus}");
+            sb.AppendLine($"status: {stateSnapshot.RelationshipStatus} | alt {stateSnapshot.AlternativeStatus}");
         }
         else
         {
-            sb.AppendLine($"status: {state.Snapshot.RelationshipStatus}");
+            sb.AppendLine($"status: {stateSnapshot.RelationshipStatus}");
         }
 
         sb.AppendLine($"signals: {(signals.Count == 0 ? "limited evidence" : string.Join(", ", signals))}");
@@ -161,7 +166,7 @@ public class BotCommandService : IBotCommandService
         var doNot = BuildDoNot(primary);
         sb.AppendLine($"do not: {doNot}");
 
-        if (state.Confidence.HighAmbiguity)
+        if (stateSnapshot.AmbiguityScore > 0.65f)
         {
             sb.AppendLine("note: ambiguity high, prefer softer moves and clarifications.");
         }
@@ -177,15 +182,16 @@ public class BotCommandService : IBotCommandService
             return scopeError;
         }
 
-        var result = await _strategyEngine.RunAsync(new StrategyEngineRequest
-        {
-            CaseId = scope.Value.CaseId,
-            ChatId = scope.Value.ChatId,
-            Actor = BuildActor(senderId),
-            SourceType = "telegram_command",
-            SourceId = "/next",
-            Persist = true
-        }, ct);
+        var result = await TryGetReusableStrategyAsync(scope.Value.CaseId, scope.Value.ChatId, ct)
+            ?? await _strategyEngine.RunAsync(new StrategyEngineRequest
+            {
+                CaseId = scope.Value.CaseId,
+                ChatId = scope.Value.ChatId,
+                Actor = BuildActor(senderId),
+                SourceType = "telegram_command",
+                SourceId = "/next",
+                Persist = true
+            }, ct);
 
         var primary = result.Options.FirstOrDefault(x => x.IsPrimary) ?? result.Options.FirstOrDefault();
         if (primary == null)
@@ -219,7 +225,17 @@ public class BotCommandService : IBotCommandService
         }
 
         var (tone, notes) = ParseDraftArgs(commandArgs);
-        var result = await _draftEngine.RunAsync(new DraftEngineRequest
+        DraftEngineResult? result = null;
+        if (string.IsNullOrWhiteSpace(tone) && string.IsNullOrWhiteSpace(notes))
+        {
+            var reusedDraft = await TryGetReusableDraftAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
+            if (reusedDraft != null)
+            {
+                result = new DraftEngineResult { Record = reusedDraft };
+            }
+        }
+
+        result ??= await _draftEngine.RunAsync(new DraftEngineRequest
         {
             CaseId = scope.Value.CaseId,
             ChatId = scope.Value.ChatId,
@@ -265,7 +281,13 @@ public class BotCommandService : IBotCommandService
             draftRecordId = latestDraft.Id;
         }
 
-        var result = await _draftReviewEngine.RunAsync(new DraftReviewRequest
+        DraftReviewResult? result = null;
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            result = await TryGetReusableReviewAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
+        }
+
+        result ??= await _draftReviewEngine.RunAsync(new DraftReviewRequest
         {
             CaseId = scope.Value.CaseId,
             ChatId = scope.Value.ChatId,
@@ -299,6 +321,40 @@ public class BotCommandService : IBotCommandService
             return scopeError;
         }
 
+        var clarificationArtifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            scope.Value.CaseId,
+            scope.Value.ChatId,
+            Stage6ArtifactTypes.ClarificationState,
+            Stage6ArtifactTypes.ChatScope(scope.Value.ChatId),
+            ct);
+        var clarificationEvidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            scope.Value.CaseId,
+            scope.Value.ChatId,
+            Stage6ArtifactTypes.ClarificationState,
+            ct);
+        if (clarificationArtifact != null)
+        {
+            var freshness = Stage6ArtifactFreshness.Evaluate(clarificationArtifact, DateTime.UtcNow, clarificationEvidence.LatestEvidenceAtUtc);
+            if (!freshness.IsStale)
+            {
+                try
+                {
+                    var persisted = JsonSerializer.Deserialize<BotClarificationStateArtifact>(clarificationArtifact.PayloadJson);
+                    if (persisted != null)
+                    {
+                        _ = await _stage6ArtifactRepository.TouchReusedAsync(clarificationArtifact.Id, DateTime.UtcNow, ct);
+                        return BuildGapsReply(persisted);
+                    }
+                }
+                catch (JsonException)
+                {
+                    // fall through to regeneration
+                }
+            }
+
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(clarificationArtifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+        }
+
         var top = await GetTopQuestionAsync(scope.Value.CaseId, scope.Value.ChatId, ct);
         if (top == null)
         {
@@ -306,18 +362,40 @@ public class BotCommandService : IBotCommandService
         }
 
         var options = ParseJsonList(top.Question.AnswerOptionsJson, 4);
-        var sb = new StringBuilder();
-        sb.AppendLine($"question: {top.Question.QuestionText}");
-        sb.AppendLine($"why it matters: {top.Question.WhyItMatters}");
-        sb.AppendLine($"priority: {top.Question.Priority} | status: {top.Question.Status}");
-        sb.AppendLine($"options: {(options.Count == 0 ? "free text" : string.Join(" | ", options))}");
-        sb.AppendLine($"answer path: /answer {top.Question.Id} | <your answer>  (or /answer <your answer> for top question)");
-        if (top.IsBlockedByDependency)
+        var artifactPayload = new BotClarificationStateArtifact
         {
-            sb.AppendLine("note: this question is currently dependency-blocked; answer its parent first.");
-        }
+            QuestionId = top.Question.Id,
+            QuestionText = top.Question.QuestionText,
+            WhyItMatters = top.Question.WhyItMatters,
+            Priority = top.Question.Priority,
+            Status = top.Question.Status,
+            Options = options,
+            IsDependencyBlocked = top.IsBlockedByDependency
+        };
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.ClarificationState,
+            CaseId = scope.Value.CaseId,
+            ChatId = scope.Value.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(scope.Value.ChatId),
+            PayloadObjectType = "clarification_state",
+            PayloadObjectId = top.Question.Id.ToString(),
+            PayloadJson = JsonSerializer.Serialize(artifactPayload),
+            FreshnessBasisHash = clarificationEvidence.BasisHash,
+            FreshnessBasisJson = clarificationEvidence.BasisJson,
+            GeneratedAt = DateTime.UtcNow,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = DateTime.UtcNow.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.ClarificationState)),
+            IsStale = false,
+            SourceType = "telegram_command",
+            SourceId = "/gaps",
+            SourceMessageId = null,
+            SourceSessionId = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
 
-        return sb.ToString().Trim();
+        return BuildGapsReply(artifactPayload);
     }
 
     private async Task<string> HandleAnswerAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
@@ -567,6 +645,170 @@ public class BotCommandService : IBotCommandService
             .FirstOrDefault();
     }
 
+    private async Task<StateSnapshot?> TryGetReusableCurrentStateSnapshotAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            caseId,
+            chatId,
+            Stage6ArtifactTypes.CurrentState,
+            Stage6ArtifactTypes.ChatScope(chatId),
+            ct);
+        if (artifact == null)
+        {
+            return null;
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(caseId, chatId, Stage6ArtifactTypes.CurrentState, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale || !Guid.TryParse(artifact.PayloadObjectId, out var snapshotId))
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        var snapshot = await _stateProfileRepository.GetStateSnapshotByIdAsync(snapshotId, ct);
+        if (snapshot == null)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "missing_payload_object", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+        return snapshot;
+    }
+
+    private async Task<StrategyEngineResult?> TryGetReusableStrategyAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            caseId,
+            chatId,
+            Stage6ArtifactTypes.Strategy,
+            Stage6ArtifactTypes.ChatScope(chatId),
+            ct);
+        if (artifact == null)
+        {
+            return null;
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(caseId, chatId, Stage6ArtifactTypes.Strategy, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale || !Guid.TryParse(artifact.PayloadObjectId, out var strategyId))
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        var record = await _strategyDraftRepository.GetStrategyRecordByIdAsync(strategyId, ct);
+        if (record == null)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "missing_payload_object", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        var options = await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(record.Id, ct);
+        _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+        return new StrategyEngineResult
+        {
+            Record = record,
+            Options = options,
+            MicroStep = record.MicroStep,
+            Horizon = ParseJsonList(record.HorizonJson, 6),
+            WhyNotNotes = record.WhyNotOthers,
+            Confidence = new StrategyConfidenceAssessment
+            {
+                Confidence = record.StrategyConfidence
+            }
+        };
+    }
+
+    private async Task<DraftRecord?> TryGetReusableDraftAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            caseId,
+            chatId,
+            Stage6ArtifactTypes.Draft,
+            Stage6ArtifactTypes.ChatScope(chatId),
+            ct);
+        if (artifact == null)
+        {
+            return null;
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(caseId, chatId, Stage6ArtifactTypes.Draft, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale || !Guid.TryParse(artifact.PayloadObjectId, out var draftId))
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        var draft = await _strategyDraftRepository.GetDraftRecordByIdAsync(draftId, ct);
+        if (draft == null)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "missing_payload_object", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+        return draft;
+    }
+
+    private async Task<DraftReviewResult?> TryGetReusableReviewAsync(long caseId, long chatId, CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            caseId,
+            chatId,
+            Stage6ArtifactTypes.Review,
+            Stage6ArtifactTypes.ChatScope(chatId),
+            ct);
+        if (artifact == null)
+        {
+            return null;
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(caseId, chatId, Stage6ArtifactTypes.Review, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        try
+        {
+            var review = JsonSerializer.Deserialize<DraftReviewResult>(artifact.PayloadJson);
+            if (review == null)
+            {
+                _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "invalid_payload_json", DateTime.UtcNow, ct);
+                return null;
+            }
+
+            _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+            return review;
+        }
+        catch (JsonException)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "invalid_payload_json", DateTime.UtcNow, ct);
+            return null;
+        }
+    }
+
+    private static string BuildGapsReply(BotClarificationStateArtifact artifact)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"question: {artifact.QuestionText}");
+        sb.AppendLine($"why it matters: {artifact.WhyItMatters}");
+        sb.AppendLine($"priority: {artifact.Priority} | status: {artifact.Status}");
+        sb.AppendLine($"options: {(artifact.Options.Count == 0 ? "free text" : string.Join(" | ", artifact.Options))}");
+        sb.AppendLine($"answer path: /answer {artifact.QuestionId} | <your answer>  (or /answer <your answer> for top question)");
+        if (artifact.IsDependencyBlocked)
+        {
+            sb.AppendLine("note: this question is currently dependency-blocked; answer its parent first.");
+        }
+
+        return sb.ToString().Trim();
+    }
+
     private static (string Command, string Args) SplitCommand(string normalized)
     {
         var firstSpace = normalized.IndexOf(' ');
@@ -616,6 +858,17 @@ public class BotCommandService : IBotCommandService
             "/answer <text> or /answer <question-id> | <text>",
             "/timeline - current and prior periods",
             "/offline <summary> - log offline event");
+    }
+
+    private sealed class BotClarificationStateArtifact
+    {
+        public Guid QuestionId { get; set; }
+        public string QuestionText { get; set; } = string.Empty;
+        public string WhyItMatters { get; set; } = string.Empty;
+        public string Priority { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public List<string> Options { get; set; } = [];
+        public bool IsDependencyBlocked { get; set; }
     }
 
     private static string BuildActor(long? senderId)

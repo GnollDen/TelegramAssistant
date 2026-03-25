@@ -16,6 +16,8 @@ public class DraftReviewEngine : IDraftReviewEngine
     private readonly IStrategyDraftRepository _strategyDraftRepository;
     private readonly IStrategyEngine _strategyEngine;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly IDraftRiskAssessor _riskAssessor;
     private readonly IDraftStrategyFitChecker _strategyFitChecker;
     private readonly ISaferRewriteGenerator _saferRewriteGenerator;
@@ -30,6 +32,8 @@ public class DraftReviewEngine : IDraftReviewEngine
         IStrategyDraftRepository strategyDraftRepository,
         IStrategyEngine strategyEngine,
         IDomainReviewEventRepository domainReviewEventRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         IDraftRiskAssessor riskAssessor,
         IDraftStrategyFitChecker strategyFitChecker,
         ISaferRewriteGenerator saferRewriteGenerator,
@@ -43,6 +47,8 @@ public class DraftReviewEngine : IDraftReviewEngine
         _strategyDraftRepository = strategyDraftRepository;
         _strategyEngine = strategyEngine;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _riskAssessor = riskAssessor;
         _strategyFitChecker = strategyFitChecker;
         _saferRewriteGenerator = saferRewriteGenerator;
@@ -307,5 +313,33 @@ public class DraftReviewEngine : IDraftReviewEngine
                 CreatedAt = DateTime.UtcNow
             }, ct);
         }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+            request.CaseId,
+            request.ChatId,
+            Stage6ArtifactTypes.Review,
+            ct);
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Review,
+            CaseId = request.CaseId,
+            ChatId = request.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId),
+            PayloadObjectType = "draft_review",
+            PayloadObjectId = result.ReviewId.ToString(),
+            PayloadJson = JsonSerializer.Serialize(result, JsonOptions),
+            FreshnessBasisHash = evidence.BasisHash,
+            FreshnessBasisJson = evidence.BasisJson,
+            GeneratedAt = DateTime.UtcNow,
+            RefreshedAt = DateTime.UtcNow,
+            StaleAt = DateTime.UtcNow.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.Review)),
+            IsStale = false,
+            SourceType = request.SourceType,
+            SourceId = request.SourceId,
+            SourceMessageId = null,
+            SourceSessionId = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
     }
 }
