@@ -28,6 +28,7 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
         services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
         services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
+        services.Configure<Stage6AutoCaseGenerationSettings>(config.GetSection(Stage6AutoCaseGenerationSettings.Section));
         services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
         services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
 
@@ -87,6 +88,27 @@ public static partial class ServiceRegistrationExtensions
             s.IntegrityWriteVolumeUnsafeThreshold = Math.Max(
                 s.IntegrityWriteVolumeWarningThreshold,
                 s.IntegrityWriteVolumeUnsafeThreshold);
+        });
+
+        services.PostConfigure<Stage6AutoCaseGenerationSettings>(s =>
+        {
+            s.PollIntervalSeconds = Math.Max(10, s.PollIntervalSeconds);
+            s.ScopeLookbackHours = Math.Max(1, s.ScopeLookbackHours);
+            s.CaseUpdateCooldownMinutes = Math.Max(1, s.CaseUpdateCooldownMinutes);
+            s.StaleAfterNoSignalHours = Math.Max(1, s.StaleAfterNoSignalHours);
+            s.MinMessagesForStateRefresh = Math.Max(1, s.MinMessagesForStateRefresh);
+            s.MinMessagesForDossierCandidate = Math.Max(1, s.MinMessagesForDossierCandidate);
+            s.MinMessagesForDraftCandidate = Math.Max(1, s.MinMessagesForDraftCandidate);
+            s.StateRefreshMinAgeHours = Math.Max(1, s.StateRefreshMinAgeHours);
+            s.DossierCandidateMinAgeHours = Math.Max(1, s.DossierCandidateMinAgeHours);
+            s.DraftCandidatePendingHours = Math.Max(1, s.DraftCandidatePendingHours);
+            s.RiskBlockingThreshold = Math.Clamp(s.RiskBlockingThreshold, 0f, 1f);
+            s.RiskImportantThreshold = Math.Clamp(s.RiskImportantThreshold, 0f, 1f);
+            s.NeedsReviewMaxConfidenceThreshold = Math.Clamp(s.NeedsReviewMaxConfidenceThreshold, 0f, 1f);
+            s.AmbiguityClarificationThreshold = Math.Clamp(s.AmbiguityClarificationThreshold, 0f, 1f);
+            s.EvidenceConflictConfidenceThreshold = Math.Clamp(s.EvidenceConflictConfidenceThreshold, 0f, 1f);
+            s.NextStepBlockedConfidenceThreshold = Math.Clamp(s.NextStepBlockedConfidenceThreshold, 0f, 1f);
+            s.NeedsInputFallbackConfidenceThreshold = Math.Clamp(s.NeedsInputFallbackConfidenceThreshold, 0f, 1f);
         });
 
         return services;

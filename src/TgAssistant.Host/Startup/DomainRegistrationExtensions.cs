@@ -6,6 +6,7 @@ using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
+using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
@@ -150,6 +151,8 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<ICompetingContextInterpretationService, CompetingContextInterpretationService>();
         services.AddSingleton<ICompetingContextRuntimeService, CompetingContextRuntimeService>();
         services.AddSingleton<CompetingContextVerificationService>();
+        services.AddSingleton<Stage6AutoCaseGenerationService>();
+        services.AddSingleton<Stage6AutoCaseGenerationVerificationService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
