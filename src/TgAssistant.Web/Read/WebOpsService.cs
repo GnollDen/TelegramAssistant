@@ -365,6 +365,16 @@ public class WebOpsService : IWebOpsService
             feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
             ct: ct);
 
+        if (request.MarkResolved)
+        {
+            _ = await _stage6CaseRepository.UpdateStatusAsync(
+                caseRecord.Id,
+                Stage6CaseStatuses.Resolved,
+                request.Actor,
+                request.Reason ?? "clarification_answer",
+                ct);
+        }
+
         return new WebStage6ClarificationAnswerResult
         {
             Success = true,
@@ -1183,10 +1193,19 @@ public class WebOpsService : IWebOpsService
         WebStage6CaseActionRequest request,
         CancellationToken ct)
     {
-        var success = caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
-                      && Guid.TryParse(caseRecord.SourceObjectId, out var questionId)
-            ? await ApplyClarificationWorkflowStatusAsync(questionId, targetStatus, caseRecord.Priority, request.Actor, request.Reason ?? request.Note, ct)
-            : await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, targetStatus, request.Actor, request.Reason ?? request.Note, ct);
+        var success = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, targetStatus, request.Actor, request.Reason ?? request.Note, ct);
+        if (success
+            && caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(caseRecord.SourceObjectId, out var questionId))
+        {
+            success = await ApplyClarificationWorkflowStatusAsync(
+                questionId,
+                targetStatus,
+                caseRecord.Priority,
+                request.Actor,
+                request.Reason ?? request.Note,
+                ct);
+        }
 
         if (success)
         {
@@ -1256,10 +1275,10 @@ public class WebOpsService : IWebOpsService
             CreatedAt = DateTime.UtcNow
         }, ct);
 
-        if (refreshedArtifactTypes.Count > 0
-            && (caseRecord.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)
-                || caseRecord.Status.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase)
-                || caseRecord.Status.Equals(Stage6CaseStatuses.Stale, StringComparison.OrdinalIgnoreCase)))
+        var shouldReopenCase = caseRecord.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)
+                               || caseRecord.Status.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase)
+                               || caseRecord.Status.Equals(Stage6CaseStatuses.Stale, StringComparison.OrdinalIgnoreCase);
+        if (shouldReopenCase)
         {
             _ = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, Stage6CaseStatuses.Ready, request.Actor, request.Reason, ct);
         }
@@ -1289,10 +1308,12 @@ public class WebOpsService : IWebOpsService
             Success = true,
             Stage6CaseId = caseRecord.Id,
             Action = "refresh",
-            Status = refreshedArtifactTypes.Count > 0 ? Stage6CaseStatuses.Ready : caseRecord.Status,
+            Status = shouldReopenCase ? Stage6CaseStatuses.Ready : caseRecord.Status,
             Message = refreshedArtifactTypes.Count > 0
                 ? $"Refresh requested for: {string.Join(", ", refreshedArtifactTypes)}."
-                : "No current linked artifacts were available to refresh.",
+                : shouldReopenCase
+                    ? "Refresh requested. Case moved to ready even though no current linked artifacts were available."
+                    : "No current linked artifacts were available to refresh.",
             RefreshedArtifactTypes = refreshedArtifactTypes
         };
     }
