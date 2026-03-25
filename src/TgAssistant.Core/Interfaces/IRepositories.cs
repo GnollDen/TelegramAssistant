@@ -595,6 +595,14 @@ public class Stage5MetricsSnapshot
     public long ReanalysisBacklog { get; set; }
     public long QuarantineTotal { get; set; }
     public long QuarantineStuck { get; set; }
+    public long DuplicateMessageBusinessKeyGroups { get; set; }
+    public long DuplicateMessageBusinessKeyRows { get; set; }
+    public decimal DuplicateMessageBusinessKeyRowRate { get; set; }
+    public long ProcessedWithoutExtraction { get; set; }
+    public long ProcessedWithoutApplyEvidenceCount { get; set; }
+    public decimal ProcessedWithoutApplyEvidenceRate { get; set; }
+    public long WatermarkRegressionBlocked1h { get; set; }
+    public long WatermarkMonotonicRegressionCount { get; set; }
 }
 
 public sealed class QuarantineMetrics

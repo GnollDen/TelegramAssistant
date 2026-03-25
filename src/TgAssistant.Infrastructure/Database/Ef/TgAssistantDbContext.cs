@@ -439,6 +439,18 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.AnalysisRequests1h).HasColumnName("analysis_requests_1h");
             e.Property(x => x.AnalysisTokens1h).HasColumnName("analysis_tokens_1h");
             e.Property(x => x.AnalysisCostUsd1h).HasColumnName("analysis_cost_usd_1h");
+            e.Property(x => x.PendingSessionsQueue).HasColumnName("pending_sessions_queue");
+            e.Property(x => x.ReanalysisBacklog).HasColumnName("reanalysis_backlog");
+            e.Property(x => x.QuarantineTotal).HasColumnName("quarantine_total");
+            e.Property(x => x.QuarantineStuck).HasColumnName("quarantine_stuck");
+            e.Property(x => x.DuplicateMessageBusinessKeyGroups).HasColumnName("duplicate_message_business_key_groups");
+            e.Property(x => x.DuplicateMessageBusinessKeyRows).HasColumnName("duplicate_message_business_key_rows");
+            e.Property(x => x.DuplicateMessageBusinessKeyRowRate).HasColumnName("duplicate_message_business_key_row_rate");
+            e.Property(x => x.ProcessedWithoutExtraction).HasColumnName("processed_without_extraction");
+            e.Property(x => x.ProcessedWithoutApplyEvidenceCount).HasColumnName("processed_without_apply_evidence_count");
+            e.Property(x => x.ProcessedWithoutApplyEvidenceRate).HasColumnName("processed_without_apply_evidence_rate");
+            e.Property(x => x.WatermarkRegressionBlocked1h).HasColumnName("watermark_regression_blocked_1h");
+            e.Property(x => x.WatermarkMonotonicRegressionCount).HasColumnName("watermark_monotonic_regression_count");
             e.HasIndex(x => x.CapturedAt);
         });
 

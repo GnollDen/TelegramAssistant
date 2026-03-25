@@ -40,7 +40,7 @@ public class Stage5MetricsWorkerService : BackgroundService
                 var snapshot = await _metricsRepository.CaptureAsync(stoppingToken);
                 await _metricsRepository.SaveSnapshotAsync(snapshot, stoppingToken);
                 _logger.LogInformation(
-                    "Stage5 metrics snapshot: processed={Processed} extracted={Extracted} expensive_backlog={Backlog} merge_pending={MergePending} errors_1h={Errors} pending_sessions_queue={PendingSessionsQueue} reanalysis_backlog={ReanalysisBacklog} quarantine_total={QuarantineTotal} quarantine_stuck={QuarantineStuck}",
+                    "Stage5 metrics snapshot: processed={Processed} extracted={Extracted} expensive_backlog={Backlog} merge_pending={MergePending} errors_1h={Errors} pending_sessions_queue={PendingSessionsQueue} reanalysis_backlog={ReanalysisBacklog} quarantine_total={QuarantineTotal} quarantine_stuck={QuarantineStuck} duplicate_key_groups={DuplicateKeyGroups} duplicate_key_rows={DuplicateKeyRows} duplicate_key_row_rate={DuplicateKeyRowRate} processed_without_extraction={ProcessedWithoutExtraction} processed_without_apply_evidence={ProcessedWithoutApplyEvidence} processed_without_apply_rate={ProcessedWithoutApplyRate} watermark_regression_blocked_1h={WatermarkRegressionBlocked1h} watermark_regression_total={WatermarkRegressionTotal}",
                     snapshot.ProcessedMessages,
                     snapshot.ExtractionsTotal,
                     snapshot.ExpensiveBacklog,
@@ -49,11 +49,19 @@ public class Stage5MetricsWorkerService : BackgroundService
                     snapshot.PendingSessionsQueue,
                     snapshot.ReanalysisBacklog,
                     snapshot.QuarantineTotal,
-                    snapshot.QuarantineStuck);
+                    snapshot.QuarantineStuck,
+                    snapshot.DuplicateMessageBusinessKeyGroups,
+                    snapshot.DuplicateMessageBusinessKeyRows,
+                    snapshot.DuplicateMessageBusinessKeyRowRate,
+                    snapshot.ProcessedWithoutExtraction,
+                    snapshot.ProcessedWithoutApplyEvidenceCount,
+                    snapshot.ProcessedWithoutApplyEvidenceRate,
+                    snapshot.WatermarkRegressionBlocked1h,
+                    snapshot.WatermarkMonotonicRegressionCount);
                 if (_previousSnapshot != null)
                 {
                     _logger.LogInformation(
-                        "Stage5 metrics delta_since_last_poll (rolling-window gauges may be negative): processed_delta={ProcessedDelta} extracted_delta={ExtractedDelta} backlog_delta={BacklogDelta} errors_1h_delta={ErrorsDelta} requests_1h_delta={RequestsDelta} tokens_1h_delta={TokensDelta} cost_1h_delta={CostDelta} pending_sessions_queue_delta={PendingSessionsQueueDelta} reanalysis_backlog_delta={ReanalysisBacklogDelta} quarantine_total_delta={QuarantineTotalDelta} quarantine_stuck_delta={QuarantineStuckDelta}",
+                        "Stage5 metrics delta_since_last_poll (rolling-window gauges may be negative): processed_delta={ProcessedDelta} extracted_delta={ExtractedDelta} backlog_delta={BacklogDelta} errors_1h_delta={ErrorsDelta} requests_1h_delta={RequestsDelta} tokens_1h_delta={TokensDelta} cost_1h_delta={CostDelta} pending_sessions_queue_delta={PendingSessionsQueueDelta} reanalysis_backlog_delta={ReanalysisBacklogDelta} quarantine_total_delta={QuarantineTotalDelta} quarantine_stuck_delta={QuarantineStuckDelta} duplicate_key_groups_delta={DuplicateKeyGroupsDelta} duplicate_key_rows_delta={DuplicateKeyRowsDelta} duplicate_key_row_rate_delta={DuplicateKeyRowRateDelta} processed_without_extraction_delta={ProcessedWithoutExtractionDelta} processed_without_apply_evidence_delta={ProcessedWithoutApplyEvidenceDelta} processed_without_apply_rate_delta={ProcessedWithoutApplyRateDelta} watermark_regression_blocked_1h_delta={WatermarkRegressionBlocked1hDelta} watermark_regression_total_delta={WatermarkRegressionTotalDelta}",
                         snapshot.ProcessedMessages - _previousSnapshot.ProcessedMessages,
                         snapshot.ExtractionsTotal - _previousSnapshot.ExtractionsTotal,
                         snapshot.ExpensiveBacklog - _previousSnapshot.ExpensiveBacklog,
@@ -64,7 +72,50 @@ public class Stage5MetricsWorkerService : BackgroundService
                         snapshot.PendingSessionsQueue - _previousSnapshot.PendingSessionsQueue,
                         snapshot.ReanalysisBacklog - _previousSnapshot.ReanalysisBacklog,
                         snapshot.QuarantineTotal - _previousSnapshot.QuarantineTotal,
-                        snapshot.QuarantineStuck - _previousSnapshot.QuarantineStuck);
+                        snapshot.QuarantineStuck - _previousSnapshot.QuarantineStuck,
+                        snapshot.DuplicateMessageBusinessKeyGroups - _previousSnapshot.DuplicateMessageBusinessKeyGroups,
+                        snapshot.DuplicateMessageBusinessKeyRows - _previousSnapshot.DuplicateMessageBusinessKeyRows,
+                        snapshot.DuplicateMessageBusinessKeyRowRate - _previousSnapshot.DuplicateMessageBusinessKeyRowRate,
+                        snapshot.ProcessedWithoutExtraction - _previousSnapshot.ProcessedWithoutExtraction,
+                        snapshot.ProcessedWithoutApplyEvidenceCount - _previousSnapshot.ProcessedWithoutApplyEvidenceCount,
+                        snapshot.ProcessedWithoutApplyEvidenceRate - _previousSnapshot.ProcessedWithoutApplyEvidenceRate,
+                        snapshot.WatermarkRegressionBlocked1h - _previousSnapshot.WatermarkRegressionBlocked1h,
+                        snapshot.WatermarkMonotonicRegressionCount - _previousSnapshot.WatermarkMonotonicRegressionCount);
+                }
+
+                if ((_previousSnapshot == null
+                     || snapshot.ProcessedWithoutApplyEvidenceCount != _previousSnapshot.ProcessedWithoutApplyEvidenceCount
+                     || snapshot.ProcessedWithoutApplyEvidenceRate != _previousSnapshot.ProcessedWithoutApplyEvidenceRate)
+                    && snapshot.ProcessedWithoutApplyEvidenceCount > 0)
+                {
+                    _logger.LogWarning(
+                        "Stage5 processed-without-apply anomaly signal: count={Count} rate={Rate} processed_without_extraction={ProcessedWithoutExtraction}",
+                        snapshot.ProcessedWithoutApplyEvidenceCount,
+                        snapshot.ProcessedWithoutApplyEvidenceRate,
+                        snapshot.ProcessedWithoutExtraction);
+                }
+
+                if ((_previousSnapshot == null
+                     || snapshot.DuplicateMessageBusinessKeyRowRate > _previousSnapshot.DuplicateMessageBusinessKeyRowRate)
+                    && snapshot.DuplicateMessageBusinessKeyRows > 0)
+                {
+                    _logger.LogWarning(
+                        "Stage5 duplicate-rate regression signal: duplicate_groups={DuplicateGroups} duplicate_rows={DuplicateRows} duplicate_row_rate={DuplicateRowRate}",
+                        snapshot.DuplicateMessageBusinessKeyGroups,
+                        snapshot.DuplicateMessageBusinessKeyRows,
+                        snapshot.DuplicateMessageBusinessKeyRowRate);
+                }
+
+                var watermarkRegressionDelta = _previousSnapshot == null
+                    ? snapshot.WatermarkMonotonicRegressionCount
+                    : snapshot.WatermarkMonotonicRegressionCount - _previousSnapshot.WatermarkMonotonicRegressionCount;
+                if (watermarkRegressionDelta > 0)
+                {
+                    _logger.LogWarning(
+                        "Stage5 watermark monotonicity regression signal: regressions_since_last_poll={RegressionDelta} regressions_total={RegressionTotal} regressions_1h={Regression1h}",
+                        watermarkRegressionDelta,
+                        snapshot.WatermarkMonotonicRegressionCount,
+                        snapshot.WatermarkRegressionBlocked1h);
                 }
 
                 _previousSnapshot = snapshot;
