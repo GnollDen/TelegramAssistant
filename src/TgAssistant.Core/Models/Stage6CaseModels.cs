@@ -75,3 +75,12 @@ public class Stage6CaseLink
     public string MetadataJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+public class Stage6ScopeCandidate
+{
+    public long ScopeCaseId { get; set; }
+    public long ChatId { get; set; }
+    public int ActiveCaseCount { get; set; }
+    public int TotalCaseCount { get; set; }
+    public DateTime LastCaseUpdatedAtUtc { get; set; }
+}

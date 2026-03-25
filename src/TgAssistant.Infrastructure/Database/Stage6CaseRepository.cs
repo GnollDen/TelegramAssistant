@@ -208,6 +208,45 @@ public class Stage6CaseRepository : IStage6CaseRepository
         }, ct);
     }
 
+    public async Task<List<Stage6ScopeCandidate>> GetScopeCandidatesAsync(int limit = 10, CancellationToken ct = default)
+    {
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+        return await WithDbContextAsync(async db =>
+        {
+            var rows = await db.Stage6Cases
+                .AsNoTracking()
+                .Where(x => x.ScopeCaseId > 0 && x.ChatId.HasValue && x.ChatId > 0)
+                .GroupBy(x => new { x.ScopeCaseId, ChatId = x.ChatId!.Value })
+                .Select(group => new
+                {
+                    group.Key.ScopeCaseId,
+                    group.Key.ChatId,
+                    ActiveCaseCount = group.Count(x =>
+                        x.Status != Stage6CaseStatuses.Resolved
+                        && x.Status != Stage6CaseStatuses.Rejected),
+                    TotalCaseCount = group.Count(),
+                    LastCaseUpdatedAtUtc = group.Max(x => x.UpdatedAt)
+                })
+                .OrderByDescending(x => x.ActiveCaseCount)
+                .ThenByDescending(x => x.LastCaseUpdatedAtUtc)
+                .ThenBy(x => x.ScopeCaseId)
+                .ThenBy(x => x.ChatId)
+                .Take(boundedLimit)
+                .ToListAsync(ct);
+
+            return rows
+                .Select(x => new Stage6ScopeCandidate
+                {
+                    ScopeCaseId = x.ScopeCaseId,
+                    ChatId = x.ChatId,
+                    ActiveCaseCount = x.ActiveCaseCount,
+                    TotalCaseCount = x.TotalCaseCount,
+                    LastCaseUpdatedAtUtc = x.LastCaseUpdatedAtUtc
+                })
+                .ToList();
+        }, ct);
+    }
+
     public async Task<bool> UpdateStatusAsync(Guid id, string status, string actor, string? reason = null, CancellationToken ct = default)
     {
         var normalizedStatus = NormalizeStatus(status);
