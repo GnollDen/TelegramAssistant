@@ -5,16 +5,30 @@ using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
 
+internal static class AnalysisStateSignalKeys
+{
+    internal const string WatermarkMonotonicRegressionCountKey = "observability:watermark_monotonic_regression_count";
+    internal const string WatermarkMonotonicRegressionMinuteKeyPrefix = "observability:watermark_monotonic_regression_minute:";
+
+    internal static string BuildWatermarkMonotonicRegressionMinuteKey(DateTime utcTimestamp)
+    {
+        return $"{WatermarkMonotonicRegressionMinuteKeyPrefix}{utcTimestamp:yyyyMMddHHmm}";
+    }
+}
+
 public class AnalysisStateRepository : IAnalysisStateRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly IExtractionErrorRepository _extractionErrorRepository;
     private readonly ILogger<AnalysisStateRepository> _logger;
 
     public AnalysisStateRepository(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IExtractionErrorRepository extractionErrorRepository,
         ILogger<AnalysisStateRepository> logger)
     {
         _dbFactory = dbFactory;
+        _extractionErrorRepository = extractionErrorRepository;
         _logger = logger;
     }
 
@@ -52,11 +66,32 @@ public class AnalysisStateRepository : IAnalysisStateRepository
 
         if (persistedValue > value)
         {
+            long? regressionTotal = null;
+            try
+            {
+                regressionTotal = await IncrementWatermarkRegressionSignalsAsync(db, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to persist watermark monotonic regression counter signal: key={Key}, requested={Requested}, persisted={Persisted}",
+                    normalizedKey,
+                    value,
+                    persistedValue);
+            }
+
             _logger.LogWarning(
-                "Blocked non-monotonic watermark update: key={Key}, requested={Requested}, persisted={Persisted}",
+                "Blocked non-monotonic watermark update: key={Key}, requested={Requested}, persisted={Persisted}, regression_total={RegressionTotal}",
                 normalizedKey,
                 value,
-                persistedValue);
+                persistedValue,
+                regressionTotal);
+            await _extractionErrorRepository.LogAsync(
+                "analysis_state",
+                "watermark_regression_blocked",
+                payload: $"key={normalizedKey};requested={value};persisted={persistedValue}",
+                ct: ct);
         }
     }
 
@@ -93,5 +128,33 @@ public class AnalysisStateRepository : IAnalysisStateRepository
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<long> IncrementWatermarkRegressionSignalsAsync(TgAssistantDbContext db, CancellationToken ct)
+    {
+        var total = await IncrementSignalAsync(
+            db,
+            AnalysisStateSignalKeys.WatermarkMonotonicRegressionCountKey,
+            ct);
+        await IncrementSignalAsync(
+            db,
+            AnalysisStateSignalKeys.BuildWatermarkMonotonicRegressionMinuteKey(DateTime.UtcNow),
+            ct);
+        return total;
+    }
+
+    private static Task<long> IncrementSignalAsync(TgAssistantDbContext db, string key, CancellationToken ct)
+    {
+        return db.Database.SqlQueryRaw<long>(
+            """
+            INSERT INTO analysis_state (key, value, updated_at)
+            VALUES ({0}, 1, NOW())
+            ON CONFLICT (key) DO UPDATE
+            SET value = analysis_state.value + 1,
+                updated_at = NOW()
+            RETURNING value;
+            """,
+            key)
+            .SingleAsync(ct);
     }
 }

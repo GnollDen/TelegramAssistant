@@ -22,6 +22,16 @@ public class RedisMessageQueue : IMessageQueue
     private readonly object _inflightLock = new();
     private DateTime _lastReclaimAtUtc = DateTime.MinValue;
     private DateTime _lastPendingMetricsAtUtc = DateTime.MinValue;
+    private long _pendingAgingAnomalyCount;
+    private long _reclaimExecutionCount;
+    private long _reclaimedEntriesCount;
+    private long _duplicateSuppressionCount;
+    private long _deliveredEntryCount;
+    private long _poisonEntryCount;
+    private long _lastLoggedDuplicateSuppressionCount;
+    private long _lastLoggedDeliveredEntryCount;
+    private long _lastLoggedPoisonEntryCount;
+    private long _lastLoggedReclaimedEntriesCount;
 
     public RedisMessageQueue(IConnectionMultiplexer redis, IOptions<RedisSettings> settings, ILogger<RedisMessageQueue> logger)
     {
@@ -162,17 +172,64 @@ public class RedisMessageQueue : IMessageQueue
     {
         var pendingInfo = await db.StreamPendingAsync(_settings.StreamName, _settings.ConsumerGroup);
         var pendingCount = pendingInfo.PendingMessageCount;
+        var minIdleMs = Math.Max(1000L, _settings.PendingMinIdleSeconds * 1000L);
+        var batchSize = Math.Max(1, _settings.PendingReclaimBatchSize);
+        var maxIdleMs = (logPendingMetrics || (runReclaim && pendingCount > 0))
+            ? await GetMaxPendingIdleMsAsync(db, pendingInfo)
+            : 0;
         if (logPendingMetrics)
         {
-            var maxIdleMs = await GetMaxPendingIdleMsAsync(db, pendingInfo);
+            var deliveredDelta = ConsumeCounterDelta(ref _lastLoggedDeliveredEntryCount, ref _deliveredEntryCount);
+            var duplicateSuppressedDelta = ConsumeCounterDelta(ref _lastLoggedDuplicateSuppressionCount, ref _duplicateSuppressionCount);
+            var poisonDelta = ConsumeCounterDelta(ref _lastLoggedPoisonEntryCount, ref _poisonEntryCount);
+            var reclaimedDelta = ConsumeCounterDelta(ref _lastLoggedReclaimedEntriesCount, ref _reclaimedEntriesCount);
+            var duplicateAttemptDelta = deliveredDelta + duplicateSuppressedDelta;
+            var duplicateRate = duplicateAttemptDelta == 0
+                ? 0d
+                : (double)duplicateSuppressedDelta / duplicateAttemptDelta;
             _logger.LogInformation(
-                "Redis stream pending status: stream={Stream} group={Group} pending={PendingCount} max_idle_ms={MaxIdleMs} lowest_id={LowestId} highest_id={HighestId}",
+                "Redis queue health: stream={Stream} group={Group} consumer={Consumer} pending={PendingCount} consumers={ConsumerCount} max_idle_ms={MaxIdleMs} lowest_id={LowestId} highest_id={HighestId} inflight_local={InflightLocal} reclaimed_buffer={ReclaimedBuffer} delivered_delta={DeliveredDelta} duplicate_suppressed_delta={DuplicateSuppressedDelta} duplicate_rate={DuplicateRate} reclaimed_delta={ReclaimedDelta} poison_delta={PoisonDelta} pending_aging_anomalies={PendingAgingAnomalies} reclaim_executions={ReclaimExecutions} total_reclaimed={TotalReclaimed}",
                 _settings.StreamName,
                 _settings.ConsumerGroup,
+                _consumerName,
                 pendingCount,
+                pendingInfo.Consumers.Length,
                 maxIdleMs,
                 pendingInfo.LowestPendingMessageId.IsNull ? "<none>" : pendingInfo.LowestPendingMessageId.ToString(),
-                pendingInfo.HighestPendingMessageId.IsNull ? "<none>" : pendingInfo.HighestPendingMessageId.ToString());
+                pendingInfo.HighestPendingMessageId.IsNull ? "<none>" : pendingInfo.HighestPendingMessageId.ToString(),
+                GetInflightCount(),
+                GetReclaimedBufferCount(),
+                deliveredDelta,
+                duplicateSuppressedDelta,
+                duplicateRate,
+                reclaimedDelta,
+                poisonDelta,
+                Interlocked.Read(ref _pendingAgingAnomalyCount),
+                Interlocked.Read(ref _reclaimExecutionCount),
+                Interlocked.Read(ref _reclaimedEntriesCount));
+            if (pendingCount > 0 && maxIdleMs >= minIdleMs)
+            {
+                var anomalyCount = Interlocked.Increment(ref _pendingAgingAnomalyCount);
+                _logger.LogWarning(
+                    "Redis PEL aging anomaly detected: stream={Stream} group={Group} pending={PendingCount} max_idle_ms={MaxIdleMs} reclaim_idle_threshold_ms={ThresholdMs} anomaly_count={AnomalyCount}",
+                    _settings.StreamName,
+                    _settings.ConsumerGroup,
+                    pendingCount,
+                    maxIdleMs,
+                    minIdleMs,
+                    anomalyCount);
+            }
+            if (duplicateSuppressedDelta >= 5 && duplicateRate >= 0.2d)
+            {
+                _logger.LogWarning(
+                    "Redis duplicate-rate regression signal: stream={Stream} group={Group} consumer={Consumer} duplicate_suppressed_delta={DuplicateSuppressedDelta} delivered_delta={DeliveredDelta} duplicate_rate={DuplicateRate}",
+                    _settings.StreamName,
+                    _settings.ConsumerGroup,
+                    _consumerName,
+                    duplicateSuppressedDelta,
+                    deliveredDelta,
+                    duplicateRate);
+            }
             _lastPendingMetricsAtUtc = DateTime.UtcNow;
         }
 
@@ -186,8 +243,6 @@ public class RedisMessageQueue : IMessageQueue
             return;
         }
 
-        var minIdleMs = Math.Max(1000L, _settings.PendingMinIdleSeconds * 1000L);
-        var batchSize = Math.Max(1, _settings.PendingReclaimBatchSize);
         var nextStartId = (RedisValue)"0-0";
         var reclaimed = 0;
         while (reclaimed < batchSize)
@@ -217,12 +272,42 @@ public class RedisMessageQueue : IMessageQueue
 
         if (reclaimed > 0)
         {
+            var reclaimCount = Interlocked.Increment(ref _reclaimExecutionCount);
+            var totalReclaimed = Interlocked.Add(ref _reclaimedEntriesCount, reclaimed);
             _logger.LogWarning(
-                "Redis pending reclaim executed: stream={Stream} group={Group} consumer={Consumer} reclaimed={Reclaimed} min_idle_ms={MinIdleMs}",
+                "Redis pending reclaim executed: stream={Stream} group={Group} consumer={Consumer} reclaimed={Reclaimed} min_idle_ms={MinIdleMs} reclaim_count={ReclaimCount} total_reclaimed={TotalReclaimed}",
                 _settings.StreamName,
                 _settings.ConsumerGroup,
                 _consumerName,
                 reclaimed,
+                minIdleMs,
+                reclaimCount,
+                totalReclaimed);
+            if (pendingCount > 0)
+            {
+                var reclaimRate = (double)reclaimed / pendingCount;
+                if (reclaimRate >= 0.5d || reclaimed >= batchSize)
+                {
+                    _logger.LogWarning(
+                        "Redis reclaim spike anomaly: stream={Stream} group={Group} pending_before={PendingBefore} reclaimed={Reclaimed} reclaim_ratio={ReclaimRatio:P2} batch_size={BatchSize}",
+                        _settings.StreamName,
+                        _settings.ConsumerGroup,
+                        pendingCount,
+                        reclaimed,
+                        reclaimRate,
+                        batchSize);
+                }
+            }
+        }
+        else if (pendingCount > 0 && maxIdleMs >= minIdleMs)
+        {
+            _logger.LogWarning(
+                "Redis reclaim anomaly: aged pending entries remained unreclaimed. stream={Stream} group={Group} consumer={Consumer} pending={PendingCount} max_idle_ms={MaxIdleMs} min_idle_ms={MinIdleMs}",
+                _settings.StreamName,
+                _settings.ConsumerGroup,
+                _consumerName,
+                pendingCount,
+                maxIdleMs,
                 minIdleMs);
         }
 
@@ -285,6 +370,7 @@ public class RedisMessageQueue : IMessageQueue
 
             if (!TryMarkInflight(msg.StreamId))
             {
+                Interlocked.Increment(ref _duplicateSuppressionCount);
                 _logger.LogDebug(
                     "Suppressed duplicate stream entry delivery: source={Source} stream_id={StreamId} consumer={Consumer}",
                     source,
@@ -294,11 +380,13 @@ public class RedisMessageQueue : IMessageQueue
             }
 
             results.Add(msg);
+            Interlocked.Increment(ref _deliveredEntryCount);
         }
 
         if (poisonIds.Count > 0)
         {
             await db.StreamAcknowledgeAsync(_settings.StreamName, _settings.ConsumerGroup, poisonIds.ToArray());
+            Interlocked.Add(ref _poisonEntryCount, poisonIds.Count);
             _logger.LogWarning(
                 "Acknowledged malformed stream entries after DLQ handoff: count={Count} stream={Stream} group={Group}",
                 poisonIds.Count,
@@ -325,6 +413,7 @@ public class RedisMessageQueue : IMessageQueue
 
             if (!TryBufferReclaimed(msg))
             {
+                Interlocked.Increment(ref _duplicateSuppressionCount);
                 _logger.LogDebug(
                     "Suppressed duplicate reclaimed stream entry: stream_id={StreamId} consumer={Consumer}",
                     msg.StreamId,
@@ -343,6 +432,7 @@ public class RedisMessageQueue : IMessageQueue
         if (poisonIds.Count > 0)
         {
             await db.StreamAcknowledgeAsync(_settings.StreamName, _settings.ConsumerGroup, poisonIds.ToArray());
+            Interlocked.Add(ref _poisonEntryCount, poisonIds.Count);
             _logger.LogWarning(
                 "Acknowledged malformed reclaimed entries after DLQ handoff: count={Count} stream={Stream} group={Group}",
                 poisonIds.Count,
@@ -364,11 +454,13 @@ public class RedisMessageQueue : IMessageQueue
                 _bufferedReclaimedIds.Remove(msg.StreamId);
                 if (!TryMarkInflight(msg.StreamId))
                 {
+                    Interlocked.Increment(ref _duplicateSuppressionCount);
                     continue;
                 }
 
                 results.Add(msg);
                 drained++;
+                Interlocked.Increment(ref _deliveredEntryCount);
             }
         }
 
@@ -502,6 +594,28 @@ public class RedisMessageQueue : IMessageQueue
         var machine = SanitizeToken(Environment.MachineName);
         var processId = Process.GetCurrentProcess().Id;
         return $"{baseName}-{machine}-{processId}";
+    }
+
+    private static long ConsumeCounterDelta(ref long lastLoggedValue, ref long currentValue)
+    {
+        var total = Interlocked.Read(ref currentValue);
+        return total - Interlocked.Exchange(ref lastLoggedValue, total);
+    }
+
+    private int GetInflightCount()
+    {
+        lock (_inflightLock)
+        {
+            return _inflightMessageIds.Count;
+        }
+    }
+
+    private int GetReclaimedBufferCount()
+    {
+        lock (_reclaimedLock)
+        {
+            return _reclaimedBuffer.Count;
+        }
     }
 
     private static string SanitizeToken(string value)

@@ -65,10 +65,15 @@ public class MessageRepository : IMessageRepository
         var duplicateGroups = existing.Count - existingMap.Count;
         if (duplicateGroups > 0)
         {
+            var duplicateRate = existing.Count == 0
+                ? 0d
+                : (double)duplicateGroups / existing.Count * 100d;
             _logger.LogWarning(
-                "Detected pre-existing cross-source duplicates in messages table for incoming save scope: duplicate_rows={DuplicateRows}, scoped_keys={ScopedKeys}",
+                "Detected pre-existing cross-source duplicates in messages table for incoming save scope: duplicate_rows={DuplicateRows}, scoped_keys={ScopedKeys}, scoped_existing_rows={ScopedExistingRows}, duplicate_rate_pct={DuplicateRatePct}",
                 duplicateGroups,
-                existingMap.Count);
+                existingMap.Count,
+                existing.Count,
+                Math.Round(duplicateRate, 3));
         }
 
         var updatedAndMarkedForReanalysis = 0;
