@@ -2459,7 +2459,7 @@ public class WebOpsService : IWebOpsService
 
         return objectType.Trim().ToLowerInvariant() switch
         {
-            "stage6_artifact_type" => $"/ops-artifact?artifactType={Uri.EscapeDataString(objectId)}",
+            "stage6_artifact_type" => $"/artifact-detail?artifactType={Uri.EscapeDataString(objectId)}",
             _ => $"/history-object?objectType={Uri.EscapeDataString(objectType)}&objectId={Uri.EscapeDataString(objectId)}"
         };
     }
