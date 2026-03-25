@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using TgAssistant.Core.Interfaces;
@@ -49,8 +50,10 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
             Input = input
         };
 
+        var timer = Stopwatch.StartNew();
         var res = await _http.PostAsJsonAsync("/api/v1/embeddings", req, ct);
         var body = await res.Content.ReadAsStringAsync(ct);
+        timer.Stop();
         if (!res.IsSuccessStatusCode)
         {
             if (BudgetErrorClassifier.IsQuotaLike(res.StatusCode, body))
@@ -89,11 +92,11 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
             vector[i++] = x.GetSingle();
         }
 
-        await TryLogUsageAsync(root, model, ct);
+        await TryLogUsageAsync(root, model, (int)timer.ElapsedMilliseconds, ct);
         return vector;
     }
 
-    private async Task TryLogUsageAsync(JsonElement root, string model, CancellationToken ct)
+    private async Task TryLogUsageAsync(JsonElement root, string model, int latencyMs, CancellationToken ct)
     {
         if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
         {
@@ -116,6 +119,7 @@ public class OpenRouterEmbeddingService : ITextEmbeddingGenerator
             CompletionTokens = 0,
             TotalTokens = totalTokens,
             CostUsd = cost,
+            LatencyMs = Math.Max(0, latencyMs),
             CreatedAt = DateTime.UtcNow
         }, ct);
 

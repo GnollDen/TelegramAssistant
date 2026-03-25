@@ -208,6 +208,7 @@ public sealed class Stage6LightAbRunCommand
                 CompletionTokens = x.CompletionTokens,
                 TotalTokens = x.TotalTokens,
                 CostUsd = x.CostUsd,
+                LatencyMs = x.LatencyMs,
                 CreatedAtUtc = x.CreatedAt
             })
             .ToListAsync(ct);
@@ -223,7 +224,7 @@ public sealed class Stage6LightAbRunCommand
     {
         var lines = new List<string>
         {
-            "case_id,chat_id,case_type,phase,model,prompt_tokens,completion_tokens,total_tokens,cost_usd,created_at_utc"
+            "case_id,chat_id,case_type,phase,model,prompt_tokens,completion_tokens,total_tokens,cost_usd,latency_ms,created_at_utc"
         };
 
         foreach (var item in cases)
@@ -246,6 +247,7 @@ public sealed class Stage6LightAbRunCommand
                     row.CompletionTokens,
                     row.TotalTokens,
                     row.CostUsd,
+                    row.LatencyMs,
                     Csv(row.CreatedAtUtc.ToString("O"))));
             }
         }
@@ -310,6 +312,7 @@ public sealed class Stage6LightAbUsageRow
     public int CompletionTokens { get; set; }
     public int TotalTokens { get; set; }
     public decimal CostUsd { get; set; }
+    public int? LatencyMs { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
 

@@ -21,6 +21,7 @@ public class EvalRepository : IEvalRepository
         {
             Id = run.RunId,
             RunName = run.RunName,
+            ScenarioPackKey = string.IsNullOrWhiteSpace(run.ScenarioPackKey) ? null : run.ScenarioPackKey.Trim(),
             Passed = run.Passed,
             StartedAt = run.StartedAt,
             FinishedAt = run.FinishedAt,
@@ -39,9 +40,14 @@ public class EvalRepository : IEvalRepository
         {
             Id = result.Id,
             RunId = result.RunId,
+            ScenarioType = string.IsNullOrWhiteSpace(result.ScenarioType) ? "quality" : result.ScenarioType.Trim(),
             ScenarioName = result.ScenarioName,
             Passed = result.Passed,
             Summary = result.Summary,
+            LatencyMs = Math.Max(0, result.LatencyMs),
+            CostUsd = result.CostUsd < 0 ? 0 : result.CostUsd,
+            ModelSummaryJson = string.IsNullOrWhiteSpace(result.ModelSummaryJson) ? "{}" : result.ModelSummaryJson,
+            FeedbackSummaryJson = string.IsNullOrWhiteSpace(result.FeedbackSummaryJson) ? "{}" : result.FeedbackSummaryJson,
             MetricsJson = string.IsNullOrWhiteSpace(result.MetricsJson) ? "{}" : result.MetricsJson,
             CreatedAt = result.CreatedAt == default ? DateTime.UtcNow : result.CreatedAt
         };
@@ -155,6 +161,7 @@ public class EvalRepository : IEvalRepository
         {
             RunId = row.Id,
             RunName = row.RunName,
+            ScenarioPackKey = row.ScenarioPackKey,
             Passed = row.Passed,
             StartedAt = row.StartedAt,
             FinishedAt = row.FinishedAt,
@@ -170,9 +177,14 @@ public class EvalRepository : IEvalRepository
         {
             Id = row.Id,
             RunId = row.RunId,
+            ScenarioType = string.IsNullOrWhiteSpace(row.ScenarioType) ? "quality" : row.ScenarioType,
             ScenarioName = row.ScenarioName,
             Passed = row.Passed,
             Summary = row.Summary,
+            LatencyMs = Math.Max(0, row.LatencyMs),
+            CostUsd = row.CostUsd < 0 ? 0 : row.CostUsd,
+            ModelSummaryJson = string.IsNullOrWhiteSpace(row.ModelSummaryJson) ? "{}" : row.ModelSummaryJson,
+            FeedbackSummaryJson = string.IsNullOrWhiteSpace(row.FeedbackSummaryJson) ? "{}" : row.FeedbackSummaryJson,
             MetricsJson = string.IsNullOrWhiteSpace(row.MetricsJson) ? "{}" : row.MetricsJson,
             CreatedAt = row.CreatedAt
         };

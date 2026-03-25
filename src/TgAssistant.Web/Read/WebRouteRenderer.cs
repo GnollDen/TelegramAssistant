@@ -167,7 +167,10 @@ public class WebRouteRenderer : IWebRouteRenderer
             Action = EmptyToNull(GetQuery(query, "action")) ?? string.Empty,
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
             Reason = EmptyToNull(GetQuery(query, "reason")),
-            Note = EmptyToNull(GetQuery(query, "note"))
+            Note = EmptyToNull(GetQuery(query, "note")),
+            FeedbackKind = EmptyToNull(GetQuery(query, "feedbackKind")),
+            FeedbackDimension = EmptyToNull(GetQuery(query, "feedbackDimension")),
+            IsUseful = ParseNullableBoolean(GetQuery(query, "useful"))
         }, ct);
     }
 
@@ -192,7 +195,9 @@ public class WebRouteRenderer : IWebRouteRenderer
             AnswerValue = EmptyToNull(GetQuery(query, "answer")) ?? string.Empty,
             MarkResolved = !string.Equals(EmptyToNull(GetQuery(query, "markResolved")), "false", StringComparison.OrdinalIgnoreCase),
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
-            Reason = EmptyToNull(GetQuery(query, "reason"))
+            Reason = EmptyToNull(GetQuery(query, "reason")),
+            IsUseful = ParseNullableBoolean(GetQuery(query, "useful")),
+            FeedbackDimension = EmptyToNull(GetQuery(query, "feedbackDimension"))
         }, ct);
     }
 
@@ -658,8 +663,31 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
             sb.AppendLine("<label>answer <input name='answer' value=''></label> ");
             sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
+            sb.AppendLine("<label>useful <select name='useful'><option value='true'>true</option><option value='false'>false</option></select></label> ");
             sb.AppendLine("<button type='submit'>submit answer</button>");
             sb.AppendLine("</form>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Feedback</h2>");
+        foreach (var item in model.Feedback.Take(20))
+        {
+            sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(item.FeedbackKind)} | dim={E(item.FeedbackDimension)} | useful={E(item.IsUseful?.ToString() ?? "-")} | {E(item.Note ?? "-")}</div>");
+        }
+        if (model.Feedback.Count == 0)
+        {
+            sb.AppendLine("<p>No case feedback recorded yet.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Outcomes</h2>");
+        foreach (var item in model.Outcomes.Take(20))
+        {
+            sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(item.OutcomeType)} | status={E(item.CaseStatusAfter)} | user_context_material={item.UserContextMaterial} | {E(item.Note ?? "-")}</div>");
+        }
+        if (model.Outcomes.Count == 0)
+        {
+            sb.AppendLine("<p>No explicit case outcomes recorded yet.</p>");
         }
         sb.AppendLine("</section>");
 
@@ -701,6 +729,16 @@ public class WebRouteRenderer : IWebRouteRenderer
         if (model.LinkedCases.Count == 0)
         {
             sb.AppendLine("<p>No linked active cases.</p>");
+        }
+        sb.AppendLine("</section>");
+        sb.AppendLine("<section><h2>Feedback</h2>");
+        foreach (var item in model.Feedback.Take(20))
+        {
+            sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(item.FeedbackKind)} | dim={E(item.FeedbackDimension)} | useful={E(item.IsUseful?.ToString() ?? "-")} | {E(item.Note ?? "-")}</div>");
+        }
+        if (model.Feedback.Count == 0)
+        {
+            sb.AppendLine("<p>No artifact feedback recorded yet.</p>");
         }
         sb.AppendLine("</section>");
         sb.AppendLine("<section><h2>Payload</h2>");
@@ -1505,6 +1543,16 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string? EmptyToNull(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static bool? ParseNullableBoolean(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return bool.TryParse(value, out var parsed) ? parsed : null;
     }
 
     private static Guid? ParseGuidQuery(IReadOnlyDictionary<string, string> query, string key)

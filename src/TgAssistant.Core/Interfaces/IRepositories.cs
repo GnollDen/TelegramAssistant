@@ -255,6 +255,7 @@ public interface IAnalysisUsageRepository
     Task LogAsync(AnalysisUsageEvent evt, CancellationToken ct = default);
     Task<decimal> GetCostUsdSinceAsync(string phase, DateTime sinceUtc, CancellationToken ct = default);
     Task<Dictionary<string, decimal>> GetCostUsdByPhaseSinceAsync(DateTime sinceUtc, CancellationToken ct = default);
+    Task<AnalysisUsageWindowSummary> SummarizeWindowAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
 }
 
 public interface IEmbeddingRepository
@@ -448,6 +449,25 @@ public interface IStage6UserContextRepository
 {
     Task<Stage6UserContextEntry> CreateAsync(Stage6UserContextEntry entry, CancellationToken ct = default);
     Task<List<Stage6UserContextEntry>> GetByScopeCaseAsync(long scopeCaseId, int limit = 200, CancellationToken ct = default);
+}
+
+public interface IStage6FeedbackRepository
+{
+    Task<Stage6FeedbackEntry> AddAsync(Stage6FeedbackEntry entry, CancellationToken ct = default);
+    Task<List<Stage6FeedbackEntry>> GetByCaseAsync(Guid stage6CaseId, int limit = 100, CancellationToken ct = default);
+    Task<List<Stage6FeedbackEntry>> GetByArtifactAsync(
+        long scopeCaseId,
+        long? chatId,
+        string artifactType,
+        int limit = 100,
+        CancellationToken ct = default);
+}
+
+public interface IStage6CaseOutcomeRepository
+{
+    Task<Stage6CaseOutcomeRecord> AddAsync(Stage6CaseOutcomeRecord record, CancellationToken ct = default);
+    Task<List<Stage6CaseOutcomeRecord>> GetByCaseAsync(Guid stage6CaseId, int limit = 100, CancellationToken ct = default);
+    Task<List<Stage6CaseOutcomeRecord>> GetByScopeAsync(long scopeCaseId, long? chatId, int limit = 300, CancellationToken ct = default);
 }
 
 public interface IInboxConflictRepository
@@ -686,5 +706,21 @@ public class AnalysisUsageEvent
     public int CompletionTokens { get; set; }
     public int TotalTokens { get; set; }
     public decimal CostUsd { get; set; }
+    public int? LatencyMs { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class AnalysisUsageWindowSummary
+{
+    public DateTime FromUtc { get; set; }
+    public DateTime ToUtc { get; set; }
+    public int TotalRows { get; set; }
+    public decimal TotalCostUsd { get; set; }
+    public int TotalPromptTokens { get; set; }
+    public int TotalCompletionTokens { get; set; }
+    public int TotalTokens { get; set; }
+    public double AverageLatencyMs { get; set; }
+    public Dictionary<string, decimal> CostByModel { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, int> RowsByPhaseModel { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, double> AvgLatencyByPhaseModel { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

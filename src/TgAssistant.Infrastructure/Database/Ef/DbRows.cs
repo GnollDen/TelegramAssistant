@@ -324,6 +324,7 @@ public class DbAnalysisUsageEvent
     public int CompletionTokens { get; set; }
     public int TotalTokens { get; set; }
     public decimal CostUsd { get; set; }
+    public int? LatencyMs { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -805,6 +806,37 @@ public class DbStage6UserContextEntry
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbStage6FeedbackEntry
+{
+    public Guid Id { get; set; }
+    public long ScopeCaseId { get; set; }
+    public long? ChatId { get; set; }
+    public Guid? Stage6CaseId { get; set; }
+    public string? ArtifactType { get; set; }
+    public string FeedbackKind { get; set; } = string.Empty;
+    public string FeedbackDimension { get; set; } = string.Empty;
+    public bool? IsUseful { get; set; }
+    public string? Note { get; set; }
+    public string SourceChannel { get; set; } = string.Empty;
+    public string Actor { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbStage6CaseOutcome
+{
+    public Guid Id { get; set; }
+    public Guid Stage6CaseId { get; set; }
+    public long ScopeCaseId { get; set; }
+    public long? ChatId { get; set; }
+    public string OutcomeType { get; set; } = string.Empty;
+    public string CaseStatusAfter { get; set; } = string.Empty;
+    public bool UserContextMaterial { get; set; }
+    public string? Note { get; set; }
+    public string SourceChannel { get; set; } = string.Empty;
+    public string Actor { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbBudgetOperationalState
 {
     public string PathKey { get; set; } = string.Empty;
@@ -868,6 +900,7 @@ public class DbEvalRun
 {
     public Guid Id { get; set; }
     public string RunName { get; set; } = string.Empty;
+    public string? ScenarioPackKey { get; set; }
     public bool Passed { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime FinishedAt { get; set; }
@@ -879,9 +912,14 @@ public class DbEvalScenarioResult
 {
     public Guid Id { get; set; }
     public Guid RunId { get; set; }
+    public string ScenarioType { get; set; } = string.Empty;
     public string ScenarioName { get; set; } = string.Empty;
     public bool Passed { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public int LatencyMs { get; set; }
+    public decimal CostUsd { get; set; }
+    public string ModelSummaryJson { get; set; } = "{}";
+    public string FeedbackSummaryJson { get; set; } = "{}";
     public string MetricsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
 }
