@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Infrastructure.Database.Ef;
-using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 
@@ -36,12 +35,7 @@ public static class RuntimeHealthProbeRunner
             }
         }
 
-        var redis = services.GetRequiredService<IConnectionMultiplexer>();
-        var redisDb = redis.GetDatabase();
-        _ = await redisDb.PingAsync();
-
-        var redisQueue = services.GetRequiredService<RedisMessageQueue>();
-        await redisQueue.InitializeAsync();
+        await ValidateRedisQueueReadinessAsync(services, token);
 
         ValidateCoordinationAssumptions(services, selection);
 
@@ -49,6 +43,40 @@ public static class RuntimeHealthProbeRunner
         {
             var stage5VerificationService = services.GetRequiredService<Stage5VerificationService>();
             await stage5VerificationService.RunAsync(token);
+        }
+    }
+
+    private static async Task ValidateRedisQueueReadinessAsync(IServiceProvider services, CancellationToken ct)
+    {
+        var redisSettings = services.GetRequiredService<IOptions<RedisSettings>>().Value;
+        if (string.IsNullOrWhiteSpace(redisSettings.StreamName))
+        {
+            throw new InvalidOperationException("Readiness failed: Redis:StreamName must be configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(redisSettings.ConsumerGroup))
+        {
+            throw new InvalidOperationException("Readiness failed: Redis:ConsumerGroup must be configured.");
+        }
+
+        var redis = services.GetRequiredService<IConnectionMultiplexer>();
+        var redisDb = redis.GetDatabase();
+        _ = await redisDb.PingAsync();
+
+        var streamName = redisSettings.StreamName.Trim();
+        var groupName = redisSettings.ConsumerGroup.Trim();
+        var streamExists = await redisDb.KeyExistsAsync(streamName);
+        if (!streamExists)
+        {
+            throw new InvalidOperationException(
+                $"Readiness failed: Redis stream '{streamName}' does not exist.");
+        }
+
+        var groups = await redisDb.StreamGroupInfoAsync(streamName);
+        if (!groups.Any(x => string.Equals(x.Name, groupName, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"Readiness failed: Redis consumer group '{groupName}' does not exist on stream '{streamName}'.");
         }
     }
 
