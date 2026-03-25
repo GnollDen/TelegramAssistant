@@ -28,6 +28,10 @@ It consolidates the recent backlog, product, and sprint-planning work into one p
 - broader Stage 6 implementation roadmap
 - now treated as supporting planning context
 
+6. [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
+- separate web delivery track
+- use when planning the internal operator web app
+
 ## Current Source-of-Truth Rule
 
 For current implementation planning, use:
@@ -40,6 +44,7 @@ For supporting decision context, use:
 - [PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md)
 - [RUNTIME_TOPOLOGY_NOTE_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\RUNTIME_TOPOLOGY_NOTE_2026-03-25.md)
 - [STAGE6_FULL_IMPLEMENTATION_PLAN_2026-03-24.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_FULL_IMPLEMENTATION_PLAN_2026-03-24.md)
+- [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
 
 Do not use `docs/BACKLOG_STATUS.md` as an equal execution authority for sprint start.
 It is useful as historical status framing, but the active planning pack is authoritative for current implementation sequencing.
