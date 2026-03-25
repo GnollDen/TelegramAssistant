@@ -6,6 +6,8 @@ namespace TgAssistant.Web.Read;
 
 public class WebOpsService : IWebOpsService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IPeriodRepository _periodRepository;
@@ -18,6 +20,11 @@ public class WebOpsService : IWebOpsService
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly IBudgetOpsRepository _budgetOpsRepository;
     private readonly IEvalRepository _evalRepository;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
+    private readonly IStage6UserContextRepository _stage6UserContextRepository;
+    private readonly IClarificationOrchestrator _clarificationOrchestrator;
 
     public WebOpsService(
         IInboxConflictRepository inboxConflictRepository,
@@ -31,7 +38,12 @@ public class WebOpsService : IWebOpsService
         INetworkGraphService networkGraphService,
         IDomainReviewEventRepository domainReviewEventRepository,
         IBudgetOpsRepository budgetOpsRepository,
-        IEvalRepository evalRepository)
+        IEvalRepository evalRepository,
+        IStage6CaseRepository stage6CaseRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
+        IStage6UserContextRepository stage6UserContextRepository,
+        IClarificationOrchestrator clarificationOrchestrator)
     {
         _inboxConflictRepository = inboxConflictRepository;
         _clarificationRepository = clarificationRepository;
@@ -45,6 +57,333 @@ public class WebOpsService : IWebOpsService
         _domainReviewEventRepository = domainReviewEventRepository;
         _budgetOpsRepository = budgetOpsRepository;
         _evalRepository = evalRepository;
+        _stage6CaseRepository = stage6CaseRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
+        _stage6UserContextRepository = stage6UserContextRepository;
+        _clarificationOrchestrator = clarificationOrchestrator;
+    }
+
+    public async Task<Stage6CaseQueueReadModel> GetCaseQueueAsync(
+        WebReadRequest request,
+        string? status = "active",
+        string? priority = null,
+        string? caseType = null,
+        string? artifactType = null,
+        string? query = null,
+        CancellationToken ct = default)
+    {
+        var allCases = (await _stage6CaseRepository.GetCasesAsync(request.CaseId, ct: ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .ToList();
+
+        var normalizedStatus = NormalizeCaseQueueStatus(status);
+        var normalizedPriority = EmptyToNull(priority);
+        var normalizedCaseType = EmptyToNull(caseType);
+        var normalizedArtifactType = EmptyToNull(artifactType);
+        var normalizedQuery = EmptyToNull(query);
+
+        var filtered = allCases
+            .Where(x => MatchesCaseQueueStatus(x, normalizedStatus))
+            .Where(x => string.IsNullOrWhiteSpace(normalizedPriority) || x.Priority.Equals(normalizedPriority, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(normalizedCaseType) || x.CaseType.Equals(normalizedCaseType, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(normalizedArtifactType)
+                        || ParseJsonStringArray(x.TargetArtifactTypesJson).Contains(normalizedArtifactType, StringComparer.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(normalizedQuery) || MatchesCaseQuery(x, normalizedQuery))
+            .OrderByDescending(x => PriorityWeight(x.Priority))
+            .ThenByDescending(x => StatusWeight(x.Status))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Select(x =>
+            {
+                var targetArtifacts = ParseJsonStringArray(x.TargetArtifactTypesJson);
+                return new Stage6CaseQueueItemReadModel
+                {
+                    Id = x.Id,
+                    CaseType = x.CaseType,
+                    CaseSubtype = x.CaseSubtype,
+                    Status = x.Status,
+                    Priority = x.Priority,
+                    Confidence = x.Confidence,
+                    ReasonSummary = x.ReasonSummary,
+                    QuestionText = x.QuestionText,
+                    SourceObjectType = x.SourceObjectType,
+                    SourceObjectId = x.SourceObjectId,
+                    UpdatedAt = x.UpdatedAt,
+                    NeedsAnswer = x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase),
+                    ResponseMode = x.ResponseMode,
+                    EvidenceCount = ParseJsonStringArray(x.EvidenceRefsJson).Count,
+                    TargetArtifactTypes = targetArtifacts
+                };
+            })
+            .ToList();
+
+        return new Stage6CaseQueueReadModel
+        {
+            StatusFilter = normalizedStatus,
+            PriorityFilter = normalizedPriority,
+            CaseTypeFilter = normalizedCaseType,
+            ArtifactTypeFilter = normalizedArtifactType,
+            Query = normalizedQuery,
+            TotalCases = allCases.Count,
+            VisibleCases = filtered.Count,
+            NeedsInputCases = allCases.Count(x => x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase)),
+            ReadyCases = allCases.Count(x => x.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase)
+                                             || x.Status.Equals(Stage6CaseStatuses.New, StringComparison.OrdinalIgnoreCase)),
+            StaleCases = allCases.Count(x => x.Status.Equals(Stage6CaseStatuses.Stale, StringComparison.OrdinalIgnoreCase)),
+            ResolvedCases = allCases.Count(x => x.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)),
+            Cases = filtered
+        };
+    }
+
+    public async Task<Stage6CaseDetailReadModel> GetCaseDetailAsync(
+        WebReadRequest request,
+        Guid stage6CaseId,
+        CancellationToken ct = default)
+    {
+        var caseRecord = await _stage6CaseRepository.GetByIdAsync(stage6CaseId, ct);
+        if (caseRecord == null || caseRecord.ScopeCaseId != request.CaseId || (caseRecord.ChatId.HasValue && caseRecord.ChatId != request.ChatId))
+        {
+            return new Stage6CaseDetailReadModel
+            {
+                Exists = false,
+                Id = stage6CaseId,
+                ReasonSummary = "Stage 6 case not found for this scope."
+            };
+        }
+
+        var clarification = await LoadClarificationDetailAsync(caseRecord, ct);
+        var sourceSummary = await BuildSourceSummaryAsync(caseRecord, clarification, ct);
+        var history = await BuildStage6CaseHistoryAsync(caseRecord, ct);
+        var evidence = await BuildStage6EvidenceAsync(caseRecord, clarification, ct);
+        var artifacts = await BuildStage6ArtifactSummariesAsync(request, ParseJsonStringArray(caseRecord.TargetArtifactTypesJson), ct);
+        var contextEntries = await BuildStage6ContextEntriesAsync(request, caseRecord, ct);
+
+        return new Stage6CaseDetailReadModel
+        {
+            Exists = true,
+            Id = caseRecord.Id,
+            CaseType = caseRecord.CaseType,
+            CaseSubtype = caseRecord.CaseSubtype,
+            Status = caseRecord.Status,
+            Priority = caseRecord.Priority,
+            Confidence = caseRecord.Confidence,
+            ReasonSummary = caseRecord.ReasonSummary,
+            QuestionText = caseRecord.QuestionText,
+            ClarificationKind = caseRecord.ClarificationKind,
+            ResponseMode = caseRecord.ResponseMode,
+            ResponseChannelHint = caseRecord.ResponseChannelHint,
+            SourceObjectType = caseRecord.SourceObjectType,
+            SourceObjectId = caseRecord.SourceObjectId,
+            SourceSummary = sourceSummary.Summary,
+            SourceLink = sourceSummary.Link,
+            CreatedAt = caseRecord.CreatedAt,
+            UpdatedAt = caseRecord.UpdatedAt,
+            SubjectRefs = ParseJsonStringArray(caseRecord.SubjectRefsJson),
+            ReopenTriggers = ParseJsonStringArray(caseRecord.ReopenTriggerRulesJson),
+            Evidence = evidence,
+            Artifacts = artifacts,
+            ContextEntries = contextEntries,
+            History = history,
+            Clarification = clarification
+        };
+    }
+
+    public async Task<Stage6ArtifactDetailReadModel> GetArtifactDetailAsync(
+        WebReadRequest request,
+        string artifactType,
+        CancellationToken ct = default)
+    {
+        var normalizedArtifactType = NormalizeArtifactType(artifactType);
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(request.CaseId, request.ChatId, normalizedArtifactType, scopeKey, ct);
+        var evidenceStamp = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(request.CaseId, request.ChatId, normalizedArtifactType, ct);
+        var linkedCases = await BuildLinkedCasesForArtifactAsync(request, normalizedArtifactType, ct);
+
+        if (artifact == null)
+        {
+            return new Stage6ArtifactDetailReadModel
+            {
+                ArtifactType = normalizedArtifactType,
+                Exists = false,
+                Status = "missing",
+                Reason = "No current artifact has been generated for this scope yet.",
+                Summary = "Artifact pending or never generated.",
+                FreshnessBasisJson = evidenceStamp.BasisJson,
+                LatestEvidenceAtUtc = evidenceStamp.LatestEvidenceAtUtc,
+                Evidence = BuildEvidenceFromBasis(evidenceStamp.BasisJson),
+                LinkedCases = linkedCases
+            };
+        }
+
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidenceStamp.LatestEvidenceAtUtc);
+        var summary = SummarizeArtifact(artifact, freshness.Reason);
+
+        return new Stage6ArtifactDetailReadModel
+        {
+            ArtifactType = normalizedArtifactType,
+            Exists = true,
+            Status = freshness.IsStale ? "stale" : "fresh",
+            Reason = freshness.Reason,
+            Summary = summary.Summary,
+            ConfidenceLabel = summary.ConfidenceLabel,
+            PayloadObjectType = artifact.PayloadObjectType,
+            PayloadObjectId = artifact.PayloadObjectId,
+            PayloadJson = artifact.PayloadJson,
+            FreshnessBasisJson = artifact.FreshnessBasisJson,
+            GeneratedAt = artifact.GeneratedAt,
+            RefreshedAt = artifact.RefreshedAt,
+            LatestEvidenceAtUtc = evidenceStamp.LatestEvidenceAtUtc,
+            SourceType = artifact.SourceType,
+            SourceId = artifact.SourceId,
+            Evidence = BuildEvidenceFromBasis(artifact.FreshnessBasisJson),
+            LinkedCases = linkedCases
+        };
+    }
+
+    public async Task<WebStage6CaseActionResult> ApplyCaseActionAsync(
+        WebStage6CaseActionRequest request,
+        CancellationToken ct = default)
+    {
+        var caseRecord = await LoadScopedStage6CaseAsync(request.ScopeCaseId, request.ChatId, request.Stage6CaseId, ct);
+        if (caseRecord == null)
+        {
+            return new WebStage6CaseActionResult
+            {
+                Success = false,
+                Stage6CaseId = request.Stage6CaseId,
+                Action = request.Action,
+                Message = "Stage 6 case not found for this scope."
+            };
+        }
+
+        var action = NormalizeStage6Action(request.Action);
+        return action switch
+        {
+            "resolve" => await ApplyStage6StatusActionAsync(caseRecord, Stage6CaseStatuses.Resolved, request, ct),
+            "reject" => await ApplyStage6StatusActionAsync(caseRecord, Stage6CaseStatuses.Rejected, request, ct),
+            "refresh" => await ApplyStage6RefreshActionAsync(caseRecord, request, ct),
+            "annotate" => await ApplyStage6AnnotationAsync(caseRecord, request, ct),
+            _ => new WebStage6CaseActionResult
+            {
+                Success = false,
+                Stage6CaseId = request.Stage6CaseId,
+                Action = action,
+                Message = "Unsupported case action."
+            }
+        };
+    }
+
+    public async Task<WebStage6ClarificationAnswerResult> ApplyClarificationAnswerAsync(
+        WebStage6ClarificationAnswerRequest request,
+        CancellationToken ct = default)
+    {
+        var caseRecord = await LoadScopedStage6CaseAsync(request.ScopeCaseId, request.ChatId, request.Stage6CaseId, ct);
+        if (caseRecord == null)
+        {
+            return new WebStage6ClarificationAnswerResult
+            {
+                Success = false,
+                Stage6CaseId = request.Stage6CaseId,
+                Message = "Stage 6 case not found for this scope."
+            };
+        }
+
+        if (!caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParse(caseRecord.SourceObjectId, out var questionId))
+        {
+            return new WebStage6ClarificationAnswerResult
+            {
+                Success = false,
+                Stage6CaseId = request.Stage6CaseId,
+                Message = "This case does not accept clarification answers."
+            };
+        }
+
+        var trimmedAnswer = request.AnswerValue?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(trimmedAnswer))
+        {
+            return new WebStage6ClarificationAnswerResult
+            {
+                Success = false,
+                Stage6CaseId = request.Stage6CaseId,
+                Message = "Answer text is required."
+            };
+        }
+
+        var targetArtifacts = ParseJsonStringArray(caseRecord.TargetArtifactTypesJson);
+        var applyResult = await _clarificationOrchestrator.ApplyAnswerAsync(new ClarificationApplyRequest
+        {
+            QuestionId = questionId,
+            AnswerType = string.IsNullOrWhiteSpace(request.AnswerType) ? "text" : request.AnswerType.Trim(),
+            AnswerValue = trimmedAnswer,
+            AnswerConfidence = Math.Clamp(request.AnswerConfidence, 0f, 1f),
+            SourceClass = string.IsNullOrWhiteSpace(request.SourceClass) ? "operator_web" : request.SourceClass.Trim(),
+            AffectedObjectsJson = JsonSerializer.Serialize(targetArtifacts, JsonOptions),
+            SourceType = "web",
+            SourceId = "web_operator_answer",
+            MarkResolved = request.MarkResolved,
+            Actor = request.Actor,
+            Reason = request.Reason
+        }, ct);
+
+        var refreshedArtifactTypes = await MarkArtifactsStaleAsync(
+            request.ScopeCaseId,
+            request.ChatId,
+            targetArtifacts,
+            "clarification_answer_applied",
+            ct);
+
+        return new WebStage6ClarificationAnswerResult
+        {
+            Success = true,
+            Stage6CaseId = caseRecord.Id,
+            QuestionId = applyResult.Question.Id,
+            AnswerId = applyResult.Answer.Id,
+            Message = request.MarkResolved
+                ? "Clarification answer recorded and case marked resolved."
+                : "Clarification answer recorded.",
+            QuestionText = applyResult.Question.QuestionText,
+            AnswerValue = applyResult.Answer.AnswerValue,
+            RefreshedArtifactTypes = refreshedArtifactTypes,
+            RecomputeTargets = applyResult.RecomputePlan.Targets
+                .Select(x => $"{x.Layer}:{x.TargetType}:{x.TargetId}")
+                .ToList()
+        };
+    }
+
+    public async Task<WebStage6ArtifactActionResult> ApplyArtifactActionAsync(
+        WebStage6ArtifactActionRequest request,
+        CancellationToken ct = default)
+    {
+        var action = NormalizeStage6Action(request.Action);
+        var normalizedArtifactType = NormalizeArtifactType(request.ArtifactType);
+        if (!action.Equals("refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            return new WebStage6ArtifactActionResult
+            {
+                Success = false,
+                ArtifactType = normalizedArtifactType,
+                Action = action,
+                Message = "Unsupported artifact action."
+            };
+        }
+
+        var refreshedArtifactTypes = await MarkArtifactsStaleAsync(
+            request.ScopeCaseId,
+            request.ChatId,
+            [normalizedArtifactType],
+            request.Reason ?? "operator_refresh_requested",
+            ct);
+
+        return new WebStage6ArtifactActionResult
+        {
+            Success = refreshedArtifactTypes.Count > 0,
+            ArtifactType = normalizedArtifactType,
+            Action = action,
+            Message = refreshedArtifactTypes.Count > 0
+                ? $"Artifact '{normalizedArtifactType}' marked stale for refresh."
+                : $"No current '{normalizedArtifactType}' artifact was available to refresh."
+        };
     }
 
     public async Task<InboxReadModel> GetInboxAsync(
@@ -55,39 +394,47 @@ public class WebOpsService : IWebOpsService
         bool? blocking = null,
         CancellationToken ct = default)
     {
-        var rows = (await _inboxConflictRepository.GetInboxItemsAsync(request.CaseId, string.IsNullOrWhiteSpace(status) ? null : status, ct))
-            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
-            .ToList();
+        var queueStatus = NormalizeInboxStatusAsCaseStatus(status);
+        var queue = await GetCaseQueueAsync(
+            request,
+            status: queueStatus,
+            priority: priority,
+            caseType: null,
+            artifactType: null,
+            query: null,
+            ct: ct);
 
-        if (!string.IsNullOrWhiteSpace(priority))
-        {
-            rows = rows.Where(x => x.Priority.Equals(priority, StringComparison.OrdinalIgnoreCase)).ToList();
-        }
-
-        if (blocking.HasValue)
-        {
-            rows = rows.Where(x => x.IsBlocking == blocking.Value).ToList();
-        }
-
-        var mapped = rows
-            .OrderByDescending(x => x.UpdatedAt)
+        var mapped = queue.Cases
+            .Where(x => !blocking.HasValue
+                        || blocking.Value == (x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase)
+                                              || x.CaseType.Equals(Stage6CaseTypes.Risk, StringComparison.OrdinalIgnoreCase)))
             .Select(x => new InboxItemReadModel
             {
                 Id = x.Id,
-                ItemType = x.ItemType,
+                ItemType = x.CaseType,
                 SourceObjectType = x.SourceObjectType,
                 SourceObjectId = x.SourceObjectId,
                 Priority = x.Priority,
-                IsBlocking = x.IsBlocking,
-                Summary = string.IsNullOrWhiteSpace(x.Summary) ? x.Title : x.Summary,
+                IsBlocking = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase)
+                             || x.CaseType.Equals(Stage6CaseTypes.Risk, StringComparison.OrdinalIgnoreCase),
+                Summary = string.IsNullOrWhiteSpace(x.QuestionText) ? x.ReasonSummary : x.QuestionText,
                 Status = x.Status,
-                UpdatedAt = x.UpdatedAt
+                UpdatedAt = x.UpdatedAt,
+                Confidence = x.Confidence,
+                ReasonSummary = x.ReasonSummary
             })
             .ToList();
 
-        var blockingGroup = mapped.Where(x => x.IsBlocking || x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase)).ToList();
-        var highImpactGroup = mapped.Where(x => !blockingGroup.Any(b => b.Id == x.Id) && IsHighImpact(x)).ToList();
-        var restGroup = mapped.Where(x => !blockingGroup.Any(b => b.Id == x.Id) && !highImpactGroup.Any(h => h.Id == x.Id)).ToList();
+        var blockingGroup = mapped
+            .Where(x => x.IsBlocking)
+            .ToList();
+        var highImpactGroup = mapped
+            .Where(x => !blockingGroup.Any(b => b.Id == x.Id)
+                        && x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var restGroup = mapped
+            .Where(x => !blockingGroup.Any(b => b.Id == x.Id) && !highImpactGroup.Any(h => h.Id == x.Id))
+            .ToList();
 
         var normalizedGroup = NormalizeGroup(group);
         if (normalizedGroup == "blocking")
@@ -109,7 +456,7 @@ public class WebOpsService : IWebOpsService
         return new InboxReadModel
         {
             GroupFilter = normalizedGroup,
-            StatusFilter = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant(),
+            StatusFilter = queueStatus,
             PriorityFilter = priority,
             BlockingFilter = blocking,
             Blocking = blockingGroup,
@@ -166,6 +513,21 @@ public class WebOpsService : IWebOpsService
 
         switch (normalizedType)
         {
+            case "stage6_case":
+                if (Guid.TryParse(objectId, out var stage6CaseId))
+                {
+                    var stage6Case = await _stage6CaseRepository.GetByIdAsync(stage6CaseId, ct);
+                    if (stage6Case != null && stage6Case.ScopeCaseId == request.CaseId && (stage6Case.ChatId == null || stage6Case.ChatId == request.ChatId))
+                    {
+                        objectModel.ObjectSummary = string.IsNullOrWhiteSpace(stage6Case.QuestionText)
+                            ? stage6Case.ReasonSummary
+                            : $"{stage6Case.QuestionText} | {stage6Case.ReasonSummary}";
+                        objectModel.Status = stage6Case.Status;
+                        objectModel.Priority = stage6Case.Priority;
+                    }
+                }
+
+                break;
             case "clarification_question":
                 if (Guid.TryParse(objectId, out var qid))
                 {
@@ -755,6 +1117,697 @@ public class WebOpsService : IWebOpsService
         };
     }
 
+    private async Task<Stage6CaseRecord?> LoadScopedStage6CaseAsync(long scopeCaseId, long chatId, Guid stage6CaseId, CancellationToken ct)
+    {
+        var caseRecord = await _stage6CaseRepository.GetByIdAsync(stage6CaseId, ct);
+        if (caseRecord == null || caseRecord.ScopeCaseId != scopeCaseId || (caseRecord.ChatId.HasValue && caseRecord.ChatId != chatId))
+        {
+            return null;
+        }
+
+        return caseRecord;
+    }
+
+    private async Task<WebStage6CaseActionResult> ApplyStage6StatusActionAsync(
+        Stage6CaseRecord caseRecord,
+        string targetStatus,
+        WebStage6CaseActionRequest request,
+        CancellationToken ct)
+    {
+        var success = caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+                      && Guid.TryParse(caseRecord.SourceObjectId, out var questionId)
+            ? await ApplyClarificationWorkflowStatusAsync(questionId, targetStatus, caseRecord.Priority, request.Actor, request.Reason ?? request.Note, ct)
+            : await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, targetStatus, request.Actor, request.Reason ?? request.Note, ct);
+
+        return new WebStage6CaseActionResult
+        {
+            Success = success,
+            Stage6CaseId = caseRecord.Id,
+            Action = NormalizeStage6Action(request.Action),
+            Status = targetStatus,
+            Message = success
+                ? $"Case moved to '{targetStatus}'."
+                : "Case status change was not applied."
+        };
+    }
+
+    private async Task<WebStage6CaseActionResult> ApplyStage6RefreshActionAsync(
+        Stage6CaseRecord caseRecord,
+        WebStage6CaseActionRequest request,
+        CancellationToken ct)
+    {
+        var targetArtifacts = ParseJsonStringArray(caseRecord.TargetArtifactTypesJson);
+        var refreshedArtifactTypes = await MarkArtifactsStaleAsync(
+            request.ScopeCaseId,
+            request.ChatId,
+            targetArtifacts,
+            request.Reason ?? "operator_refresh_requested",
+            ct);
+
+        await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
+        {
+            ObjectType = "stage6_case",
+            ObjectId = caseRecord.Id.ToString(),
+            Action = "refresh_requested",
+            NewValueRef = JsonSerializer.Serialize(new { artifacts = refreshedArtifactTypes }, JsonOptions),
+            Reason = request.Reason,
+            Actor = request.Actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        if (refreshedArtifactTypes.Count > 0
+            && (caseRecord.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)
+                || caseRecord.Status.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase)
+                || caseRecord.Status.Equals(Stage6CaseStatuses.Stale, StringComparison.OrdinalIgnoreCase)))
+        {
+            _ = await _stage6CaseRepository.UpdateStatusAsync(caseRecord.Id, Stage6CaseStatuses.Ready, request.Actor, request.Reason, ct);
+        }
+
+        return new WebStage6CaseActionResult
+        {
+            Success = true,
+            Stage6CaseId = caseRecord.Id,
+            Action = "refresh",
+            Status = refreshedArtifactTypes.Count > 0 ? Stage6CaseStatuses.Ready : caseRecord.Status,
+            Message = refreshedArtifactTypes.Count > 0
+                ? $"Refresh requested for: {string.Join(", ", refreshedArtifactTypes)}."
+                : "No current linked artifacts were available to refresh.",
+            RefreshedArtifactTypes = refreshedArtifactTypes
+        };
+    }
+
+    private async Task<WebStage6CaseActionResult> ApplyStage6AnnotationAsync(
+        Stage6CaseRecord caseRecord,
+        WebStage6CaseActionRequest request,
+        CancellationToken ct)
+    {
+        var note = string.IsNullOrWhiteSpace(request.Note) ? request.Reason : request.Note;
+        if (string.IsNullOrWhiteSpace(note))
+        {
+            return new WebStage6CaseActionResult
+            {
+                Success = false,
+                Stage6CaseId = caseRecord.Id,
+                Action = "annotate",
+                Message = "Annotation text is required."
+            };
+        }
+
+        var appliesToRefs = ParseJsonStringArray(caseRecord.TargetArtifactTypesJson)
+            .Select(x => $"artifact_type:{x}")
+            .Concat(ParseJsonStringArray(caseRecord.SubjectRefsJson))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _ = await _stage6UserContextRepository.CreateAsync(new Stage6UserContextEntry
+        {
+            Stage6CaseId = caseRecord.Id,
+            ScopeCaseId = request.ScopeCaseId,
+            ChatId = request.ChatId,
+            SourceKind = UserContextSourceKinds.LongFormContext,
+            ClarificationQuestionId = caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+                                     && Guid.TryParse(caseRecord.SourceObjectId, out var questionId)
+                ? questionId
+                : null,
+            ContentText = note.Trim(),
+            AppliesToRefsJson = JsonSerializer.Serialize(appliesToRefs, JsonOptions),
+            EnteredVia = "web",
+            UserReportedCertainty = 0.75f,
+            SourceType = "web",
+            SourceId = $"stage6_case:{caseRecord.Id:D}",
+            ConflictsWithRefsJson = "[]",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
+        {
+            ObjectType = "stage6_case",
+            ObjectId = caseRecord.Id.ToString(),
+            Action = "annotation_added",
+            NewValueRef = JsonSerializer.Serialize(new { note }, JsonOptions),
+            Reason = request.Reason,
+            Actor = request.Actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        return new WebStage6CaseActionResult
+        {
+            Success = true,
+            Stage6CaseId = caseRecord.Id,
+            Action = "annotate",
+            Status = caseRecord.Status,
+            Message = "Annotation saved as user-reported context."
+        };
+    }
+
+    private async Task<bool> ApplyClarificationWorkflowStatusAsync(
+        Guid questionId,
+        string targetStatus,
+        string priority,
+        string actor,
+        string? reason,
+        CancellationToken ct)
+    {
+        var questionStatus = targetStatus switch
+        {
+            Stage6CaseStatuses.Resolved => "resolved",
+            Stage6CaseStatuses.Rejected => "rejected",
+            Stage6CaseStatuses.Stale => "stale",
+            Stage6CaseStatuses.Ready => "answered",
+            _ => "open"
+        };
+
+        return await _clarificationRepository.UpdateQuestionWorkflowAsync(questionId, questionStatus, priority, actor, reason, ct);
+    }
+
+    private async Task<List<string>> MarkArtifactsStaleAsync(
+        long scopeCaseId,
+        long chatId,
+        IReadOnlyCollection<string> artifactTypes,
+        string reason,
+        CancellationToken ct)
+    {
+        var refreshed = new List<string>();
+        var scopeKey = Stage6ArtifactTypes.ChatScope(chatId);
+        foreach (var artifactType in artifactTypes.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var current = await _stage6ArtifactRepository.GetCurrentAsync(scopeCaseId, chatId, artifactType, scopeKey, ct);
+            if (current == null)
+            {
+                continue;
+            }
+
+            if (await _stage6ArtifactRepository.MarkStaleAsync(current.Id, reason, DateTime.UtcNow, ct))
+            {
+                refreshed.Add(artifactType);
+            }
+        }
+
+        return refreshed;
+    }
+
+    private async Task<ClarificationQuestionDetailReadModel?> LoadClarificationDetailAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
+    {
+        if (!caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParse(caseRecord.SourceObjectId, out var questionId))
+        {
+            return null;
+        }
+
+        var question = await _clarificationRepository.GetQuestionByIdAsync(questionId, ct);
+        if (question == null)
+        {
+            return null;
+        }
+
+        var answers = await _clarificationRepository.GetAnswersByQuestionIdAsync(question.Id, ct);
+        return new ClarificationQuestionDetailReadModel
+        {
+            QuestionId = question.Id,
+            QuestionText = question.QuestionText,
+            WhyItMatters = question.WhyItMatters,
+            Status = question.Status,
+            Priority = question.Priority,
+            QuestionType = question.QuestionType,
+            AnswerOptions = ParseJsonStringArray(question.AnswerOptionsJson),
+            Answers = answers
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(8)
+                .Select(x => new ClarificationAnswerDetailReadModel
+                {
+                    Id = x.Id,
+                    AnswerType = x.AnswerType,
+                    AnswerValue = x.AnswerValue,
+                    AnswerConfidence = x.AnswerConfidence,
+                    SourceClass = x.SourceClass,
+                    CreatedAt = x.CreatedAt
+                })
+                .ToList()
+        };
+    }
+
+    private async Task<(string Summary, string? Link)> BuildSourceSummaryAsync(
+        Stage6CaseRecord caseRecord,
+        ClarificationQuestionDetailReadModel? clarification,
+        CancellationToken ct)
+    {
+        if (clarification != null)
+        {
+            return (clarification.QuestionText, $"/history-object?objectType=clarification_question&objectId={clarification.QuestionId}");
+        }
+
+        if (caseRecord.SourceObjectType.Equals("strategy_record", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(caseRecord.SourceObjectId, out var strategyId))
+        {
+            var strategy = await _strategyDraftRepository.GetStrategyRecordByIdAsync(strategyId, ct);
+            if (strategy != null)
+            {
+                return ($"{strategy.RecommendedGoal} | {BuildSnippet(strategy.MicroStep, 96)}", $"/history-object?objectType=strategy_record&objectId={strategy.Id}");
+            }
+        }
+
+        if (caseRecord.SourceObjectType.Equals("period", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(caseRecord.SourceObjectId, out var periodId))
+        {
+            var period = await _periodRepository.GetPeriodByIdAsync(periodId, ct);
+            if (period != null)
+            {
+                return ($"{period.Label}: {BuildSnippet(period.Summary, 96)}", $"/history-object?objectType=period&objectId={period.Id}");
+            }
+        }
+
+        if (caseRecord.SourceObjectType.Equals("state_snapshot", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(caseRecord.SourceObjectId, out var snapshotId))
+        {
+            var snapshot = await _stateProfileRepository.GetStateSnapshotByIdAsync(snapshotId, ct);
+            if (snapshot != null)
+            {
+                return ($"{snapshot.DynamicLabel} / {snapshot.RelationshipStatus}", $"/history-object?objectType=state_snapshot&objectId={snapshot.Id}");
+            }
+        }
+
+        return (string.IsNullOrWhiteSpace(caseRecord.QuestionText) ? caseRecord.ReasonSummary : caseRecord.QuestionText, BuildObjectLink(caseRecord.SourceObjectType, caseRecord.SourceObjectId));
+    }
+
+    private async Task<List<ActivityEventReadModel>> BuildStage6CaseHistoryAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
+    {
+        var history = await _domainReviewEventRepository.GetByObjectAsync("stage6_case", caseRecord.Id.ToString(), 12, ct);
+        if (caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase))
+        {
+            history.AddRange(await _domainReviewEventRepository.GetByObjectAsync("clarification_question", caseRecord.SourceObjectId, 12, ct));
+        }
+
+        return history
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(12)
+            .Select(ToActivity)
+            .ToList();
+    }
+
+    private async Task<List<Stage6EvidenceReadModel>> BuildStage6EvidenceAsync(
+        Stage6CaseRecord caseRecord,
+        ClarificationQuestionDetailReadModel? clarification,
+        CancellationToken ct)
+    {
+        var refs = ParseJsonStringArray(caseRecord.EvidenceRefsJson);
+        var evidence = new List<Stage6EvidenceReadModel>();
+
+        if (clarification != null)
+        {
+            evidence.Add(new Stage6EvidenceReadModel
+            {
+                Reference = $"clarification_question:{clarification.QuestionId}",
+                SourceClass = "system_inference",
+                Title = "Clarification prompt",
+                Summary = clarification.WhyItMatters,
+                Link = $"/history-object?objectType=clarification_question&objectId={clarification.QuestionId}",
+                TimestampUtc = null
+            });
+        }
+
+        foreach (var reference in refs.Distinct(StringComparer.OrdinalIgnoreCase).Take(12))
+        {
+            evidence.Add(await BuildEvidenceItemAsync(reference, ct));
+        }
+
+        return evidence;
+    }
+
+    private async Task<Stage6EvidenceReadModel> BuildEvidenceItemAsync(string reference, CancellationToken ct)
+    {
+        if (!TryParseReference(reference, out var objectType, out var objectId))
+        {
+            return new Stage6EvidenceReadModel
+            {
+                Reference = reference,
+                SourceClass = "system_inference",
+                Title = "Reference",
+                Summary = reference
+            };
+        }
+
+        switch (objectType)
+        {
+            case "message" when long.TryParse(objectId, out var messageId):
+                var message = await _messageRepository.GetByIdAsync(messageId, ct);
+                if (message != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "observed_evidence",
+                        Title = $"Message #{message.Id}",
+                        Summary = BuildSnippet(message.Text, 160),
+                        Link = $"/search?objectType=message&q={Uri.EscapeDataString(message.Id.ToString())}",
+                        TimestampUtc = message.Timestamp
+                    };
+                }
+
+                break;
+
+            case "clarification_question" when Guid.TryParse(objectId, out var questionId):
+                var question = await _clarificationRepository.GetQuestionByIdAsync(questionId, ct);
+                if (question != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Clarification question",
+                        Summary = question.QuestionText,
+                        Link = $"/history-object?objectType=clarification_question&objectId={question.Id}",
+                        TimestampUtc = question.UpdatedAt
+                    };
+                }
+
+                break;
+
+            case "clarification_answer" when Guid.TryParse(objectId, out var answerId):
+                var answer = await _clarificationRepository.GetAnswerByIdAsync(answerId, ct);
+                if (answer != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "user_reported_context",
+                        Title = "Clarification answer",
+                        Summary = answer.AnswerValue,
+                        Link = $"/search?objectType=clarification_answer&q={Uri.EscapeDataString(answer.Id.ToString())}",
+                        TimestampUtc = answer.CreatedAt
+                    };
+                }
+
+                break;
+
+            case "state_snapshot" when Guid.TryParse(objectId, out var snapshotId):
+                var snapshot = await _stateProfileRepository.GetStateSnapshotByIdAsync(snapshotId, ct);
+                if (snapshot != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Current-state snapshot",
+                        Summary = $"{snapshot.DynamicLabel} / {snapshot.RelationshipStatus} (conf {snapshot.Confidence:0.00})",
+                        Link = $"/history-object?objectType=state_snapshot&objectId={snapshot.Id}",
+                        TimestampUtc = snapshot.AsOf
+                    };
+                }
+
+                break;
+
+            case "strategy_record" when Guid.TryParse(objectId, out var strategyId):
+                var strategy = await _strategyDraftRepository.GetStrategyRecordByIdAsync(strategyId, ct);
+                if (strategy != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Strategy record",
+                        Summary = $"{strategy.RecommendedGoal} | {BuildSnippet(strategy.MicroStep, 140)}",
+                        Link = $"/history-object?objectType=strategy_record&objectId={strategy.Id}",
+                        TimestampUtc = strategy.CreatedAt
+                    };
+                }
+
+                break;
+
+            case "draft_record" when Guid.TryParse(objectId, out var draftId):
+                var draft = await _strategyDraftRepository.GetDraftRecordByIdAsync(draftId, ct);
+                if (draft != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Draft record",
+                        Summary = BuildSnippet(draft.MainDraft, 160),
+                        Link = $"/history-object?objectType=draft_record&objectId={draft.Id}",
+                        TimestampUtc = draft.CreatedAt
+                    };
+                }
+
+                break;
+
+            case "period" when Guid.TryParse(objectId, out var periodId):
+                var period = await _periodRepository.GetPeriodByIdAsync(periodId, ct);
+                if (period != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Timeline period",
+                        Summary = $"{period.Label}: {BuildSnippet(period.Summary, 140)}",
+                        Link = $"/history-object?objectType=period&objectId={period.Id}",
+                        TimestampUtc = period.UpdatedAt
+                    };
+                }
+
+                break;
+
+            case "conflict_record" when Guid.TryParse(objectId, out var conflictId):
+                var conflict = await _inboxConflictRepository.GetConflictRecordByIdAsync(conflictId, ct);
+                if (conflict != null)
+                {
+                    return new Stage6EvidenceReadModel
+                    {
+                        Reference = reference,
+                        SourceClass = "system_inference",
+                        Title = "Conflict record",
+                        Summary = conflict.Summary,
+                        Link = $"/history-object?objectType=conflict_record&objectId={conflict.Id}",
+                        TimestampUtc = conflict.UpdatedAt
+                    };
+                }
+
+                break;
+        }
+
+        return new Stage6EvidenceReadModel
+        {
+            Reference = reference,
+            SourceClass = SourceClassForReference(objectType),
+            Title = objectType.Replace('_', ' '),
+            Summary = objectId,
+            Link = BuildObjectLink(objectType, objectId)
+        };
+    }
+
+    private async Task<List<Stage6ArtifactSummaryReadModel>> BuildStage6ArtifactSummariesAsync(
+        WebReadRequest request,
+        IReadOnlyCollection<string> artifactTypes,
+        CancellationToken ct)
+    {
+        var results = new List<Stage6ArtifactSummaryReadModel>();
+        var scopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId);
+        foreach (var artifactType in artifactTypes.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var current = await _stage6ArtifactRepository.GetCurrentAsync(request.CaseId, request.ChatId, artifactType, scopeKey, ct);
+            if (current == null)
+            {
+                results.Add(new Stage6ArtifactSummaryReadModel
+                {
+                    ArtifactType = artifactType,
+                    Exists = false,
+                    Status = "missing",
+                    Summary = "No current artifact.",
+                    Reason = "pending_generation"
+                });
+                continue;
+            }
+
+            var evidenceStamp = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(request.CaseId, request.ChatId, artifactType, ct);
+            var freshness = Stage6ArtifactFreshness.Evaluate(current, DateTime.UtcNow, evidenceStamp.LatestEvidenceAtUtc);
+            var summary = SummarizeArtifact(current, freshness.Reason);
+            results.Add(new Stage6ArtifactSummaryReadModel
+            {
+                ArtifactType = artifactType,
+                Exists = true,
+                Status = freshness.IsStale ? "stale" : "fresh",
+                Summary = summary.Summary,
+                Reason = freshness.Reason,
+                ConfidenceLabel = summary.ConfidenceLabel,
+                GeneratedAt = current.GeneratedAt,
+                RefreshedAt = current.RefreshedAt,
+                PayloadObjectType = current.PayloadObjectType,
+                PayloadObjectId = current.PayloadObjectId
+            });
+        }
+
+        return results;
+    }
+
+    private async Task<List<Stage6ContextEntryReadModel>> BuildStage6ContextEntriesAsync(
+        WebReadRequest request,
+        Stage6CaseRecord caseRecord,
+        CancellationToken ct)
+    {
+        var questionId = caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+                         && Guid.TryParse(caseRecord.SourceObjectId, out var parsedQuestionId)
+            ? parsedQuestionId
+            : (Guid?)null;
+
+        var contextEntries = await _stage6UserContextRepository.GetByScopeCaseAsync(request.CaseId, 120, ct);
+        return contextEntries
+            .Where(x => x.ChatId == request.ChatId)
+            .Where(x => x.Stage6CaseId == caseRecord.Id || (questionId.HasValue && x.ClarificationQuestionId == questionId.Value))
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(10)
+            .Select(x => new Stage6ContextEntryReadModel
+            {
+                Id = x.Id,
+                SourceKind = x.SourceKind,
+                ContentText = x.ContentText,
+                EnteredVia = x.EnteredVia,
+                UserReportedCertainty = x.UserReportedCertainty,
+                CreatedAt = x.CreatedAt,
+                AppliesToRefs = ParseJsonStringArray(x.AppliesToRefsJson)
+            })
+            .ToList();
+    }
+
+    private async Task<List<Stage6CaseQueueItemReadModel>> BuildLinkedCasesForArtifactAsync(
+        WebReadRequest request,
+        string artifactType,
+        CancellationToken ct)
+    {
+        var cases = await _stage6CaseRepository.GetCasesAsync(request.CaseId, ct: ct);
+        return cases
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .Where(x => ParseJsonStringArray(x.TargetArtifactTypesJson).Contains(artifactType, StringComparer.OrdinalIgnoreCase))
+            .OrderByDescending(x => PriorityWeight(x.Priority))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Take(8)
+            .Select(x => new Stage6CaseQueueItemReadModel
+            {
+                Id = x.Id,
+                CaseType = x.CaseType,
+                CaseSubtype = x.CaseSubtype,
+                Status = x.Status,
+                Priority = x.Priority,
+                Confidence = x.Confidence,
+                ReasonSummary = x.ReasonSummary,
+                QuestionText = x.QuestionText,
+                SourceObjectType = x.SourceObjectType,
+                SourceObjectId = x.SourceObjectId,
+                UpdatedAt = x.UpdatedAt,
+                NeedsAnswer = x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase),
+                ResponseMode = x.ResponseMode,
+                EvidenceCount = ParseJsonStringArray(x.EvidenceRefsJson).Count,
+                TargetArtifactTypes = ParseJsonStringArray(x.TargetArtifactTypesJson)
+            })
+            .ToList();
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        return NormalizeArtifactType(artifact.ArtifactType) switch
+        {
+            Stage6ArtifactTypes.CurrentState => SummarizeCurrentStateArtifact(artifact, freshnessReason),
+            Stage6ArtifactTypes.Strategy => SummarizeStrategyArtifact(artifact, freshnessReason),
+            Stage6ArtifactTypes.Draft => SummarizeDraftArtifact(artifact, freshnessReason),
+            Stage6ArtifactTypes.Review => SummarizeReviewArtifact(artifact, freshnessReason),
+            Stage6ArtifactTypes.ClarificationState => SummarizeClarificationStateArtifact(artifact, freshnessReason),
+            Stage6ArtifactTypes.Dossier => SummarizeDossierArtifact(artifact, freshnessReason),
+            _ => (BuildSnippet(artifact.PayloadJson, 180), null)
+        };
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeCurrentStateArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<CurrentStateReadModel>(artifact.PayloadJson);
+        if (model != null)
+        {
+            return ($"{model.DynamicLabel} / {model.RelationshipStatus}{RenderFreshnessSuffix(freshnessReason)}", model.Confidence.ToString("0.00"));
+        }
+
+        return (BuildSnippet(artifact.PayloadJson, 180), null);
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeStrategyArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<StrategyReadModel>(artifact.PayloadJson);
+        if (model != null && !string.IsNullOrWhiteSpace(model.PrimarySummary))
+        {
+            return ($"{BuildSnippet(model.PrimarySummary, 140)}{RenderFreshnessSuffix(freshnessReason)}", model.Confidence.ToString("0.00"));
+        }
+
+        var payload = ParseJsonMap(artifact.PayloadJson);
+        var goal = payload.GetValueOrDefault("recommendedGoal");
+        var step = payload.GetValueOrDefault("microStep");
+        var confidence = payload.GetValueOrDefault("strategyConfidence");
+        var summary = string.IsNullOrWhiteSpace(goal)
+            ? BuildSnippet(step, 160)
+            : $"{goal} | {BuildSnippet(step, 120)}";
+        return ($"{summary}{RenderFreshnessSuffix(freshnessReason)}", string.IsNullOrWhiteSpace(confidence) ? null : confidence);
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeDraftArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<DraftReadModel>(artifact.PayloadJson);
+        if (model != null && !string.IsNullOrWhiteSpace(model.MainDraft))
+        {
+            return ($"{BuildSnippet(model.MainDraft, 140)}{RenderFreshnessSuffix(freshnessReason)}", model.Confidence.ToString("0.00"));
+        }
+
+        var payload = ParseJsonMap(artifact.PayloadJson);
+        return ($"{BuildSnippet(payload.GetValueOrDefault("mainDraft"), 160)}{RenderFreshnessSuffix(freshnessReason)}", payload.GetValueOrDefault("confidence"));
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeReviewArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<DraftReviewResult>(artifact.PayloadJson);
+        if (model != null)
+        {
+            var summary = string.IsNullOrWhiteSpace(model.Assessment)
+                ? BuildSnippet(model.StrategyConflictNote, 140)
+                : BuildSnippet(model.Assessment, 140);
+            return ($"{summary}{RenderFreshnessSuffix(freshnessReason)}", model.MainRisks.Count.ToString());
+        }
+
+        return (BuildSnippet(artifact.PayloadJson, 180), null);
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeClarificationStateArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<ClarificationsReadModel>(artifact.PayloadJson);
+        if (model != null)
+        {
+            return ($"open_clarifications={model.OpenCount}, top_questions={model.TopQuestions.Count}{RenderFreshnessSuffix(freshnessReason)}", null);
+        }
+
+        return (BuildSnippet(artifact.PayloadJson, 180), null);
+    }
+
+    private static (string Summary, string? ConfidenceLabel) SummarizeDossierArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
+    {
+        var model = Deserialize<DossierReadModel>(artifact.PayloadJson);
+        if (model != null)
+        {
+            var summary = string.IsNullOrWhiteSpace(model.Summary)
+                ? $"observed={model.ObservedFacts.Count}, confirmed={model.Confirmed.Count}, conflicts={model.Conflicts.Count}"
+                : BuildSnippet(model.Summary, 160);
+            return ($"{summary}{RenderFreshnessSuffix(freshnessReason)}", null);
+        }
+
+        return (BuildSnippet(artifact.PayloadJson, 180), null);
+    }
+
+    private static List<Stage6EvidenceReadModel> BuildEvidenceFromBasis(string? basisJson)
+    {
+        return ParseJsonMap(basisJson)
+            .Select(x => new Stage6EvidenceReadModel
+            {
+                Reference = x.Key,
+                SourceClass = "observed_evidence",
+                Title = x.Key.Replace('_', ' '),
+                Summary = x.Value
+            })
+            .ToList();
+    }
+
     private async Task<List<DomainReviewEvent>> CollectRecentEventsAsync(WebReadRequest request, int limit, CancellationToken ct)
     {
         var objectRefs = new List<(string ObjectType, string ObjectId)>();
@@ -939,6 +1992,205 @@ public class WebOpsService : IWebOpsService
         }
 
         return result;
+    }
+
+    private static List<string> ParseJsonStringArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return doc.RootElement.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static T? Deserialize<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static string NormalizeCaseQueueStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() switch
+        {
+            "all" => "all",
+            "new" => Stage6CaseStatuses.New,
+            "ready" => Stage6CaseStatuses.Ready,
+            "needs_user_input" => Stage6CaseStatuses.NeedsUserInput,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            _ => "active"
+        };
+    }
+
+    private static string NormalizeInboxStatusAsCaseStatus(string? status)
+    {
+        return status?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "open" => "active",
+            "active" => "active",
+            "all" => "all",
+            "ready" => Stage6CaseStatuses.Ready,
+            "needs_user_input" => Stage6CaseStatuses.NeedsUserInput,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            _ => "active"
+        };
+    }
+
+    private static bool MatchesCaseQueueStatus(Stage6CaseRecord caseRecord, string normalizedStatus)
+    {
+        return normalizedStatus switch
+        {
+            "all" => true,
+            "active" => caseRecord.Status is Stage6CaseStatuses.New or Stage6CaseStatuses.Ready or Stage6CaseStatuses.NeedsUserInput or Stage6CaseStatuses.Stale,
+            _ => caseRecord.Status.Equals(normalizedStatus, StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static bool MatchesCaseQuery(Stage6CaseRecord caseRecord, string query)
+    {
+        return (caseRecord.CaseType?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.CaseSubtype?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.Status?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.Priority?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.ReasonSummary?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.QuestionText?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.SourceObjectType?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (caseRecord.SourceObjectId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+               || ParseJsonStringArray(caseRecord.TargetArtifactTypesJson).Any(x => x.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int PriorityWeight(string priority)
+    {
+        return priority?.Trim().ToLowerInvariant() switch
+        {
+            "blocking" => 4,
+            "important" => 3,
+            "high" => 3,
+            "optional" => 1,
+            _ => 2
+        };
+    }
+
+    private static int StatusWeight(string status)
+    {
+        return status?.Trim().ToLowerInvariant() switch
+        {
+            Stage6CaseStatuses.NeedsUserInput => 5,
+            Stage6CaseStatuses.Ready => 4,
+            Stage6CaseStatuses.New => 3,
+            Stage6CaseStatuses.Stale => 2,
+            Stage6CaseStatuses.Resolved => 1,
+            Stage6CaseStatuses.Rejected => 0,
+            _ => 0
+        };
+    }
+
+    private static string NormalizeArtifactType(string artifactType)
+    {
+        return string.IsNullOrWhiteSpace(artifactType)
+            ? string.Empty
+            : artifactType.Trim().ToLowerInvariant();
+    }
+
+    private static string NormalizeStage6Action(string action)
+    {
+        return action?.Trim().ToLowerInvariant() switch
+        {
+            "resolve" => "resolve",
+            "reject" => "reject",
+            "refresh" => "refresh",
+            "annotate" => "annotate",
+            _ => string.Empty
+        };
+    }
+
+    private static string? EmptyToNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static bool TryParseReference(string reference, out string objectType, out string objectId)
+    {
+        objectType = string.Empty;
+        objectId = string.Empty;
+        if (string.IsNullOrWhiteSpace(reference))
+        {
+            return false;
+        }
+
+        var parts = reference.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            return false;
+        }
+
+        objectType = parts[0].Trim().ToLowerInvariant();
+        objectId = parts[1].Trim();
+        return true;
+    }
+
+    private static string SourceClassForReference(string objectType)
+    {
+        return objectType switch
+        {
+            "message" => "observed_evidence",
+            "clarification_answer" => "user_reported_context",
+            _ => "system_inference"
+        };
+    }
+
+    private static string? BuildObjectLink(string objectType, string objectId)
+    {
+        if (string.IsNullOrWhiteSpace(objectType) || string.IsNullOrWhiteSpace(objectId))
+        {
+            return null;
+        }
+
+        return objectType.Trim().ToLowerInvariant() switch
+        {
+            "stage6_artifact_type" => $"/ops-artifact?artifactType={Uri.EscapeDataString(objectId)}",
+            _ => $"/history-object?objectType={Uri.EscapeDataString(objectType)}&objectId={Uri.EscapeDataString(objectId)}"
+        };
+    }
+
+    private static string RenderFreshnessSuffix(string? freshnessReason)
+    {
+        return string.IsNullOrWhiteSpace(freshnessReason) ? string.Empty : $" [{freshnessReason}]";
     }
 
     private static Guid? TryParseGuidMetric(IReadOnlyDictionary<string, string> metrics, string key)
