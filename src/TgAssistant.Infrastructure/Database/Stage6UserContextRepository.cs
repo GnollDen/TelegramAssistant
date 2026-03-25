@@ -93,7 +93,8 @@ public class Stage6UserContextRepository : IStage6UserContextRepository
         {
             UserContextSourceKinds.ClarificationAnswer or
             UserContextSourceKinds.LongFormContext or
-            UserContextSourceKinds.OfflineContextNote => normalized,
+            UserContextSourceKinds.OfflineContextNote or
+            UserContextSourceKinds.OperatorAnnotation => normalized,
             _ => UserContextSourceKinds.ClarificationAnswer
         };
     }

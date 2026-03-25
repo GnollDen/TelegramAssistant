@@ -5,6 +5,7 @@ public static class UserContextSourceKinds
     public const string ClarificationAnswer = "clarification_answer";
     public const string LongFormContext = "long_form_context";
     public const string OfflineContextNote = "offline_context_note";
+    public const string OperatorAnnotation = "operator_annotation";
 }
 
 public class Stage6UserContextEntry

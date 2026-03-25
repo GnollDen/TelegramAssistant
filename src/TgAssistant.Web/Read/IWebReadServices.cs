@@ -29,6 +29,37 @@ public interface IWebReviewService
 
 public interface IWebOpsService
 {
+    Task<Stage6CaseQueueReadModel> GetCaseQueueAsync(
+        WebReadRequest request,
+        string? status = "active",
+        string? priority = null,
+        string? caseType = null,
+        string? artifactType = null,
+        string? query = null,
+        CancellationToken ct = default);
+
+    Task<Stage6CaseDetailReadModel> GetCaseDetailAsync(
+        WebReadRequest request,
+        Guid stage6CaseId,
+        CancellationToken ct = default);
+
+    Task<Stage6ArtifactDetailReadModel> GetArtifactDetailAsync(
+        WebReadRequest request,
+        string artifactType,
+        CancellationToken ct = default);
+
+    Task<WebStage6CaseActionResult> ApplyCaseActionAsync(
+        WebStage6CaseActionRequest request,
+        CancellationToken ct = default);
+
+    Task<WebStage6ClarificationAnswerResult> ApplyClarificationAnswerAsync(
+        WebStage6ClarificationAnswerRequest request,
+        CancellationToken ct = default);
+
+    Task<WebStage6ArtifactActionResult> ApplyArtifactActionAsync(
+        WebStage6ArtifactActionRequest request,
+        CancellationToken ct = default);
+
     Task<InboxReadModel> GetInboxAsync(
         WebReadRequest request,
         string? group = null,
