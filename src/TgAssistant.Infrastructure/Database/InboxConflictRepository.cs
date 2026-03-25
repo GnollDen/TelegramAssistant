@@ -9,10 +9,14 @@ namespace TgAssistant.Infrastructure.Database;
 public class InboxConflictRepository : IInboxConflictRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
 
-    public InboxConflictRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
+    public InboxConflictRepository(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IStage6CaseRepository stage6CaseRepository)
     {
         _dbFactory = dbFactory;
+        _stage6CaseRepository = stage6CaseRepository;
     }
 
     public async Task<InboxItem> CreateInboxItemAsync(InboxItem item, CancellationToken ct = default)
@@ -40,6 +44,7 @@ public class InboxConflictRepository : IInboxConflictRepository
 
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO domain_inbox_items (
                     id,
@@ -102,6 +107,7 @@ public class InboxConflictRepository : IInboxConflictRepository
                 .ThenByDescending(x => x.Id)
                 .FirstAsync(ct);
 
+            _ = await UpsertCaseFromInboxAsync(persisted, ct);
             return ToDomain(persisted);
         }, ct);
     }
@@ -155,6 +161,7 @@ public class InboxConflictRepository : IInboxConflictRepository
 
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO domain_conflict_records (
                     id,
@@ -230,6 +237,7 @@ public class InboxConflictRepository : IInboxConflictRepository
                 .ThenByDescending(x => x.Id)
                 .FirstAsync(ct);
 
+            _ = await UpsertCaseFromConflictAsync(persisted, ct);
             return ToDomain(persisted);
         }, ct);
     }
@@ -262,6 +270,7 @@ public class InboxConflictRepository : IInboxConflictRepository
     {
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             var row = await db.InboxItems.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (row == null)
             {
@@ -288,6 +297,7 @@ public class InboxConflictRepository : IInboxConflictRepository
             });
 
             await db.SaveChangesAsync(ct);
+            _ = await UpsertCaseFromInboxAsync(row, ct);
             return true;
         }, ct);
     }
@@ -296,6 +306,7 @@ public class InboxConflictRepository : IInboxConflictRepository
     {
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             var row = await db.ConflictRecords.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (row == null)
             {
@@ -322,8 +333,177 @@ public class InboxConflictRepository : IInboxConflictRepository
             });
 
             await db.SaveChangesAsync(ct);
+            _ = await UpsertCaseFromConflictAsync(row, ct);
             return true;
         }, ct);
+    }
+
+    private async Task<Stage6CaseRecord> UpsertCaseFromInboxAsync(DbInboxItem row, CancellationToken ct)
+    {
+        var stage6Case = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = row.CaseId,
+            ChatId = row.ChatId,
+            ScopeType = "chat",
+            CaseType = ResolveInboxCaseType(row.ItemType),
+            CaseSubtype = row.ItemType,
+            Status = ResolveCaseStatusFromInboxStatus(row.Status),
+            Priority = NormalizePriority(row.Priority),
+            Confidence = null,
+            ReasonSummary = string.IsNullOrWhiteSpace(row.Summary) ? row.Title : row.Summary,
+            EvidenceRefsJson = "[]",
+            SubjectRefsJson = "[]",
+            TargetArtifactTypesJson = "[]",
+            ReopenTriggerRulesJson = """["new_signal","operator_reopen"]""",
+            ProvenanceJson = JsonSerializer.Serialize(new
+            {
+                row.ItemType,
+                row.Title,
+                row.LastActor,
+                row.LastReason
+            }),
+            SourceObjectType = "inbox_item",
+            SourceObjectId = row.Id.ToString(),
+            CreatedAt = row.CreatedAt,
+            UpdatedAt = row.UpdatedAt
+        }, ct);
+
+        await _stage6CaseRepository.UpsertLinkAsync(new Stage6CaseLink
+        {
+            Stage6CaseId = stage6Case.Id,
+            LinkedObjectType = "inbox_item",
+            LinkedObjectId = row.Id.ToString(),
+            LinkRole = Stage6CaseLinkRoles.Source,
+            MetadataJson = "{}",
+            CreatedAt = row.CreatedAt
+        }, ct);
+
+        return stage6Case;
+    }
+
+    private async Task<Stage6CaseRecord> UpsertCaseFromConflictAsync(DbConflictRecord row, CancellationToken ct)
+    {
+        var stage6Case = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = row.CaseId,
+            ChatId = row.ChatId,
+            ScopeType = "chat",
+            CaseType = Stage6CaseTypes.Risk,
+            CaseSubtype = row.ConflictType,
+            Status = ResolveCaseStatusFromConflictStatus(row.Status),
+            Priority = ResolvePriorityFromSeverity(row.Severity),
+            Confidence = ResolveConfidenceFromSeverity(row.Severity),
+            ReasonSummary = row.Summary,
+            EvidenceRefsJson = "[]",
+            SubjectRefsJson = "[]",
+            TargetArtifactTypesJson = "[]",
+            ReopenTriggerRulesJson = """["new_conflict_evidence","operator_reopen"]""",
+            ProvenanceJson = JsonSerializer.Serialize(new
+            {
+                row.ConflictType,
+                row.ObjectAType,
+                row.ObjectAId,
+                row.ObjectBType,
+                row.ObjectBId,
+                row.LastActor,
+                row.LastReason
+            }),
+            SourceObjectType = "conflict_record",
+            SourceObjectId = row.Id.ToString(),
+            CreatedAt = row.CreatedAt,
+            UpdatedAt = row.UpdatedAt
+        }, ct);
+
+        await _stage6CaseRepository.UpsertLinkAsync(new Stage6CaseLink
+        {
+            Stage6CaseId = stage6Case.Id,
+            LinkedObjectType = "conflict_record",
+            LinkedObjectId = row.Id.ToString(),
+            LinkRole = Stage6CaseLinkRoles.Source,
+            MetadataJson = "{}",
+            CreatedAt = row.CreatedAt
+        }, ct);
+
+        return stage6Case;
+    }
+
+    private static string ResolveInboxCaseType(string itemType)
+    {
+        var normalized = (itemType ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Contains("refresh", StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6CaseTypes.StateRefreshNeeded;
+        }
+
+        if (normalized.Contains("dossier", StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6CaseTypes.DossierCandidate;
+        }
+
+        if (normalized.Contains("draft", StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6CaseTypes.DraftCandidate;
+        }
+
+        return Stage6CaseTypes.NeedsReview;
+    }
+
+    private static string ResolveCaseStatusFromInboxStatus(string status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "open" or "pending" or "in_progress" => Stage6CaseStatuses.Ready,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            _ => Stage6CaseStatuses.New
+        };
+    }
+
+    private static string ResolveCaseStatusFromConflictStatus(string status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "open" or "in_progress" => Stage6CaseStatuses.Ready,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            _ => Stage6CaseStatuses.New
+        };
+    }
+
+    private static string ResolvePriorityFromSeverity(string severity)
+    {
+        var normalized = (severity ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "high" => "blocking",
+            "low" => "optional",
+            _ => "important"
+        };
+    }
+
+    private static float ResolveConfidenceFromSeverity(string severity)
+    {
+        var normalized = (severity ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "high" => 0.9f,
+            "low" => 0.35f,
+            _ => 0.65f
+        };
+    }
+
+    private static string NormalizePriority(string priority)
+    {
+        var normalized = (priority ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "blocking" or "important" or "optional" => normalized,
+            _ => "important"
+        };
     }
 
     private static InboxItem ToDomain(DbInboxItem row) => new()

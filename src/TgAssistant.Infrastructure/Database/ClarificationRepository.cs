@@ -9,10 +9,17 @@ namespace TgAssistant.Infrastructure.Database;
 public class ClarificationRepository : IClarificationRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6UserContextRepository _stage6UserContextRepository;
 
-    public ClarificationRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
+    public ClarificationRepository(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IStage6CaseRepository stage6CaseRepository,
+        IStage6UserContextRepository stage6UserContextRepository)
     {
         _dbFactory = dbFactory;
+        _stage6CaseRepository = stage6CaseRepository;
+        _stage6UserContextRepository = stage6UserContextRepository;
     }
 
     public async Task<ClarificationQuestion> CreateQuestionAsync(ClarificationQuestion question, CancellationToken ct = default)
@@ -43,8 +50,10 @@ public class ClarificationRepository : IClarificationRepository
 
         await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             db.ClarificationQuestions.Add(row);
             await db.SaveChangesAsync(ct);
+            await UpsertClarificationCaseAsync(row, actor: "clarification_repository", reason: "question_created", ct);
         }, ct);
 
         return ToDomain(row);
@@ -138,6 +147,7 @@ public class ClarificationRepository : IClarificationRepository
     {
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             var row = await db.ClarificationQuestions.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (row == null)
             {
@@ -164,6 +174,7 @@ public class ClarificationRepository : IClarificationRepository
             });
 
             await db.SaveChangesAsync(ct);
+            await UpsertClarificationCaseAsync(row, actor, reason ?? "question_workflow_updated", ct);
             return true;
         }, ct);
     }
@@ -178,6 +189,7 @@ public class ClarificationRepository : IClarificationRepository
     {
         return await WithDbContextAsync(async db =>
         {
+            using var scope = AmbientDbContextScope.Enter(db);
             var question = await db.ClarificationQuestions.FirstOrDefaultAsync(x => x.Id == questionId, ct)
                 ?? throw new InvalidOperationException($"Clarification question '{questionId}' not found.");
 
@@ -217,8 +229,169 @@ public class ClarificationRepository : IClarificationRepository
             });
 
             await db.SaveChangesAsync(ct);
+            var stage6Case = await UpsertClarificationCaseAsync(question, actor, reason ?? "answer_applied", ct);
+            await _stage6UserContextRepository.CreateAsync(new Stage6UserContextEntry
+            {
+                Stage6CaseId = stage6Case.Id,
+                ScopeCaseId = question.CaseId,
+                ChatId = question.ChatId ?? 0,
+                SourceKind = UserContextSourceKinds.ClarificationAnswer,
+                ClarificationQuestionId = question.Id,
+                ContentText = answerRow.AnswerValue,
+                AppliesToRefsJson = NormalizeJsonArray(answerRow.AffectedObjectsJson),
+                EnteredVia = ResolveEnteredVia(answerRow.SourceType),
+                UserReportedCertainty = Math.Clamp(answerRow.AnswerConfidence, 0f, 1f),
+                SourceType = answerRow.SourceType,
+                SourceId = answerRow.SourceId,
+                SourceMessageId = answerRow.SourceMessageId,
+                SourceSessionId = answerRow.SourceSessionId,
+                ConflictsWithRefsJson = "[]",
+                CreatedAt = answerRow.CreatedAt
+            }, ct);
             return ToDomain(answerRow);
         }, ct);
+    }
+
+    private async Task<Stage6CaseRecord> UpsertClarificationCaseAsync(
+        DbClarificationQuestion question,
+        string actor,
+        string reason,
+        CancellationToken ct)
+    {
+        var caseRecord = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = question.CaseId,
+            ChatId = question.ChatId,
+            ScopeType = "chat",
+            CaseType = ResolveClarificationCaseType(question.QuestionType),
+            CaseSubtype = question.QuestionType,
+            Status = ResolveCaseStatusFromQuestionStatus(question.Status),
+            Priority = question.Priority,
+            Confidence = Math.Clamp(question.ExpectedGain, 0f, 1f),
+            ReasonSummary = string.IsNullOrWhiteSpace(question.WhyItMatters) ? question.QuestionText : question.WhyItMatters,
+            ClarificationKind = ResolveClarificationKind(question.QuestionType),
+            QuestionText = question.QuestionText,
+            ResponseMode = "free_text",
+            ResponseChannelHint = "bot_or_web",
+            EvidenceRefsJson = "[]",
+            SubjectRefsJson = "[]",
+            TargetArtifactTypesJson = NormalizeJsonArray(question.AffectedOutputsJson),
+            ReopenTriggerRulesJson = """["new_evidence","operator_correction","artifact_stale_after_context_change"]""",
+            ProvenanceJson = JsonSerializer.Serialize(new
+            {
+                source_type = question.SourceType,
+                source_id = question.SourceId,
+                source_message_id = question.SourceMessageId,
+                source_session_id = question.SourceSessionId,
+                actor,
+                reason
+            }),
+            SourceObjectType = "clarification_question",
+            SourceObjectId = question.Id.ToString(),
+            CreatedAt = question.CreatedAt,
+            UpdatedAt = question.UpdatedAt,
+            ResolvedAt = question.ResolvedAt
+        }, ct);
+
+        await _stage6CaseRepository.UpsertLinkAsync(new Stage6CaseLink
+        {
+            Stage6CaseId = caseRecord.Id,
+            LinkedObjectType = "clarification_question",
+            LinkedObjectId = question.Id.ToString(),
+            LinkRole = Stage6CaseLinkRoles.Source,
+            MetadataJson = "{}",
+            CreatedAt = question.CreatedAt
+        }, ct);
+
+        foreach (var artifactType in ParseJsonStringArray(question.AffectedOutputsJson))
+        {
+            await _stage6CaseRepository.UpsertLinkAsync(new Stage6CaseLink
+            {
+                Stage6CaseId = caseRecord.Id,
+                LinkedObjectType = "stage6_artifact_type",
+                LinkedObjectId = artifactType,
+                LinkRole = Stage6CaseLinkRoles.ArtifactTarget,
+                MetadataJson = "{}",
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+        }
+
+        return caseRecord;
+    }
+
+    private static string ResolveClarificationCaseType(string questionType)
+    {
+        var normalized = (questionType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "missing_data" => Stage6CaseTypes.ClarificationMissingData,
+            "ambiguity" => Stage6CaseTypes.ClarificationAmbiguity,
+            "evidence_interpretation_conflict" => Stage6CaseTypes.ClarificationEvidenceInterpretationConflict,
+            "next_step_blocked" => Stage6CaseTypes.ClarificationNextStepBlocked,
+            _ => Stage6CaseTypes.NeedsInput
+        };
+    }
+
+    private static string? ResolveClarificationKind(string questionType)
+    {
+        var normalized = (questionType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized is "missing_data" or "ambiguity" or "evidence_interpretation_conflict" or "next_step_blocked"
+            ? normalized
+            : null;
+    }
+
+    private static string ResolveCaseStatusFromQuestionStatus(string questionStatus)
+    {
+        var normalized = (questionStatus ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "open" or "in_progress" => Stage6CaseStatuses.NeedsUserInput,
+            "answered" => Stage6CaseStatuses.Ready,
+            "resolved" => Stage6CaseStatuses.Resolved,
+            "rejected" => Stage6CaseStatuses.Rejected,
+            "stale" => Stage6CaseStatuses.Stale,
+            _ => Stage6CaseStatuses.New
+        };
+    }
+
+    private static string ResolveEnteredVia(string sourceType)
+    {
+        return (sourceType ?? string.Empty).Contains("telegram", StringComparison.OrdinalIgnoreCase)
+            ? "bot"
+            : "web";
+    }
+
+    private static IReadOnlyList<string> ParseJsonStringArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<string>>(json);
+            if (parsed == null)
+            {
+                return [];
+            }
+
+            return parsed
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string NormalizeJsonArray(string? json)
+    {
+        var values = ParseJsonStringArray(json);
+        return JsonSerializer.Serialize(values);
     }
 
     private static ClarificationQuestion ToDomain(DbClarificationQuestion row) => new()
