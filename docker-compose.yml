@@ -50,6 +50,14 @@ services:
         condition: service_healthy
     environment:
       Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
+      Web__Url: ${WEB_URL:-http://127.0.0.1:5078}
+      Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
+      Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}
+      Web__AccessHeaderName: ${WEB_ACCESS_HEADER_NAME:-X-Tga-Operator-Key}
+      Web__AccessCookieName: ${WEB_ACCESS_COOKIE_NAME:-tga_operator_key}
+      Web__OperatorIdentity: ${WEB_OPERATOR_IDENTITY:-web-operator}
+      Web__DefaultCaseId: ${WEB_DEFAULT_CASE_ID:-0}
+      Web__DefaultChatId: ${WEB_DEFAULT_CHAT_ID:-0}
       Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       Redis__ConnectionString: "127.0.0.1:6379"
       Redis__ConsumerName: ${REDIS_CONSUMER_NAME:-worker}
