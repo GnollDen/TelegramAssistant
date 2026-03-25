@@ -54,6 +54,21 @@ These remain useful as source material, but should not be treated as the first e
 - `PROJECT_REVIEW_BACKLOG_2026-03-25.md`
 - `WORKING_SPRINTS_2026-03-25.md`
 
+## Pre-Sprint 9.5 Execution Notes (2026-03-25)
+
+These notes freeze the Stage 6 baseline and contracts immediately before Sprint 10:
+
+- [PRE_SPRINT_9_5_CONTEXT_REFRESH_PACKET_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRE_SPRINT_9_5_CONTEXT_REFRESH_PACKET_2026-03-25.md)
+- [PRE_SPRINT_9_5_CLARIFICATION_CASE_CONTRACT_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRE_SPRINT_9_5_CLARIFICATION_CASE_CONTRACT_2026-03-25.md)
+- [PRE_SPRINT_9_5_USER_SUPPLIED_CONTEXT_CONTRACT_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRE_SPRINT_9_5_USER_SUPPLIED_CONTEXT_CONTRACT_2026-03-25.md)
+- [PRE_SPRINT_9_5_BEHAVIORAL_PROFILE_INTRO_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRE_SPRINT_9_5_BEHAVIORAL_PROFILE_INTRO_PLAN_2026-03-25.md)
+- [PRE_SPRINT_9_5_SPRINT_10_13_FIT_CHECK_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRE_SPRINT_9_5_SPRINT_10_13_FIT_CHECK_2026-03-25.md)
+
+## Sprint Implementation Notes
+
+- [SPRINT_10_CASE_MODEL_IMPLEMENTATION_NOTES_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\SPRINT_10_CASE_MODEL_IMPLEMENTATION_NOTES_2026-03-25.md)
+- [SPRINT_11_AUTO_CASE_GENERATION_IMPLEMENTATION_NOTES_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\SPRINT_11_AUTO_CASE_GENERATION_IMPLEMENTATION_NOTES_2026-03-25.md)
+
 ## Intent
 
 This folder should reduce planning sprawl and make it obvious:

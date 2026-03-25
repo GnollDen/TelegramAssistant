@@ -533,6 +533,13 @@ Before moving into case generation and operator workflows, agents should be re-a
 - behavioral-profile backlog note
 - updated sprint mapping for Sprints 10-13 if needed
 
+Execution artifacts produced on `2026-03-25`:
+- `PRE_SPRINT_9_5_CONTEXT_REFRESH_PACKET_2026-03-25.md`
+- `PRE_SPRINT_9_5_CLARIFICATION_CASE_CONTRACT_2026-03-25.md`
+- `PRE_SPRINT_9_5_USER_SUPPLIED_CONTEXT_CONTRACT_2026-03-25.md`
+- `PRE_SPRINT_9_5_BEHAVIORAL_PROFILE_INTRO_PLAN_2026-03-25.md`
+- `PRE_SPRINT_9_5_SPRINT_10_13_FIT_CHECK_2026-03-25.md`
+
 ### Exit criteria
 
 - agents have an updated shared context baseline
@@ -562,6 +569,7 @@ Represent actionable Stage 6 work as explicit cases.
 - timestamps, priority, confidence, reason
 - clarification case typing
 - user-context source typing
+- map existing queue primitives (`inbox`, `clarification`, `conflict`) into one explicit case lifecycle model
 
 ### Product contracts applied
 
@@ -610,6 +618,7 @@ Let Stage 6 identify and prioritize useful operator work on its own.
 - noise suppression rules
 - system-detected missing-context cases
 - clarification prompts based on message/date/people gaps
+- runtime ownership for autonomous generation path must be explicit before full rollout
 
 ### Product contracts applied
 
@@ -663,6 +672,7 @@ Make Stage 6 cases and artifacts usable in real operator workflows.
 - show evidence summary before asking for user judgment
 - bot as primary fast clarification intake
 - web as expanded clarification/evidence review surface
+- implementation extends existing bot/web surfaces; no broad web-platform rebuild is implied in this sprint
 
 ### Product contracts applied
 
@@ -718,6 +728,7 @@ Turn Stage 6 into a measurable, improvable system.
 - per-model and per-scenario quality views
 - budget policy by layer
 - evaluation of behavioral-profile usefulness and clarification quality
+- behavioral-profile evaluation remains bounded and non-diagnostic until persistence and evaluation gates are explicit
 
 ### Product contracts applied
 
