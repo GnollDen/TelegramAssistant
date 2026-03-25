@@ -44,6 +44,7 @@ The full execution program is split into two major phases:
 - operator workflow
 - feedback and evaluation
 - product contracts
+- behavioral and user-context intelligence
 
 The key rule is:
 - correctness and silent-failure risk removal come before broader product breadth
@@ -505,6 +506,47 @@ From `PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md`:
 
 - prompt/style A/B only if contract changes materially
 
+## Pre-Sprint 9.5: Agent Context Refresh and Clarification Design
+
+### Goal
+
+Refresh the dev-agent context and lock the design for interactive clarification and user-supplied context before the case-system sprints begin.
+
+### Scope
+
+- refresh agents on latest code, PRD, backlog, and completed sprints
+- validate that Sprint 10+ still match current system reality
+- define interactive clarification case contract
+- define user-supplied context contract
+- define behavioral-profile introduction plan
+
+### Why this exists
+
+After Sprint 9, the system has stronger product contracts.
+Before moving into case generation and operator workflows, agents should be re-anchored on the current code and planning truth so later implementation does not use stale assumptions.
+
+### Deliverables
+
+- refreshed implementation context packet for agents
+- clarification-case design note
+- user-supplied context contract note
+- behavioral-profile backlog note
+- updated sprint mapping for Sprints 10-13 if needed
+
+### Exit criteria
+
+- agents have an updated shared context baseline
+- clarification and user-context layers are explicit backlog work
+- Sprint 10+ assumptions are confirmed or minimally adjusted
+
+### Manual testing
+
+- design review only
+
+### A/B testing
+
+- not needed
+
 ## Sprint 10: Case Model
 
 ### Goal
@@ -518,6 +560,8 @@ Represent actionable Stage 6 work as explicit cases.
 - case statuses
 - artifact linking
 - timestamps, priority, confidence, reason
+- clarification case typing
+- user-context source typing
 
 ### Product contracts applied
 
@@ -564,6 +608,8 @@ Let Stage 6 identify and prioritize useful operator work on its own.
 - minimal prioritization/ranking
 - refresh/reopen logic
 - noise suppression rules
+- system-detected missing-context cases
+- clarification prompts based on message/date/people gaps
 
 ### Product contracts applied
 
@@ -613,6 +659,10 @@ Make Stage 6 cases and artifacts usable in real operator workflows.
   - reject
   - refresh
   - annotate
+- answer clarification cases with user-supplied context
+- show evidence summary before asking for user judgment
+- bot as primary fast clarification intake
+- web as expanded clarification/evidence review surface
 
 ### Product contracts applied
 
@@ -640,6 +690,7 @@ From `PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md`:
 
 - Stage 6 has a real operator workflow
 - bot and web are complementary instead of overlapping messily
+- clarification intake split between bot and web is explicit and usable
 
 ### Manual testing
 
@@ -666,6 +717,7 @@ Turn Stage 6 into a measurable, improvable system.
 - cost and latency analytics by scenario
 - per-model and per-scenario quality views
 - budget policy by layer
+- evaluation of behavioral-profile usefulness and clarification quality
 
 ### Product contracts applied
 
@@ -819,6 +871,7 @@ Recommended A/B checkpoints:
 7. Sprint 7 Stage 6 Artifact Foundation
 8. Sprint 8 Dossier and Current-State Quality
 9. Sprint 9 Stage 6 Product Contracts
+9.5. Pre-Sprint 9.5 Agent Context Refresh and Clarification Design
 10. Sprint 10 Case Model
 11. Sprint 11 Auto Case Generation
 12. Sprint 12 Operator Workflow in Bot and Web
