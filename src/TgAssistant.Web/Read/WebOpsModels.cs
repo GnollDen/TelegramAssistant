@@ -256,10 +256,20 @@ public class Stage6CaseDetailReadModel
     public string? SourceLink { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public DateTime? ReadyAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public DateTime? StaleAt { get; set; }
+    public DateTime? EarliestEvidenceAtUtc { get; set; }
+    public DateTime? LatestEvidenceAtUtc { get; set; }
     public List<string> SubjectRefs { get; set; } = [];
     public List<string> ReopenTriggers { get; set; } = [];
     public List<Stage6EvidenceReadModel> Evidence { get; set; } = [];
+    public List<Stage6EvidenceMessageReadModel> EvidenceMessages { get; set; } = [];
+    public List<Stage6EvidenceParticipantReadModel> EvidenceParticipants { get; set; } = [];
     public List<Stage6ArtifactSummaryReadModel> Artifacts { get; set; } = [];
+    public List<Stage6CaseQueueItemReadModel> LinkedCases { get; set; } = [];
+    public List<Stage6LinkedObjectReadModel> LinkedObjects { get; set; } = [];
     public List<Stage6ContextEntryReadModel> ContextEntries { get; set; } = [];
     public List<Stage6FeedbackReadModel> Feedback { get; set; } = [];
     public List<Stage6CaseOutcomeReadModel> Outcomes { get; set; } = [];
@@ -317,11 +327,16 @@ public class Stage6ContextEntryReadModel
 {
     public Guid Id { get; set; }
     public string SourceKind { get; set; } = string.Empty;
+    public string SourceType { get; set; } = string.Empty;
+    public string SourceId { get; set; } = string.Empty;
     public string ContentText { get; set; } = string.Empty;
     public string EnteredVia { get; set; } = string.Empty;
     public float UserReportedCertainty { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<string> AppliesToRefs { get; set; } = [];
+    public Guid? SupersedesContextEntryId { get; set; }
+    public List<string> ConflictsWithRefs { get; set; } = [];
+    public string? StructuredPayloadJson { get; set; }
 }
 
 public class Stage6ArtifactDetailReadModel
@@ -358,6 +373,33 @@ public class Stage6FeedbackReadModel
     public DateTime CreatedAt { get; set; }
 }
 
+public class Stage6LinkedObjectReadModel
+{
+    public string LinkRole { get; set; } = string.Empty;
+    public string LinkedObjectType { get; set; } = string.Empty;
+    public string LinkedObjectId { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? Link { get; set; }
+}
+
+public class Stage6EvidenceMessageReadModel
+{
+    public long MessageId { get; set; }
+    public DateTime TimestampUtc { get; set; }
+    public long SenderId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public string TextSnippet { get; set; } = string.Empty;
+    public bool IsDirectEvidence { get; set; }
+}
+
+public class Stage6EvidenceParticipantReadModel
+{
+    public long SenderId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public int MessageCount { get; set; }
+    public int EvidenceMessageCount { get; set; }
+}
+
 public class Stage6CaseOutcomeReadModel
 {
     public Guid Id { get; set; }
@@ -382,6 +424,11 @@ public class WebStage6CaseActionRequest
     public string? FeedbackKind { get; set; }
     public string? FeedbackDimension { get; set; }
     public bool? IsUseful { get; set; }
+    public string? ContextSourceKind { get; set; }
+    public string? ContextEntryMode { get; set; }
+    public string? CorrectionTargetRef { get; set; }
+    public string? CorrectionSummary { get; set; }
+    public float? ContextCertainty { get; set; }
 }
 
 public class WebStage6CaseActionResult
