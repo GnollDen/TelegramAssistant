@@ -909,3 +909,16 @@ If completed in order, this sprint plan should produce:
 - a real operator workflow in bot and web
 - measurable quality, cost, and latency
 - a single-operator product that is both technically safer and practically usable
+
+## Separate Web Delivery Track
+
+The backend/operator program above is now largely covered.
+
+The remaining planning gap is a dedicated web-delivery track for turning the current web logic into a real internal operator application.
+
+That work is tracked separately in:
+- [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
+
+Key rule:
+- do not reopen the backend sprint program just to deliver the web layer
+- treat web implementation as a separate execution track built on the completed backend substrate
