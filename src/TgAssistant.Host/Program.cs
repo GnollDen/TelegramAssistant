@@ -67,6 +67,7 @@ try
     var runOutcomeSmoke = args.Any(arg => string.Equals(arg, "--outcome-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage6ExecutionSmoke = args.Any(arg => string.Equals(arg, "--stage6-execution-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
@@ -149,6 +150,7 @@ try
         "--outcome-smoke",
         "--stage5-smoke",
         "--budget-smoke",
+        "--stage6-execution-smoke",
         "--eval-smoke",
         "--launch-smoke",
         "--external-archive-smoke",
@@ -338,6 +340,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<BudgetVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Budget smoke run requested via --budget-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runStage6ExecutionSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<Stage6ExecutionDisciplineVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Stage6 execution smoke run requested via --stage6-execution-smoke. Exiting after successful verification.");
             return;
         }
 

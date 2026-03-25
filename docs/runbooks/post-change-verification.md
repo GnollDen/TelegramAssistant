@@ -30,6 +30,7 @@ Typical commands:
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=ingest --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --stage5-smoke`
+- `dotnet run --project src/TgAssistant.Host -- --stage6-execution-smoke` (Stage 6 cancellation/cooldown/degrade execution discipline)
 
 When prompt contracts change (Sprint 4 scope), also verify:
 
