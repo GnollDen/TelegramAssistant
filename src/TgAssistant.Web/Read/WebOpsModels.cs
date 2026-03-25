@@ -261,6 +261,8 @@ public class Stage6CaseDetailReadModel
     public List<Stage6EvidenceReadModel> Evidence { get; set; } = [];
     public List<Stage6ArtifactSummaryReadModel> Artifacts { get; set; } = [];
     public List<Stage6ContextEntryReadModel> ContextEntries { get; set; } = [];
+    public List<Stage6FeedbackReadModel> Feedback { get; set; } = [];
+    public List<Stage6CaseOutcomeReadModel> Outcomes { get; set; } = [];
     public List<ActivityEventReadModel> History { get; set; } = [];
     public ClarificationQuestionDetailReadModel? Clarification { get; set; }
 }
@@ -340,7 +342,32 @@ public class Stage6ArtifactDetailReadModel
     public string SourceType { get; set; } = string.Empty;
     public string SourceId { get; set; } = string.Empty;
     public List<Stage6EvidenceReadModel> Evidence { get; set; } = [];
+    public List<Stage6FeedbackReadModel> Feedback { get; set; } = [];
     public List<Stage6CaseQueueItemReadModel> LinkedCases { get; set; } = [];
+}
+
+public class Stage6FeedbackReadModel
+{
+    public Guid Id { get; set; }
+    public string FeedbackKind { get; set; } = string.Empty;
+    public string FeedbackDimension { get; set; } = string.Empty;
+    public bool? IsUseful { get; set; }
+    public string? Note { get; set; }
+    public string SourceChannel { get; set; } = string.Empty;
+    public string Actor { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Stage6CaseOutcomeReadModel
+{
+    public Guid Id { get; set; }
+    public string OutcomeType { get; set; } = string.Empty;
+    public string CaseStatusAfter { get; set; } = string.Empty;
+    public bool UserContextMaterial { get; set; }
+    public string? Note { get; set; }
+    public string SourceChannel { get; set; } = string.Empty;
+    public string Actor { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
 }
 
 public class WebStage6CaseActionRequest
@@ -352,6 +379,9 @@ public class WebStage6CaseActionRequest
     public string Actor { get; set; } = "web";
     public string? Reason { get; set; }
     public string? Note { get; set; }
+    public string? FeedbackKind { get; set; }
+    public string? FeedbackDimension { get; set; }
+    public bool? IsUseful { get; set; }
 }
 
 public class WebStage6CaseActionResult
@@ -376,6 +406,8 @@ public class WebStage6ClarificationAnswerRequest
     public bool MarkResolved { get; set; } = true;
     public string Actor { get; set; } = "web";
     public string? Reason { get; set; }
+    public bool? IsUseful { get; set; }
+    public string? FeedbackDimension { get; set; }
 }
 
 public class WebStage6ClarificationAnswerResult

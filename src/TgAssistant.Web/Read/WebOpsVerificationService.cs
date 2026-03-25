@@ -17,6 +17,8 @@ public class WebOpsVerificationService
     private readonly IBudgetOpsRepository _budgetOpsRepository;
     private readonly IEvalRepository _evalRepository;
     private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6FeedbackRepository _stage6FeedbackRepository;
+    private readonly IStage6CaseOutcomeRepository _stage6CaseOutcomeRepository;
 
     public WebOpsVerificationService(
         IWebRouteRenderer webRouteRenderer,
@@ -30,7 +32,9 @@ public class WebOpsVerificationService
         IOfflineEventRepository offlineEventRepository,
         IBudgetOpsRepository budgetOpsRepository,
         IEvalRepository evalRepository,
-        IStage6CaseRepository stage6CaseRepository)
+        IStage6CaseRepository stage6CaseRepository,
+        IStage6FeedbackRepository stage6FeedbackRepository,
+        IStage6CaseOutcomeRepository stage6CaseOutcomeRepository)
     {
         _webRouteRenderer = webRouteRenderer;
         _messageRepository = messageRepository;
@@ -44,6 +48,8 @@ public class WebOpsVerificationService
         _budgetOpsRepository = budgetOpsRepository;
         _evalRepository = evalRepository;
         _stage6CaseRepository = stage6CaseRepository;
+        _stage6FeedbackRepository = stage6FeedbackRepository;
+        _stage6CaseOutcomeRepository = stage6CaseOutcomeRepository;
     }
 
     public async Task RunAsync(CancellationToken ct = default)
@@ -150,9 +156,14 @@ public class WebOpsVerificationService
         {
             Id = Guid.NewGuid(),
             RunId = runId,
+            ScenarioType = "economics",
             ScenarioName = "budget_visibility",
             Passed = true,
             Summary = "budget state visible",
+            LatencyMs = 240,
+            CostUsd = 0.014m,
+            ModelSummaryJson = "{\"openai/gpt-4o-mini\":0.014}",
+            FeedbackSummaryJson = "{\"clarification_useful\":1}",
             MetricsJson = "{\"states_visible\":1}",
             CreatedAt = DateTime.UtcNow
         }, ct);
@@ -161,9 +172,14 @@ public class WebOpsVerificationService
         {
             Id = Guid.NewGuid(),
             RunId = previousRunId,
+            ScenarioType = "economics",
             ScenarioName = "budget_visibility",
             Passed = false,
             Summary = "previous run failed for comparison visibility",
+            LatencyMs = 330,
+            CostUsd = 0.021m,
+            ModelSummaryJson = "{\"openai/gpt-4o-mini\":0.021}",
+            FeedbackSummaryJson = "{\"clarification_useful\":0}",
             MetricsJson = "{\"states_visible\":0}",
             CreatedAt = DateTime.UtcNow.AddMinutes(-15)
         }, ct);
@@ -219,6 +235,27 @@ public class WebOpsVerificationService
             throw new InvalidOperationException("Ops web smoke failed: clarification answer intake route did not persist/render answer.");
         }
 
+        var feedbackRows = await _stage6FeedbackRepository.GetByCaseAsync(stage6Case.Id, 20, ct);
+        if (feedbackRows.Count == 0)
+        {
+            throw new InvalidOperationException("Ops web smoke failed: case feedback was not recorded after clarification answer.");
+        }
+
+        var outcomeRows = await _stage6CaseOutcomeRepository.GetByCaseAsync(stage6Case.Id, 20, ct);
+        if (outcomeRows.Count == 0)
+        {
+            throw new InvalidOperationException("Ops web smoke failed: case outcomes were not recorded after clarification answer.");
+        }
+
+        var caseAfterAnswer = await _webRouteRenderer.RenderAsync($"/case-detail?caseId={stage6Case.Id}", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-detail after answer did not resolve.");
+        if (string.IsNullOrWhiteSpace(caseAfterAnswer.Html)
+            || !caseAfterAnswer.Html.Contains("Feedback", StringComparison.OrdinalIgnoreCase)
+            || !caseAfterAnswer.Html.Contains("Outcomes", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: case detail does not expose feedback/outcome history.");
+        }
+
         var historyPage = await _webRouteRenderer.RenderAsync("/history?objectType=clarification_question", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /history route did not resolve.");
         if (string.IsNullOrWhiteSpace(historyPage.Html)
@@ -263,6 +300,8 @@ public class WebOpsVerificationService
         if (string.IsNullOrWhiteSpace(evalPage.Html)
             || !evalPage.Html.Contains("Ops Eval", StringComparison.OrdinalIgnoreCase)
             || !evalPage.Html.Contains("budget_visibility", StringComparison.OrdinalIgnoreCase)
+            || !evalPage.Html.Contains("latency_ms", StringComparison.OrdinalIgnoreCase)
+            || !evalPage.Html.Contains("cost_usd", StringComparison.OrdinalIgnoreCase)
             || !evalPage.Html.Contains("Run Comparisons", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: /ops-eval route does not show eval run/scenarios.");

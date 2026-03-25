@@ -63,6 +63,7 @@ public class EvalRunResult
 {
     public Guid RunId { get; set; }
     public string RunName { get; set; } = string.Empty;
+    public string? ScenarioPackKey { get; set; }
     public bool Passed { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime FinishedAt { get; set; }
@@ -75,9 +76,14 @@ public class EvalScenarioResult
 {
     public Guid Id { get; set; }
     public Guid RunId { get; set; }
+    public string ScenarioType { get; set; } = "quality";
     public string ScenarioName { get; set; } = string.Empty;
     public bool Passed { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public int LatencyMs { get; set; }
+    public decimal CostUsd { get; set; }
+    public string ModelSummaryJson { get; set; } = "{}";
+    public string FeedbackSummaryJson { get; set; } = "{}";
     public string MetricsJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

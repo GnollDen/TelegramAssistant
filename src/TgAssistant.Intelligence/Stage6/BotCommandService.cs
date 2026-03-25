@@ -37,6 +37,8 @@ public class BotCommandService : IBotCommandService
     private readonly IStage6CaseRepository _stage6CaseRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IStage6UserContextRepository _stage6UserContextRepository;
+    private readonly IStage6FeedbackRepository _stage6FeedbackRepository;
+    private readonly IStage6CaseOutcomeRepository _stage6CaseOutcomeRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly ILogger<BotCommandService> _logger;
 
@@ -58,6 +60,8 @@ public class BotCommandService : IBotCommandService
         IStage6CaseRepository stage6CaseRepository,
         IClarificationRepository clarificationRepository,
         IStage6UserContextRepository stage6UserContextRepository,
+        IStage6FeedbackRepository stage6FeedbackRepository,
+        IStage6CaseOutcomeRepository stage6CaseOutcomeRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
         ILogger<BotCommandService> logger)
     {
@@ -78,6 +82,8 @@ public class BotCommandService : IBotCommandService
         _stage6CaseRepository = stage6CaseRepository;
         _clarificationRepository = clarificationRepository;
         _stage6UserContextRepository = stage6UserContextRepository;
+        _stage6FeedbackRepository = stage6FeedbackRepository;
+        _stage6CaseOutcomeRepository = stage6CaseOutcomeRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
         _logger = logger;
     }
@@ -112,6 +118,7 @@ public class BotCommandService : IBotCommandService
                 "/reject" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Rejected, "reject", ct)),
                 "/refresh" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Ready, "refresh", ct)),
                 "/annotate" => (true, await HandleAnnotateAsync(args, transportChatId, sourceMessageId, senderId, ct)),
+                "/feedback" => (true, await HandleFeedbackAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/timeline" => (true, await HandleTimelineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/offline" => (true, await HandleOfflineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/help" => (true, BuildHelp()),
@@ -468,9 +475,22 @@ public class BotCommandService : IBotCommandService
                     actor,
                     reason,
                     ct);
-                return resolvedQuestion
-                    ? $"Resolved clarification case {caseRecord.Id} after recorded answer."
-                    : $"Failed to resolve clarification case {caseRecord.Id}.";
+                if (resolvedQuestion)
+                {
+                    await RecordOutcomeAndFeedbackAsync(
+                        caseRecord,
+                        Stage6CaseOutcomeTypes.Resolved,
+                        Stage6CaseStatuses.Resolved,
+                        Stage6FeedbackKinds.AcceptUseful,
+                        true,
+                        reason,
+                        actor,
+                        sourceChannel: "bot",
+                        ct: ct);
+                    return $"Resolved clarification case {caseRecord.Id} after recorded answer.";
+                }
+
+                return $"Failed to resolve clarification case {caseRecord.Id}.";
             }
         }
 
@@ -483,9 +503,22 @@ public class BotCommandService : IBotCommandService
                 actor,
                 reason,
                 ct);
-            return rejectedQuestion
-                ? $"Rejected clarification case {caseRecord.Id}. Reopen with /refresh {caseRecord.Id} if new evidence arrives."
-                : $"Failed to reject clarification case {caseRecord.Id}.";
+            if (rejectedQuestion)
+            {
+                await RecordOutcomeAndFeedbackAsync(
+                    caseRecord,
+                    Stage6CaseOutcomeTypes.Rejected,
+                    Stage6CaseStatuses.Rejected,
+                    Stage6FeedbackKinds.RejectNotUseful,
+                    false,
+                    reason,
+                    actor,
+                    sourceChannel: "bot",
+                    ct: ct);
+                return $"Rejected clarification case {caseRecord.Id}. Reopen with /refresh {caseRecord.Id} if new evidence arrives.";
+            }
+
+            return $"Failed to reject clarification case {caseRecord.Id}.";
         }
 
         if (caseRecord.Status.Equals(nextStatus, StringComparison.OrdinalIgnoreCase))
@@ -497,6 +530,33 @@ public class BotCommandService : IBotCommandService
         if (!updated)
         {
             return $"Failed to {action} case {caseRecord.Id}.";
+        }
+
+        if (action.Equals("resolve", StringComparison.OrdinalIgnoreCase))
+        {
+            await RecordOutcomeAndFeedbackAsync(
+                caseRecord,
+                Stage6CaseOutcomeTypes.Resolved,
+                Stage6CaseStatuses.Resolved,
+                Stage6FeedbackKinds.AcceptUseful,
+                true,
+                reason,
+                actor,
+                sourceChannel: "bot",
+                ct: ct);
+        }
+        else
+        {
+            await RecordOutcomeAndFeedbackAsync(
+                caseRecord,
+                Stage6CaseOutcomeTypes.Rejected,
+                Stage6CaseStatuses.Rejected,
+                Stage6FeedbackKinds.RejectNotUseful,
+                false,
+                reason,
+                actor,
+                sourceChannel: "bot",
+                ct: ct);
         }
 
         return action.Equals("resolve", StringComparison.OrdinalIgnoreCase)
@@ -562,10 +622,88 @@ public class BotCommandService : IBotCommandService
             CreatedAt = DateTime.UtcNow
         }, ct);
 
+        await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId ?? scope.Value.ChatId,
+            Stage6CaseId = caseRecord.Id,
+            FeedbackKind = Stage6FeedbackKinds.CorrectionNote,
+            FeedbackDimension = ResolveFeedbackDimension(caseRecord, null),
+            IsUseful = null,
+            Note = note,
+            SourceChannel = "bot",
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
         var suffix = clarificationQuestion != null && clarificationQuestion.Status is "open" or "in_progress"
             ? $" Clarification answer path stays /answer {clarificationQuestion.Id} | <your answer>."
             : string.Empty;
         return $"annotation saved for case {caseRecord.Id}.{suffix}".Trim();
+    }
+
+    private async Task<string> HandleFeedbackAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
+    {
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var target = ParseStage6CaseTarget(commandArgs);
+        if (!target.Stage6CaseId.HasValue)
+        {
+            return "Usage: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]";
+        }
+
+        var segments = (target.Text ?? string.Empty)
+            .Split('|', StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+        if (segments.Count == 0)
+        {
+            return "Usage: /feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]";
+        }
+
+        var caseRecord = await LoadScopedCaseAsync(target.Stage6CaseId.Value, scope.Value, ct);
+        if (caseRecord == null)
+        {
+            return "Stage 6 case not found in current scope.";
+        }
+
+        var kind = segments[0].Trim().ToLowerInvariant();
+        if (kind is not Stage6FeedbackKinds.AcceptUseful
+            and not Stage6FeedbackKinds.RejectNotUseful
+            and not Stage6FeedbackKinds.CorrectionNote
+            and not Stage6FeedbackKinds.RefreshRequested)
+        {
+            return "feedback kind must be one of: accept_useful, reject_not_useful, correction_note, refresh_requested";
+        }
+
+        var note = segments.Count > 1 ? string.Join(" | ", segments.Skip(1)) : null;
+        var actor = BuildActor(senderId);
+        bool? isUseful = kind switch
+        {
+            Stage6FeedbackKinds.AcceptUseful => true,
+            Stage6FeedbackKinds.RejectNotUseful => false,
+            _ => null
+        };
+
+        await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId ?? scope.Value.ChatId,
+            Stage6CaseId = caseRecord.Id,
+            FeedbackKind = kind,
+            FeedbackDimension = ResolveFeedbackDimension(caseRecord, null),
+            IsUseful = isUseful,
+            Note = note,
+            SourceChannel = "bot",
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        return $"feedback saved for case {caseRecord.Id}: {kind}";
     }
 
     private async Task<string> HandleGapsAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
@@ -701,6 +839,25 @@ public class BotCommandService : IBotCommandService
             Actor = BuildActor(senderId),
             Reason = "telegram_answer"
         }, ct);
+
+        var linkedCase = (await _stage6CaseRepository.GetCasesAsync(scope.Value.CaseId, ct: ct))
+            .Where(x => x.ChatId == null || x.ChatId == scope.Value.ChatId)
+            .FirstOrDefault(x => x.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
+                                 && x.SourceObjectId.Equals(questionId.ToString(), StringComparison.OrdinalIgnoreCase));
+        if (linkedCase != null)
+        {
+            await RecordOutcomeAndFeedbackAsync(
+                linkedCase,
+                Stage6CaseOutcomeTypes.AnsweredByUser,
+                Stage6CaseStatuses.Resolved,
+                Stage6FeedbackKinds.AcceptUseful,
+                true,
+                "answer_recorded",
+                BuildActor(senderId),
+                sourceChannel: "bot",
+                userContextMaterialOverride: true,
+                ct: ct);
+        }
 
         var layers = applied.RecomputePlan.Targets
             .Select(x => x.Layer)
@@ -1252,6 +1409,19 @@ public class BotCommandService : IBotCommandService
             CreatedAt = DateTime.UtcNow
         }, ct);
 
+        await RecordOutcomeAndFeedbackAsync(
+            caseRecord,
+            Stage6CaseOutcomeTypes.Refreshed,
+            reopened
+                ? (IsClarificationCaseType(caseRecord.CaseType) ? Stage6CaseStatuses.NeedsUserInput : Stage6CaseStatuses.Ready)
+                : caseRecord.Status,
+            Stage6FeedbackKinds.RefreshRequested,
+            null,
+            reason,
+            actor,
+            sourceChannel: "bot",
+            ct: ct);
+
         var nextStep = artifactTypes.Count == 0
             ? "no linked artifacts were recorded"
             : $"stale artifacts={staleCount}/{artifactTypes.Count} ({string.Join(", ", artifactTypes)})";
@@ -1264,6 +1434,75 @@ public class BotCommandService : IBotCommandService
         }
 
         return $"refresh applied for case {caseRecord.Id}: {nextStep}; reopened={(reopened ? "yes" : "no")}.";
+    }
+
+    private async Task RecordOutcomeAndFeedbackAsync(
+        Stage6CaseRecord caseRecord,
+        string outcomeType,
+        string caseStatusAfter,
+        string feedbackKind,
+        bool? isUseful,
+        string? note,
+        string actor,
+        string sourceChannel,
+        bool? userContextMaterialOverride = null,
+        CancellationToken ct = default)
+    {
+        var userContextMaterial = userContextMaterialOverride ?? await HasUserContextForCaseAsync(caseRecord, ct);
+
+        _ = await _stage6CaseOutcomeRepository.AddAsync(new Stage6CaseOutcomeRecord
+        {
+            Stage6CaseId = caseRecord.Id,
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId,
+            OutcomeType = outcomeType,
+            CaseStatusAfter = caseStatusAfter,
+            UserContextMaterial = userContextMaterial,
+            Note = note,
+            SourceChannel = sourceChannel,
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = caseRecord.ScopeCaseId,
+            ChatId = caseRecord.ChatId,
+            Stage6CaseId = caseRecord.Id,
+            FeedbackKind = feedbackKind,
+            FeedbackDimension = ResolveFeedbackDimension(caseRecord, null),
+            IsUseful = isUseful,
+            Note = note,
+            SourceChannel = sourceChannel,
+            Actor = actor,
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+    }
+
+    private async Task<bool> HasUserContextForCaseAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
+    {
+        var rows = await _stage6UserContextRepository.GetByScopeCaseAsync(caseRecord.ScopeCaseId, 400, ct);
+        return rows.Any(x => x.Stage6CaseId == caseRecord.Id && x.CreatedAt >= caseRecord.CreatedAt);
+    }
+
+    private static string ResolveFeedbackDimension(Stage6CaseRecord caseRecord, string? explicitDimension)
+    {
+        var normalized = string.IsNullOrWhiteSpace(explicitDimension) ? null : explicitDimension.Trim().ToLowerInvariant();
+        if (normalized is Stage6FeedbackDimensions.General
+            or Stage6FeedbackDimensions.ClarificationUsefulness
+            or Stage6FeedbackDimensions.BehavioralUsefulness)
+        {
+            return normalized;
+        }
+
+        if (caseRecord.CaseType.StartsWith("clarification_", StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6FeedbackDimensions.ClarificationUsefulness;
+        }
+
+        return caseRecord.CaseSubtype?.Contains("behavior", StringComparison.OrdinalIgnoreCase) == true
+            ? Stage6FeedbackDimensions.BehavioralUsefulness
+            : Stage6FeedbackDimensions.General;
     }
 
     private static CaseQueueArgs ParseCaseQueueArgs(string args)
@@ -1526,6 +1765,7 @@ public class BotCommandService : IBotCommandService
             "/reject <stage6-case-id> [reason] - reject case",
             "/refresh <stage6-case-id> [reason] - stale linked artifacts / reopen case",
             "/annotate <stage6-case-id> | <text> - add operator context note",
+            "/feedback <stage6-case-id> | <accept_useful|reject_not_useful|correction_note|refresh_requested> | [note]",
             "/timeline - current and prior periods",
             "/offline <summary> - log offline event");
     }

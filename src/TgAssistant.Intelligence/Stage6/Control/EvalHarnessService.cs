@@ -16,6 +16,10 @@ public class EvalHarnessService : IEvalHarnessService
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly Stage5VerificationService _stage5VerificationService;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
+    private readonly IAnalysisUsageRepository _analysisUsageRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6FeedbackRepository _stage6FeedbackRepository;
     private readonly ILogger<EvalHarnessService> _logger;
     private readonly ConcurrentDictionary<string, EvalExperimentDefinition> _experimentDefinitions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -25,6 +29,10 @@ public class EvalHarnessService : IEvalHarnessService
         IDomainReviewEventRepository domainReviewEventRepository,
         Stage5VerificationService stage5VerificationService,
         IBudgetGuardrailService budgetGuardrailService,
+        IAnalysisUsageRepository analysisUsageRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6CaseRepository stage6CaseRepository,
+        IStage6FeedbackRepository stage6FeedbackRepository,
         ILogger<EvalHarnessService> logger)
     {
         _settings = settings.Value;
@@ -32,6 +40,10 @@ public class EvalHarnessService : IEvalHarnessService
         _domainReviewEventRepository = domainReviewEventRepository;
         _stage5VerificationService = stage5VerificationService;
         _budgetGuardrailService = budgetGuardrailService;
+        _analysisUsageRepository = analysisUsageRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6CaseRepository = stage6CaseRepository;
+        _stage6FeedbackRepository = stage6FeedbackRepository;
         _logger = logger;
         RegisterDefaultExperimentDefinitions();
     }
@@ -56,6 +68,7 @@ public class EvalHarnessService : IEvalHarnessService
         {
             RunId = Guid.NewGuid(),
             RunName = runName,
+            ScenarioPackKey = "adhoc",
             Passed = false,
             StartedAt = startedAt,
             FinishedAt = startedAt,
@@ -68,7 +81,16 @@ public class EvalHarnessService : IEvalHarnessService
         var scenarioResults = new List<EvalScenarioResult>();
         foreach (var scenarioName in scenarioNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            var scenarioStartedAt = DateTime.UtcNow;
             var result = await RunScenarioAsync(run.RunId, scenarioName, ct);
+            var scenarioFinishedAt = DateTime.UtcNow;
+            var usage = await _analysisUsageRepository.SummarizeWindowAsync(
+                scenarioStartedAt.AddSeconds(-1),
+                scenarioFinishedAt.AddSeconds(1),
+                ct);
+            result.LatencyMs = Math.Max(0, (int)(scenarioFinishedAt - scenarioStartedAt).TotalMilliseconds);
+            result.CostUsd = usage.TotalCostUsd;
+            result.ModelSummaryJson = JsonSerializer.Serialize(usage.CostByModel);
             await _evalRepository.AddScenarioResultAsync(result, ct);
             scenarioResults.Add(result);
         }
@@ -265,10 +287,16 @@ public class EvalHarnessService : IEvalHarnessService
             {
                 "budget_visibility" => await RunBudgetVisibilityScenarioAsync(runId, scenarioName, ct),
                 "stage5_config" => await RunStage5ConfigScenarioAsync(runId, scenarioName, ct),
+                "stage6_dossier_current_state_quality" => await RunStage6ArtifactQualityScenarioAsync(runId, scenarioName, ct),
+                "stage6_draft_review_quality" => await RunStage6DraftReviewQualityScenarioAsync(runId, scenarioName, ct),
+                "stage6_clarification_usefulness" => await RunClarificationUsefulnessScenarioAsync(runId, scenarioName, ct),
+                "stage6_case_usefulness_noise" => await RunCaseUsefulnessNoiseScenarioAsync(runId, scenarioName, ct),
+                "stage6_behavioral_usefulness" => await RunBehavioralUsefulnessScenarioAsync(runId, scenarioName, ct),
                 _ => new EvalScenarioResult
                 {
                     Id = Guid.NewGuid(),
                     RunId = runId,
+                    ScenarioType = "quality",
                     ScenarioName = scenarioName,
                     Passed = false,
                     Summary = "unknown scenario",
@@ -283,6 +311,7 @@ public class EvalHarnessService : IEvalHarnessService
             {
                 Id = Guid.NewGuid(),
                 RunId = runId,
+                ScenarioType = "quality",
                 ScenarioName = scenarioName,
                 Passed = false,
                 Summary = ex.Message,
@@ -309,6 +338,7 @@ public class EvalHarnessService : IEvalHarnessService
         {
             Id = Guid.NewGuid(),
             RunId = runId,
+            ScenarioType = "economics",
             ScenarioName = scenarioName,
             Passed = hasState,
             Summary = hasState ? "budget visibility works" : "budget state not persisted",
@@ -329,12 +359,315 @@ public class EvalHarnessService : IEvalHarnessService
         {
             Id = Guid.NewGuid(),
             RunId = runId,
+            ScenarioType = "quality",
             ScenarioName = scenarioName,
             Passed = true,
             Summary = "stage5 config smoke passed",
             MetricsJson = JsonSerializer.Serialize(new { check = "stage5_smoke" }),
             CreatedAt = DateTime.UtcNow
         };
+    }
+
+    private async Task<EvalScenarioResult> RunStage6ArtifactQualityScenarioAsync(Guid runId, string scenarioName, CancellationToken ct)
+    {
+        var scope = await EnsureEvalSeedCaseAsync("artifact_quality", ct);
+        var scopeKey = Stage6ArtifactTypes.ChatScope(scope.ChatId);
+        var currentState = await _stage6ArtifactRepository.GetCurrentAsync(scope.CaseId, scope.ChatId, Stage6ArtifactTypes.CurrentState, scopeKey, ct);
+        var dossier = await _stage6ArtifactRepository.GetCurrentAsync(scope.CaseId, scope.ChatId, Stage6ArtifactTypes.Dossier, scopeKey, ct);
+        var passed = currentState != null && dossier != null;
+
+        return new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioType = "quality",
+            ScenarioName = scenarioName,
+            Passed = passed,
+            Summary = passed ? "dossier/current_state artifacts are present" : "missing core artifacts",
+            MetricsJson = JsonSerializer.Serialize(new
+            {
+                scope_case_id = scope.CaseId,
+                chat_id = scope.ChatId,
+                has_current_state = currentState != null,
+                has_dossier = dossier != null
+            }),
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    private async Task<EvalScenarioResult> RunStage6DraftReviewQualityScenarioAsync(Guid runId, string scenarioName, CancellationToken ct)
+    {
+        var scope = await EnsureEvalSeedCaseAsync("draft_review_quality", ct);
+        var cases = await _stage6CaseRepository.GetCasesAsync(scope.CaseId, ct: ct);
+        var readyCases = cases.Count(x => x.Status is Stage6CaseStatuses.Ready or Stage6CaseStatuses.New);
+        var withDraftTarget = cases.Count(x => x.TargetArtifactTypesJson.Contains(Stage6ArtifactTypes.Draft, StringComparison.OrdinalIgnoreCase));
+        var passed = readyCases > 0 && withDraftTarget > 0;
+
+        return new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioType = "quality",
+            ScenarioName = scenarioName,
+            Passed = passed,
+            Summary = passed ? "draft/review candidate cases exist" : "missing draft/review candidate coverage",
+            MetricsJson = JsonSerializer.Serialize(new
+            {
+                scope_case_id = scope.CaseId,
+                ready_cases = readyCases,
+                draft_target_cases = withDraftTarget
+            }),
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    private async Task<EvalScenarioResult> RunClarificationUsefulnessScenarioAsync(Guid runId, string scenarioName, CancellationToken ct)
+    {
+        var scope = await EnsureEvalSeedCaseAsync("clarification_usefulness", ct);
+        var caseRow = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeType = "chat",
+            CaseType = Stage6CaseTypes.ClarificationAmbiguity,
+            Status = Stage6CaseStatuses.NeedsUserInput,
+            Priority = "important",
+            ReasonSummary = "Need clarification for ambiguity.",
+            TargetArtifactTypesJson = JsonSerializer.Serialize(new[] { Stage6ArtifactTypes.ClarificationState }),
+            SourceObjectType = "clarification_question",
+            SourceObjectId = Guid.NewGuid().ToString("D"),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            Stage6CaseId = caseRow.Id,
+            FeedbackKind = Stage6FeedbackKinds.AcceptUseful,
+            FeedbackDimension = Stage6FeedbackDimensions.ClarificationUsefulness,
+            IsUseful = true,
+            Note = "clarification reduced ambiguity",
+            SourceChannel = "eval",
+            Actor = "eval_harness",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var feedback = await _stage6FeedbackRepository.GetByCaseAsync(caseRow.Id, 50, ct);
+        var useful = feedback.Count(x => x.FeedbackDimension == Stage6FeedbackDimensions.ClarificationUsefulness && x.IsUseful == true);
+        var notUseful = feedback.Count(x => x.FeedbackDimension == Stage6FeedbackDimensions.ClarificationUsefulness && x.IsUseful == false);
+        var passed = useful >= notUseful;
+
+        var feedbackSummary = JsonSerializer.Serialize(new
+        {
+            clarification_useful = useful,
+            clarification_not_useful = notUseful
+        });
+
+        return new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioType = "usefulness",
+            ScenarioName = scenarioName,
+            Passed = passed,
+            Summary = passed ? "clarification feedback shows usefulness" : "clarification usefulness is degraded",
+            FeedbackSummaryJson = feedbackSummary,
+            MetricsJson = JsonSerializer.Serialize(new
+            {
+                scope_case_id = scope.CaseId,
+                case_id = caseRow.Id
+            }),
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    private async Task<EvalScenarioResult> RunCaseUsefulnessNoiseScenarioAsync(Guid runId, string scenarioName, CancellationToken ct)
+    {
+        var scope = await EnsureEvalSeedCaseAsync("case_usefulness_noise", ct);
+        var caseRow = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeType = "chat",
+            CaseType = Stage6CaseTypes.NeedsReview,
+            Status = Stage6CaseStatuses.Ready,
+            Priority = "important",
+            ReasonSummary = "review candidate",
+            TargetArtifactTypesJson = JsonSerializer.Serialize(new[] { Stage6ArtifactTypes.Review }),
+            SourceObjectType = "draft_review",
+            SourceObjectId = Guid.NewGuid().ToString("D"),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            Stage6CaseId = caseRow.Id,
+            FeedbackKind = Stage6FeedbackKinds.AcceptUseful,
+            FeedbackDimension = Stage6FeedbackDimensions.General,
+            IsUseful = true,
+            Note = "case was useful for review flow",
+            SourceChannel = "eval",
+            Actor = "eval_harness",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var feedback = await _stage6FeedbackRepository.GetByCaseAsync(caseRow.Id, 50, ct);
+        var useful = feedback.Count(x => x.IsUseful == true);
+        var noisy = feedback.Count(x => x.IsUseful == false);
+        var passed = useful >= noisy;
+
+        return new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioType = "usefulness",
+            ScenarioName = scenarioName,
+            Passed = passed,
+            Summary = passed ? "case usefulness exceeds noise" : "case noise exceeds usefulness",
+            FeedbackSummaryJson = JsonSerializer.Serialize(new
+            {
+                useful,
+                noisy
+            }),
+            MetricsJson = JsonSerializer.Serialize(new
+            {
+                scope_case_id = scope.CaseId,
+                case_id = caseRow.Id
+            }),
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    private async Task<EvalScenarioResult> RunBehavioralUsefulnessScenarioAsync(Guid runId, string scenarioName, CancellationToken ct)
+    {
+        var scope = await EnsureEvalSeedCaseAsync("behavioral_usefulness", ct);
+        var caseRow = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeType = "chat",
+            CaseType = Stage6CaseTypes.NeedsReview,
+            CaseSubtype = "behavioral_profile_support",
+            Status = Stage6CaseStatuses.Ready,
+            Priority = "important",
+            ReasonSummary = "behavioral layer support review",
+            TargetArtifactTypesJson = JsonSerializer.Serialize(new[] { Stage6ArtifactTypes.Strategy }),
+            SourceObjectType = "behavioral_profile",
+            SourceObjectId = Guid.NewGuid().ToString("D"),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        }, ct);
+
+        _ = await _stage6FeedbackRepository.AddAsync(new Stage6FeedbackEntry
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            Stage6CaseId = caseRow.Id,
+            FeedbackKind = Stage6FeedbackKinds.CorrectionNote,
+            FeedbackDimension = Stage6FeedbackDimensions.BehavioralUsefulness,
+            IsUseful = true,
+            Note = "behavioral profile helpful, bounded and non-diagnostic",
+            SourceChannel = "eval",
+            Actor = "eval_harness",
+            CreatedAt = DateTime.UtcNow
+        }, ct);
+
+        var feedback = await _stage6FeedbackRepository.GetByCaseAsync(caseRow.Id, 50, ct);
+        var useful = feedback.Count(x => x.FeedbackDimension == Stage6FeedbackDimensions.BehavioralUsefulness && x.IsUseful == true);
+        var concerns = feedback.Count(x => x.FeedbackDimension == Stage6FeedbackDimensions.BehavioralUsefulness && x.IsUseful == false);
+        var passed = useful >= concerns;
+
+        return new EvalScenarioResult
+        {
+            Id = Guid.NewGuid(),
+            RunId = runId,
+            ScenarioType = "usefulness",
+            ScenarioName = scenarioName,
+            Passed = passed,
+            Summary = passed ? "behavioral layer feedback remains useful" : "behavioral layer is overclaiming/noisy",
+            FeedbackSummaryJson = JsonSerializer.Serialize(new
+            {
+                behavioral_useful = useful,
+                behavioral_concerns = concerns
+            }),
+            MetricsJson = JsonSerializer.Serialize(new
+            {
+                scope_case_id = scope.CaseId,
+                case_id = caseRow.Id
+            }),
+            CreatedAt = DateTime.UtcNow
+        };
+    }
+
+    private async Task<CaseScope> EnsureEvalSeedCaseAsync(string scenario, CancellationToken ct)
+    {
+        var scope = CaseScopeFactory.CreateSmokeScope($"eval13:{scenario}");
+        var now = DateTime.UtcNow;
+
+        _ = await _stage6CaseRepository.UpsertAsync(new Stage6CaseRecord
+        {
+            ScopeCaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeType = "chat",
+            CaseType = Stage6CaseTypes.DossierCandidate,
+            Status = Stage6CaseStatuses.Ready,
+            Priority = "important",
+            ReasonSummary = $"seeded for {scenario}",
+            TargetArtifactTypesJson = JsonSerializer.Serialize(new[] { Stage6ArtifactTypes.Dossier, Stage6ArtifactTypes.CurrentState, Stage6ArtifactTypes.Draft, Stage6ArtifactTypes.Review }),
+            SourceObjectType = "eval_seed",
+            SourceObjectId = scenario,
+            CreatedAt = now,
+            UpdatedAt = now
+        }, ct);
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.CurrentState,
+            CaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(scope.ChatId),
+            PayloadObjectType = "state_snapshot",
+            PayloadObjectId = Guid.NewGuid().ToString("D"),
+            PayloadJson = JsonSerializer.Serialize(new { summary = "current state seed", confidence = 0.71 }),
+            FreshnessBasisHash = Guid.NewGuid().ToString("N"),
+            FreshnessBasisJson = JsonSerializer.Serialize(new { refs = new[] { "seed:state" } }),
+            GeneratedAt = now,
+            RefreshedAt = now,
+            IsCurrent = true,
+            IsStale = false,
+            SourceType = "eval_seed",
+            SourceId = scenario,
+            CreatedAt = now,
+            UpdatedAt = now
+        }, ct);
+
+        _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+        {
+            ArtifactType = Stage6ArtifactTypes.Dossier,
+            CaseId = scope.CaseId,
+            ChatId = scope.ChatId,
+            ScopeKey = Stage6ArtifactTypes.ChatScope(scope.ChatId),
+            PayloadObjectType = "dossier",
+            PayloadObjectId = Guid.NewGuid().ToString("D"),
+            PayloadJson = JsonSerializer.Serialize(new { summary = "dossier seed", confidence = 0.69 }),
+            FreshnessBasisHash = Guid.NewGuid().ToString("N"),
+            FreshnessBasisJson = JsonSerializer.Serialize(new { refs = new[] { "seed:dossier" } }),
+            GeneratedAt = now,
+            RefreshedAt = now,
+            IsCurrent = true,
+            IsStale = false,
+            SourceType = "eval_seed",
+            SourceId = scenario,
+            CreatedAt = now,
+            UpdatedAt = now
+        }, ct);
+
+        return scope;
     }
 
     private static List<EvalExperimentScenarioDelta> BuildScenarioDeltas(
@@ -444,6 +777,7 @@ public class EvalHarnessService : IEvalHarnessService
             {
                 Id = Guid.NewGuid(),
                 RunId = runId,
+                ScenarioType = "comparison",
                 ScenarioName = $"variant:{variant.VariantKey}",
                 Passed = variant.Passed,
                 Summary = variant.Summary,
@@ -576,7 +910,7 @@ public class EvalHarnessService : IEvalHarnessService
             ExperimentKey = "stage6_guarded_default",
             DisplayName = "Stage6 Guarded Default",
             Description = "Baseline practical A/B experiment pack over the eval harness.",
-            DefaultScenarioPackKey = "core",
+            DefaultScenarioPackKey = "stage6_quality",
             Variants =
             [
                 new EvalExperimentVariantDefinition
@@ -613,6 +947,44 @@ public class EvalHarnessService : IEvalHarnessService
                             ScenarioName = "stage5_config",
                             Required = true,
                             Description = "Stage5 configuration smoke passes."
+                        }
+                    ]
+                },
+                new EvalScenarioPackDefinition
+                {
+                    PackKey = "stage6_quality",
+                    Description = "Stage 6 quality, usefulness, and economics baseline pack",
+                    Scenarios =
+                    [
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage6_dossier_current_state_quality",
+                            Required = true,
+                            Description = "Dossier/current-state artifacts are usable and inspectable."
+                        },
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage6_draft_review_quality",
+                            Required = true,
+                            Description = "Draft/review path has candidate and artifact coverage."
+                        },
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage6_clarification_usefulness",
+                            Required = true,
+                            Description = "Clarification flow usefulness is measurable from linked feedback."
+                        },
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage6_case_usefulness_noise",
+                            Required = true,
+                            Description = "Case usefulness vs noise baseline from explicit operator feedback."
+                        },
+                        new EvalScenarioDefinition
+                        {
+                            ScenarioName = "stage6_behavioral_usefulness",
+                            Required = true,
+                            Description = "Behavioral layer usefulness is explicitly tracked as bounded support."
                         }
                     ]
                 }
