@@ -17,6 +17,8 @@ public class CurrentStateEngine : ICurrentStateEngine
     private readonly IInboxConflictRepository _inboxConflictRepository;
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly ICompetingContextRuntimeService _competingContextRuntimeService;
     private readonly IStateScoreCalculator _scoreCalculator;
     private readonly IStateConfidenceEvaluator _confidenceEvaluator;
@@ -33,6 +35,8 @@ public class CurrentStateEngine : ICurrentStateEngine
         IInboxConflictRepository inboxConflictRepository,
         IStateProfileRepository stateProfileRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         ICompetingContextRuntimeService competingContextRuntimeService,
         IStateScoreCalculator scoreCalculator,
         IStateConfidenceEvaluator confidenceEvaluator,
@@ -48,6 +52,8 @@ public class CurrentStateEngine : ICurrentStateEngine
         _inboxConflictRepository = inboxConflictRepository;
         _stateProfileRepository = stateProfileRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _competingContextRuntimeService = competingContextRuntimeService;
         _scoreCalculator = scoreCalculator;
         _confidenceEvaluator = confidenceEvaluator;
@@ -142,6 +148,42 @@ public class CurrentStateEngine : ICurrentStateEngine
                 Reason = "current_state_engine",
                 Actor = request.Actor,
                 CreatedAt = DateTime.UtcNow
+            }, ct);
+
+            var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+                request.CaseId,
+                request.ChatId,
+                Stage6ArtifactTypes.CurrentState,
+                ct);
+            _ = await _stage6ArtifactRepository.UpsertCurrentAsync(new Stage6ArtifactRecord
+            {
+                ArtifactType = Stage6ArtifactTypes.CurrentState,
+                CaseId = request.CaseId,
+                ChatId = request.ChatId,
+                ScopeKey = Stage6ArtifactTypes.ChatScope(request.ChatId),
+                PayloadObjectType = "state_snapshot",
+                PayloadObjectId = snapshot.Id.ToString(),
+                PayloadJson = JsonSerializer.Serialize(new
+                {
+                    snapshot.Id,
+                    snapshot.DynamicLabel,
+                    snapshot.RelationshipStatus,
+                    snapshot.AlternativeStatus,
+                    snapshot.Confidence,
+                    snapshot.AsOf
+                }, JsonOptions),
+                FreshnessBasisHash = evidence.BasisHash,
+                FreshnessBasisJson = evidence.BasisJson,
+                GeneratedAt = snapshot.CreatedAt,
+                RefreshedAt = snapshot.CreatedAt,
+                StaleAt = snapshot.CreatedAt.Add(_stage6ArtifactFreshnessService.ResolveTtl(Stage6ArtifactTypes.CurrentState)),
+                IsStale = false,
+                SourceType = request.SourceType,
+                SourceId = request.SourceId,
+                SourceMessageId = snapshot.SourceMessageId,
+                SourceSessionId = snapshot.SourceSessionId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             }, ct);
         }
 
