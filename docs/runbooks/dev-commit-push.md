@@ -18,7 +18,7 @@ End code work in a clean state:
 2. Verify the changed scope.
    - C#: `dotnet build TelegramAssistant.sln`
    - MCP TypeScript: `cd src/TgAssistant.Mcp && npm run build`
-   - runtime/startup changes: add targeted `--healthcheck` or `--runtime-wiring-check`
+   - runtime/startup changes: add targeted `--liveness-check`, `--readiness-check`, and `--runtime-wiring-check` (`--healthcheck` remains readiness alias for Sprint 1)
 3. Stage only the intended batch.
    - do not include unrelated files
    - if the tree is mixed, split the batch first

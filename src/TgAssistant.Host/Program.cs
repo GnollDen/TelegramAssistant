@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
+using TgAssistant.Host.Health;
 using TgAssistant.Host.Stage6Ab;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
@@ -126,6 +127,8 @@ try
         : externalArchiveActorArg["--external-archive-actor=".Length..];
     var runListSmokes = args.Any(arg => string.Equals(arg, "--list-smokes", StringComparison.OrdinalIgnoreCase));
     var runRuntimeWiringCheck = args.Any(arg => string.Equals(arg, "--runtime-wiring-check", StringComparison.OrdinalIgnoreCase));
+    var runLivenessCheck = args.Any(arg => string.Equals(arg, "--liveness-check", StringComparison.OrdinalIgnoreCase));
+    var runReadinessCheck = args.Any(arg => string.Equals(arg, "--readiness-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
     var smokeEntrypoints = new[]
     {
@@ -158,7 +161,7 @@ try
         return;
     }
 
-    var runtimeRoleSelection = new RuntimeRoleSelection(RuntimeWorkloadRole.All, "default", "all");
+    var runtimeRoleSelection = new RuntimeRoleSelection(RuntimeWorkloadRole.None, "unresolved", string.Empty);
 
     var builder = Host.CreateDefaultBuilder(args)
         .UseSerilog()
@@ -166,6 +169,7 @@ try
         {
             var config = context.Configuration;
             runtimeRoleSelection = RuntimeRoleParser.Parse(args, config);
+            RuntimeStartupGuard.Validate(config, runtimeRoleSelection);
             services.AddTelegramAssistantCompositionRoot(config, runtimeRoleSelection);
 
             Log.Information(
@@ -179,21 +183,19 @@ try
 
     using (var scope = host.Services.CreateScope())
     {
-        if (runHealthCheck)
+        if (runLivenessCheck)
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
-            await using var db = await dbFactory.CreateDbContextAsync(timeoutCts.Token);
-            if (!await db.Database.CanConnectAsync(timeoutCts.Token))
-            {
-                throw new InvalidOperationException("Database connectivity check failed.");
-            }
+            await RuntimeHealthProbeRunner.RunLivenessCheckAsync(runtimeRoleSelection, CancellationToken.None);
+            Log.Information("Liveness check passed: process viability is healthy.");
+            return;
+        }
 
-            var redis = scope.ServiceProvider.GetRequiredService<IConnectionMultiplexer>();
-            var redisDb = redis.GetDatabase();
-            _ = await redisDb.PingAsync();
-
-            Log.Information("Healthcheck passed: database and redis are reachable.");
+        if (runReadinessCheck || runHealthCheck)
+        {
+            await RuntimeHealthProbeRunner.RunReadinessCheckAsync(scope.ServiceProvider, runtimeRoleSelection, CancellationToken.None);
+            Log.Information(
+                "Readiness check passed: critical dependencies and role assumptions are operational. alias_used={HealthAliasUsed}",
+                runHealthCheck);
             return;
         }
 

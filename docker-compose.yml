@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: tgassistant
       POSTGRES_USER: tgassistant
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - /opt/tgassistant/data/postgres:/var/lib/postgresql/data
     ports:
@@ -49,7 +49,8 @@ services:
       redis:
         condition: service_healthy
     environment:
-      Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:-changeme}"
+      Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
+      Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       Redis__ConnectionString: "127.0.0.1:6379"
       Redis__EnablePendingReclaim: ${REDIS_ENABLE_PENDING_RECLAIM:-true}
       Redis__PendingReclaimIntervalSeconds: ${REDIS_PENDING_RECLAIM_INTERVAL_SECONDS:-30}
@@ -62,7 +63,7 @@ services:
       Telegram__PhoneNumber: ${TG_PHONE}
       Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID}
-      BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-0}
+      BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-}
       BotChat__DefaultCaseId: ${BOTCHAT_DEFAULT_CASE_ID:-0}
       BotChat__DefaultChatId: ${BOTCHAT_DEFAULT_CHAT_ID:-0}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
@@ -264,11 +265,11 @@ services:
       POSTGRES_PORT: 5432
       POSTGRES_DB: tgassistant
       POSTGRES_USER: tgassistant
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       MCP_TRANSPORT: ${MCP_TRANSPORT:-sse}
       MCP_SSE_HOST: ${MCP_SSE_HOST:-0.0.0.0}
       MCP_SSE_PORT: ${MCP_SSE_PORT:-3800}
-      MCP_SSE_AUTH_TOKEN: ${MCP_SSE_AUTH_TOKEN:-change_me_mcp_token}
+      MCP_SSE_AUTH_TOKEN: ${MCP_SSE_AUTH_TOKEN:?MCP_SSE_AUTH_TOKEN is required}
       MCP_SSE_ALLOW_CONTAINER_BIND: ${MCP_SSE_ALLOW_CONTAINER_BIND:-true}
     ports:
       - "127.0.0.1:${MCP_SSE_PORT:-3800}:${MCP_SSE_PORT:-3800}"
@@ -281,7 +282,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATA_SOURCE_NAME: "postgresql://tgassistant:${POSTGRES_PASSWORD:-changeme}@postgres:5432/tgassistant?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://tgassistant:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/tgassistant?sslmode=disable"
     ports:
       - "127.0.0.1:9187:9187"
 
@@ -327,9 +328,9 @@ services:
         condition: service_started
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       LLM_BUDGET_HOURLY_USD: ${LLM_BUDGET_HOURLY_USD:-0.50}
       LLM_BUDGET_DAILY_USD: ${LLM_BUDGET_DAILY_USD:-10.00}
     volumes:

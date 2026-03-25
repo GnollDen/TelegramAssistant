@@ -19,6 +19,18 @@ public enum RuntimeWorkloadRole
 public sealed record RuntimeRoleSelection(RuntimeWorkloadRole Roles, string Source, string RawValue)
 {
     public bool Has(RuntimeWorkloadRole role) => (Roles & role) == role;
+
+    public static string[] AllowedCombinationDisplay { get; } =
+    {
+        "ingest",
+        "ingest,ops",
+        "stage5",
+        "stage5,maintenance",
+        "stage6",
+        "web",
+        "web,ops",
+        "ingest,stage5,maintenance,ops"
+    };
 }
 
 public static class RuntimeRoleParser
@@ -29,6 +41,18 @@ public static class RuntimeRoleParser
         "--runtime-roles="
     };
 
+    private static readonly HashSet<RuntimeWorkloadRole> AllowedCombinations = new()
+    {
+        RuntimeWorkloadRole.Ingest,
+        RuntimeWorkloadRole.Ingest | RuntimeWorkloadRole.Ops,
+        RuntimeWorkloadRole.Stage5,
+        RuntimeWorkloadRole.Stage5 | RuntimeWorkloadRole.Maintenance,
+        RuntimeWorkloadRole.Stage6,
+        RuntimeWorkloadRole.Web,
+        RuntimeWorkloadRole.Web | RuntimeWorkloadRole.Ops,
+        RuntimeWorkloadRole.Ingest | RuntimeWorkloadRole.Stage5 | RuntimeWorkloadRole.Maintenance | RuntimeWorkloadRole.Ops
+    };
+
     public static RuntimeRoleSelection Parse(string[] args, IConfiguration config)
     {
         var (rawArg, argPrefix) = TryGetArgValue(args);
@@ -37,34 +61,81 @@ public static class RuntimeRoleParser
 
         if (string.IsNullOrWhiteSpace(rawArg) && string.IsNullOrWhiteSpace(rawConfig))
         {
-            return new RuntimeRoleSelection(RuntimeWorkloadRole.All, "default", "all");
+            throw new InvalidOperationException(
+                "Runtime role is required. Set Runtime:Role/Runtime:Roles or pass --runtime-role=...");
         }
 
         var rawRoles = string.IsNullOrWhiteSpace(rawArg) ? rawConfig! : rawArg!;
         var source = string.IsNullOrWhiteSpace(rawArg) ? "config" : $"arg:{argPrefix}";
-        var roles = RuntimeWorkloadRole.None;
-        foreach (var token in rawRoles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var roles = ParseRolesOrThrow(rawRoles, source);
+        if (!AllowedCombinations.Contains(roles))
         {
-            roles |= ParseRoleToken(token);
+            throw new InvalidOperationException(
+                $"Runtime role combination '{rawRoles}' is not allowed for Sprint 1. Allowed combinations: {string.Join("; ", RuntimeRoleSelection.AllowedCombinationDisplay)}.");
         }
 
-        return roles == RuntimeWorkloadRole.None
-            ? new RuntimeRoleSelection(RuntimeWorkloadRole.All, $"{source}-invalid-fallback", rawRoles)
-            : new RuntimeRoleSelection(roles, source, rawRoles);
+        return new RuntimeRoleSelection(roles, source, rawRoles);
     }
 
-    private static RuntimeWorkloadRole ParseRoleToken(string token) => token.ToLowerInvariant() switch
+    private static RuntimeWorkloadRole ParseRolesOrThrow(string rawRoles, string source)
     {
-        "all" => RuntimeWorkloadRole.All,
-        "ingest" => RuntimeWorkloadRole.Ingest,
-        "stage5" => RuntimeWorkloadRole.Stage5,
-        "stage6" => RuntimeWorkloadRole.Stage6,
-        "web" => RuntimeWorkloadRole.Web,
-        "ops" => RuntimeWorkloadRole.Ops,
-        "maintenance" => RuntimeWorkloadRole.Maintenance,
-        "mcp" => RuntimeWorkloadRole.Mcp,
-        _ => RuntimeWorkloadRole.None
-    };
+        var roles = RuntimeWorkloadRole.None;
+        var unknownTokens = new List<string>();
+        var tokens = rawRoles
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(token => token.ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (tokens.Count == 0)
+        {
+            throw new InvalidOperationException($"Runtime role input from {source} is empty.");
+        }
+
+        foreach (var token in tokens)
+        {
+            switch (token)
+            {
+                case "ingest":
+                    roles |= RuntimeWorkloadRole.Ingest;
+                    break;
+                case "stage5":
+                    roles |= RuntimeWorkloadRole.Stage5;
+                    break;
+                case "stage6":
+                    roles |= RuntimeWorkloadRole.Stage6;
+                    break;
+                case "web":
+                    roles |= RuntimeWorkloadRole.Web;
+                    break;
+                case "ops":
+                    roles |= RuntimeWorkloadRole.Ops;
+                    break;
+                case "maintenance":
+                    roles |= RuntimeWorkloadRole.Maintenance;
+                    break;
+                case "all":
+                case "mcp":
+                    unknownTokens.Add(token);
+                    break;
+                default:
+                    unknownTokens.Add(token);
+                    break;
+            }
+        }
+
+        if (unknownTokens.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Unknown or disallowed runtime role token(s) from {source}: {string.Join(", ", unknownTokens)}.");
+        }
+
+        if (roles == RuntimeWorkloadRole.None)
+        {
+            throw new InvalidOperationException($"Runtime role input from {source} resolved to no valid roles.");
+        }
+
+        return roles;
+    }
 
     private static (string? Value, string Prefix) TryGetArgValue(string[] args)
     {

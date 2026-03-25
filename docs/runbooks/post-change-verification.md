@@ -23,7 +23,9 @@ Also run targeted checks when changes touch:
 
 Typical commands:
 
-- `dotnet run --project src/TgAssistant.Host -- --healthcheck`
+- `dotnet run --project src/TgAssistant.Host -- --liveness-check`
+- `dotnet run --project src/TgAssistant.Host -- --readiness-check`
+- `dotnet run --project src/TgAssistant.Host -- --healthcheck` (Sprint 1 compatibility alias to readiness)
 - `dotnet run --project src/TgAssistant.Host -- --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=ingest --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --runtime-wiring-check`
