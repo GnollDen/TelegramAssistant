@@ -1025,7 +1025,10 @@ public partial class AnalysisWorkerService : BackgroundService
         }
 
         await MarkFailedCheapChunksForReanalysisAsync(failedChunkMessageIds, balanceIssueDetected == 1, ct);
-        await MarkProcessedMessagesExceptFailedAsync(messages, failedChunkMessageIds, ct);
+
+        var successfulMessageIds = new List<long>(messages.Count);
+        var failedValidationMessageIds = new List<long>();
+        var failedItemMessageIds = new List<long>();
 
         foreach (var message in messages)
         {
@@ -1044,7 +1047,47 @@ public partial class AnalysisWorkerService : BackgroundService
             {
                 needsExpensiveMarked++;
             }
+
+            if (itemResult.Succeeded)
+            {
+                successfulMessageIds.Add(message.Id);
+                continue;
+            }
+
+            failedChunkMessageIds.TryAdd(message.Id, 0);
+            if (itemResult.ValidationRejected)
+            {
+                failedValidationMessageIds.Add(message.Id);
+            }
+            else
+            {
+                failedItemMessageIds.Add(message.Id);
+            }
         }
+
+        if (failedValidationMessageIds.Count > 0)
+        {
+            await _messageRepository.MarkNeedsReanalysisAsync(
+                failedValidationMessageIds,
+                "stage5_validation_rejected",
+                ct);
+            _logger.LogWarning(
+                "Stage5 queued validation-rejected messages for retry: count={Count}",
+                failedValidationMessageIds.Count);
+        }
+
+        if (failedItemMessageIds.Count > 0)
+        {
+            await _messageRepository.MarkNeedsReanalysisAsync(
+                failedItemMessageIds,
+                "stage5_cheap_item_failed",
+                ct);
+            _logger.LogWarning(
+                "Stage5 queued failed cheap items for retry: count={Count}",
+                failedItemMessageIds.Count);
+        }
+
+        await MarkProcessedMessagesAsync(successfulMessageIds, ct);
 
         var result = new CheapPassResult(failedChunkMessageIds.Keys.ToHashSet(), balanceIssueDetected == 1);
         timer.Stop();
@@ -1152,14 +1195,12 @@ public partial class AnalysisWorkerService : BackgroundService
             balanceIssueDetected);
     }
 
-    private async Task MarkProcessedMessagesExceptFailedAsync(
-        List<Message> messages,
-        ConcurrentDictionary<long, byte> failedChunkMessageIds,
+    private async Task MarkProcessedMessagesAsync(
+        IEnumerable<long> messageIds,
         CancellationToken ct)
     {
-        var processedMessageIds = messages
-            .Select(x => x.Id)
-            .Where(id => !failedChunkMessageIds.ContainsKey(id))
+        var processedMessageIds = messageIds
+            .Distinct()
             .ToArray();
         if (processedMessageIds.Length == 0)
         {
@@ -1198,7 +1239,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};json={JsonSerializer.Serialize(extracted, ExtractionSerializationOptions.SnakeCase)}",
                     ct: ct);
 
-                return new CheapItemResult(ValidationRejected: true, NeedsExpensiveMarked: false);
+                return new CheapItemResult(Succeeded: false, ValidationRejected: true, NeedsExpensiveMarked: false);
             }
 
             var needsExpensive = IsExpensivePassEnabled() &&
@@ -1210,7 +1251,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 await _extractionApplier.ApplyExtractionAsync(message.Id, extracted, message, ct);
             }
 
-            return new CheapItemResult(ValidationRejected: false, NeedsExpensiveMarked: needsExpensive);
+            return new CheapItemResult(Succeeded: true, ValidationRejected: false, NeedsExpensiveMarked: needsExpensive);
         }
         catch (Exception ex)
         {
@@ -1221,7 +1262,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 messageId: message.Id,
                 payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};exception={ex.GetType().Name}",
                 ct: ct);
-            return new CheapItemResult(ValidationRejected: false, NeedsExpensiveMarked: false);
+            return new CheapItemResult(Succeeded: false, ValidationRejected: false, NeedsExpensiveMarked: false);
         }
     }
 
@@ -2604,6 +2645,7 @@ public partial class AnalysisWorkerService : BackgroundService
         HashSet<long> FailedMessageIds,
         bool BalanceIssueDetected);
     private sealed record CheapItemResult(
+        bool Succeeded,
         bool ValidationRejected,
         bool NeedsExpensiveMarked);
     private sealed record CheapChunkRequest(string Model, List<AnalysisInputMessage> Messages);

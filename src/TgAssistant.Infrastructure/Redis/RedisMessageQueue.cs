@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -13,8 +14,12 @@ public class RedisMessageQueue : IMessageQueue
     private readonly IConnectionMultiplexer _redis;
     private readonly RedisSettings _settings;
     private readonly ILogger<RedisMessageQueue> _logger;
+    private readonly string _consumerName;
     private readonly Queue<RawTelegramMessage> _reclaimedBuffer = new();
+    private readonly HashSet<string> _bufferedReclaimedIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _inflightMessageIds = new(StringComparer.Ordinal);
     private readonly object _reclaimedLock = new();
+    private readonly object _inflightLock = new();
     private DateTime _lastReclaimAtUtc = DateTime.MinValue;
     private DateTime _lastPendingMetricsAtUtc = DateTime.MinValue;
 
@@ -23,6 +28,7 @@ public class RedisMessageQueue : IMessageQueue
         _redis = redis;
         _settings = settings.Value;
         _logger = logger;
+        _consumerName = BuildConsumerName(_settings.ConsumerName);
     }
 
     public async Task InitializeAsync()
@@ -37,6 +43,13 @@ public class RedisMessageQueue : IMessageQueue
         {
             _logger.LogDebug("Consumer group {Group} already exists", _settings.ConsumerGroup);
         }
+
+        _logger.LogInformation(
+            "Redis queue initialized: stream={Stream} group={Group} configured_consumer={ConfiguredConsumer} effective_consumer={EffectiveConsumer}",
+            _settings.StreamName,
+            _settings.ConsumerGroup,
+            _settings.ConsumerName,
+            _consumerName);
 
         if (_settings.EnablePendingReclaim)
         {
@@ -95,14 +108,14 @@ public class RedisMessageQueue : IMessageQueue
         }
 
         var readCount = Math.Max(1, maxCount - results.Count);
-        var entries = await db.StreamReadGroupAsync(_settings.StreamName, _settings.ConsumerGroup, _settings.ConsumerName, position: StreamPosition.NewMessages, count: readCount);
+        var entries = await db.StreamReadGroupAsync(_settings.StreamName, _settings.ConsumerGroup, _consumerName, position: StreamPosition.NewMessages, count: readCount);
         if (entries.Length == 0 && results.Count == 0)
         {
             await Task.Delay(timeout, ct);
             return results;
         }
 
-        DeserializeAndAppendEntries(entries, results);
+        await DeserializeAndAppendEntriesAsync(db, entries, results, source: "new");
         return results;
     }
 
@@ -110,7 +123,19 @@ public class RedisMessageQueue : IMessageQueue
     {
         var db = _redis.GetDatabase();
         var ids = messageIds.Select(id => (RedisValue)id).ToArray();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
         await db.StreamAcknowledgeAsync(_settings.StreamName, _settings.ConsumerGroup, ids);
+        lock (_inflightLock)
+        {
+            foreach (var id in ids)
+            {
+                _inflightMessageIds.Remove(id.ToString());
+            }
+        }
     }
 
     private async Task RunPendingMaintenanceIfDueAsync(IDatabase db)
@@ -171,7 +196,7 @@ public class RedisMessageQueue : IMessageQueue
             var result = await db.StreamAutoClaimAsync(
                 _settings.StreamName,
                 _settings.ConsumerGroup,
-                _settings.ConsumerName,
+                _consumerName,
                 minIdleMs,
                 nextStartId,
                 take);
@@ -182,7 +207,7 @@ public class RedisMessageQueue : IMessageQueue
                 break;
             }
 
-            reclaimed += EnqueueReclaimedMessages(claimedEntries);
+            reclaimed += await EnqueueReclaimedMessagesAsync(db, claimedEntries);
             nextStartId = result.NextStartId;
             if (nextStartId.IsNull)
             {
@@ -196,7 +221,7 @@ public class RedisMessageQueue : IMessageQueue
                 "Redis pending reclaim executed: stream={Stream} group={Group} consumer={Consumer} reclaimed={Reclaimed} min_idle_ms={MinIdleMs}",
                 _settings.StreamName,
                 _settings.ConsumerGroup,
-                _settings.ConsumerName,
+                _consumerName,
                 reclaimed,
                 minIdleMs);
         }
@@ -243,26 +268,67 @@ public class RedisMessageQueue : IMessageQueue
         return maxIdleMs;
     }
 
-    private void DeserializeAndAppendEntries(StreamEntry[] entries, List<RawTelegramMessage> results)
+    private async Task DeserializeAndAppendEntriesAsync(IDatabase db, StreamEntry[] entries, List<RawTelegramMessage> results, string source)
     {
+        var poisonIds = new List<RedisValue>();
         foreach (var entry in entries)
         {
-            if (!TryDeserializeEntry(entry, out var msg))
+            if (!TryDeserializeEntry(entry, out var msg, out var reason))
             {
+                if (await TryQuarantinePoisonEntryAsync(db, entry, reason, source))
+                {
+                    poisonIds.Add(entry.Id);
+                }
+
+                continue;
+            }
+
+            if (!TryMarkInflight(msg.StreamId))
+            {
+                _logger.LogDebug(
+                    "Suppressed duplicate stream entry delivery: source={Source} stream_id={StreamId} consumer={Consumer}",
+                    source,
+                    msg.StreamId,
+                    _consumerName);
                 continue;
             }
 
             results.Add(msg);
         }
+
+        if (poisonIds.Count > 0)
+        {
+            await db.StreamAcknowledgeAsync(_settings.StreamName, _settings.ConsumerGroup, poisonIds.ToArray());
+            _logger.LogWarning(
+                "Acknowledged malformed stream entries after DLQ handoff: count={Count} stream={Stream} group={Group}",
+                poisonIds.Count,
+                _settings.StreamName,
+                _settings.ConsumerGroup);
+        }
     }
 
-    private int EnqueueReclaimedMessages(StreamEntry[] entries)
+    private async Task<int> EnqueueReclaimedMessagesAsync(IDatabase db, StreamEntry[] entries)
     {
+        var poisonIds = new List<RedisValue>();
         var added = 0;
         foreach (var entry in entries)
         {
-            if (!TryDeserializeEntry(entry, out var msg))
+            if (!TryDeserializeEntry(entry, out var msg, out var reason))
             {
+                if (await TryQuarantinePoisonEntryAsync(db, entry, reason, "reclaim"))
+                {
+                    poisonIds.Add(entry.Id);
+                }
+
+                continue;
+            }
+
+            if (!TryBufferReclaimed(msg))
+            {
+                _logger.LogDebug(
+                    "Suppressed duplicate reclaimed stream entry: stream_id={StreamId} consumer={Consumer}",
+                    msg.StreamId,
+                    _consumerName);
                 continue;
             }
 
@@ -272,6 +338,16 @@ public class RedisMessageQueue : IMessageQueue
             }
 
             added++;
+        }
+
+        if (poisonIds.Count > 0)
+        {
+            await db.StreamAcknowledgeAsync(_settings.StreamName, _settings.ConsumerGroup, poisonIds.ToArray());
+            _logger.LogWarning(
+                "Acknowledged malformed reclaimed entries after DLQ handoff: count={Count} stream={Stream} group={Group}",
+                poisonIds.Count,
+                _settings.StreamName,
+                _settings.ConsumerGroup);
         }
 
         return added;
@@ -284,7 +360,14 @@ public class RedisMessageQueue : IMessageQueue
         {
             while (results.Count < maxCount && _reclaimedBuffer.Count > 0)
             {
-                results.Add(_reclaimedBuffer.Dequeue());
+                var msg = _reclaimedBuffer.Dequeue();
+                _bufferedReclaimedIds.Remove(msg.StreamId);
+                if (!TryMarkInflight(msg.StreamId))
+                {
+                    continue;
+                }
+
+                results.Add(msg);
                 drained++;
             }
         }
@@ -293,29 +376,145 @@ public class RedisMessageQueue : IMessageQueue
         {
             _logger.LogInformation(
                 "Redis reclaimed messages delivered to worker: consumer={Consumer} delivered={Delivered}",
-                _settings.ConsumerName,
+                _consumerName,
                 drained);
         }
     }
 
-    private bool TryDeserializeEntry(StreamEntry entry, out RawTelegramMessage message)
+    private bool TryDeserializeEntry(StreamEntry entry, out RawTelegramMessage message, out string reason)
     {
         try
         {
             var json = entry["data"].ToString();
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                message = new RawTelegramMessage();
+                reason = "missing_or_empty_data_field";
+                return false;
+            }
+
             message = JsonSerializer.Deserialize<RawTelegramMessage>(json) ?? new RawTelegramMessage();
             if (string.IsNullOrWhiteSpace(message.StreamId))
             {
                 message.StreamId = entry.Id.ToString();
             }
 
+            reason = string.Empty;
             return true;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to deserialize stream entry {Id}", entry.Id);
             message = new RawTelegramMessage();
+            reason = $"deserialization_failed:{ex.GetType().Name}";
             return false;
         }
+    }
+
+    private async Task<bool> TryQuarantinePoisonEntryAsync(IDatabase db, StreamEntry entry, string reason, string source)
+    {
+        try
+        {
+            var payload = entry["data"].ToString();
+            await db.StreamAddAsync(_settings.DeadLetterStreamName, new NameValueEntry[]
+            {
+                new("source_stream", _settings.StreamName),
+                new("source_group", _settings.ConsumerGroup),
+                new("source_consumer", _consumerName),
+                new("source_entry_id", entry.Id.ToString()),
+                new("source_mode", source),
+                new("reason", reason),
+                new("failed_at_utc", DateTime.UtcNow.ToString("O")),
+                new("raw_data", string.IsNullOrWhiteSpace(payload) ? "<empty>" : payload)
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to publish malformed stream entry to DLQ. entry_id={EntryId} dlq={DlqStream} reason={Reason}",
+                entry.Id,
+                _settings.DeadLetterStreamName,
+                reason);
+            return false;
+        }
+    }
+
+    private bool TryBufferReclaimed(RawTelegramMessage msg)
+    {
+        lock (_reclaimedLock)
+        {
+            if (_bufferedReclaimedIds.Contains(msg.StreamId))
+            {
+                return false;
+            }
+        }
+
+        lock (_inflightLock)
+        {
+            if (_inflightMessageIds.ContainsKey(msg.StreamId))
+            {
+                return false;
+            }
+        }
+
+        lock (_reclaimedLock)
+        {
+            if (!_bufferedReclaimedIds.Add(msg.StreamId))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool TryMarkInflight(string streamId)
+    {
+        var now = DateTime.UtcNow;
+        var dedupeWindow = GetInflightDedupeWindow();
+
+        lock (_inflightLock)
+        {
+            if (_inflightMessageIds.TryGetValue(streamId, out var firstSeenAtUtc))
+            {
+                if (now - firstSeenAtUtc < dedupeWindow)
+                {
+                    return false;
+                }
+            }
+
+            _inflightMessageIds[streamId] = now;
+            return true;
+        }
+    }
+
+    private TimeSpan GetInflightDedupeWindow()
+    {
+        var seconds = Math.Max(10, Math.Max(_settings.PendingMinIdleSeconds, _settings.PendingReclaimIntervalSeconds * 2));
+        return TimeSpan.FromSeconds(seconds);
+    }
+
+    private static string BuildConsumerName(string configuredConsumerName)
+    {
+        var baseName = string.IsNullOrWhiteSpace(configuredConsumerName) ? "worker" : configuredConsumerName.Trim();
+        var machine = SanitizeToken(Environment.MachineName);
+        var processId = Process.GetCurrentProcess().Id;
+        return $"{baseName}-{machine}-{processId}";
+    }
+
+    private static string SanitizeToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "unknown";
+        }
+
+        var chars = value
+            .Trim()
+            .Select(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' ? ch : '-')
+            .ToArray();
+        return new string(chars);
     }
 }
