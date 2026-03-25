@@ -2,7 +2,7 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public partial class AnalysisWorkerService
 {
-    private const string DefaultCheapPrompt = """
+    internal const string DefaultCheapPrompt = """
 You extract intelligence signals from chat logs.
 Return ONLY a valid JSON object with field `items`.
 For each input `<message id="...">` return exactly one item with the same `message_id`.
@@ -133,7 +133,7 @@ Output item: {"message_id":105,"entities":[],"observations":[],"claims":[],"fact
 Never include markdown or extra text.
 """;
 
-    private const string DefaultExpensivePrompt = """
+    internal const string DefaultExpensivePrompt = """
 You are a high-accuracy resolver for dossier extraction.
 Input includes:
 - the original message text with metadata
@@ -182,7 +182,7 @@ Input message: [meta] sender_name="Alena" ... and then I'll go
 Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 """;
 
-    private const string SummaryPrompt = """
+    internal const string SummaryPrompt = """
 You are an analytical dialogue summarizer for long-term memory context.
 Return ONLY JSON object: {"summary":"..."}.
 

@@ -76,19 +76,44 @@ Failure behavior:
 - failed messages marked for reanalysis
 
 ------------------------------------------------------------
-5) Post-processing and persistence
+5) Prompt contracts (Sprint 4 hardening)
+------------------------------------------------------------
+Managed prompt contracts are defined once in `Stage5PromptCatalog` and persisted in
+`prompt_templates` with explicit:
+- `id`
+- `version`
+- `checksum`
+- `system_prompt`
+
+Update semantics:
+- prompt rows are upserted only when contract content/metadata changed
+- unchanged contracts do not bump `updated_at` (update-if-changed)
+
+Session summary prompt contract:
+- one source of truth (`stage5_session_summary_v1`) is used by both:
+  - inline summary path in `AnalysisWorkerService`
+  - `DialogSummaryWorkerService`
+
+------------------------------------------------------------
+6) Post-processing and persistence
 ------------------------------------------------------------
 For each processed message:
 1. normalize/sanitize/refine extraction
-2. validate schema/content constraints
+2. validate schema + semantic contract constraints
 3. upsert `message_extractions.cheap_json`
 4. set `needs_expensive` when required
 5. if expensive not required -> apply extraction transactionally to domain tables
 
 Domain writes are handled by `ExtractionApplier`.
 
+Semantic validation (beyond shape):
+- allowlist enforcement for entity types, claim/fact categories and keys, relationship types
+- snake_case/canonical checks for enum-like fields
+- `requires_expensive=true` requires non-empty `reason`
+- Russian-output check for generated payload fields on likely-Russian source messages
+
 ------------------------------------------------------------
-6) Expensive pass resolver
+7) Expensive pass resolver
 ------------------------------------------------------------
 Backlog source:
 - `message_extractions` where `needs_expensive=true`
@@ -100,7 +125,7 @@ Behavior:
 - finalize with cheap extraction when retries exhausted or denied
 
 ------------------------------------------------------------
-7) Slice summary worker (DialogSummaryWorkerService)
+8) Slice summary worker (DialogSummaryWorkerService)
 ------------------------------------------------------------
 Summary worker now consumes slices from `chat_sessions`:
 - source: `GetPendingAggregationCandidatesAsync(staleBeforeUtc)`
@@ -121,13 +146,13 @@ Important:
   `stage5:summary_extraction_watermark`) are not part of active runtime flow.
 
 ------------------------------------------------------------
-8) Cold path and finalization
+9) Cold path and finalization
 ------------------------------------------------------------
 `DailyKnowledgeCrystallizationWorkerService` aggregates cooled session summaries
 into final daily summaries and marks archived sessions/final states.
 
 ------------------------------------------------------------
-9) Operational checks
+10) Operational checks
 ------------------------------------------------------------
 - Session queue pressure:
   `chat_sessions where is_analyzed=false and is_finalized=false`

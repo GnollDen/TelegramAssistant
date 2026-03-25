@@ -23,8 +23,6 @@ public partial class AnalysisWorkerService : BackgroundService
     private const string SessionSkipQuarantineReason = "session_limit_skipped_more_than_3_times";
     private const int SessionSkipQuarantineRecoveryAgeHours = 6;
     private const int UncappedSessionSliceFetchWindowSessions = 200;
-    private const string CheapPromptId = "stage5_cheap_extract_v10";
-    private const string ExpensivePromptId = "stage5_expensive_reason_v5";
     private const int MaxCheapLlmBatchSize = 100;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -162,7 +160,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 }
 
                 var expensiveResolved = await _expensivePassResolver.ProcessExpensiveBacklogAsync(
-                    async ct => (await GetPromptAsync(ExpensivePromptId, DefaultExpensivePrompt, ct)).SystemPrompt,
+                    async ct => (await GetPromptAsync(Stage5PromptCatalog.ExpensiveReasoning, ct)).SystemPrompt,
                     stoppingToken);
                 if (expensiveResolved > 0)
                 {
@@ -940,7 +938,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     replyContext.GetValueOrDefault(m.Id))
             }).ToList();
 
-            var cheapPrompt = await GetPromptAsync(CheapPromptId, DefaultCheapPrompt, ct);
+            var cheapPrompt = await GetPromptAsync(Stage5PromptCatalog.CheapExtraction, ct);
             var (computedModelGroups, cheapChunks) = BuildCheapChunkRequests(batch, modelByMessageId);
             modelGroups = computedModelGroups;
             cheapChunkRequests = cheapChunks.Count;
@@ -1218,8 +1216,22 @@ public partial class AnalysisWorkerService : BackgroundService
     {
         try
         {
-            byId.TryGetValue(message.Id, out var extracted);
-            extracted ??= new ExtractionItem { MessageId = message.Id };
+            if (!byId.TryGetValue(message.Id, out var extracted))
+            {
+                _logger.LogWarning(
+                    "Stage5 extraction validation rejected message_id={MessageId}: missing_extraction_item",
+                    message.Id);
+
+                await _extractionErrorRepository.LogAsync(
+                    stage: "stage5_validation",
+                    reason: "missing_extraction_item",
+                    messageId: message.Id,
+                    payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)}",
+                    ct: ct);
+
+                return new CheapItemResult(Succeeded: false, ValidationRejected: true, NeedsExpensiveMarked: false);
+            }
+
             extracted = ExtractionRefiner.NormalizeExtractionForMessage(extracted, message);
             extracted = ExtractionRefiner.SanitizeExtraction(extracted);
             extracted = ExtractionRefiner.RefineExtractionForMessage(extracted, message, _settings);
@@ -1396,9 +1408,10 @@ public partial class AnalysisWorkerService : BackgroundService
 
         try
         {
+            var summaryPrompt = await GetPromptAsync(Stage5PromptCatalog.SessionSummary, ct);
             var response = await _analysisService.SummarizeDialogAsync(
                 string.IsNullOrWhiteSpace(_settings.SummaryModel) ? _settings.ExpensiveModel : _settings.SummaryModel,
-                SummaryPrompt,
+                summaryPrompt.SystemPrompt,
                 chatId,
                 "episodic_slice",
                 periodStart,
@@ -1592,30 +1605,30 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(CheapPromptId, "Stage5 Cheap Extraction v10", DefaultCheapPrompt, ct);
-        await EnsurePromptAsync(ExpensivePromptId, "Stage5 Expensive Reasoning v5", DefaultExpensivePrompt, ct);
+        await EnsurePromptAsync(Stage5PromptCatalog.CheapExtraction, ct);
+        await EnsurePromptAsync(Stage5PromptCatalog.ExpensiveReasoning, ct);
+        await EnsurePromptAsync(Stage5PromptCatalog.SessionSummary, ct);
     }
 
-    private async Task EnsurePromptAsync(string id, string name, string systemPrompt, CancellationToken ct)
+    private async Task EnsurePromptAsync(ManagedPromptTemplate contract, CancellationToken ct)
     {
-        var existing = await _promptRepository.GetByIdAsync(id, ct);
-        if (existing != null)
+        var existing = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        var managed = contract.ToTemplate();
+        if (existing != null &&
+            string.Equals(existing.Version, managed.Version, StringComparison.Ordinal) &&
+            string.Equals(existing.Checksum, managed.Checksum, StringComparison.Ordinal) &&
+            string.Equals(existing.SystemPrompt, managed.SystemPrompt, StringComparison.Ordinal))
         {
             return;
         }
 
-        await _promptRepository.UpsertAsync(new PromptTemplate
-        {
-            Id = id,
-            Name = name,
-            SystemPrompt = systemPrompt
-        }, ct);
+        await _promptRepository.UpsertAsync(managed, ct);
     }
 
-    private async Task<PromptTemplate> GetPromptAsync(string id, string fallback, CancellationToken ct)
+    private async Task<PromptTemplate> GetPromptAsync(ManagedPromptTemplate contract, CancellationToken ct)
     {
-        var prompt = await _promptRepository.GetByIdAsync(id, ct);
-        return prompt ?? new PromptTemplate { Id = id, Name = id, SystemPrompt = fallback };
+        var prompt = await _promptRepository.GetByIdAsync(contract.Id, ct);
+        return prompt ?? contract.ToTemplate();
     }
 
     private static Task DelayBetweenBatchesAsync(CancellationToken ct)

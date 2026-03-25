@@ -15,7 +15,6 @@ namespace TgAssistant.Intelligence.Stage6;
 [Obsolete("Deprecated by Stage 5 v10 Hybrid manifesto. Keep disabled and do not register in DI.")]
 public class ContinuousRefinementWorkerService : BackgroundService
 {
-    private const string CheapPromptId = "stage5_cheap_extract_v7";
     private const string CursorKey = "stage6:continuous_refinement:cursor";
     private const string FallbackCheapPrompt = """
 Return only valid JSON object {"items":[...]} and produce one extraction item per input message_id.
@@ -224,7 +223,7 @@ Use grounded facts only and keep empty arrays for low-value chatter.
 
     private async Task<ResolvedPrompt> GetCheapPromptAsync(CancellationToken ct)
     {
-        var prompt = await _promptTemplateRepository.GetByIdAsync(CheapPromptId, ct);
+        var prompt = await _promptTemplateRepository.GetByIdAsync(Stage5PromptCatalog.CheapExtraction.Id, ct);
         if (prompt == null || string.IsNullOrWhiteSpace(prompt.SystemPrompt))
         {
             return new ResolvedPrompt

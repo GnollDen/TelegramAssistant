@@ -334,6 +334,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Id).HasColumnName("id");
             e.Property(x => x.Name).HasColumnName("name");
             e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Version).HasColumnName("version");
+            e.Property(x => x.Checksum).HasColumnName("checksum");
             e.Property(x => x.SystemPrompt).HasColumnName("system_prompt");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");

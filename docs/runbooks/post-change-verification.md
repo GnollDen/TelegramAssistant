@@ -29,6 +29,14 @@ Typical commands:
 - `dotnet run --project src/TgAssistant.Host -- --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=ingest --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --runtime-wiring-check`
+- `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --stage5-smoke`
+
+When prompt contracts change (Sprint 4 scope), also verify:
+
+- `prompt_templates` has explicit `version` and `checksum` values for managed prompts.
+- no-op restarts do not mutate managed prompt rows when prompt content is unchanged.
+- session summary prompt is sourced from one managed contract (`stage5_session_summary_v1`) across inline and worker paths.
+- semantic validation rejects contract drift (invalid category/key/relationship type, or missing `reason` when `requires_expensive=true`).
 
 ## Verification Reporting
 

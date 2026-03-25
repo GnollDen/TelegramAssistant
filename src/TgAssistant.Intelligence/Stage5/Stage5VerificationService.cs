@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
+using TgAssistant.Core.Interfaces;
 
 namespace TgAssistant.Intelligence.Stage5;
 
@@ -9,21 +10,24 @@ public class Stage5VerificationService
     private readonly AnalysisSettings _analysisSettings;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly SummaryHistoricalRetrievalService _summaryHistoricalRetrievalService;
+    private readonly IPromptTemplateRepository _promptTemplateRepository;
     private readonly ILogger<Stage5VerificationService> _logger;
 
     public Stage5VerificationService(
         IOptions<AnalysisSettings> analysisSettings,
         IOptions<EmbeddingSettings> embeddingSettings,
         SummaryHistoricalRetrievalService summaryHistoricalRetrievalService,
+        IPromptTemplateRepository promptTemplateRepository,
         ILogger<Stage5VerificationService> logger)
     {
         _analysisSettings = analysisSettings.Value;
         _embeddingSettings = embeddingSettings.Value;
         _summaryHistoricalRetrievalService = summaryHistoricalRetrievalService;
+        _promptTemplateRepository = promptTemplateRepository;
         _logger = logger;
     }
 
-    public Task RunAsync(CancellationToken ct = default)
+    public async Task RunAsync(CancellationToken ct = default)
     {
         var expensiveEnabled = _analysisSettings.ExpensivePassEnabled;
         var expensiveBatch = Math.Max(0, _analysisSettings.MaxExpensivePerBatch);
@@ -56,6 +60,34 @@ public class Stage5VerificationService
             throw new InvalidOperationException("Stage5 smoke failed: SummaryHistoricalHintsEnabled=true while SummaryEnabled=false.");
         }
 
+        var managedPrompts = new[]
+        {
+            Stage5PromptCatalog.CheapExtraction,
+            Stage5PromptCatalog.ExpensiveReasoning,
+            Stage5PromptCatalog.SessionSummary,
+            Stage5PromptCatalog.DailyAggregate
+        };
+        foreach (var managedPrompt in managedPrompts)
+        {
+            var dbTemplate = await _promptTemplateRepository.GetByIdAsync(managedPrompt.Id, ct);
+            if (dbTemplate == null)
+            {
+                throw new InvalidOperationException($"Stage5 smoke failed: managed prompt '{managedPrompt.Id}' is missing in prompt_templates.");
+            }
+
+            if (!string.Equals(dbTemplate.Version, managedPrompt.Version, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Stage5 smoke failed: managed prompt '{managedPrompt.Id}' version mismatch db='{dbTemplate.Version}' code='{managedPrompt.Version}'.");
+            }
+
+            if (!string.Equals(dbTemplate.Checksum, managedPrompt.Checksum, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Stage5 smoke failed: managed prompt '{managedPrompt.Id}' checksum mismatch db='{dbTemplate.Checksum}' code='{managedPrompt.Checksum}'.");
+            }
+        }
+
         var summaryInlinePath = _analysisSettings.Enabled
             ? (_analysisSettings.SummaryEnabled ? "inline_llm_plus_fallback" : "inline_fallback_only")
             : "disabled_with_stage5";
@@ -64,7 +96,7 @@ public class Stage5VerificationService
             : "disabled";
 
         _logger.LogInformation(
-            "Stage5 smoke passed. cheap_model={CheapModel}, expensive_pass_enabled={ExpensiveEnabled}, expensive_batch_limit={ExpensiveBatchLimit}, expensive_daily_budget_usd={ExpensiveDailyBudget:0.000000}, edit_diff_enabled={EditDiffEnabled}, summary_inline_path={SummaryInlinePath}, summary_worker_path={SummaryWorkerPath}, summary_model={SummaryModel}, historical_hints_enabled={HistoricalHintsEnabled}, summary_embedding_model={SummaryEmbeddingModel}, summary_embedding_from_config={SummaryEmbeddingFromConfig}",
+            "Stage5 smoke passed. cheap_model={CheapModel}, expensive_pass_enabled={ExpensiveEnabled}, expensive_batch_limit={ExpensiveBatchLimit}, expensive_daily_budget_usd={ExpensiveDailyBudget:0.000000}, edit_diff_enabled={EditDiffEnabled}, summary_inline_path={SummaryInlinePath}, summary_worker_path={SummaryWorkerPath}, summary_model={SummaryModel}, historical_hints_enabled={HistoricalHintsEnabled}, summary_embedding_model={SummaryEmbeddingModel}, summary_embedding_from_config={SummaryEmbeddingFromConfig}, managed_prompt_count={ManagedPromptCount}",
             _analysisSettings.CheapModel,
             expensiveEnabled,
             expensiveBatch,
@@ -75,9 +107,9 @@ public class Stage5VerificationService
             string.IsNullOrWhiteSpace(_analysisSettings.SummaryModel) ? _analysisSettings.ExpensiveModel : _analysisSettings.SummaryModel,
             summaryRouting.HistoricalHintsEnabled,
             summaryRouting.EmbeddingModel,
-            summaryRouting.EmbeddingModelFromConfig);
+            summaryRouting.EmbeddingModelFromConfig,
+            managedPrompts.Length);
 
         ct.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
     }
 }
