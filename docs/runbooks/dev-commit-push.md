@@ -25,7 +25,19 @@ End code work in a clean state:
 4. Create one clean commit.
    - message in English, imperative mood
 5. Push immediately.
-   - `git push origin <branch>`
+   - preferred safe command: `scripts/safe_push.sh origin <branch>`
+   - direct fallback: `git push origin <branch>`
+
+## Workflow Push Guard
+
+`scripts/safe_push.sh` blocks pushes that include `.github/workflows/*` by default.
+This prevents common PAT failures when token scope does not include `workflow`.
+
+If workflow push is intentional, use:
+- `ALLOW_WORKFLOW_PUSH=1 scripts/safe_push.sh origin <branch>`
+
+Safe preview without actual push:
+- `DRY_RUN=1 scripts/safe_push.sh origin <branch>`
 
 ## Completion Rule
 
