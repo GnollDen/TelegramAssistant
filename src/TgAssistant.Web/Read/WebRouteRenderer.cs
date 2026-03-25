@@ -15,6 +15,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         "/queue",
         "/inbox",
         "/history",
+        "/case-evidence",
         "/state",
         "/timeline",
         "/network",
@@ -72,6 +73,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/queue" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
             "/inbox" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
             "/case-detail" => new WebRenderResult { Route = path, Title = "Case Detail", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request) },
+            "/case-evidence" => new WebRenderResult { Route = path, Title = "Case Evidence", Html = RenderCaseEvidence(await ExecuteCaseDetailReadAsync(request, query, ct), request) },
             "/artifact-detail" => new WebRenderResult { Route = path, Title = "Artifact Detail", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request) },
             "/case-action" => new WebRenderResult { Route = path, Title = "Case Action", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request) },
             "/clarification-answer" => new WebRenderResult { Route = path, Title = "Clarification Answer", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request) },
@@ -171,7 +173,12 @@ public class WebRouteRenderer : IWebRouteRenderer
             Note = EmptyToNull(GetQuery(query, "note")),
             FeedbackKind = EmptyToNull(GetQuery(query, "feedbackKind")),
             FeedbackDimension = EmptyToNull(GetQuery(query, "feedbackDimension")),
-            IsUseful = ParseNullableBoolean(GetQuery(query, "useful"))
+            IsUseful = ParseNullableBoolean(GetQuery(query, "useful")),
+            ContextSourceKind = EmptyToNull(GetQuery(query, "contextSourceKind")),
+            ContextEntryMode = EmptyToNull(GetQuery(query, "contextEntryMode")),
+            CorrectionTargetRef = EmptyToNull(GetQuery(query, "correctionTargetRef")),
+            CorrectionSummary = EmptyToNull(GetQuery(query, "correctionSummary")),
+            ContextCertainty = ParseNullableSingle(GetQuery(query, "contextCertainty"))
         }, ct);
     }
 
@@ -194,6 +201,8 @@ public class WebRouteRenderer : IWebRouteRenderer
             Stage6CaseId = caseId,
             AnswerType = EmptyToNull(GetQuery(query, "answerType")) ?? "text",
             AnswerValue = EmptyToNull(GetQuery(query, "answer")) ?? string.Empty,
+            SourceClass = EmptyToNull(GetQuery(query, "sourceClass")) ?? "operator_web",
+            AnswerConfidence = ParseNullableSingle(GetQuery(query, "answerConfidence")) ?? 0.8f,
             MarkResolved = !string.Equals(EmptyToNull(GetQuery(query, "markResolved")), "false", StringComparison.OrdinalIgnoreCase),
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
             Reason = EmptyToNull(GetQuery(query, "reason")),
@@ -596,16 +605,46 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
         sb.AppendLine($"<p>updated={E(model.UpdatedAt.ToString("u"))}</p>");
         sb.AppendLine($"<p>evidence-first summary: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
+        sb.AppendLine("<section><h2>Deep Review Snapshot</h2>");
+        sb.AppendLine($"<p>lifecycle: created={E(model.CreatedAt.ToString("u"))} | ready={E(model.ReadyAt?.ToString("u") ?? "-")} | resolved={E(model.ResolvedAt?.ToString("u") ?? "-")} | rejected={E(model.RejectedAt?.ToString("u") ?? "-")} | stale={E(model.StaleAt?.ToString("u") ?? "-")}</p>");
+        sb.AppendLine($"<p>evidence window: from={E(model.EarliestEvidenceAtUtc?.ToString("u") ?? "-")} to={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
+        sb.AppendLine($"<p>participants: {(model.EvidenceParticipants.Count == 0 ? "-" : E(string.Join(" | ", model.EvidenceParticipants.Select(x => $"{x.SenderName} (msgs={x.MessageCount}, direct={x.EvidenceMessageCount})"))))}</p>");
+        sb.AppendLine($"<p>subject refs: {(model.SubjectRefs.Count == 0 ? "-" : E(string.Join(", ", model.SubjectRefs)))} </p>");
+        sb.AppendLine($"<p>reopen triggers: {(model.ReopenTriggers.Count == 0 ? "-" : E(string.Join("; ", model.ReopenTriggers)))} </p>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-evidence", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() }))}'>open evidence drill-down</a> | <a href='{E(BuildScopedPath("/timeline", request))}'>timeline</a> | <a href='{E(BuildScopedPath("/network", request))}'>people/network</a> | <a href='{E(BuildScopedPath("/history", request, new Dictionary<string, string?> { ["objectType"] = "stage6_case" }))}'>case history feed</a></p>");
+        sb.AppendLine("</section>");
 
         sb.AppendLine("<section><h2>Evidence First Context</h2>");
         foreach (var evidence in model.Evidence.Take(12))
         {
             var link = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>open</a>";
-            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | ref={E(evidence.Reference)}{link}</div>");
+            var time = evidence.TimestampUtc.HasValue ? evidence.TimestampUtc.Value.ToString("yyyy-MM-dd HH:mm") : "-";
+            var refTrail = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
+            {
+                ["objectType"] = "stage6_case",
+                ["objectId"] = model.Id.ToString()
+            });
+            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | at={E(time)} | ref={E(evidence.Reference)}{link} | <a href='{E(refTrail)}'>case trail</a></div>");
         }
         if (model.Evidence.Count == 0)
         {
             sb.AppendLine("<p>No explicit evidence refs. Case reason is shown as fallback.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Evidence Drill-Down: Message Window</h2>");
+        foreach (var row in model.EvidenceMessages)
+        {
+            var messageLink = BuildScopedPath("/search", request, new Dictionary<string, string?>
+            {
+                ["objectType"] = "message",
+                ["q"] = row.MessageId.ToString()
+            });
+            sb.AppendLine($"<div>{(row.IsDirectEvidence ? "<strong>evidence</strong>" : "context")} | {E(row.TimestampUtc.ToString("yyyy-MM-dd HH:mm"))} | {E(row.SenderName)} | msg#{row.MessageId} | {E(row.TextSnippet)} | <a href='{E(messageLink)}'>open message</a></div>");
+        }
+        if (model.EvidenceMessages.Count == 0)
+        {
+            sb.AppendLine("<p>No message-level evidence window available for this case.</p>");
         }
         sb.AppendLine("</section>");
 
@@ -630,10 +669,51 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
         sb.AppendLine("</section>");
 
+        sb.AppendLine("<section><h2>Linked Cases and Objects</h2>");
+        foreach (var linkedCase in model.LinkedCases)
+        {
+            var linkedCaseLink = BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
+            {
+                ["caseId"] = linkedCase.Id.ToString()
+            });
+            sb.AppendLine($"<div>case <a href='{E(linkedCaseLink)}'>{linkedCase.Id}</a> | {E(linkedCase.CaseType)} | {E(linkedCase.Status)} | {E(linkedCase.ReasonSummary)}</div>");
+        }
+        foreach (var linked in model.LinkedObjects)
+        {
+            var target = linked.Link ?? BuildScopedPath("/history-object", request, new Dictionary<string, string?>
+            {
+                ["objectType"] = linked.LinkedObjectType,
+                ["objectId"] = linked.LinkedObjectId
+            });
+            sb.AppendLine($"<div>{E(linked.LinkRole)} | {E(linked.LinkedObjectType)}:{E(linked.LinkedObjectId)} | {E(linked.Summary)} | <a href='{E(target)}'>open</a></div>");
+        }
+        if (model.LinkedCases.Count == 0 && model.LinkedObjects.Count == 0)
+        {
+            sb.AppendLine("<p>No linked cases/objects were resolved for this case.</p>");
+        }
+        sb.AppendLine("</section>");
+
         sb.AppendLine("<section><h2>Context Notes</h2>");
         foreach (var entry in model.ContextEntries)
         {
-            sb.AppendLine($"<div>{E(entry.SourceKind)} via {E(entry.EnteredVia)} | certainty={entry.UserReportedCertainty:0.00} | {E(entry.ContentText)}</div>");
+            sb.AppendLine($"<div>{E(entry.SourceKind)} via {E(entry.EnteredVia)} | source={E(entry.SourceType)}:{E(entry.SourceId)} | certainty={entry.UserReportedCertainty:0.00} | at={E(entry.CreatedAt.ToString("yyyy-MM-dd HH:mm"))}</div>");
+            sb.AppendLine($"<div>{E(entry.ContentText)}</div>");
+            if (entry.AppliesToRefs.Count > 0)
+            {
+                sb.AppendLine($"<div>applies_to: {E(string.Join(", ", entry.AppliesToRefs))}</div>");
+            }
+            if (entry.ConflictsWithRefs.Count > 0)
+            {
+                sb.AppendLine($"<div>conflicts: {E(string.Join(", ", entry.ConflictsWithRefs))}</div>");
+            }
+            if (entry.SupersedesContextEntryId.HasValue)
+            {
+                sb.AppendLine($"<div>supersedes: {E(entry.SupersedesContextEntryId.Value.ToString())}</div>");
+            }
+            if (!string.IsNullOrWhiteSpace(entry.StructuredPayloadJson))
+            {
+                sb.AppendLine($"<details><summary>structured payload</summary><pre>{E(entry.StructuredPayloadJson!)}</pre></details>");
+            }
         }
         if (model.ContextEntries.Count == 0)
         {
@@ -667,6 +747,21 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
         sb.AppendLine("<button type='submit'>save note</button>");
         sb.AppendLine("</form>");
+        sb.AppendLine("<h3>Long-form Context / Correction</h3>");
+        sb.AppendLine("<form method='get' action='/case-action'>");
+        sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
+        sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
+        sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
+        sb.AppendLine("<input type='hidden' name='action' value='annotate'>");
+        sb.AppendLine("<p><label>mode <select name='contextEntryMode'><option value='context'>context</option><option value='correction'>correction</option></select></label> ");
+        sb.AppendLine("<label>source kind <select name='contextSourceKind'><option value='long_form_context'>long_form_context</option><option value='user_context_correction'>user_context_correction</option><option value='operator_annotation'>operator_annotation</option></select></label></p>");
+        sb.AppendLine("<p><label>context/correction text<br><textarea name='note' rows='6' cols='110'></textarea></label></p>");
+        sb.AppendLine("<p><label>correction target ref <input name='correctionTargetRef' value=''></label> ");
+        sb.AppendLine("<label>correction summary <input name='correctionSummary' value=''></label></p>");
+        sb.AppendLine("<p><label>certainty 0..1 <input name='contextCertainty' value='0.85'></label> ");
+        sb.AppendLine("<label>reason <input name='reason' value=''></label></p>");
+        sb.AppendLine("<button type='submit'>save long-form context</button>");
+        sb.AppendLine("</form>");
         if (model.Clarification != null)
         {
             sb.AppendLine("<h3>Clarification</h3>");
@@ -689,7 +784,9 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
             sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
             sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
-            sb.AppendLine("<label>answer <input name='answer' value=''></label> ");
+            sb.AppendLine("<p><label>answer type <select name='answerType'><option value='text'>text</option><option value='long_form'>long_form</option><option value='correction'>correction</option></select></label> ");
+            sb.AppendLine("<label>source class <select name='sourceClass'><option value='operator_web'>operator_web</option><option value='user_reported_context'>user_reported_context</option><option value='user_context_correction'>user_context_correction</option></select></label></p>");
+            sb.AppendLine("<p><label>answer<br><textarea name='answer' rows='5' cols='100'></textarea></label></p>");
             sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
             sb.AppendLine("<label>useful <select name='useful'><option value='true'>true</option><option value='false'>false</option></select></label> ");
             sb.AppendLine("<button type='submit'>submit answer</button>");
@@ -747,7 +844,8 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<section><h2>Evidence Summary</h2>");
         foreach (var evidence in model.Evidence.Take(12))
         {
-            sb.AppendLine($"<div>{E(evidence.Title)} | {E(evidence.Summary)}</div>");
+            var open = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>open</a>";
+            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | ref={E(evidence.Reference)}{open}</div>");
         }
         if (model.Evidence.Count == 0)
         {
@@ -761,7 +859,11 @@ public class WebRouteRenderer : IWebRouteRenderer
             {
                 ["caseId"] = item.Id.ToString()
             });
-            sb.AppendLine($"<div><a href='{E(link)}'>{item.Id}</a> | {E(item.CaseType)} | {E(item.Status)} | {E(item.ReasonSummary)}</div>");
+            var drilldown = BuildScopedPath("/case-evidence", request, new Dictionary<string, string?>
+            {
+                ["caseId"] = item.Id.ToString()
+            });
+            sb.AppendLine($"<div><a href='{E(link)}'>{item.Id}</a> | {E(item.CaseType)} | {E(item.Status)} | {E(item.ReasonSummary)} | <a href='{E(drilldown)}'>evidence</a></div>");
         }
         if (model.LinkedCases.Count == 0)
         {
@@ -780,6 +882,62 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("</section>");
         sb.AppendLine("<section><h2>Payload</h2>");
         sb.AppendLine($"<pre>{E(model.PayloadJson)}</pre>");
+        sb.AppendLine("</section>");
+        return CloseShell(sb);
+    }
+
+    private static string RenderCaseEvidence(Stage6CaseDetailReadModel model, WebReadRequest request)
+    {
+        var sb = CreateShell("Case Evidence");
+        sb.AppendLine("<h1>Case Evidence Drill-Down</h1>");
+        if (!model.Exists)
+        {
+            sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
+            return CloseShell(sb);
+        }
+
+        sb.AppendLine($"<p>case={model.Id} | type={E(model.CaseType)} | status={E(model.Status)}</p>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-detail", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() }))}'>back to case detail</a></p>");
+        sb.AppendLine($"<p>evidence window: from={E(model.EarliestEvidenceAtUtc?.ToString("u") ?? "-")} to={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
+
+        sb.AppendLine("<section><h2>Evidence Refs</h2>");
+        foreach (var evidence in model.Evidence)
+        {
+            var open = string.IsNullOrWhiteSpace(evidence.Link) ? "-" : $"<a href='{E(evidence.Link)}'>open</a>";
+            var at = evidence.TimestampUtc.HasValue ? evidence.TimestampUtc.Value.ToString("yyyy-MM-dd HH:mm") : "-";
+            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Reference)} | {E(evidence.Title)} | at={E(at)} | {E(evidence.Summary)} | {open}</div>");
+        }
+        if (model.Evidence.Count == 0)
+        {
+            sb.AppendLine("<p>No evidence refs.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Timeline / Messages</h2>");
+        foreach (var message in model.EvidenceMessages)
+        {
+            var messageLink = BuildScopedPath("/search", request, new Dictionary<string, string?>
+            {
+                ["objectType"] = "message",
+                ["q"] = message.MessageId.ToString()
+            });
+            sb.AppendLine($"<div>{(message.IsDirectEvidence ? "<strong>evidence</strong>" : "context")} | {E(message.TimestampUtc.ToString("yyyy-MM-dd HH:mm"))} | {E(message.SenderName)} | msg#{message.MessageId} | {E(message.TextSnippet)} | <a href='{E(messageLink)}'>open message</a></div>");
+        }
+        if (model.EvidenceMessages.Count == 0)
+        {
+            sb.AppendLine("<p>No message timeline context for this case.</p>");
+        }
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>People Context</h2>");
+        foreach (var person in model.EvidenceParticipants)
+        {
+            sb.AppendLine($"<div>{E(person.SenderName)} | sender_id={person.SenderId} | messages={person.MessageCount} | direct_evidence={person.EvidenceMessageCount}</div>");
+        }
+        if (model.EvidenceParticipants.Count == 0)
+        {
+            sb.AppendLine("<p>No participant summary available.</p>");
+        }
         sb.AppendLine("</section>");
         return CloseShell(sb);
     }
@@ -1677,6 +1835,16 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
 
         return bool.TryParse(value, out var parsed) ? parsed : null;
+    }
+
+    private static float? ParseNullableSingle(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return float.TryParse(value, out var parsed) ? Math.Clamp(parsed, 0f, 1f) : null;
     }
 
     private static Guid? ParseGuidQuery(IReadOnlyDictionary<string, string> query, string key)

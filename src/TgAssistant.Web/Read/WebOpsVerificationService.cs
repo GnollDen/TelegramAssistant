@@ -237,9 +237,29 @@ public class WebOpsVerificationService
             ?? throw new InvalidOperationException("Ops web smoke failed: /case-detail route did not resolve.");
         if (string.IsNullOrWhiteSpace(caseDetailPage.Html)
             || !caseDetailPage.Html.Contains("Evidence First Context", StringComparison.OrdinalIgnoreCase)
-            || !caseDetailPage.Html.Contains("Clarification", StringComparison.OrdinalIgnoreCase))
+            || !caseDetailPage.Html.Contains("Clarification", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Deep Review Snapshot", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Long-form Context / Correction", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: case detail route does not show evidence-first clarification workflow.");
+        }
+
+        var evidencePage = await _webRouteRenderer.RenderAsync($"/case-evidence?caseId={stage6Case.Id}", request, ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: /case-evidence route did not resolve.");
+        if (string.IsNullOrWhiteSpace(evidencePage.Html)
+            || !evidencePage.Html.Contains("Case Evidence Drill-Down", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: /case-evidence route does not show evidence drill-down.");
+        }
+
+        var contextPage = await _webRouteRenderer.RenderAsync(
+            $"/case-action?caseId={stage6Case.Id}&action=annotate&contextEntryMode=correction&contextSourceKind=user_context_correction&correctionTargetRef={Uri.EscapeDataString("message:1")}&note={Uri.EscapeDataString("Long-form correction from web smoke. Clarifies date mismatch.")}&reason={Uri.EscapeDataString("w3 smoke correction")}",
+            request,
+            ct)
+            ?? throw new InvalidOperationException("Ops web smoke failed: long-form correction route did not resolve.");
+        if (!contextPage.Html.Contains("success=True", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Ops web smoke failed: long-form correction submission did not report success.");
         }
 
         foreach (var artifactType in W2ArtifactTypes)
