@@ -6,6 +6,8 @@ Use this after deploy or when a risky runtime change must be validated in produc
 
 1. container/process status
 2. application healthcheck
+   - liveness (process viability)
+   - readiness (critical dependency admission)
 3. runtime wiring check
 4. role-specific wiring checks when relevant
 5. pipeline liveliness in logs
@@ -14,7 +16,9 @@ Use this after deploy or when a risky runtime change must be validated in produc
 
 - `docker compose ps`
 - app logs over a recent window
-- `dotnet TgAssistant.Host.dll --healthcheck`
+- `dotnet TgAssistant.Host.dll --liveness-check`
+- `dotnet TgAssistant.Host.dll --readiness-check`
+- `dotnet TgAssistant.Host.dll --healthcheck` (Sprint 1 compatibility alias to readiness)
 - `dotnet TgAssistant.Host.dll --runtime-wiring-check`
 - role-specific runtime checks
 - Redis queue/group sanity
