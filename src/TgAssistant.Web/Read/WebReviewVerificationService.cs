@@ -314,6 +314,26 @@ public class WebReviewVerificationService
             throw new InvalidOperationException("Web review smoke failed: /review-edit-period route did not resolve.");
         }
 
+        var confirmRouteNeedsConfirmation = await _webRouteRenderer.RenderAsync(
+            $"/review-action?objectType=clarification_question&objectId={confirmQuestion.Id}&action=confirm",
+            request,
+            ct);
+        if (confirmRouteNeedsConfirmation == null
+            || !confirmRouteNeedsConfirmation.Html.Contains("Confirmation Required", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Web review smoke failed: review confirm route did not request confirmation.");
+        }
+
+        var confirmRoute = await _webRouteRenderer.RenderAsync(
+            $"/review-action?objectType=clarification_question&objectId={confirmQuestion.Id}&action=confirm&confirm=1",
+            request,
+            ct);
+        if (confirmRoute == null
+            || !confirmRoute.Html.Contains("Review Action", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Web review smoke failed: confirmed /review-action route did not resolve.");
+        }
+
         var auditConfirm = await _domainReviewEventRepository.GetByObjectAsync("clarification_question", confirmQuestion.Id.ToString(), 20, ct);
         var auditReject = await _domainReviewEventRepository.GetByObjectAsync("clarification_question", rejectQuestion.Id.ToString(), 20, ct);
         var auditDefer = await _domainReviewEventRepository.GetByObjectAsync("conflict_record", conflict.Id.ToString(), 20, ct);

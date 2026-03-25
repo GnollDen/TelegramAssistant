@@ -36,6 +36,8 @@ public interface IWebOpsService
         string? caseType = null,
         string? artifactType = null,
         string? query = null,
+        string? sortBy = null,
+        string? sortDirection = null,
         CancellationToken ct = default);
 
     Task<Stage6CaseDetailReadModel> GetCaseDetailAsync(

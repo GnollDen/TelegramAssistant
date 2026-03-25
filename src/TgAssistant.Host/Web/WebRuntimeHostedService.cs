@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -77,10 +78,20 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         app.MapGet("/", async (HttpContext context, CancellationToken ct) =>
         {
             var request = CreateReadRequest(context.Request, settings);
-            var queueResult = await GetRenderer().RenderAsync("/queue" + context.Request.QueryString, request, ct);
-            var body = queueResult is null
-                ? "<p>Queue preview is unavailable.</p>"
-                : queueResult.Html;
+            var body = "<p>Queue preview is unavailable.</p>";
+            try
+            {
+                var queueResult = await GetRenderer().RenderAsync("/queue" + context.Request.QueryString, request, ct);
+                if (queueResult is not null)
+                {
+                    body = queueResult.Html;
+                }
+            }
+            catch (Exception ex)
+            {
+                body = $"<h2>Queue Preview Error</h2><p>{WebUtility.HtmlEncode(ex.Message)}</p>";
+            }
+
             var html = WrapShellHtml("Operator Shell", "/", body, context.Request, settings);
             return Results.Content(html, "text/html; charset=utf-8");
         });
@@ -136,22 +147,36 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         string? fallbackTitle,
         CancellationToken ct)
     {
-        var request = CreateReadRequest(context.Request, settings);
-        var routeWithQuery = $"{route}{context.Request.QueryString}";
-        var result = await GetRenderer().RenderAsync(routeWithQuery, request, ct);
-        if (result is null)
+        try
         {
-            return Results.NotFound(WrapShellHtml(
-                "Route Not Found",
-                route,
-                $"<p>Route <code>{WebUtility.HtmlEncode(route)}</code> is not available.</p>",
-                context.Request,
-                settings));
-        }
+            var request = CreateReadRequest(context.Request, settings);
+            var routeWithQuery = $"{route}{context.Request.QueryString}";
+            var result = await GetRenderer().RenderAsync(routeWithQuery, request, ct);
+            if (result is null)
+            {
+                return Results.NotFound(WrapShellHtml(
+                    "Route Not Found",
+                    route,
+                    $"<h2>Route Not Found</h2><p>Route <code>{WebUtility.HtmlEncode(route)}</code> is not available.</p><p>Use <a href='/queue'>queue</a> or <a href='/dashboard'>dashboard</a> to continue.</p>",
+                    context.Request,
+                    settings));
+            }
 
-        var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Operator Shell" : result.Title;
-        var html = WrapShellHtml(title, route, result.Html, context.Request, settings);
-        return Results.Content(html, "text/html; charset=utf-8");
+            var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Operator Shell" : result.Title;
+            var html = WrapShellHtml(title, route, result.Html, context.Request, settings);
+            return Results.Content(html, "text/html; charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Web route render failed for {Route}", route);
+            var safeRoute = WebUtility.HtmlEncode(route);
+            var safeError = WebUtility.HtmlEncode(ex.Message);
+            var errorHtml = $"<h2>Render Error</h2><p>Failed to render <code>{safeRoute}</code>.</p><p>{safeError}</p><p><a href='/queue'>open queue</a></p>";
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            return Results.Content(
+                WrapShellHtml("Render Error", route, errorHtml, context.Request, settings),
+                "text/html; charset=utf-8");
+        }
     }
 
     private IWebRouteRenderer GetRenderer() => _services.GetRequiredService<IWebRouteRenderer>();
@@ -175,7 +200,11 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             readRequest.ChatId = chatId;
         }
 
-        if (DateTime.TryParse(request.Query["asOfUtc"], out var asOfUtc))
+        if (DateTime.TryParse(
+                request.Query["asOfUtc"],
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var asOfUtc))
         {
             readRequest.AsOfUtc = DateTime.SpecifyKind(asOfUtc, DateTimeKind.Utc);
         }
@@ -271,12 +300,12 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         sb.Append($"<title>{escapedTitle}</title>");
         sb.Append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.Append("<style>");
-        sb.Append("body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#f5f7fb;color:#13203a;}");
-        sb.Append("header{background:#13203a;color:#fff;padding:14px 18px;}");
-        sb.Append("header h1{margin:0;font-size:1.05rem;}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}");
-        sb.Append("nav a{color:#d8e4ff;text-decoration:none;border:1px solid #365480;padding:6px 10px;border-radius:7px;}");
-        sb.Append("nav a.active{background:#3f74d1;color:#fff;border-color:#3f74d1;}");
-        sb.Append("main{max-width:1100px;margin:16px auto;padding:0 14px 24px;}section{background:#fff;padding:12px 14px;border-radius:8px;border:1px solid #d9e2ef;}");
+        sb.Append("body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;background:#f3f6fb;color:#14243f;line-height:1.45;}");
+        sb.Append("header{background:#1e314f;color:#fff;padding:14px 18px;}");
+        sb.Append("header h1{margin:0;font-size:1.05rem;}nav{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;}");
+        sb.Append("nav a{color:#dce8ff;text-decoration:none;border:1px solid #4a6288;padding:6px 10px;border-radius:7px;background:rgba(255,255,255,.04);}");
+        sb.Append("nav a.active{background:#6289ca;color:#fff;border-color:#6289ca;}");
+        sb.Append("main{max-width:1120px;margin:16px auto;padding:0 14px 24px;}section{background:#fff;padding:12px 14px;border-radius:10px;border:1px solid #d9e3f1;}");
         sb.Append("</style></head><body>");
         sb.Append("<header><h1>Telegram Assistant Operator Shell</h1><nav>");
         sb.Append(RenderNavLink(shellPath, "Shell", activeRoute == "/"));

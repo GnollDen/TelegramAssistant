@@ -208,6 +208,8 @@ public class Stage6CaseQueueReadModel
     public string? CaseTypeFilter { get; set; }
     public string? ArtifactTypeFilter { get; set; }
     public string? Query { get; set; }
+    public string SortBy { get; set; } = "priority";
+    public string SortDirection { get; set; } = "desc";
     public int TotalCases { get; set; }
     public int VisibleCases { get; set; }
     public int NeedsInputCases { get; set; }
@@ -438,6 +440,7 @@ public class WebStage6CaseActionResult
     public string Action { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string? Status { get; set; }
+    public bool RequiresConfirmation { get; set; }
     public List<string> RefreshedArtifactTypes { get; set; } = [];
 }
 
@@ -466,6 +469,7 @@ public class WebStage6ClarificationAnswerResult
     public string Message { get; set; } = string.Empty;
     public string QuestionText { get; set; } = string.Empty;
     public string AnswerValue { get; set; } = string.Empty;
+    public bool RequiresConfirmation { get; set; }
     public List<string> RefreshedArtifactTypes { get; set; } = [];
     public List<string> RecomputeTargets { get; set; } = [];
 }
