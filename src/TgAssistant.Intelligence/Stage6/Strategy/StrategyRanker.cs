@@ -39,7 +39,8 @@ public class StrategyRanker : IStrategyRanker
                 (candidate.StateFit * 0.45f)
                 + (candidate.ProfileFit * 0.2f)
                 + (candidate.PairPatternFit * 0.2f)
-                - (candidate.RiskScore * 0.35f);
+                - (candidate.RiskScore * 0.35f)
+                - (candidate.EthicalPenalty * 0.3f);
 
             ranked.Add(candidate);
         }

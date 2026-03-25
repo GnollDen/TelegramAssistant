@@ -85,7 +85,10 @@ public class StrategyEngine : IStrategyEngine
             var risk = _riskEvaluator.Evaluate(context, candidate);
             candidate.RiskLabels = risk.Labels;
             candidate.RiskScore = risk.RiskScore;
+            candidate.EthicalFlags = BuildEthicalFlags(candidate.RiskLabels);
+            candidate.EthicalPenalty = ComputeEthicalPenalty(candidate.EthicalFlags);
         }
+        candidates = ApplyEthicalContract(candidates);
 
         ApplyCompetingStrategyConstraints(candidates, competingRuntime.Interpretation.StrategyConstraints);
         var ranked = _ranker.Rank(context, candidates);
@@ -132,7 +135,8 @@ public class StrategyEngine : IStrategyEngine
                     Risk = JsonSerializer.Serialize(new
                     {
                         labels = option.RiskLabels,
-                        score = option.RiskScore
+                        score = option.RiskScore,
+                        ethical_flags = option.EthicalFlags
                     }, JsonOptions),
                     WhenToUse = option.WhenToUse,
                     SuccessSigns = option.SuccessSigns,
@@ -170,6 +174,7 @@ public class StrategyEngine : IStrategyEngine
                         x.ActionType,
                         x.FinalScore,
                         x.RiskScore,
+                        x.EthicalFlags,
                         x.IsPrimary
                     })
                 }, JsonOptions),
@@ -234,7 +239,8 @@ public class StrategyEngine : IStrategyEngine
                 Risk = JsonSerializer.Serialize(new
                 {
                     labels = x.RiskLabels,
-                    score = x.RiskScore
+                    score = x.RiskScore,
+                    ethical_flags = x.EthicalFlags
                 }, JsonOptions),
                 WhenToUse = x.WhenToUse,
                 SuccessSigns = x.SuccessSigns,
@@ -517,5 +523,86 @@ public class StrategyEngine : IStrategyEngine
     private static bool IsHighImpactSeverity(string? severity)
     {
         return string.Equals(severity, "high", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<string> BuildEthicalFlags(IReadOnlyCollection<string> riskLabels)
+    {
+        var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (riskLabels.Contains("manipulative_gain_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            flags.Add("non_manipulation_violation_risk");
+        }
+
+        if (riskLabels.Contains("contact_at_any_cost_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            flags.Add("contact_at_any_cost_risk");
+        }
+
+        if (riskLabels.Contains("anxious_overreach_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            flags.Add("anxious_overreaching_risk");
+        }
+
+        if (riskLabels.Contains("dignity_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            flags.Add("dignity_preservation_risk");
+        }
+
+        if (riskLabels.Contains("clarity_dignity_aligned", StringComparer.OrdinalIgnoreCase))
+        {
+            flags.Add("clarity_dignity_aligned");
+        }
+
+        return flags.ToList();
+    }
+
+    private static float ComputeEthicalPenalty(IReadOnlyCollection<string> flags)
+    {
+        var penalty = 0f;
+        if (flags.Contains("non_manipulation_violation_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            penalty += 0.28f;
+        }
+
+        if (flags.Contains("contact_at_any_cost_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            penalty += 0.18f;
+        }
+
+        if (flags.Contains("anxious_overreaching_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            penalty += 0.1f;
+        }
+
+        if (flags.Contains("dignity_preservation_risk", StringComparer.OrdinalIgnoreCase))
+        {
+            penalty += 0.1f;
+        }
+
+        if (flags.Contains("clarity_dignity_aligned", StringComparer.OrdinalIgnoreCase))
+        {
+            penalty = Math.Max(0f, penalty - 0.06f);
+        }
+
+        return Math.Clamp(penalty, 0f, 0.6f);
+    }
+
+    private static List<StrategyCandidateOption> ApplyEthicalContract(IReadOnlyList<StrategyCandidateOption> candidates)
+    {
+        var filtered = candidates
+            .Where(x => !x.EthicalFlags.Contains("non_manipulation_violation_risk", StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        if (filtered.Count == 0)
+        {
+            return candidates.ToList();
+        }
+
+        foreach (var option in filtered)
+        {
+            option.RiskScore = Math.Clamp(option.RiskScore + option.EthicalPenalty, 0f, 1f);
+        }
+
+        return filtered;
     }
 }

@@ -142,6 +142,10 @@ public class ProfileSubjectReadModel
     public List<ProfileTraitReadModel> TopTraits { get; set; } = [];
     public string WhatWorks { get; set; } = string.Empty;
     public string WhatFails { get; set; } = string.Empty;
+    public string ParticipantPatterns { get; set; } = string.Empty;
+    public string PairDynamics { get; set; } = string.Empty;
+    public string RepeatedInteractionModes { get; set; } = string.Empty;
+    public string ChangesOverTime { get; set; } = string.Empty;
 }
 
 public class ProfileTraitReadModel
@@ -179,6 +183,12 @@ public class StrategyReadModel
     public string MicroStep { get; set; } = string.Empty;
     public List<string> Horizon { get; set; } = [];
     public string WhyNotNotes { get; set; } = string.Empty;
+    public List<StateInsightReadModel> ObservedFacts { get; set; } = [];
+    public List<StateInsightReadModel> LikelyInterpretation { get; set; } = [];
+    public List<StateInsightReadModel> Uncertainties { get; set; } = [];
+    public List<StateInsightReadModel> MissingInformation { get; set; } = [];
+    public List<string> RelationalPatterns { get; set; } = [];
+    public string EthicalContractSummary { get; set; } = string.Empty;
 }
 
 public class StrategyOptionReadModel
@@ -203,6 +213,8 @@ public class DraftReadModel
     public string MainDraft { get; set; } = string.Empty;
     public string? AltDraft1 { get; set; }
     public string? AltDraft2 { get; set; }
+    public string? SofterAlternative { get; set; }
+    public string? MoreDirectAlternative { get; set; }
     public string? StyleNotes { get; set; }
     public float Confidence { get; set; }
 }

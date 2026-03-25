@@ -40,6 +40,7 @@ public class StrategyCandidateOption
     public string Summary { get; set; } = string.Empty;
     public string Purpose { get; set; } = string.Empty;
     public List<string> RiskLabels { get; set; } = [];
+    public List<string> EthicalFlags { get; set; } = [];
     public string WhenToUse { get; set; } = string.Empty;
     public string SuccessSigns { get; set; } = string.Empty;
     public string FailureSigns { get; set; } = string.Empty;
@@ -48,6 +49,7 @@ public class StrategyCandidateOption
     public float ProfileFit { get; set; }
     public float PairPatternFit { get; set; }
     public float RiskScore { get; set; }
+    public float EthicalPenalty { get; set; }
     public float FinalScore { get; set; }
 }
 

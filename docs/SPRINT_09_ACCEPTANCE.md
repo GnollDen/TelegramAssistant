@@ -2,56 +2,61 @@
 
 ## Purpose
 
-Validate that Sprint 9 exposed the implemented engines through a usable bot command layer.
+Validate Sprint 9 Stage 6 product contracts as explicit, enforceable output behavior.
 
 ## Acceptance Checklist
 
-## Command Coverage
+## Contract Coverage
 
-- `/state` works
-- `/next` works
-- `/draft` works
-- `/review` works
-- `/gaps` works
-- `/answer` works
-- `/timeline` works
-- `/offline` is wired in a usable way
+- fact vs interpretation is explicitly separated in scoped Stage 6 outputs
+- uncertainty / alternative reading and missing information are explicit
+- relational patterns are explicit:
+  - participant patterns
+  - pair dynamics
+  - repeated interaction modes
+  - changes over time
+- strategy output reflects ethical contract:
+  - optimize for clarity/dignity/non-manipulation
+  - penalize contact-at-any-cost/manipulative pressure patterns
+- draft output has fixed default shape:
+  - main
+  - softer alternative
+  - more direct alternative
+- personal style guardrails are explicit and persisted in style notes
 
-## Engine Integration
+## Behavior Integration
 
-- commands use real engines
-- outputs are not placeholders
-- command results are grounded in current product state
+- contracts are enforced in engine/read-layer logic, not only prose guidance
+- operator-facing surfaces expose contract sections/markers
+- outputs remain synthesized (no raw internal dump as default)
 
-## Formatting
+## Style and Ethics
 
-- responses are concise
-- response structure matches product expectations
-- uncertainty is not hidden
-
-## Clarification Flow
-
-- a top clarification question can be surfaced
-- answer flow works
-- clarification flow is not broken by command integration
+- strategy avoids manipulative or pressure-maximizing framing
+- draft style avoids preachy/service-tone/anxious-overexplaining/emotional-overfilling
+- outputs preserve depth, clarity, strength, warmth when appropriate, and directness without unnecessary coldness
 
 ## Verification
 
 - build passes
-- startup passes
-- bot smoke passes
+- targeted smoke/assertions validate:
+  - ethical strategy markers
+  - relational pattern fields in scoped outputs
+  - fixed draft variant shape
+  - explicit fact/interpretation/uncertainty/missing-info sections
 
 ## Hold Conditions
 
 Hold Sprint 9 if any of these are true:
 
-- commands are stubs
-- main commands fail end-to-end
-- outputs are too raw or unusable in Telegram
-- clarification flow is broken
+- contracts remain implicit narrative convention only
+- relational patterns are still hidden or non-represented
+- strategy still rewards manipulative/pressure-maximizing moves
+- draft shape is unstable or ad hoc
+- personal style guardrails are not visible in behavior/contract markers
 
 ## Pass Condition
 
 Sprint 9 passes if:
 
-- the product now has a usable command-level bot interface over the implemented reasoning stack
+- Stage 6 outputs now follow a unified, explicit, and testable product-contract layer

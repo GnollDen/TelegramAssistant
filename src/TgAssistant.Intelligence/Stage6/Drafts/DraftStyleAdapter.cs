@@ -29,7 +29,8 @@ public class DraftStyleAdapter : IDraftStyleAdapter
         {
             $"communication_style={communicationStyle}",
             $"warmth_score={(context.CurrentState?.WarmthScore ?? 0.5f):0.00}",
-            $"directness_hint={directnessHint}"
+            $"directness_hint={directnessHint}",
+            "style_contract=avoid_preachy_avoid_service_tone_avoid_anxious_overexplaining_avoid_emotional_overfilling"
         };
 
         switch (communicationStyle)
@@ -64,6 +65,27 @@ public class DraftStyleAdapter : IDraftStyleAdapter
             main = Soften(main);
             notes.Add("warmth_guard=enabled");
         }
+
+        var desiredTone = (context.DesiredTone ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(desiredTone))
+        {
+            var normalizedTone = desiredTone.ToLowerInvariant();
+            if (normalizedTone.Contains("soft") || normalizedTone.Contains("warm") || normalizedTone.Contains("gentle"))
+            {
+                alt1 = Soften(alt1);
+                notes.Add("desired_tone=softer");
+            }
+
+            if (normalizedTone.Contains("direct") || normalizedTone.Contains("clear") || normalizedTone.Contains("firm") || normalizedTone.Contains("forceful"))
+            {
+                alt2 = MakeDirect(alt2);
+                notes.Add("desired_tone=more_direct");
+            }
+        }
+
+        main = ApplyStyleGuardrails(main);
+        alt1 = ApplyStyleGuardrails(alt1);
+        alt2 = ApplyStyleGuardrails(alt2);
 
         return new DraftStyledContent
         {
@@ -126,6 +148,57 @@ public class DraftStyleAdapter : IDraftStyleAdapter
         var prefixes = new[] { "если тебе ок,", "если удобно,", "без спешки," };
         var prefix = prefixes[Math.Abs(value.GetHashCode(StringComparison.Ordinal)) % prefixes.Length];
         return $"{Capitalize(prefix)} {value.TrimStart()}";
+    }
+
+    private static string MakeDirect(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var compact = value.Trim()
+            .Replace("If you're open, ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("If it feels right for you, ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("без спешки, ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("если тебе ок, ", string.Empty, StringComparison.OrdinalIgnoreCase);
+        return TrimTo(compact, 180);
+    }
+
+    private static string ApplyStyleGuardrails(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var compact = value.Trim();
+        compact = compact.Replace("please be advised", string.Empty, StringComparison.OrdinalIgnoreCase);
+        compact = compact.Replace("thank you for your understanding", "thanks", StringComparison.OrdinalIgnoreCase);
+        compact = compact.Replace("I just wanted to explain everything", "I want to be clear", StringComparison.OrdinalIgnoreCase);
+        compact = compact.Replace("I am very very sorry", "I am sorry", StringComparison.OrdinalIgnoreCase);
+        compact = compact.Replace("🙏", string.Empty, StringComparison.OrdinalIgnoreCase);
+        compact = compact.Replace("!!!", "!");
+        compact = compact.Replace("..", ".");
+        compact = KeepSentenceBudget(compact, 2, 220);
+        return compact;
+    }
+
+    private static string KeepSentenceBudget(string text, int maxSentences, int maxLen)
+    {
+        var split = text.Split(['.', '!', '?'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (split.Length == 0)
+        {
+            return TrimTo(text, maxLen);
+        }
+
+        var kept = string.Join(". ", split.Take(maxSentences)).Trim();
+        if (!string.IsNullOrWhiteSpace(kept) && !kept.EndsWith('.') && !kept.EndsWith('!') && !kept.EndsWith('?'))
+        {
+            kept += ".";
+        }
+
+        return TrimTo(kept, maxLen);
     }
 
     private static string TrimTo(string value, int maxLen)

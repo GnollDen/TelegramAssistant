@@ -109,7 +109,15 @@ public class WebReadVerificationService
         AssertNonEmptyRoute(rendered, "/timeline", "Timeline");
         AssertNonEmptyRoute(rendered, "/network", "Network");
         AssertNonEmptyRoute(rendered, "/profiles", "Profiles");
+        AssertNonEmptyRoute(rendered, "/profiles", "participant patterns:");
+        AssertNonEmptyRoute(rendered, "/profiles", "pair dynamics:");
         AssertNonEmptyRoute(rendered, "/strategy", "Strategy");
+        AssertNonEmptyRoute(rendered, "/strategy", "Observed Facts");
+        AssertNonEmptyRoute(rendered, "/strategy", "Likely Interpretation");
+        AssertNonEmptyRoute(rendered, "/strategy", "Relational Patterns");
+        AssertNonEmptyRoute(rendered, "/strategy", "ethics:");
+        AssertNonEmptyRoute(rendered, "/drafts-reviews", "softer alternative:");
+        AssertNonEmptyRoute(rendered, "/drafts-reviews", "more direct alternative:");
         AssertNonEmptyRoute(rendered, "/outcomes", "Outcome Trail");
         AssertNonEmptyRoute(rendered, "/outcomes", "Chain visibility");
         AssertNonEmptyRoute(rendered, "/ops-budget", "Ops Budget");
