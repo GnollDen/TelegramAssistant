@@ -6,6 +6,7 @@ public static class UserContextSourceKinds
     public const string LongFormContext = "long_form_context";
     public const string OfflineContextNote = "offline_context_note";
     public const string OperatorAnnotation = "operator_annotation";
+    public const string UserContextCorrection = "user_context_correction";
 }
 
 public class Stage6UserContextEntry

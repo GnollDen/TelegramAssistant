@@ -161,10 +161,20 @@ public class WebOpsService : IWebOpsService
         var sourceSummary = await BuildSourceSummaryAsync(caseRecord, clarification, ct);
         var history = await BuildStage6CaseHistoryAsync(caseRecord, ct);
         var evidence = await BuildStage6EvidenceAsync(caseRecord, clarification, ct);
+        var evidenceMessages = await BuildCaseEvidenceMessageWindowAsync(caseRecord, request.ChatId, ct);
+        var evidenceParticipants = BuildEvidenceParticipants(evidenceMessages);
+        var linkedCases = await BuildLinkedCasesForCaseAsync(request, caseRecord, ct);
+        var linkedObjects = await BuildCaseLinksAsync(caseRecord, ct);
         var artifacts = await BuildStage6ArtifactSummariesAsync(request, ParseJsonStringArray(caseRecord.TargetArtifactTypesJson), ct);
         var contextEntries = await BuildStage6ContextEntriesAsync(request, caseRecord, ct);
         var feedback = await BuildCaseFeedbackAsync(caseRecord.Id, ct);
         var outcomes = await BuildCaseOutcomesAsync(caseRecord.Id, ct);
+        var evidenceTimes = evidence
+            .Where(x => x.TimestampUtc.HasValue)
+            .Select(x => x.TimestampUtc!.Value)
+            .Concat(evidenceMessages.Select(x => x.TimestampUtc))
+            .OrderBy(x => x)
+            .ToList();
 
         return new Stage6CaseDetailReadModel
         {
@@ -186,10 +196,20 @@ public class WebOpsService : IWebOpsService
             SourceLink = sourceSummary.Link,
             CreatedAt = caseRecord.CreatedAt,
             UpdatedAt = caseRecord.UpdatedAt,
+            ReadyAt = caseRecord.ReadyAt,
+            ResolvedAt = caseRecord.ResolvedAt,
+            RejectedAt = caseRecord.RejectedAt,
+            StaleAt = caseRecord.StaleAt,
+            EarliestEvidenceAtUtc = evidenceTimes.Count == 0 ? null : evidenceTimes[0],
+            LatestEvidenceAtUtc = evidenceTimes.Count == 0 ? null : evidenceTimes[^1],
             SubjectRefs = ParseJsonStringArray(caseRecord.SubjectRefsJson),
             ReopenTriggers = ParseJsonStringArray(caseRecord.ReopenTriggerRulesJson),
             Evidence = evidence,
+            EvidenceMessages = evidenceMessages,
+            EvidenceParticipants = evidenceParticipants,
             Artifacts = artifacts,
+            LinkedCases = linkedCases,
+            LinkedObjects = linkedObjects,
             ContextEntries = contextEntries,
             Feedback = feedback,
             Outcomes = outcomes,
@@ -1341,23 +1361,38 @@ public class WebOpsService : IWebOpsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var contextMode = (request.ContextEntryMode ?? "context").Trim().ToLowerInvariant();
+        var contextSourceKind = ResolveContextSourceKind(request.ContextSourceKind, contextMode);
+        var correctionTargetRef = EmptyToNull(request.CorrectionTargetRef);
+        var correctionSummary = EmptyToNull(request.CorrectionSummary);
+        var structuredPayload = BuildStructuredContextPayloadJson(contextMode, correctionSummary, correctionTargetRef, request.Note, request.Reason);
+        var certainty = request.ContextCertainty.HasValue
+            ? Math.Clamp(request.ContextCertainty.Value, 0f, 1f)
+            : contextMode.Equals("correction", StringComparison.OrdinalIgnoreCase)
+                ? 0.85f
+                : 0.75f;
+        var conflicts = contextMode.Equals("correction", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(correctionTargetRef)
+            ? new[] { correctionTargetRef }.ToList()
+            : new List<string>();
+
         _ = await _stage6UserContextRepository.CreateAsync(new Stage6UserContextEntry
         {
             Stage6CaseId = caseRecord.Id,
             ScopeCaseId = request.ScopeCaseId,
             ChatId = request.ChatId,
-            SourceKind = UserContextSourceKinds.LongFormContext,
+            SourceKind = contextSourceKind,
             ClarificationQuestionId = caseRecord.SourceObjectType.Equals("clarification_question", StringComparison.OrdinalIgnoreCase)
                                      && Guid.TryParse(caseRecord.SourceObjectId, out var questionId)
                 ? questionId
                 : null,
             ContentText = note.Trim(),
+            StructuredPayloadJson = structuredPayload,
             AppliesToRefsJson = JsonSerializer.Serialize(appliesToRefs, JsonOptions),
             EnteredVia = "web",
-            UserReportedCertainty = 0.75f,
+            UserReportedCertainty = certainty,
             SourceType = "web",
             SourceId = $"stage6_case:{caseRecord.Id:D}",
-            ConflictsWithRefsJson = "[]",
+            ConflictsWithRefsJson = JsonSerializer.Serialize(conflicts, JsonOptions),
             CreatedAt = DateTime.UtcNow
         }, ct);
 
@@ -1366,7 +1401,13 @@ public class WebOpsService : IWebOpsService
             ObjectType = "stage6_case",
             ObjectId = caseRecord.Id.ToString(),
             Action = "annotation_added",
-            NewValueRef = JsonSerializer.Serialize(new { note }, JsonOptions),
+            NewValueRef = JsonSerializer.Serialize(new
+            {
+                note,
+                context_mode = contextMode,
+                source_kind = contextSourceKind,
+                correction_target_ref = correctionTargetRef
+            }, JsonOptions),
             Reason = request.Reason,
             Actor = request.Actor,
             CreatedAt = DateTime.UtcNow
@@ -1382,13 +1423,27 @@ public class WebOpsService : IWebOpsService
             feedbackDimension: ResolveFeedbackDimension(caseRecord, request.FeedbackDimension),
             ct: ct);
 
+        var refreshedArtifacts = contextMode.Equals("correction", StringComparison.OrdinalIgnoreCase)
+            ? await MarkArtifactsStaleAsync(
+                request.ScopeCaseId,
+                request.ChatId,
+                ParseJsonStringArray(caseRecord.TargetArtifactTypesJson),
+                request.Reason ?? "context_correction_received",
+                ct)
+            : [];
+
         return new WebStage6CaseActionResult
         {
             Success = true,
             Stage6CaseId = caseRecord.Id,
             Action = "annotate",
             Status = caseRecord.Status,
-            Message = "Annotation saved as user-reported context."
+            Message = contextMode.Equals("correction", StringComparison.OrdinalIgnoreCase)
+                ? (refreshedArtifacts.Count == 0
+                    ? "Correction saved as user context."
+                    : $"Correction saved. Artifacts marked stale: {string.Join(", ", refreshedArtifacts)}.")
+                : "Long-form context saved.",
+            RefreshedArtifactTypes = refreshedArtifacts
         };
     }
 
@@ -1896,11 +1951,16 @@ public class WebOpsService : IWebOpsService
             {
                 Id = x.Id,
                 SourceKind = x.SourceKind,
+                SourceType = x.SourceType,
+                SourceId = x.SourceId,
                 ContentText = x.ContentText,
                 EnteredVia = x.EnteredVia,
                 UserReportedCertainty = x.UserReportedCertainty,
                 CreatedAt = x.CreatedAt,
-                AppliesToRefs = ParseJsonStringArray(x.AppliesToRefsJson)
+                AppliesToRefs = ParseJsonStringArray(x.AppliesToRefsJson),
+                SupersedesContextEntryId = x.SupersedesContextEntryId,
+                ConflictsWithRefs = ParseJsonStringArray(x.ConflictsWithRefsJson),
+                StructuredPayloadJson = EmptyToNull(x.StructuredPayloadJson)
             })
             .ToList();
     }
@@ -1936,6 +1996,165 @@ public class WebOpsService : IWebOpsService
                 TargetArtifactTypes = ParseJsonStringArray(x.TargetArtifactTypesJson)
             })
             .ToList();
+    }
+
+    private async Task<List<Stage6CaseQueueItemReadModel>> BuildLinkedCasesForCaseAsync(
+        WebReadRequest request,
+        Stage6CaseRecord caseRecord,
+        CancellationToken ct)
+    {
+        var sourceEvidenceRefs = ParseJsonStringArray(caseRecord.EvidenceRefsJson);
+        var sourceSubjectRefs = ParseJsonStringArray(caseRecord.SubjectRefsJson);
+        var sourceTargetArtifacts = ParseJsonStringArray(caseRecord.TargetArtifactTypesJson);
+        var allCases = await _stage6CaseRepository.GetCasesAsync(request.CaseId, ct: ct);
+
+        return allCases
+            .Where(x => x.Id != caseRecord.Id)
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .Where(x => IsLinkedCase(caseRecord, x, sourceEvidenceRefs, sourceSubjectRefs, sourceTargetArtifacts))
+            .OrderByDescending(x => PriorityWeight(x.Priority))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Take(8)
+            .Select(x => new Stage6CaseQueueItemReadModel
+            {
+                Id = x.Id,
+                CaseType = x.CaseType,
+                CaseSubtype = x.CaseSubtype,
+                Status = x.Status,
+                Priority = x.Priority,
+                Confidence = x.Confidence,
+                ReasonSummary = x.ReasonSummary,
+                QuestionText = x.QuestionText,
+                SourceObjectType = x.SourceObjectType,
+                SourceObjectId = x.SourceObjectId,
+                UpdatedAt = x.UpdatedAt,
+                NeedsAnswer = x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase),
+                ResponseMode = x.ResponseMode,
+                EvidenceCount = ParseJsonStringArray(x.EvidenceRefsJson).Count,
+                TargetArtifactTypes = ParseJsonStringArray(x.TargetArtifactTypesJson)
+            })
+            .ToList();
+    }
+
+    private async Task<List<Stage6LinkedObjectReadModel>> BuildCaseLinksAsync(Stage6CaseRecord caseRecord, CancellationToken ct)
+    {
+        var links = await _stage6CaseRepository.GetLinksAsync(caseRecord.Id, ct);
+        var results = new List<Stage6LinkedObjectReadModel>();
+        foreach (var link in links
+                     .OrderByDescending(x => x.CreatedAt)
+                     .Take(20))
+        {
+            var evidence = await BuildEvidenceItemAsync($"{link.LinkedObjectType}:{link.LinkedObjectId}", ct);
+            results.Add(new Stage6LinkedObjectReadModel
+            {
+                LinkRole = link.LinkRole,
+                LinkedObjectType = link.LinkedObjectType,
+                LinkedObjectId = link.LinkedObjectId,
+                Summary = string.IsNullOrWhiteSpace(evidence.Summary) ? $"{link.LinkedObjectType}:{link.LinkedObjectId}" : evidence.Summary,
+                Link = BuildObjectLink(link.LinkedObjectType, link.LinkedObjectId) ?? evidence.Link
+            });
+        }
+
+        return results;
+    }
+
+    private async Task<List<Stage6EvidenceMessageReadModel>> BuildCaseEvidenceMessageWindowAsync(
+        Stage6CaseRecord caseRecord,
+        long chatId,
+        CancellationToken ct)
+    {
+        var messageIds = ParseJsonStringArray(caseRecord.EvidenceRefsJson)
+            .Select(refValue =>
+            {
+                if (!TryParseReference(refValue, out var type, out var id))
+                {
+                    return (long?)null;
+                }
+
+                return type.Equals("message", StringComparison.OrdinalIgnoreCase) && long.TryParse(id, out var messageId)
+                    ? messageId
+                    : null;
+            })
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .Take(8)
+            .ToList();
+
+        if (messageIds.Count == 0)
+        {
+            return [];
+        }
+
+        var directSet = messageIds.ToHashSet();
+        var merged = new Dictionary<long, Stage6EvidenceMessageReadModel>();
+        foreach (var messageId in messageIds)
+        {
+            var window = await _messageRepository.GetChatWindowAroundAsync(chatId, messageId, beforeCount: 3, afterCount: 3, ct);
+            foreach (var row in window)
+            {
+                merged[row.Id] = new Stage6EvidenceMessageReadModel
+                {
+                    MessageId = row.Id,
+                    TimestampUtc = row.Timestamp,
+                    SenderId = row.SenderId,
+                    SenderName = string.IsNullOrWhiteSpace(row.SenderName) ? row.SenderId.ToString() : row.SenderName,
+                    TextSnippet = BuildSnippet(row.Text, 220),
+                    IsDirectEvidence = directSet.Contains(row.Id)
+                };
+            }
+        }
+
+        return merged.Values
+            .OrderBy(x => x.TimestampUtc)
+            .Take(40)
+            .ToList();
+    }
+
+    private static List<Stage6EvidenceParticipantReadModel> BuildEvidenceParticipants(
+        IReadOnlyCollection<Stage6EvidenceMessageReadModel> evidenceMessages)
+    {
+        return evidenceMessages
+            .GroupBy(x => (x.SenderId, x.SenderName), x => x)
+            .Select(group => new Stage6EvidenceParticipantReadModel
+            {
+                SenderId = group.Key.SenderId,
+                SenderName = group.Key.SenderName,
+                MessageCount = group.Count(),
+                EvidenceMessageCount = group.Count(x => x.IsDirectEvidence)
+            })
+            .OrderByDescending(x => x.EvidenceMessageCount)
+            .ThenByDescending(x => x.MessageCount)
+            .ToList();
+    }
+
+    private static bool IsLinkedCase(
+        Stage6CaseRecord source,
+        Stage6CaseRecord candidate,
+        IReadOnlyCollection<string> sourceEvidenceRefs,
+        IReadOnlyCollection<string> sourceSubjectRefs,
+        IReadOnlyCollection<string> sourceTargetArtifacts)
+    {
+        if (candidate.SourceObjectType.Equals(source.SourceObjectType, StringComparison.OrdinalIgnoreCase)
+            && candidate.SourceObjectId.Equals(source.SourceObjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var candidateEvidence = ParseJsonStringArray(candidate.EvidenceRefsJson);
+        if (candidateEvidence.Any(x => sourceEvidenceRefs.Contains(x, StringComparer.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var candidateSubjects = ParseJsonStringArray(candidate.SubjectRefsJson);
+        if (candidateSubjects.Any(x => sourceSubjectRefs.Contains(x, StringComparer.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var candidateArtifacts = ParseJsonStringArray(candidate.TargetArtifactTypesJson);
+        return candidateArtifacts.Any(x => sourceTargetArtifacts.Contains(x, StringComparer.OrdinalIgnoreCase));
     }
 
     private static (string Summary, string? ConfidenceLabel) SummarizeArtifact(Stage6ArtifactRecord artifact, string? freshnessReason)
@@ -2434,6 +2653,62 @@ public class WebOpsService : IWebOpsService
         return caseRecord.CaseSubtype?.Contains("behavior", StringComparison.OrdinalIgnoreCase) == true
             ? Stage6FeedbackDimensions.BehavioralUsefulness
             : Stage6FeedbackDimensions.General;
+    }
+
+    private static string ResolveContextSourceKind(string? explicitSourceKind, string contextMode)
+    {
+        var normalized = EmptyToNull(explicitSourceKind)?.ToLowerInvariant();
+        if (normalized is UserContextSourceKinds.ClarificationAnswer
+            or UserContextSourceKinds.LongFormContext
+            or UserContextSourceKinds.OfflineContextNote
+            or UserContextSourceKinds.OperatorAnnotation
+            or UserContextSourceKinds.UserContextCorrection)
+        {
+            return normalized;
+        }
+
+        return contextMode.Equals("correction", StringComparison.OrdinalIgnoreCase)
+            ? UserContextSourceKinds.UserContextCorrection
+            : UserContextSourceKinds.LongFormContext;
+    }
+
+    private static string BuildStructuredContextPayloadJson(
+        string contextMode,
+        string? correctionSummary,
+        string? correctionTargetRef,
+        string? note,
+        string? reason)
+    {
+        var payload = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mode"] = contextMode
+        };
+
+        var normalizedCorrectionSummary = EmptyToNull(correctionSummary);
+        if (!string.IsNullOrWhiteSpace(normalizedCorrectionSummary))
+        {
+            payload["correction_summary"] = normalizedCorrectionSummary;
+        }
+
+        var normalizedCorrectionTargetRef = EmptyToNull(correctionTargetRef);
+        if (!string.IsNullOrWhiteSpace(normalizedCorrectionTargetRef))
+        {
+            payload["correction_target_ref"] = normalizedCorrectionTargetRef;
+        }
+
+        var normalizedReason = EmptyToNull(reason);
+        if (!string.IsNullOrWhiteSpace(normalizedReason))
+        {
+            payload["reason"] = normalizedReason;
+        }
+
+        var normalizedNote = EmptyToNull(note);
+        if (!string.IsNullOrWhiteSpace(normalizedNote))
+        {
+            payload["note_excerpt"] = BuildSnippet(normalizedNote, 120);
+        }
+
+        return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
     private static string? EmptyToNull(string? value)
