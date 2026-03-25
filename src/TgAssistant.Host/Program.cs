@@ -16,6 +16,7 @@ using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
+using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
@@ -72,6 +73,7 @@ try
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
+    var runAutoCaseSmoke = args.Any(arg => string.Equals(arg, "--auto-case-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepairApply = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair-apply", StringComparison.OrdinalIgnoreCase));
     var runStage6LightAb = args.Any(arg => string.Equals(arg, "--stage6-light-ab-run", StringComparison.OrdinalIgnoreCase));
@@ -154,7 +156,8 @@ try
         "--eval-smoke",
         "--launch-smoke",
         "--external-archive-smoke",
-        "--competing-context-smoke"
+        "--competing-context-smoke",
+        "--auto-case-smoke"
     };
 
     if (runListSmokes)
@@ -383,6 +386,14 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<CompetingContextVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Competing context smoke run requested via --competing-context-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runAutoCaseSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<Stage6AutoCaseGenerationVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Auto-case smoke run requested via --auto-case-smoke. Exiting after successful verification.");
             return;
         }
 

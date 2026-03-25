@@ -319,6 +319,29 @@ public class ContinuousRefinementSettings
     public float LowConfidenceThreshold { get; set; } = 0.7f;
 }
 
+public class Stage6AutoCaseGenerationSettings
+{
+    public const string Section = "Stage6AutoCaseGeneration";
+    public bool Enabled { get; set; } = false;
+    public int PollIntervalSeconds { get; set; } = 120;
+    public int ScopeLookbackHours { get; set; } = 72;
+    public int CaseUpdateCooldownMinutes { get; set; } = 30;
+    public int StaleAfterNoSignalHours { get; set; } = 24;
+    public float RiskBlockingThreshold { get; set; } = 0.75f;
+    public float RiskImportantThreshold { get; set; } = 0.6f;
+    public float NeedsReviewMaxConfidenceThreshold { get; set; } = 0.55f;
+    public float AmbiguityClarificationThreshold { get; set; } = 0.65f;
+    public float EvidenceConflictConfidenceThreshold { get; set; } = 0.5f;
+    public float NextStepBlockedConfidenceThreshold { get; set; } = 0.55f;
+    public float NeedsInputFallbackConfidenceThreshold { get; set; } = 0.5f;
+    public int MinMessagesForStateRefresh { get; set; } = 4;
+    public int MinMessagesForDossierCandidate { get; set; } = 8;
+    public int MinMessagesForDraftCandidate { get; set; } = 2;
+    public int StateRefreshMinAgeHours { get; set; } = 6;
+    public int DossierCandidateMinAgeHours { get; set; } = 24;
+    public int DraftCandidatePendingHours { get; set; } = 12;
+}
+
 public class BudgetGuardrailSettings
 {
     public const string Section = "BudgetGuardrails";
