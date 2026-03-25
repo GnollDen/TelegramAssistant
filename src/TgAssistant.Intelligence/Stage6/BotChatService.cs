@@ -264,7 +264,7 @@ public class BotChatService : IBotChatService
         }
 
         var checkpointKey = BuildSessionSummaryCheckpointKey(chatId, sessionIndex);
-        await _analysisStateRepository.SetWatermarkAsync(checkpointKey, 0, ct);
+        await _analysisStateRepository.ResetWatermarksIfExistAsync([checkpointKey], ct);
         _logger.LogInformation(
             "Manual session re-summary requested: chat_id={ChatId}, session_index={SessionIndex}, checkpoint_key={CheckpointKey}",
             chatId,

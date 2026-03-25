@@ -299,6 +299,7 @@ public class MessageRepository : IMessageRepository
         MessageSource source,
         CancellationToken ct = default)
     {
+        _ = source;
         var result = new Dictionary<long, List<long>>();
         if (telegramMessageIds.Count == 0)
         {
@@ -317,7 +318,7 @@ public class MessageRepository : IMessageRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var rows = await db.Messages
             .AsNoTracking()
-            .Where(x => x.Source == (short)source && ids.Contains(x.TelegramMessageId))
+            .Where(x => ids.Contains(x.TelegramMessageId))
             .Select(x => new { x.TelegramMessageId, x.ChatId })
             .Distinct()
             .ToListAsync(ct);
@@ -702,6 +703,7 @@ public class MessageRepository : IMessageRepository
         IReadOnlyCollection<long> telegramMessageIds,
         CancellationToken ct = default)
     {
+        _ = source;
         var result = new Dictionary<long, Message>();
         if (telegramMessageIds.Count == 0)
         {
@@ -712,7 +714,6 @@ public class MessageRepository : IMessageRepository
         var rows = await db.Messages
             .AsNoTracking()
             .Where(x => x.ChatId == chatId
-                        && x.Source == (short)source
                         && telegramMessageIds.Contains(x.TelegramMessageId))
             .ToListAsync(ct);
 

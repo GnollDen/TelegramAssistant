@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database.Ef;
 
@@ -7,10 +8,14 @@ namespace TgAssistant.Infrastructure.Database;
 public class AnalysisStateRepository : IAnalysisStateRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly ILogger<AnalysisStateRepository> _logger;
 
-    public AnalysisStateRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
+    public AnalysisStateRepository(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        ILogger<AnalysisStateRepository> logger)
     {
         _dbFactory = dbFactory;
+        _logger = logger;
     }
 
     public async Task<long> GetWatermarkAsync(string key, CancellationToken ct = default)
@@ -22,24 +27,37 @@ public class AnalysisStateRepository : IAnalysisStateRepository
 
     public async Task SetWatermarkAsync(string key, long value, CancellationToken ct = default)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var row = await db.AnalysisStates.FirstOrDefaultAsync(x => x.Key == key, ct);
-        if (row == null)
+        if (string.IsNullOrWhiteSpace(key))
         {
-            db.AnalysisStates.Add(new DbAnalysisState
-            {
-                Key = key,
-                Value = value,
-                UpdatedAt = DateTime.UtcNow
-            });
-        }
-        else
-        {
-            row.Value = value;
-            row.UpdatedAt = DateTime.UtcNow;
+            throw new ArgumentException("analysis_state_key_required", nameof(key));
         }
 
-        await db.SaveChangesAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var normalizedKey = key.Trim();
+        var persistedValue = await db.Database.SqlQueryRaw<long>(
+            """
+            INSERT INTO analysis_state (key, value, updated_at)
+            VALUES ({0}, {1}, NOW())
+            ON CONFLICT (key) DO UPDATE
+            SET value = GREATEST(analysis_state.value, EXCLUDED.value),
+                updated_at = CASE
+                    WHEN EXCLUDED.value > analysis_state.value THEN NOW()
+                    ELSE analysis_state.updated_at
+                END
+            RETURNING value;
+            """,
+            normalizedKey,
+            value)
+            .SingleAsync(ct);
+
+        if (persistedValue > value)
+        {
+            _logger.LogWarning(
+                "Blocked non-monotonic watermark update: key={Key}, requested={Requested}, persisted={Persisted}",
+                normalizedKey,
+                value,
+                persistedValue);
+        }
     }
 
     public async Task ResetWatermarksIfExistAsync(IReadOnlyCollection<string> keys, CancellationToken ct = default)

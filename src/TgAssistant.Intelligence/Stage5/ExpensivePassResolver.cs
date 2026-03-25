@@ -489,7 +489,7 @@ public class ExpensivePassResolver
             await _analysisStateRepository.SetWatermarkAsync(stateKey, value, ct);
         }
 
-        await _analysisStateRepository.SetWatermarkAsync(ExpensiveBackoffStateLegacyKey, 0, ct);
+        await _analysisStateRepository.ResetWatermarksIfExistAsync([ExpensiveBackoffStateLegacyKey], ct);
     }
 
     private static string BuildExpensiveErrorPayload(Exception ex)

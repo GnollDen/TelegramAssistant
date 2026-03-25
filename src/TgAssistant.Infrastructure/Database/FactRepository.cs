@@ -74,8 +74,9 @@ public class FactRepository : IFactRepository
     {
         return await WithDbContextAsync(async db =>
         {
-            var existing = await db.Facts.FirstOrDefaultAsync(x => x.EntityId == fact.EntityId && x.Category == fact.Category && x.Key == fact.Key && x.Value == fact.Value && x.IsCurrent, ct);
-            if (existing == null)
+            var now = DateTime.UtcNow;
+            var normalizedDecayClass = NormalizeDecayClass(fact.DecayClass);
+            if (!fact.IsCurrent)
             {
                 var row = new DbFact
                 {
@@ -87,39 +88,86 @@ public class FactRepository : IFactRepository
                     Status = (short)fact.Status,
                     Confidence = fact.Confidence,
                     SourceMessageId = fact.SourceMessageId,
-                    ValidFrom = fact.ValidFrom ?? DateTime.UtcNow,
+                    ValidFrom = fact.ValidFrom ?? now,
                     ValidUntil = fact.ValidUntil,
                     IsCurrent = fact.IsCurrent,
-                    DecayClass = NormalizeDecayClass(fact.DecayClass),
+                    DecayClass = normalizedDecayClass,
                     IsUserConfirmed = fact.IsUserConfirmed,
                     TrustFactor = fact.TrustFactor,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
                 db.Facts.Add(row);
                 await db.SaveChangesAsync(ct);
                 return ToDomain(row);
             }
 
-            existing.Confidence = Math.Max(existing.Confidence, fact.Confidence);
-            var currentStatus = (ConfidenceStatus)existing.Status;
-            if (currentStatus == ConfidenceStatus.Tentative && fact.Status == ConfidenceStatus.Confirmed)
-            {
-                // Tentative facts can only be confirmed by explicit manual review command flow.
-                existing.Status = (short)ConfidenceStatus.Tentative;
-            }
-            else
-            {
-                existing.Status = (short)fact.Status;
-            }
-            existing.SourceMessageId = fact.SourceMessageId ?? existing.SourceMessageId;
-            existing.DecayClass = NormalizeDecayClass(fact.DecayClass);
-            existing.IsUserConfirmed = existing.IsUserConfirmed || fact.IsUserConfirmed;
-            existing.TrustFactor = Math.Max(existing.TrustFactor, fact.TrustFactor);
-            existing.UpdatedAt = DateTime.UtcNow;
+            var rowId = fact.Id == Guid.Empty ? Guid.NewGuid() : fact.Id;
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO facts (
+                    id,
+                    entity_id,
+                    category,
+                    key,
+                    value,
+                    status,
+                    confidence,
+                    source_message_id,
+                    valid_from,
+                    valid_until,
+                    is_current,
+                    decay_class,
+                    is_user_confirmed,
+                    trust_factor,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    {rowId},
+                    {fact.EntityId},
+                    {fact.Category},
+                    {fact.Key},
+                    {fact.Value},
+                    {(short)fact.Status},
+                    {fact.Confidence},
+                    {fact.SourceMessageId},
+                    {fact.ValidFrom ?? now},
+                    {fact.ValidUntil},
+                    TRUE,
+                    {normalizedDecayClass},
+                    {fact.IsUserConfirmed},
+                    {fact.TrustFactor},
+                    {now},
+                    {now}
+                )
+                ON CONFLICT (entity_id, category, key, value) WHERE is_current = TRUE
+                DO UPDATE
+                SET confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
+                    status = CASE
+                        WHEN facts.status = {(short)ConfidenceStatus.Tentative}
+                         AND EXCLUDED.status = {(short)ConfidenceStatus.Confirmed}
+                            THEN facts.status
+                        ELSE EXCLUDED.status
+                    END,
+                    source_message_id = COALESCE(EXCLUDED.source_message_id, facts.source_message_id),
+                    decay_class = EXCLUDED.decay_class,
+                    is_user_confirmed = facts.is_user_confirmed OR EXCLUDED.is_user_confirmed,
+                    trust_factor = GREATEST(facts.trust_factor, EXCLUDED.trust_factor),
+                    updated_at = EXCLUDED.updated_at;
+                """, ct);
 
-            await db.SaveChangesAsync(ct);
-            return ToDomain(existing);
+            var persisted = await db.Facts
+                .AsNoTracking()
+                .Where(x => x.EntityId == fact.EntityId
+                            && x.Category == fact.Category
+                            && x.Key == fact.Key
+                            && x.Value == fact.Value
+                            && x.IsCurrent)
+                .OrderByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstAsync(ct);
+            return ToDomain(persisted);
         }, ct);
     }
 

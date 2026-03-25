@@ -683,7 +683,7 @@ public partial class AnalysisWorkerService : BackgroundService
 
         if (balanceIssueDetected == 0 && failedChunkMessageIds.Count == 0)
         {
-            await _stateRepository.SetWatermarkAsync(checkpointKey, 0, ct);
+            await _stateRepository.ResetWatermarksIfExistAsync([checkpointKey], ct);
         }
 
         _logger.LogInformation(
