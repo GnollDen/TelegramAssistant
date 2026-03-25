@@ -28,6 +28,7 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
         services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
         services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
+        services.Configure<WebSettings>(config.GetSection(WebSettings.Section));
         services.Configure<Stage6AutoCaseGenerationSettings>(config.GetSection(Stage6AutoCaseGenerationSettings.Section));
         services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
         services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
@@ -109,6 +110,14 @@ public static partial class ServiceRegistrationExtensions
             s.EvidenceConflictConfidenceThreshold = Math.Clamp(s.EvidenceConflictConfidenceThreshold, 0f, 1f);
             s.NextStepBlockedConfidenceThreshold = Math.Clamp(s.NextStepBlockedConfidenceThreshold, 0f, 1f);
             s.NeedsInputFallbackConfidenceThreshold = Math.Clamp(s.NeedsInputFallbackConfidenceThreshold, 0f, 1f);
+        });
+
+        services.PostConfigure<WebSettings>(s =>
+        {
+            s.Url = string.IsNullOrWhiteSpace(s.Url) ? "http://127.0.0.1:5078" : s.Url.Trim();
+            s.AccessHeaderName = string.IsNullOrWhiteSpace(s.AccessHeaderName) ? "X-Tga-Operator-Key" : s.AccessHeaderName.Trim();
+            s.AccessCookieName = string.IsNullOrWhiteSpace(s.AccessCookieName) ? "tga_operator_key" : s.AccessCookieName.Trim();
+            s.OperatorIdentity = string.IsNullOrWhiteSpace(s.OperatorIdentity) ? "web-operator" : s.OperatorIdentity.Trim();
         });
 
         return services;

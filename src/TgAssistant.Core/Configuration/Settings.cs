@@ -306,6 +306,19 @@ public class BotChatSettings
     public long DefaultChatId { get; set; }
 }
 
+public class WebSettings
+{
+    public const string Section = "Web";
+    public string Url { get; set; } = "http://127.0.0.1:5078";
+    public bool RequireOperatorAccessToken { get; set; } = true;
+    public string OperatorAccessToken { get; set; } = string.Empty;
+    public string AccessHeaderName { get; set; } = "X-Tga-Operator-Key";
+    public string AccessCookieName { get; set; } = "tga_operator_key";
+    public string OperatorIdentity { get; set; } = "web-operator";
+    public long DefaultCaseId { get; set; }
+    public long DefaultChatId { get; set; }
+}
+
 public class ContinuousRefinementSettings
 {
     public const string Section = "ContinuousRefinement";

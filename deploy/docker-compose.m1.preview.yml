@@ -40,6 +40,15 @@ services:
     network_mode: "host"
     env_file:
       - ../.env
+    environment:
+      Web__Url: ${WEB_URL:-http://127.0.0.1:5078}
+      Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
+      Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}
+      Web__AccessHeaderName: ${WEB_ACCESS_HEADER_NAME:-X-Tga-Operator-Key}
+      Web__AccessCookieName: ${WEB_ACCESS_COOKIE_NAME:-tga_operator_key}
+      Web__OperatorIdentity: ${WEB_OPERATOR_IDENTITY:-web-operator}
+      Web__DefaultCaseId: ${WEB_DEFAULT_CASE_ID:-0}
+      Web__DefaultChatId: ${WEB_DEFAULT_CHAT_ID:-0}
     command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=web,ops"]
     restart: unless-stopped
 

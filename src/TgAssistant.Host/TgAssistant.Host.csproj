@@ -6,6 +6,9 @@
     <RootNamespace>TgAssistant.Host</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\TgAssistant.Core\TgAssistant.Core.csproj" />
     <ProjectReference Include="..\TgAssistant.Infrastructure\TgAssistant.Infrastructure.csproj" />
     <ProjectReference Include="..\TgAssistant.Telegram\TgAssistant.Telegram.csproj" />
