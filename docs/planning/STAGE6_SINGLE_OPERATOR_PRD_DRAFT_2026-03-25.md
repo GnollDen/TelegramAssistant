@@ -60,6 +60,7 @@ Bot and web are the operator layer:
 
 Stage 6 should produce:
 - `dossier`
+- `behavioral_profile`
 - `current_state`
 - `strategy`
 - `draft`
@@ -115,6 +116,7 @@ Automatic:
 
 On-demand:
 - dossier refresh
+- behavioral profile refresh
 - strategy generation
 - draft generation
 - review generation
@@ -145,6 +147,23 @@ The system should surface:
 - pair dynamics
 - repeated interaction modes
 - changes over time
+
+### User-Supplied Context
+
+The system should explicitly support a separate user-supplied context layer when chat evidence is incomplete.
+
+It should distinguish:
+- observed evidence
+- user-reported context
+- system inference
+
+User-reported context may be subjective, but it is still product-relevant input and should help:
+- fill timeline gaps
+- clarify offline events
+- explain relationship context
+- improve behavioral interpretation
+
+User-reported context should not be silently merged into observed facts as if they were the same evidence type.
 
 ### Strategy Ethics
 
@@ -184,6 +203,7 @@ The first practical release should include:
 - `draft`
 - `review`
 - `clarification`
+- structured user clarification cases
 - `timeline`
 - minimal `case queue`
 
@@ -206,6 +226,8 @@ Bot should handle:
 - `/timeline`
 - urgent items
 - quick decisions
+- primary fast clarification intake
+- short user-context answers
 
 ### Web
 
@@ -216,6 +238,8 @@ Web should handle:
 - artifact history
 - deep review
 - richer operator controls
+- expanded clarification and evidence review
+- long-form user context and corrections
 
 ## Daily Workflow
 
