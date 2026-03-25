@@ -58,40 +58,40 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/dashboard" => new WebRenderResult
             {
                 Route = path,
-                Title = "Dashboard",
+                Title = "Панель",
                 Html = RenderDashboard(
                     await _webReadService.GetDashboardAsync(request, ct),
                     await _webOpsService.GetRecentChangesAsync(request, 6, ct),
                     await _webOpsService.GetBudgetOperationalStateAsync(ct),
                     await _webOpsService.GetEvalRunsAsync(limit: 3, ct: ct))
             },
-            "/search" => new WebRenderResult { Route = path, Title = "Search", Html = RenderSearch(await ExecuteSearchAsync(request, query, ct)) },
-            "/dossier" => new WebRenderResult { Route = path, Title = "Dossier", Html = RenderDossier(await _webSearchService.GetDossierAsync(request, 30, ct)) },
-            "/view/blocking" => new WebRenderResult { Route = path, Title = "Saved View: Blocking", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "blocking", 40, ct)) },
-            "/view/current-period" => new WebRenderResult { Route = path, Title = "Saved View: Current Period", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "current-period", 10, ct)) },
-            "/view/conflicts" => new WebRenderResult { Route = path, Title = "Saved View: Conflicts", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "conflicts", 40, ct)) },
-            "/queue" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
-            "/inbox" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
-            "/case-detail" => new WebRenderResult { Route = path, Title = "Case Detail", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
-            "/case-evidence" => new WebRenderResult { Route = path, Title = "Case Evidence", Html = RenderCaseEvidence(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
-            "/artifact-detail" => new WebRenderResult { Route = path, Title = "Artifact Detail", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request, query) },
-            "/case-action" => new WebRenderResult { Route = path, Title = "Case Action", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request, query) },
-            "/clarification-answer" => new WebRenderResult { Route = path, Title = "Clarification Answer", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request, query) },
-            "/artifact-action" => new WebRenderResult { Route = path, Title = "Artifact Action", Html = RenderArtifactAction(await ExecuteArtifactActionAsync(request, query, ct), request, query) },
-            "/history" => new WebRenderResult { Route = path, Title = "History", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
-            "/history-object" => new WebRenderResult { Route = path, Title = "Object History", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
-            "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
+            "/search" => new WebRenderResult { Route = path, Title = "Поиск", Html = RenderSearch(await ExecuteSearchAsync(request, query, ct)) },
+            "/dossier" => new WebRenderResult { Route = path, Title = "Досье", Html = RenderDossier(await _webSearchService.GetDossierAsync(request, 30, ct)) },
+            "/view/blocking" => new WebRenderResult { Route = path, Title = "Сохраненный вид: блокирующие", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "blocking", 40, ct)) },
+            "/view/current-period" => new WebRenderResult { Route = path, Title = "Сохраненный вид: текущий период", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "current-period", 10, ct)) },
+            "/view/conflicts" => new WebRenderResult { Route = path, Title = "Сохраненный вид: конфликты", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "conflicts", 40, ct)) },
+            "/queue" => new WebRenderResult { Route = path, Title = "Очередь кейсов", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
+            "/inbox" => new WebRenderResult { Route = path, Title = "Очередь кейсов", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
+            "/case-detail" => new WebRenderResult { Route = path, Title = "Детали кейса", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
+            "/case-evidence" => new WebRenderResult { Route = path, Title = "Доказательства кейса", Html = RenderCaseEvidence(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
+            "/artifact-detail" => new WebRenderResult { Route = path, Title = "Детали артефакта", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request, query) },
+            "/case-action" => new WebRenderResult { Route = path, Title = "Действие по кейсу", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request, query) },
+            "/clarification-answer" => new WebRenderResult { Route = path, Title = "Ответ на уточнение", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request, query) },
+            "/artifact-action" => new WebRenderResult { Route = path, Title = "Действие по артефакту", Html = RenderArtifactAction(await ExecuteArtifactActionAsync(request, query, ct), request, query) },
+            "/history" => new WebRenderResult { Route = path, Title = "История", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
+            "/history-object" => new WebRenderResult { Route = path, Title = "История объекта", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
+            "/state" => new WebRenderResult { Route = path, Title = "Текущее состояние", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
             "/timeline" => new WebRenderResult { Route = path, Title = "Timeline", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
             "/network" => new WebRenderResult { Route = path, Title = "Network", Html = RenderNetwork(await _webReadService.GetNetworkAsync(request, ct), query) },
-            "/profiles" => new WebRenderResult { Route = path, Title = "Profiles", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
-            "/clarifications" => new WebRenderResult { Route = path, Title = "Clarifications", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
-            "/strategy" => new WebRenderResult { Route = path, Title = "Strategy", Html = RenderStrategy(await _webReadService.GetStrategyAsync(request, ct)) },
-            "/drafts-reviews" => new WebRenderResult { Route = path, Title = "Drafts / Reviews", Html = RenderDraftsReviews(await _webReadService.GetDraftsReviewsAsync(request, ct)) },
-            "/outcomes" => new WebRenderResult { Route = path, Title = "Outcome Trail", Html = RenderOutcomeTrail(await ExecuteOutcomeTrailReadAsync(request, query, ct)) },
-            "/offline-events" => new WebRenderResult { Route = path, Title = "Offline Events", Html = RenderOfflineEvents(await _webReadService.GetOfflineEventsAsync(request, ct)) },
-            "/review" => new WebRenderResult { Route = path, Title = "Review", Html = RenderReviewBoard(await _webReviewService.GetBoardAsync(request, ct), request) },
-            "/review-action" => new WebRenderResult { Route = path, Title = "Review Action", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request, query) },
-            "/review-edit-period" => new WebRenderResult { Route = path, Title = "Edit Period", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request, query) },
+            "/profiles" => new WebRenderResult { Route = path, Title = "Профили", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
+            "/clarifications" => new WebRenderResult { Route = path, Title = "Уточнения", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
+            "/strategy" => new WebRenderResult { Route = path, Title = "Стратегия", Html = RenderStrategy(await _webReadService.GetStrategyAsync(request, ct)) },
+            "/drafts-reviews" => new WebRenderResult { Route = path, Title = "Черновики / Ревью", Html = RenderDraftsReviews(await _webReadService.GetDraftsReviewsAsync(request, ct)) },
+            "/outcomes" => new WebRenderResult { Route = path, Title = "Траектория исходов", Html = RenderOutcomeTrail(await ExecuteOutcomeTrailReadAsync(request, query, ct)) },
+            "/offline-events" => new WebRenderResult { Route = path, Title = "Офлайн-события", Html = RenderOfflineEvents(await _webReadService.GetOfflineEventsAsync(request, ct)) },
+            "/review" => new WebRenderResult { Route = path, Title = "Ревью", Html = RenderReviewBoard(await _webReviewService.GetBoardAsync(request, ct), request) },
+            "/review-action" => new WebRenderResult { Route = path, Title = "Действие ревью", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request, query) },
+            "/review-edit-period" => new WebRenderResult { Route = path, Title = "Редактирование периода", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request, query) },
             "/ops-budget" => new WebRenderResult { Route = path, Title = "Ops Budget", Html = RenderOpsBudget(await ExecuteOpsBudgetReadAsync(query, ct), query) },
             "/ops-eval" => new WebRenderResult { Route = path, Title = "Ops Eval", Html = RenderOpsEval(await ExecuteOpsEvalReadAsync(query, ct), query) },
             "/ops-ab-candidates" => new WebRenderResult { Route = path, Title = "Ops A/B Candidates", Html = RenderOpsAbCandidates(await ExecuteOpsAbCandidatesReadAsync(request, query, ct), query) },
@@ -138,7 +138,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             return new Stage6CaseDetailReadModel
             {
                 Exists = false,
-                ReasonSummary = "Missing or invalid caseId."
+                ReasonSummary = "Не передан или неверный caseId."
             };
         }
 
@@ -160,7 +160,7 @@ public class WebRouteRenderer : IWebRouteRenderer
                 Success = false,
                 Stage6CaseId = Guid.Empty,
                 Action = EmptyToNull(GetQuery(query, "action")) ?? "unknown",
-                Message = "Missing or invalid caseId."
+                Message = "Не передан или неверный caseId."
             };
         }
 
@@ -206,7 +206,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             {
                 Success = false,
                 Stage6CaseId = Guid.Empty,
-                Message = "Missing or invalid caseId."
+                Message = "Не передан или неверный caseId."
             };
         }
 
@@ -280,7 +280,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             {
                 ObjectType = objectType,
                 ObjectId = objectId,
-                ObjectSummary = "Missing objectType/objectId."
+                ObjectSummary = "Не переданы objectType/objectId."
             };
         }
 
@@ -539,15 +539,15 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static void RenderDossierInsightSection(StringBuilder sb, string title, IReadOnlyCollection<DossierInsightReadModel> rows)
     {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
         foreach (var row in rows)
         {
-            sb.AppendLine($"<div><strong>{E(row.SignalStrength)}</strong> | {E(row.Title)} | {E(row.Detail)} | evidence={E(row.Evidence)} | <a href='{E(row.Link)}'>open</a></div>");
-        }
-
-        if (rows.Count == 0)
-        {
-            sb.AppendLine("<p>No items.</p>");
+            sb.AppendLine($"<div><strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong> | {E(row.Title)} | {E(row.Detail)} | <a href='{E(row.Link)}'>открыть</a></div>");
         }
 
         sb.AppendLine("</section>");
@@ -571,7 +571,7 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderCaseQueue(Stage6CaseQueueReadModel model, WebReadRequest request)
     {
-        var sb = CreateShell("Case Queue");
+        var sb = CreateShell("Очередь кейсов");
         var currentQueuePath = BuildQueueScopedPath(
             request,
             model.StatusFilter,
@@ -587,14 +587,13 @@ public class WebRouteRenderer : IWebRouteRenderer
         var blockingLink = BuildQueueScopedPath(request, model.StatusFilter, "blocking", null, null, null, model.SortBy, model.SortDirection);
         var allLink = BuildQueueScopedPath(request, "active", null, null, null, null, "priority", "desc");
 
-        sb.AppendLine("<h1>Stage 6 Queue</h1>");
-        sb.AppendLine($"<p>visible={model.VisibleCases} of total={model.TotalCases} | needs-input={model.NeedsInputCases} | ready={model.ReadyCases} | stale={model.StaleCases} | resolved={model.ResolvedCases}</p>");
-        sb.AppendLine($"<p>scope: case={request.CaseId}, chat={request.ChatId} | sort={E(model.SortBy)}:{E(model.SortDirection)}</p>");
-        sb.AppendLine("<section><h2>Triage Controls</h2>");
+        sb.AppendLine("<h1>Очередь кейсов</h1>");
+        sb.AppendLine($"<p>Показано: {model.VisibleCases}. Активных: {model.TotalCases}. Требуют ответа: {model.NeedsInputCases}. Готовы: {model.ReadyCases}.</p>");
+        sb.AppendLine("<section><h2>Фильтры</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
         sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
         sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
-        sb.AppendLine("<label>status <select name='status'>");
+        sb.AppendLine("<label>Статус <select name='status'>");
         RenderOption(sb, "active", model.StatusFilter);
         RenderOption(sb, "all", model.StatusFilter);
         RenderOption(sb, Stage6CaseStatuses.NeedsUserInput, model.StatusFilter);
@@ -604,43 +603,43 @@ public class WebRouteRenderer : IWebRouteRenderer
         RenderOption(sb, Stage6CaseStatuses.Resolved, model.StatusFilter);
         RenderOption(sb, Stage6CaseStatuses.Rejected, model.StatusFilter);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine("<label>priority <select name='priority'>");
-        RenderOption(sb, string.Empty, "all", model.PriorityFilter);
-        RenderOption(sb, "blocking", "blocking", model.PriorityFilter);
-        RenderOption(sb, "important", "important", model.PriorityFilter);
-        RenderOption(sb, "optional", "optional", model.PriorityFilter);
+        sb.AppendLine("<label>Приоритет <select name='priority'>");
+        RenderOption(sb, string.Empty, "все", model.PriorityFilter);
+        RenderOption(sb, "blocking", "блокирующий", model.PriorityFilter);
+        RenderOption(sb, "important", "важный", model.PriorityFilter);
+        RenderOption(sb, "optional", "необязательный", model.PriorityFilter);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine($"<label>caseType <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}' placeholder='needs_review'></label> ");
-        sb.AppendLine("<label>artifactType <select name='artifactType'>");
-        RenderOption(sb, string.Empty, "all", model.ArtifactTypeFilter);
-        RenderOption(sb, Stage6ArtifactTypes.Dossier, Stage6ArtifactTypes.Dossier, model.ArtifactTypeFilter);
-        RenderOption(sb, Stage6ArtifactTypes.CurrentState, Stage6ArtifactTypes.CurrentState, model.ArtifactTypeFilter);
-        RenderOption(sb, Stage6ArtifactTypes.Strategy, Stage6ArtifactTypes.Strategy, model.ArtifactTypeFilter);
-        RenderOption(sb, Stage6ArtifactTypes.Draft, Stage6ArtifactTypes.Draft, model.ArtifactTypeFilter);
-        RenderOption(sb, Stage6ArtifactTypes.Review, Stage6ArtifactTypes.Review, model.ArtifactTypeFilter);
+        sb.AppendLine($"<label>Тип кейса <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}' placeholder='needs_review'></label> ");
+        sb.AppendLine("<label>Артефакт <select name='artifactType'>");
+        RenderOption(sb, string.Empty, "все", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Dossier, "досье", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.CurrentState, "текущее состояние", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Strategy, "стратегия", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Draft, "черновик", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Review, "ревью", model.ArtifactTypeFilter);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine($"<label>q <input name='q' value='{E(model.Query ?? string.Empty)}' placeholder='text/type/object'></label> ");
-        sb.AppendLine("<label>sortBy <select name='sortBy'>");
-        RenderOption(sb, "priority", model.SortBy);
-        RenderOption(sb, "updated", model.SortBy);
-        RenderOption(sb, "status", model.SortBy);
-        RenderOption(sb, "confidence", model.SortBy);
+        sb.AppendLine($"<label>Поиск <input name='q' value='{E(model.Query ?? string.Empty)}' placeholder='текст'></label> ");
+        sb.AppendLine("<label>Сортировка <select name='sortBy'>");
+        RenderOption(sb, "priority", "приоритет", model.SortBy);
+        RenderOption(sb, "updated", "обновление", model.SortBy);
+        RenderOption(sb, "status", "статус", model.SortBy);
+        RenderOption(sb, "confidence", "уверенность", model.SortBy);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine("<label>direction <select name='sortDirection'>");
-        RenderOption(sb, "desc", model.SortDirection);
-        RenderOption(sb, "asc", model.SortDirection);
+        sb.AppendLine("<label>Направление <select name='sortDirection'>");
+        RenderOption(sb, "desc", "сначала новые", model.SortDirection);
+        RenderOption(sb, "asc", "сначала старые", model.SortDirection);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine("<button type='submit'>apply</button>");
-        sb.AppendLine($" <a href='{E(allLink)}'>reset</a>");
+        sb.AppendLine("<button type='submit'>Применить</button>");
+        sb.AppendLine($" <a href='{E(allLink)}'>Сбросить</a>");
         sb.AppendLine("</form>");
         RenderStateCallout(
             sb,
             "info",
-            "Working set",
-            $"status={model.StatusFilter}, priority={model.PriorityFilter ?? "all"}, caseType={model.CaseTypeFilter ?? "all"}, artifact={model.ArtifactTypeFilter ?? "all"}, q={model.Query ?? "-"}, order={model.SortBy}/{model.SortDirection}",
-            ("Reset filters", allLink));
-        sb.AppendLine($"<p>common filters: <a href='{E(activeLink)}'>active</a> | <a href='{E(needsInputLink)}'>needs input</a> | <a href='{E(readyLink)}'>ready</a> | <a href='{E(blockingLink)}'>blocking</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.CurrentState, null, model.SortBy, model.SortDirection))}'>state work</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.Draft, null, model.SortBy, model.SortDirection))}'>draft work</a> | <a href='{E(allLink)}'>default</a></p>");
-        sb.AppendLine($"<p>artifact views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier, ["returnTo"] = currentQueuePath }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState, ["returnTo"] = currentQueuePath }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy, ["returnTo"] = currentQueuePath }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft, ["returnTo"] = currentQueuePath }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review, ["returnTo"] = currentQueuePath }))}'>review</a></p>");
+            "Текущий срез",
+            $"Статус: {ToRuCaseStatus(model.StatusFilter)}. Приоритет: {ToRuPriority(model.PriorityFilter)}. Тип кейса: {E(model.CaseTypeFilter ?? "все")}. Артефакт: {ToRuArtifactType(model.ArtifactTypeFilter)}.",
+            ("Сбросить фильтры", allLink));
+        sb.AppendLine($"<p>Быстрые фильтры: <a href='{E(activeLink)}'>активные</a> | <a href='{E(needsInputLink)}'>требуют ответа</a> | <a href='{E(readyLink)}'>готовые</a> | <a href='{E(blockingLink)}'>блокирующие</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.CurrentState, null, model.SortBy, model.SortDirection))}'>по состоянию</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.Draft, null, model.SortBy, model.SortDirection))}'>по черновикам</a> | <a href='{E(allLink)}'>по умолчанию</a></p>");
+        sb.AppendLine($"<p>Артефакты: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier, ["returnTo"] = currentQueuePath }))}'>досье</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState, ["returnTo"] = currentQueuePath }))}'>текущее состояние</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy, ["returnTo"] = currentQueuePath }))}'>стратегия</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft, ["returnTo"] = currentQueuePath }))}'>черновик</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review, ["returnTo"] = currentQueuePath }))}'>ревью</a></p>");
         sb.AppendLine("</section>");
 
         var topNeedsInput = model.Cases
@@ -659,31 +658,30 @@ public class WebRouteRenderer : IWebRouteRenderer
             .Take(30)
             .ToList();
 
-        if (model.Cases.Count == 0)
-        {
-            RenderStateCallout(
-                sb,
-                "empty",
-                "No matching cases",
-                "Nothing matched the current queue filters. Remove the text filter, widen status scope, or reset to the default queue.",
-                ("Reset filters", allLink),
-                ("Open active queue", activeLink));
-        }
-        else
-        {
-            RenderQueueSection(sb, $"Needs Input ({topNeedsInput.Count})", topNeedsInput, request, currentQueuePath);
-            RenderQueueSection(sb, $"Ready / New ({topReady.Count})", topReady, request, currentQueuePath);
-            RenderQueueSection(sb, $"Other ({topOther.Count})", topOther, request, currentQueuePath);
-        }
-
         if (model.TotalCases == 0)
         {
             RenderStateCallout(
                 sb,
                 "empty",
-                "Queue is empty",
-                "There are no Stage 6 cases for this scope yet. This usually means upstream processing has not produced reviewable cases.",
-                ("Open dashboard", BuildScopedPath("/dashboard", request)));
+                "Очередь пока пуста",
+                "По текущей области еще нет кейсов для обработки. Обычно это значит, что апстрим-обработка еще не сформировала рабочие кейсы.",
+                ("Открыть панель", BuildScopedPath("/dashboard", request)));
+        }
+        else if (model.Cases.Count == 0)
+        {
+            RenderStateCallout(
+                sb,
+                "empty",
+                "Ничего не найдено по фильтрам",
+                "Сбросьте часть фильтров или вернитесь к базовой очереди.",
+                ("Сбросить фильтры", allLink),
+                ("Открыть активные", activeLink));
+        }
+        else
+        {
+            RenderQueueSection(sb, $"Требуют ответа ({topNeedsInput.Count})", topNeedsInput, request, currentQueuePath);
+            RenderQueueSection(sb, $"Готовые / Новые ({topReady.Count})", topReady, request, currentQueuePath);
+            RenderQueueSection(sb, $"Остальные ({topOther.Count})", topOther, request, currentQueuePath);
         }
 
         return CloseShell(sb);
@@ -691,57 +689,56 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderCaseDetail(Stage6CaseDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
-        var sb = CreateShell("Case Detail");
-        sb.AppendLine("<h1>Case Detail</h1>");
+        var sb = CreateShell("Детали кейса");
+        sb.AppendLine("<h1>Детали кейса</h1>");
         if (!model.Exists)
         {
-            sb.AppendLine("<section><h2>Case Not Found</h2>");
+            sb.AppendLine("<section><h2>Кейс не найден</h2>");
             sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
-            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
             sb.AppendLine("</section>");
             return CloseShell(sb);
         }
 
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
-        sb.AppendLine($"<p>id={model.Id}</p>");
-        sb.AppendLine($"<p>type={E(model.CaseType)} subtype={E(model.CaseSubtype ?? "-")} status={E(model.Status)} priority={E(model.Priority)} conf={FormatConfidence(model.Confidence)}</p>");
-        sb.AppendLine($"<p>reason: {E(model.ReasonSummary)}</p>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
+        sb.AppendLine($"<p><strong>{E(ToRuCaseType(model.CaseType))}</strong> | {E(ToRuCaseStatus(model.Status))} | {E(ToRuPriority(model.Priority))} | уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
+        sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
         if (!string.IsNullOrWhiteSpace(model.QuestionText))
         {
-            sb.AppendLine($"<p>question: {E(model.QuestionText)}</p>");
+            sb.AppendLine($"<p><strong>Вопрос:</strong> {E(model.QuestionText)}</p>");
         }
-        sb.AppendLine($"<p>response: mode={E(model.ResponseMode ?? "-")} channel_hint={E(model.ResponseChannelHint ?? "-")}</p>");
-        sb.AppendLine($"<p>source: {E(model.SourceObjectType)}:{E(model.SourceObjectId)} {(!string.IsNullOrWhiteSpace(model.SourceLink) ? $"<a href='{E(model.SourceLink)}'>trail</a>" : string.Empty)}</p>");
+        sb.AppendLine($"<p>Канал ответа: {E(model.ResponseMode ?? "-")}</p>");
+        sb.AppendLine($"<p>Источник: {E(ToRuObjectType(model.SourceObjectType))} {(!string.IsNullOrWhiteSpace(model.SourceLink) ? $"<a href='{E(model.SourceLink)}'>история</a>" : string.Empty)}</p>");
         if (!string.IsNullOrWhiteSpace(model.SourceSummary))
         {
-            sb.AppendLine($"<p>source summary: {E(model.SourceSummary)}</p>");
+            sb.AppendLine($"<p>{E(model.SourceSummary)}</p>");
         }
-        sb.AppendLine($"<p>updated={E(model.UpdatedAt.ToString("u"))}</p>");
-        sb.AppendLine($"<p>evidence-first summary: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
-        sb.AppendLine("<section><h2>Deep Review Snapshot</h2>");
+        sb.AppendLine($"<p>Обновлено: {E(model.UpdatedAt.ToString("u"))}</p>");
+        sb.AppendLine($"<p>Ключевая суть: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
+        sb.AppendLine("<section><h2>Контекст</h2>");
         sb.AppendLine($"<p>lifecycle: created={E(model.CreatedAt.ToString("u"))} | ready={E(model.ReadyAt?.ToString("u") ?? "-")} | resolved={E(model.ResolvedAt?.ToString("u") ?? "-")} | rejected={E(model.RejectedAt?.ToString("u") ?? "-")} | stale={E(model.StaleAt?.ToString("u") ?? "-")}</p>");
         sb.AppendLine($"<p>evidence window: from={E(model.EarliestEvidenceAtUtc?.ToString("u") ?? "-")} to={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
         sb.AppendLine($"<p>participants: {(model.EvidenceParticipants.Count == 0 ? "-" : E(string.Join(" | ", model.EvidenceParticipants.Select(x => $"{x.SenderName} (msgs={x.MessageCount}, direct={x.EvidenceMessageCount})"))))}</p>");
         sb.AppendLine($"<p>subject refs: {(model.SubjectRefs.Count == 0 ? "-" : E(string.Join(", ", model.SubjectRefs)))} </p>");
         sb.AppendLine($"<p>reopen triggers: {(model.ReopenTriggers.Count == 0 ? "-" : E(string.Join("; ", model.ReopenTriggers)))} </p>");
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-evidence", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() }))}'>open evidence drill-down</a> | <a href='{E(BuildScopedPath("/timeline", request))}'>timeline</a> | <a href='{E(BuildScopedPath("/network", request))}'>people/network</a> | <a href='{E(BuildScopedPath("/history", request, new Dictionary<string, string?> { ["objectType"] = "stage6_case" }))}'>case history feed</a></p>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-evidence", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() }))}'>Открыть доказательства</a> | <a href='{E(BuildScopedPath("/timeline", request))}'>Таймлайн</a> | <a href='{E(BuildScopedPath("/network", request))}'>Сеть участников</a> | <a href='{E(BuildScopedPath("/history", request, new Dictionary<string, string?> { ["objectType"] = "stage6_case" }))}'>История кейса</a></p>");
         sb.AppendLine("</section>");
 
-        sb.AppendLine("<section><h2>Evidence First Context</h2>");
+        sb.AppendLine("<section><h2>Основания</h2>");
         foreach (var evidence in model.Evidence.Take(12))
         {
-            var link = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>open</a>";
+            var link = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>открыть</a>";
             var time = evidence.TimestampUtc.HasValue ? evidence.TimestampUtc.Value.ToString("yyyy-MM-dd HH:mm") : "-";
             var refTrail = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
             {
                 ["objectType"] = "stage6_case",
                 ["objectId"] = model.Id.ToString()
             });
-            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | at={E(time)} | ref={E(evidence.Reference)}{link} | <a href='{E(refTrail)}'>case trail</a></div>");
+            sb.AppendLine($"<div>{E(ToRuEvidenceClass(evidence.SourceClass))} | {E(evidence.Title)} | {E(evidence.Summary)} | {E(time)}{link} | <a href='{E(refTrail)}'>история кейса</a></div>");
         }
         if (model.Evidence.Count == 0)
         {
-            sb.AppendLine("<p>No explicit evidence refs. Case reason is shown as fallback.</p>");
+            sb.AppendLine("<p>Явные основания не найдены. Показана причина кейса.</p>");
         }
         sb.AppendLine("</section>");
 
@@ -940,38 +937,39 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderArtifactDetail(Stage6ArtifactDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
-        var sb = CreateShell("Artifact Detail");
-        sb.AppendLine($"<h1>Artifact Detail: {E(model.ArtifactType)}</h1>");
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
-        sb.AppendLine($"<p>views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
-        sb.AppendLine($"<p>status={E(model.Status)} reason={E(model.Reason ?? "-")}</p>");
-        sb.AppendLine($"<p>summary={E(model.Summary)}</p>");
+        var sb = CreateShell("Детали артефакта");
+        sb.AppendLine($"<h1>Артефакт: {E(ToRuArtifactType(model.ArtifactType))}</h1>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
+        sb.AppendLine($"<p>Виды: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>досье</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>текущее состояние</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>стратегия</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>черновик</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>ревью</a></p>");
+        sb.AppendLine($"<p>Статус: {E(ToRuArtifactStatus(model.Status))}{(string.IsNullOrWhiteSpace(model.Reason) ? string.Empty : $". Причина: {E(model.Reason)}")}</p>");
+        sb.AppendLine($"<p>{E(model.Summary)}</p>");
         if (!model.Exists)
         {
-            sb.AppendLine("<section><h2>Artifact Unavailable</h2>");
-            sb.AppendLine("<p>No current artifact payload is available yet. You can return to queue or request refresh when source evidence becomes available.</p>");
+            sb.AppendLine("<section><h2>Артефакт пока недоступен</h2>");
+            sb.AppendLine("<p>Данных для этого артефакта пока нет. Вернитесь в очередь или обновите кейс после новых сообщений.</p>");
             sb.AppendLine("</section>");
+            return CloseShell(sb);
         }
-        sb.AppendLine($"<p>confidence={E(model.ConfidenceLabel ?? "-")} payload={E(model.PayloadObjectType ?? "-")}:{E(model.PayloadObjectId ?? "-")}</p>");
-        sb.AppendLine($"<p>generated={E(model.GeneratedAt?.ToString("u") ?? "-")} refreshed={E(model.RefreshedAt?.ToString("u") ?? "-")} latest_evidence={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
+        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(model.ConfidenceLabel))}</p>");
+        sb.AppendLine($"<p>Сформирован: {E(model.GeneratedAt?.ToString("u") ?? "-")} | Обновлен: {E(model.RefreshedAt?.ToString("u") ?? "-")} | Последние данные: {E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
         var refreshLink = BuildScopedPath("/artifact-action", request, new Dictionary<string, string?>
         {
             ["artifactType"] = model.ArtifactType,
             ["action"] = "refresh"
         });
-        sb.AppendLine($"<p><a href='{E(refreshLink)}'>refresh artifact</a></p>");
-        sb.AppendLine("<section><h2>Evidence Summary</h2>");
+        sb.AppendLine($"<p><a href='{E(refreshLink)}'>Обновить артефакт</a></p>");
+        sb.AppendLine("<section><h2>Ключевые основания</h2>");
         foreach (var evidence in model.Evidence.Take(12))
         {
-            var open = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>open</a>";
-            sb.AppendLine($"<div>{E(evidence.SourceClass)} | {E(evidence.Title)} | {E(evidence.Summary)} | ref={E(evidence.Reference)}{open}</div>");
+            var open = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>открыть</a>";
+            sb.AppendLine($"<div>{E(ToRuEvidenceClass(evidence.SourceClass))} | {E(evidence.Title)} | {E(evidence.Summary)}{open}</div>");
         }
         if (model.Evidence.Count == 0)
         {
-            sb.AppendLine("<p>No evidence stamp details available.</p>");
+            sb.AppendLine("<p>Пока нет подробностей по основаниям.</p>");
         }
         sb.AppendLine("</section>");
-        sb.AppendLine("<section><h2>Linked Cases</h2>");
+        sb.AppendLine("<section><h2>Связанные кейсы</h2>");
         foreach (var item in model.LinkedCases)
         {
             var link = BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
@@ -982,26 +980,27 @@ public class WebRouteRenderer : IWebRouteRenderer
             {
                 ["caseId"] = item.Id.ToString()
             });
-            sb.AppendLine($"<div><a href='{E(link)}'>{item.Id}</a> | {E(item.CaseType)} | {E(item.Status)} | {E(item.ReasonSummary)} | <a href='{E(drilldown)}'>evidence</a></div>");
+            sb.AppendLine($"<div><a href='{E(link)}'>Кейс {E(ShortId(item.Id.ToString()))}</a> | {E(ToRuCaseType(item.CaseType))} | {E(ToRuCaseStatus(item.Status))} | {E(item.ReasonSummary)} | <a href='{E(drilldown)}'>доказательства</a></div>");
         }
         if (model.LinkedCases.Count == 0)
         {
-            sb.AppendLine("<p>No linked active cases.</p>");
+            sb.AppendLine("<p>Связанные активные кейсы не найдены.</p>");
         }
         sb.AppendLine("</section>");
-        sb.AppendLine("<section><h2>Feedback</h2>");
+        sb.AppendLine("<section><h2>Обратная связь</h2>");
         foreach (var item in model.Feedback.Take(20))
         {
-            sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(item.FeedbackKind)} | dim={E(item.FeedbackDimension)} | useful={E(item.IsUseful?.ToString() ?? "-")} | {E(item.Note ?? "-")}</div>");
+            sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(ToRuFeedbackKind(item.FeedbackKind))} | полезно: {E(item.IsUseful?.ToString() ?? "-")} | {E(item.Note ?? "-")}</div>");
         }
         if (model.Feedback.Count == 0)
         {
-            sb.AppendLine("<p>No artifact feedback recorded yet.</p>");
+            sb.AppendLine("<p>Обратная связь по артефакту пока не добавлена.</p>");
         }
         sb.AppendLine("</section>");
-        sb.AppendLine("<section><h2>Payload</h2>");
+        sb.AppendLine("<details><summary>Технические детали</summary>");
+        sb.AppendLine($"<p>payload: {E(model.PayloadObjectType ?? "-")}:{E(model.PayloadObjectId ?? "-")}</p>");
         sb.AppendLine($"<pre>{E(model.PayloadJson)}</pre>");
-        sb.AppendLine("</section>");
+        sb.AppendLine("</details>");
         return CloseShell(sb);
     }
 
@@ -1063,7 +1062,7 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderCaseAction(WebStage6CaseActionResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
-        var sb = CreateShell("Case Action");
+        var sb = CreateShell("Действие по кейсу");
         var returnTo = ResolveReturnToPath(query, request);
         var detailLink = result.Stage6CaseId == Guid.Empty
             ? string.Empty
@@ -1072,40 +1071,40 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["caseId"] = result.Stage6CaseId.ToString(),
                 ["returnTo"] = returnTo
             });
-        sb.AppendLine("<h1>Case Action</h1>");
+        sb.AppendLine("<h1>Действие по кейсу</h1>");
         if (result.RequiresConfirmation)
         {
             var proceed = BuildPathFromCurrentQuery("/case-action", query, new Dictionary<string, string?> { ["confirm"] = "1" });
             RenderStateCallout(
                 sb,
                 "warning",
-                "Confirmation required",
-                string.IsNullOrWhiteSpace(result.Message) ? "This action changes case state." : result.Message,
-                ("Confirm action", proceed),
-                ("Cancel", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
+                "Требуется подтверждение",
+                string.IsNullOrWhiteSpace(result.Message) ? "Это действие изменит статус кейса." : result.Message,
+                ("Подтвердить", proceed),
+                ("Отмена", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
             return CloseShell(sb);
         }
 
         RenderStateCallout(
             sb,
             result.Success ? "success" : "error",
-            result.Success ? "Case action applied" : "Case action failed",
-            $"action={result.Action}, case={result.Stage6CaseId}. {result.Message}",
-            ("Back to queue", returnTo));
+            result.Success ? "Действие выполнено" : "Действие не выполнено",
+            $"Кейс: {ShortId(result.Stage6CaseId.ToString())}. {result.Message}",
+            ("Назад в очередь", returnTo));
         if (result.RefreshedArtifactTypes.Count > 0)
         {
-            sb.AppendLine($"<p>refreshed artifacts: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
+            sb.AppendLine($"<p>Обновлены артефакты: {E(string.Join(", ", result.RefreshedArtifactTypes.Select(ToRuArtifactType)))}</p>");
         }
         if (!string.IsNullOrWhiteSpace(detailLink))
         {
-            sb.AppendLine($"<p><a href='{E(detailLink)}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(detailLink)}'>К деталям кейса</a></p>");
         }
         return CloseShell(sb);
     }
 
     private static string RenderClarificationAnswer(WebStage6ClarificationAnswerResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
-        var sb = CreateShell("Clarification Answer");
+        var sb = CreateShell("Ответ на уточнение");
         var returnTo = ResolveReturnToPath(query, request);
         var detailLink = result.Stage6CaseId == Guid.Empty
             ? string.Empty
@@ -1114,61 +1113,61 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["caseId"] = result.Stage6CaseId.ToString(),
                 ["returnTo"] = returnTo
             });
-        sb.AppendLine("<h1>Clarification Answer</h1>");
+        sb.AppendLine("<h1>Ответ на уточнение</h1>");
         if (result.RequiresConfirmation)
         {
             var proceed = BuildPathFromCurrentQuery("/clarification-answer", query, new Dictionary<string, string?> { ["confirm"] = "1" });
             RenderStateCallout(
                 sb,
                 "warning",
-                "Submit this answer?",
-                "The answer will be recorded and the case may be marked resolved.",
-                ("Confirm answer", proceed),
-                ("Cancel", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
-            sb.AppendLine($"<p>answer preview: {E(BuildSnippet(result.AnswerValue, 220))}</p>");
+                "Отправить ответ?",
+                "Ответ будет сохранен, а кейс может быть закрыт.",
+                ("Подтвердить ответ", proceed),
+                ("Отмена", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
+            sb.AppendLine($"<p>Предпросмотр ответа: {E(BuildSnippet(result.AnswerValue, 220))}</p>");
             return CloseShell(sb);
         }
 
         RenderStateCallout(
             sb,
             result.Success ? "success" : "error",
-            result.Success ? "Clarification answer recorded" : "Clarification answer failed",
-            $"case={result.Stage6CaseId}, question={result.QuestionId?.ToString() ?? "-"}. {result.Message}",
-            ("Back to queue", returnTo));
+            result.Success ? "Ответ сохранен" : "Не удалось сохранить ответ",
+            $"Кейс: {ShortId(result.Stage6CaseId.ToString())}. {result.Message}",
+            ("Назад в очередь", returnTo));
         if (!string.IsNullOrWhiteSpace(result.QuestionText))
         {
-            sb.AppendLine($"<p>question: {E(result.QuestionText)}</p>");
-            sb.AppendLine($"<p>answer: {E(result.AnswerValue)}</p>");
+            sb.AppendLine($"<p>Вопрос: {E(result.QuestionText)}</p>");
+            sb.AppendLine($"<p>Ответ: {E(result.AnswerValue)}</p>");
         }
         if (result.RecomputeTargets.Count > 0)
         {
-            sb.AppendLine($"<p>recompute targets: {E(string.Join(", ", result.RecomputeTargets))}</p>");
+            sb.AppendLine($"<p>Пересчитаны цели: {E(string.Join(", ", result.RecomputeTargets))}</p>");
         }
         if (result.RefreshedArtifactTypes.Count > 0)
         {
-            sb.AppendLine($"<p>artifacts marked stale: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
+            sb.AppendLine($"<p>Помечены на обновление: {E(string.Join(", ", result.RefreshedArtifactTypes.Select(ToRuArtifactType)))}</p>");
         }
         if (!string.IsNullOrWhiteSpace(detailLink))
         {
-            sb.AppendLine($"<p><a href='{E(detailLink)}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(detailLink)}'>К деталям кейса</a></p>");
         }
         return CloseShell(sb);
     }
 
     private static string RenderArtifactAction(WebStage6ArtifactActionResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
-        var sb = CreateShell("Artifact Action");
+        var sb = CreateShell("Действие по артефакту");
         var returnTo = ResolveReturnToPath(query, request);
-        sb.AppendLine("<h1>Artifact Action</h1>");
+        sb.AppendLine("<h1>Действие по артефакту</h1>");
         RenderStateCallout(
             sb,
             result.Success ? "success" : "error",
-            result.Success ? "Artifact action applied" : "Artifact action failed",
-            $"action={result.Action}, artifact={result.ArtifactType}. {result.Message}",
-            ("Back to queue", returnTo));
+            result.Success ? "Действие выполнено" : "Действие не выполнено",
+            $"Артефакт: {E(ToRuArtifactType(result.ArtifactType))}. {result.Message}",
+            ("Назад в очередь", returnTo));
         if (!string.IsNullOrWhiteSpace(result.ArtifactType))
         {
-            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = result.ArtifactType, ["returnTo"] = returnTo }))}'>open artifact detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = result.ArtifactType, ["returnTo"] = returnTo }))}'>Открыть артефакт</a></p>");
         }
         return CloseShell(sb);
     }
@@ -1188,7 +1187,7 @@ public class WebRouteRenderer : IWebRouteRenderer
 
         if (items.Count == 0)
         {
-            sb.AppendLine("<p>No cases in this section for current filters.</p>");
+            sb.AppendLine("<p>В этом разделе нет кейсов по текущим фильтрам.</p>");
         }
 
         sb.AppendLine("</section>");
@@ -1226,23 +1225,26 @@ public class WebRouteRenderer : IWebRouteRenderer
         });
 
         sb.AppendLine("<article>");
-        sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(item.CaseType)}</a> | type={E(item.CaseType)} | priority={E(item.Priority)} | status={E(item.Status)}</h3>");
-        sb.AppendLine($"<p>reason: {E(item.ReasonSummary)}</p>");
+        sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(ToRuCaseType(item.CaseType))}</a> | {E(ToRuPriority(item.Priority))} | {E(ToRuCaseStatus(item.Status))}</h3>");
+        sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
         if (!string.IsNullOrWhiteSpace(item.QuestionText))
         {
-            sb.AppendLine($"<p>question: {E(item.QuestionText)}</p>");
+            sb.AppendLine($"<p><strong>Вопрос:</strong> {E(item.QuestionText)}</p>");
         }
 
-        sb.AppendLine($"<p>confidence={FormatConfidence(item.Confidence)} evidence_refs={item.EvidenceCount} updated={E(item.UpdatedAt.ToString("u"))}</p>");
-        sb.AppendLine($"<p>source=<a href='{E(objectTrail)}'>{E(item.SourceObjectType)}:{E(item.SourceObjectId)}</a></p>");
-        sb.AppendLine($"<p>targets: {(item.TargetArtifactTypes.Count == 0 ? "-" : E(string.Join(", ", item.TargetArtifactTypes)))}</p>");
+        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}. Доказательств: {item.EvidenceCount}. Обновлено: {E(item.UpdatedAt.ToString("u"))}</p>");
+        sb.AppendLine($"<p>Источник: <a href='{E(objectTrail)}'>{E(ToRuObjectType(item.SourceObjectType))}</a></p>");
+        if (item.TargetArtifactTypes.Count > 0)
+        {
+            sb.AppendLine($"<p>Связанные артефакты: {E(string.Join(", ", item.TargetArtifactTypes.Select(ToRuArtifactType)))}</p>");
+        }
 
         var detailActions = new List<string>
         {
-            $"<a href='{E(detailLink)}'>open case</a>",
-            $"<a href='{E(resolveLink)}'>resolve (confirm)</a>",
-            $"<a href='{E(rejectLink)}'>reject (confirm)</a>",
-            $"<a href='{E(refreshLink)}'>refresh</a>"
+            $"<a href='{E(detailLink)}'>Открыть</a>",
+            $"<a href='{E(resolveLink)}'>Закрыть</a>",
+            $"<a href='{E(rejectLink)}'>Отклонить</a>",
+            $"<a href='{E(refreshLink)}'>Обновить</a>"
         };
         if (item.TargetArtifactTypes.Count > 0)
         {
@@ -1251,12 +1253,12 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["artifactType"] = item.TargetArtifactTypes[0],
                 ["returnTo"] = currentQueuePath
             });
-            detailActions.Add($"<a href='{E(artifactLink)}'>open artifact</a>");
+            detailActions.Add($"<a href='{E(artifactLink)}'>Открыть артефакт</a>");
         }
 
         if (item.NeedsAnswer)
         {
-            detailActions.Add("needs answer");
+            detailActions.Add("требуется ответ");
         }
 
         sb.AppendLine($"<p>{string.Join(" | ", detailActions)}</p>");
@@ -1340,20 +1342,25 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderState(CurrentStateReadModel model)
     {
-        var sb = CreateShell("Current State");
-        sb.AppendLine("<h1>Current State</h1>");
-        sb.AppendLine($"<p>dynamic: <strong>{E(model.DynamicLabel)}</strong></p>");
-        sb.AppendLine($"<p>status: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (alt {E(model.AlternativeStatus!)})")}</p>");
-        sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
-        sb.AppendLine($"<p>overall signal strength: <strong>{E(model.OverallSignalStrength)}</strong></p>");
-        RenderStateInsightSection(sb, "Observed Facts", model.ObservedFacts);
-        RenderStateInsightSection(sb, "Likely Interpretation", model.LikelyInterpretation);
-        RenderStateInsightSection(sb, "Uncertainties / Alternative Readings", model.Uncertainties);
-        RenderStateInsightSection(sb, "Missing Information", model.MissingInformation);
-        sb.AppendLine("<h2>Scores</h2>");
-        foreach (var kv in model.Scores.OrderBy(x => x.Key))
+        var sb = CreateShell("Текущее состояние");
+        sb.AppendLine("<h1>Текущее состояние</h1>");
+        sb.AppendLine($"<p>Динамика: <strong>{E(model.DynamicLabel)}</strong></p>");
+        sb.AppendLine($"<p>Статус: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (альтернатива: {E(model.AlternativeStatus!)})")}</p>");
+        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
+        sb.AppendLine($"<p>Сила сигнала: <strong>{E(ToRuSignalStrength(model.OverallSignalStrength))}</strong></p>");
+        RenderStateInsightSection(sb, "Подтвержденные факты", model.ObservedFacts);
+        RenderStateInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
+        RenderStateInsightSection(sb, "Неопределенности", model.Uncertainties);
+        RenderStateInsightSection(sb, "Чего не хватает", model.MissingInformation);
+        if (model.Scores.Count > 0)
         {
-            sb.AppendLine($"<div>{E(kv.Key)}: {kv.Value:0.00}</div>");
+            sb.AppendLine("<details><summary>Технические скоры</summary>");
+            foreach (var kv in model.Scores.OrderBy(x => x.Key))
+            {
+                sb.AppendLine($"<div>{E(kv.Key)}: {kv.Value:0.00}</div>");
+            }
+
+            sb.AppendLine("</details>");
         }
 
         return CloseShell(sb);
@@ -1361,15 +1368,15 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static void RenderStateInsightSection(StringBuilder sb, string title, IReadOnlyCollection<StateInsightReadModel> rows)
     {
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
         foreach (var row in rows)
         {
-            sb.AppendLine($"<div><strong>{E(row.SignalStrength)}</strong> | {E(row.Title)} | {E(row.Detail)} | evidence={E(row.Evidence)}</div>");
-        }
-
-        if (rows.Count == 0)
-        {
-            sb.AppendLine("<p>No items.</p>");
+            sb.AppendLine($"<div><strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong> | {E(row.Title)} | {E(row.Detail)}</div>");
         }
 
         sb.AppendLine("</section>");
@@ -1506,59 +1513,45 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderStrategy(StrategyReadModel model)
     {
-        var sb = CreateShell("Strategy");
-        sb.AppendLine("<h1>Strategy</h1>");
-        sb.AppendLine($"<p>record: {E(model.RecordId.ToString())}</p>");
-        sb.AppendLine($"<p>confidence: {model.Confidence:0.00}</p>");
-        sb.AppendLine($"<h2>Primary</h2><p>{E(model.PrimarySummary)}</p><p>purpose: {E(model.PrimaryPurpose)}</p>");
-        sb.AppendLine($"<p>risks: {E(string.Join(", ", model.PrimaryRisks))}</p>");
-        sb.AppendLine($"<p>ethics: {E(model.EthicalContractSummary)}</p>");
-        sb.AppendLine("<h2>Observed Facts</h2>");
-        foreach (var item in model.ObservedFacts)
+        var sb = CreateShell("Стратегия");
+        sb.AppendLine("<h1>Стратегия</h1>");
+        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
+        sb.AppendLine($"<h2>Основной ход</h2><p>{E(model.PrimarySummary)}</p><p><strong>Зачем:</strong> {E(model.PrimaryPurpose)}</p>");
+        if (model.PrimaryRisks.Count > 0)
         {
-            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
+            sb.AppendLine($"<p><strong>Риски:</strong> {E(string.Join(", ", model.PrimaryRisks.Select(ToRuRiskLabel)))}</p>");
         }
+        sb.AppendLine($"<p><strong>Этическая рамка:</strong> {E(model.EthicalContractSummary)}</p>");
+        RenderStateInsightSection(sb, "Подтвержденные факты", model.ObservedFacts);
+        RenderStateInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
+        RenderStateInsightSection(sb, "Неопределенности", model.Uncertainties);
+        RenderStateInsightSection(sb, "Чего не хватает", model.MissingInformation);
 
-        sb.AppendLine("<h2>Likely Interpretation</h2>");
-        foreach (var item in model.LikelyInterpretation)
-        {
-            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
-        }
-
-        sb.AppendLine("<h2>Uncertainties / Alternative Readings</h2>");
-        foreach (var item in model.Uncertainties)
-        {
-            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
-        }
-
-        sb.AppendLine("<h2>Missing Information</h2>");
-        foreach (var item in model.MissingInformation)
-        {
-            sb.AppendLine($"<div><strong>{E(item.SignalStrength)}</strong> | {E(item.Title)} | {E(item.Detail)} | evidence={E(item.Evidence)}</div>");
-        }
-
-        sb.AppendLine("<h2>Relational Patterns</h2>");
+        sb.AppendLine("<h2>Паттерны взаимодействия</h2>");
         foreach (var pattern in model.RelationalPatterns)
         {
             sb.AppendLine($"<div>{E(pattern)}</div>");
         }
 
-        sb.AppendLine("<h2>Alternatives</h2>");
+        sb.AppendLine("<h2>Альтернативы</h2>");
         foreach (var alt in model.Alternatives)
         {
-            sb.AppendLine($"<div><strong>{E(alt.ActionType)}</strong> - {E(alt.Summary)} | risks: {E(string.Join(", ", alt.Risks))}</div>");
+            sb.AppendLine($"<div><strong>{E(alt.ActionType)}</strong> — {E(alt.Summary)}{(alt.Risks.Count == 0 ? string.Empty : $" | риски: {E(string.Join(", ", alt.Risks.Select(ToRuRiskLabel)))}")}</div>");
         }
 
-        sb.AppendLine($"<h2>Micro-step</h2><p>{E(model.MicroStep)}</p>");
+        sb.AppendLine($"<h2>Ближайший шаг</h2><p>{E(model.MicroStep)}</p>");
         if (model.Horizon.Count > 0)
         {
-            sb.AppendLine($"<h2>Horizon</h2><p>{E(string.Join(" -> ", model.Horizon))}</p>");
+            sb.AppendLine($"<h2>Горизонт</h2><p>{E(string.Join(" -> ", model.Horizon))}</p>");
         }
 
-        sb.AppendLine($"<h2>Why Not</h2><p>{E(model.WhyNotNotes)}</p>");
+        sb.AppendLine($"<h2>Почему не другие варианты</h2><p>{E(model.WhyNotNotes)}</p>");
         var strategyTrail = $"/history-object?objectType=strategy_record&objectId={UrlEncode(model.RecordId.ToString())}";
         var chainFocus = $"/outcomes?strategyRecordId={UrlEncode(model.RecordId.ToString())}";
-        sb.AppendLine($"<p><a href='{E(chainFocus)}'>Open outcome trail for this strategy</a> | <a href='{E(strategyTrail)}'>strategy history trail</a></p>");
+        sb.AppendLine($"<p><a href='{E(chainFocus)}'>Открыть цепочку исходов по стратегии</a> | <a href='{E(strategyTrail)}'>История стратегии</a></p>");
+        sb.AppendLine("<details><summary>Технические детали</summary>");
+        sb.AppendLine($"<p>strategy_record_id: {E(model.RecordId.ToString())}</p>");
+        sb.AppendLine("</details>");
         return CloseShell(sb);
     }
 
@@ -1935,9 +1928,9 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderProfileSubject(ProfileSubjectReadModel subject)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"<section><h2>{E(subject.SubjectType)} ({E(subject.SubjectId)})</h2>");
+        sb.AppendLine($"<section><h2>{E(subject.SubjectType)}</h2>");
         sb.AppendLine($"<p>{E(subject.Summary)}</p>");
-        sb.AppendLine($"<p>confidence={subject.Confidence:0.00} stability={subject.Stability:0.00}</p>");
+        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(subject.Confidence))}. Стабильность: {E(ToRuConfidenceLabel(subject.Stability))}.</p>");
         foreach (var trait in subject.TopTraits)
         {
             sb.AppendLine($"<div>{E(trait.TraitKey)}: {E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
@@ -2195,9 +2188,9 @@ public class WebRouteRenderer : IWebRouteRenderer
         var sb = new StringBuilder();
         sb.AppendLine("<!doctype html>");
         sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
-        sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;background:#f4f6fa;max-width:1060px;margin:16px auto;padding:0 14px 20px;color:#1f2937;line-height:1.45}nav{display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#e9edf5;border:1px solid #d5dde9;border-radius:10px}nav a{font-size:.92rem;text-decoration:none;color:#1d3557;background:#fff;border:1px solid #ccd7ea;border-radius:8px;padding:4px 8px}section,article{background:#fff;border:1px solid #e1e7f0;border-radius:10px;padding:10px 12px;margin:10px 0}h1,h2,h3{margin:6px 0}code{background:#eef2f8;padding:1px 5px;border-radius:5px}form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}input,select,textarea,button{font:inherit}textarea{max-width:100%}</style>");
+        sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;background:#f4f6fa;max-width:1060px;margin:16px auto;padding:0 14px 20px;color:#1f2937;line-height:1.45}nav{display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#e9edf5;border:1px solid #d5dde9;border-radius:10px}nav a{font-size:.92rem;text-decoration:none;color:#1d3557;background:#fff;border:1px solid #ccd7ea;border-radius:8px;padding:4px 8px}section,article{background:#fff;border:1px solid #e1e7f0;border-radius:10px;padding:10px 12px;margin:10px 0}h1,h2,h3{margin:6px 0}code{background:#eef2f8;padding:1px 5px;border-radius:5px}form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}input,select,textarea,button{font:inherit}textarea{max-width:100%}details{margin:10px 0}</style>");
         sb.AppendLine("</head><body>");
-        sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Queue</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/outcomes'>Outcomes</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a><a href='/ops-budget'>Ops Budget</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B Candidates</a></nav>");
+        sb.AppendLine("<nav><a href='/dashboard'>Панель</a><a href='/search'>Поиск</a><a href='/dossier'>Досье</a><a href='/view/blocking'>Вид: блокирующие</a><a href='/view/current-period'>Вид: текущий</a><a href='/view/conflicts'>Вид: конфликты</a><a href='/inbox'>Очередь</a><a href='/history'>История</a><a href='/state'>Состояние</a><a href='/timeline'>Таймлайн</a><a href='/profiles'>Профили</a><a href='/clarifications'>Уточнения</a><a href='/strategy'>Стратегия</a><a href='/drafts-reviews'>Черновики/Ревью</a><a href='/outcomes'>Исходы</a><a href='/offline-events'>Офлайн</a><a href='/review'>Ревью</a><a href='/ops-budget'>Ops Бюджет</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B</a></nav>");
         return sb;
     }
 
@@ -2297,6 +2290,180 @@ public class WebRouteRenderer : IWebRouteRenderer
             ActivePaths = stateList.Count(x => !x.IsPaused && !x.IsDegraded),
             States = stateList
         };
+    }
+
+    private static string ToRuCaseStatus(string? status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "active" => "активные",
+            "all" => "все",
+            "new" => "новый",
+            "ready" => "готов",
+            "needs_user_input" => "требует ответа",
+            "resolved" => "закрыт",
+            "rejected" => "отклонен",
+            "stale" => "устарел",
+            _ => string.IsNullOrWhiteSpace(status) ? "все" : status
+        };
+    }
+
+    private static string ToRuPriority(string? priority)
+    {
+        var normalized = (priority ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "blocking" => "блокирующий",
+            "important" => "важный",
+            "optional" => "необязательный",
+            "" => "все",
+            _ => priority ?? "все"
+        };
+    }
+
+    private static string ToRuArtifactType(string? artifactType)
+    {
+        var normalized = (artifactType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" => "все",
+            "dossier" => "досье",
+            "current_state" => "текущее состояние",
+            "strategy" => "стратегия",
+            "draft" => "черновик",
+            "review" => "ревью",
+            "clarification_state" => "уточнения",
+            _ => artifactType ?? "все"
+        };
+    }
+
+    private static string ToRuArtifactStatus(string? status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "current" => "актуален",
+            "stale" => "нуждается в обновлении",
+            "missing" => "нет данных",
+            _ => string.IsNullOrWhiteSpace(status) ? "-" : status
+        };
+    }
+
+    private static string ToRuCaseType(string? caseType)
+    {
+        if (string.IsNullOrWhiteSpace(caseType))
+        {
+            return "кейс";
+        }
+
+        return caseType
+            .Replace("clarification_", "уточнение: ", StringComparison.OrdinalIgnoreCase)
+            .Replace('_', ' ');
+    }
+
+    private static string ToRuObjectType(string? objectType)
+    {
+        if (string.IsNullOrWhiteSpace(objectType))
+        {
+            return "объект";
+        }
+
+        return objectType switch
+        {
+            "clarification_question" => "вопрос на уточнение",
+            "stage6_case" => "кейс",
+            "message" => "сообщение",
+            _ => objectType
+        };
+    }
+
+    private static string ToRuEvidenceClass(string? sourceClass)
+    {
+        return sourceClass switch
+        {
+            "system_inference" => "системный вывод",
+            "user_reported_context" => "контекст от пользователя",
+            _ => string.IsNullOrWhiteSpace(sourceClass) ? "источник" : sourceClass
+        };
+    }
+
+    private static string ToRuFeedbackKind(string? kind)
+    {
+        return kind switch
+        {
+            "accept_useful" => "принято как полезное",
+            "reject_not_useful" => "отклонено как неполезное",
+            "correction_note" => "корректирующая заметка",
+            "refresh_requested" => "запрошено обновление",
+            _ => string.IsNullOrWhiteSpace(kind) ? "-" : kind
+        };
+    }
+
+    private static string ToRuRiskLabel(string risk)
+    {
+        return risk switch
+        {
+            "overpressure" => "избыточное давление",
+            "premature_escalation" => "преждевременная эскалация",
+            "ambiguity" => "высокая неопределенность",
+            _ => risk
+        };
+    }
+
+    private static string ToRuSignalStrength(string signal)
+    {
+        return signal switch
+        {
+            "strong" => "сильный сигнал",
+            "medium" => "средний сигнал",
+            "weak" => "слабый сигнал",
+            "contradictory" => "противоречие",
+            _ => signal
+        };
+    }
+
+    private static string ToRuConfidenceLabel(float? value)
+    {
+        if (!value.HasValue)
+        {
+            return "нет оценки";
+        }
+
+        if (value.Value >= 0.75f)
+        {
+            return $"высокая ({value.Value:0.00})";
+        }
+
+        if (value.Value >= 0.45f)
+        {
+            return $"средняя ({value.Value:0.00})";
+        }
+
+        return $"низкая ({value.Value:0.00})";
+    }
+
+    private static string ToRuConfidenceLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return "нет оценки";
+        }
+
+        return label
+            .Replace("high", "высокая", StringComparison.OrdinalIgnoreCase)
+            .Replace("medium", "средняя", StringComparison.OrdinalIgnoreCase)
+            .Replace("low", "низкая", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ShortId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "-";
+        }
+
+        return value.Length <= 8 ? value : value[..8];
     }
 
     private static string UrlEncode(string value) => Uri.EscapeDataString(value ?? string.Empty);

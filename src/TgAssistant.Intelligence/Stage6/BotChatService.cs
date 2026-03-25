@@ -95,7 +95,7 @@ public class BotChatService : IBotChatService
         var diagnostics = new BotChatTurnDiagnostics();
         if (string.IsNullOrWhiteSpace(normalizedMessage))
         {
-            diagnostics.Reply = "Please provide a message.";
+            diagnostics.Reply = "Введите сообщение или команду. Подсказка: /help";
             return diagnostics;
         }
 
@@ -119,7 +119,7 @@ public class BotChatService : IBotChatService
         if (embedding.Length == 0)
         {
             _logger.LogWarning("Stage6 chat embedding is empty.");
-            diagnostics.Reply = "I cannot answer now because context retrieval failed.";
+            diagnostics.Reply = "Сейчас не могу ответить: не удалось получить контекст.";
             return diagnostics;
         }
 
@@ -163,7 +163,7 @@ public class BotChatService : IBotChatService
         {
             if (string.IsNullOrWhiteSpace(firstText))
             {
-                diagnostics.Reply = "I cannot answer based on the available context facts.";
+                diagnostics.Reply = "Сейчас недостаточно данных для уверенного ответа.";
                 return diagnostics;
             }
 
@@ -245,7 +245,7 @@ public class BotChatService : IBotChatService
         if (string.IsNullOrWhiteSpace(reply))
         {
             diagnostics.Reply = string.IsNullOrWhiteSpace(firstText)
-                ? "I cannot answer based on the available context facts."
+                ? "Сейчас недостаточно данных для уверенного ответа."
                 : firstText.Trim();
             return diagnostics;
         }
@@ -258,7 +258,7 @@ public class BotChatService : IBotChatService
     {
         if (chatId == 0 || sessionIndex < 0)
         {
-            return "Invalid parameters. Usage: /resummary <chat_id> <session_index>";
+            return "Неверные параметры. Использование: /resummary <chat_id> <session_index>";
         }
 
         var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([chatId], ct);
@@ -266,7 +266,7 @@ public class BotChatService : IBotChatService
             .FirstOrDefault(x => x.SessionIndex == sessionIndex);
         if (session == null)
         {
-            return $"Session not found: chat_id={chatId}, session_index={sessionIndex}.";
+            return $"Сессия не найдена: chat_id={chatId}, session_index={sessionIndex}.";
         }
 
         var checkpointKey = BuildSessionSummaryCheckpointKey(chatId, sessionIndex);
@@ -276,7 +276,7 @@ public class BotChatService : IBotChatService
             chatId,
             sessionIndex,
             checkpointKey);
-        return $"Re-summary requested: chat_id={chatId}, session_index={sessionIndex}.";
+        return $"Пересборка summary запрошена: chat_id={chatId}, session_index={sessionIndex}.";
     }
 
     private string ResolveReplyModel()
