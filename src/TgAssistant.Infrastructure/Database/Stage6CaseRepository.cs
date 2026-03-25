@@ -274,7 +274,7 @@ public class Stage6CaseRepository : IStage6CaseRepository
                     {row.LinkedObjectType},
                     {row.LinkedObjectId},
                     {row.LinkRole},
-                    {row.MetadataJson},
+                    {row.MetadataJson}::jsonb,
                     {row.CreatedAt}
                 )
                 ON CONFLICT (stage6_case_id, linked_object_type, linked_object_id, link_role)
