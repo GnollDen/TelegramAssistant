@@ -77,6 +77,8 @@ public class WebOpsService : IWebOpsService
         string? caseType = null,
         string? artifactType = null,
         string? query = null,
+        string? sortBy = null,
+        string? sortDirection = null,
         CancellationToken ct = default)
     {
         var allCases = (await _stage6CaseRepository.GetCasesAsync(request.CaseId, ct: ct))
@@ -88,17 +90,19 @@ public class WebOpsService : IWebOpsService
         var normalizedCaseType = EmptyToNull(caseType);
         var normalizedArtifactType = EmptyToNull(artifactType);
         var normalizedQuery = EmptyToNull(query);
+        var normalizedSortBy = NormalizeCaseQueueSortBy(sortBy);
+        var normalizedSortDirection = NormalizeSortDirection(sortDirection);
 
-        var filtered = allCases
+        var filtered = ApplyCaseQueueSorting(
+                allCases
             .Where(x => MatchesCaseQueueStatus(x, normalizedStatus))
             .Where(x => string.IsNullOrWhiteSpace(normalizedPriority) || x.Priority.Equals(normalizedPriority, StringComparison.OrdinalIgnoreCase))
             .Where(x => string.IsNullOrWhiteSpace(normalizedCaseType) || x.CaseType.Equals(normalizedCaseType, StringComparison.OrdinalIgnoreCase))
             .Where(x => string.IsNullOrWhiteSpace(normalizedArtifactType)
                         || ParseJsonStringArray(x.TargetArtifactTypesJson).Contains(normalizedArtifactType, StringComparer.OrdinalIgnoreCase))
-            .Where(x => string.IsNullOrWhiteSpace(normalizedQuery) || MatchesCaseQuery(x, normalizedQuery))
-            .OrderByDescending(x => PriorityWeight(x.Priority))
-            .ThenByDescending(x => StatusWeight(x.Status))
-            .ThenByDescending(x => x.UpdatedAt)
+            .Where(x => string.IsNullOrWhiteSpace(normalizedQuery) || MatchesCaseQuery(x, normalizedQuery)),
+                normalizedSortBy,
+                normalizedSortDirection)
             .Select(x =>
             {
                 var targetArtifacts = ParseJsonStringArray(x.TargetArtifactTypesJson);
@@ -130,6 +134,8 @@ public class WebOpsService : IWebOpsService
             CaseTypeFilter = normalizedCaseType,
             ArtifactTypeFilter = normalizedArtifactType,
             Query = normalizedQuery,
+            SortBy = normalizedSortBy,
+            SortDirection = normalizedSortDirection,
             TotalCases = allCases.Count,
             VisibleCases = filtered.Count,
             NeedsInputCases = allCases.Count(x => x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase)),
@@ -2529,6 +2535,60 @@ public class WebOpsService : IWebOpsService
             "stale" => Stage6CaseStatuses.Stale,
             _ => "active"
         };
+    }
+
+    private static string NormalizeCaseQueueSortBy(string? sortBy)
+    {
+        return sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "updated" => "updated",
+            "status" => "status",
+            "priority" => "priority",
+            "confidence" => "confidence",
+            _ => "priority"
+        };
+    }
+
+    private static string NormalizeSortDirection(string? sortDirection)
+    {
+        return sortDirection?.Trim().ToLowerInvariant() switch
+        {
+            "asc" => "asc",
+            _ => "desc"
+        };
+    }
+
+    private static IEnumerable<Stage6CaseRecord> ApplyCaseQueueSorting(
+        IEnumerable<Stage6CaseRecord> cases,
+        string sortBy,
+        string sortDirection)
+    {
+        var ordered = sortBy switch
+        {
+            "updated" => cases.OrderByDescending(x => x.UpdatedAt),
+            "status" => cases.OrderByDescending(x => StatusWeight(x.Status)).ThenByDescending(x => x.UpdatedAt),
+            "confidence" => cases.OrderByDescending(x => x.Confidence ?? -1f).ThenByDescending(x => x.UpdatedAt),
+            _ => cases
+                .OrderByDescending(x => PriorityWeight(x.Priority))
+                .ThenByDescending(x => StatusWeight(x.Status))
+                .ThenByDescending(x => x.UpdatedAt)
+        };
+
+        if (sortDirection.Equals("asc", StringComparison.OrdinalIgnoreCase))
+        {
+            return sortBy switch
+            {
+                "updated" => ordered.Reverse(),
+                "status" => cases.OrderBy(x => StatusWeight(x.Status)).ThenBy(x => x.UpdatedAt),
+                "confidence" => cases.OrderBy(x => x.Confidence ?? -1f).ThenBy(x => x.UpdatedAt),
+                _ => cases
+                    .OrderBy(x => PriorityWeight(x.Priority))
+                    .ThenBy(x => StatusWeight(x.Status))
+                    .ThenBy(x => x.UpdatedAt)
+            };
+        }
+
+        return ordered;
     }
 
     private static string NormalizeInboxStatusAsCaseStatus(string? status)

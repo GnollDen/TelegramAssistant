@@ -72,12 +72,12 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/view/conflicts" => new WebRenderResult { Route = path, Title = "Saved View: Conflicts", Html = RenderSavedView(await _webSearchService.GetSavedViewAsync(request, "conflicts", 40, ct)) },
             "/queue" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
             "/inbox" => new WebRenderResult { Route = path, Title = "Case Queue", Html = RenderCaseQueue(await ExecuteCaseQueueReadAsync(request, query, ct), request) },
-            "/case-detail" => new WebRenderResult { Route = path, Title = "Case Detail", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request) },
-            "/case-evidence" => new WebRenderResult { Route = path, Title = "Case Evidence", Html = RenderCaseEvidence(await ExecuteCaseDetailReadAsync(request, query, ct), request) },
-            "/artifact-detail" => new WebRenderResult { Route = path, Title = "Artifact Detail", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request) },
-            "/case-action" => new WebRenderResult { Route = path, Title = "Case Action", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request) },
-            "/clarification-answer" => new WebRenderResult { Route = path, Title = "Clarification Answer", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request) },
-            "/artifact-action" => new WebRenderResult { Route = path, Title = "Artifact Action", Html = RenderArtifactAction(await ExecuteArtifactActionAsync(request, query, ct), request) },
+            "/case-detail" => new WebRenderResult { Route = path, Title = "Case Detail", Html = RenderCaseDetail(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
+            "/case-evidence" => new WebRenderResult { Route = path, Title = "Case Evidence", Html = RenderCaseEvidence(await ExecuteCaseDetailReadAsync(request, query, ct), request, query) },
+            "/artifact-detail" => new WebRenderResult { Route = path, Title = "Artifact Detail", Html = RenderArtifactDetail(await ExecuteArtifactDetailReadAsync(request, query, ct), request, query) },
+            "/case-action" => new WebRenderResult { Route = path, Title = "Case Action", Html = RenderCaseAction(await ExecuteCaseActionAsync(request, query, ct), request, query) },
+            "/clarification-answer" => new WebRenderResult { Route = path, Title = "Clarification Answer", Html = RenderClarificationAnswer(await ExecuteClarificationAnswerAsync(request, query, ct), request, query) },
+            "/artifact-action" => new WebRenderResult { Route = path, Title = "Artifact Action", Html = RenderArtifactAction(await ExecuteArtifactActionAsync(request, query, ct), request, query) },
             "/history" => new WebRenderResult { Route = path, Title = "History", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
             "/history-object" => new WebRenderResult { Route = path, Title = "Object History", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
             "/state" => new WebRenderResult { Route = path, Title = "Current State", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
@@ -90,8 +90,8 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/outcomes" => new WebRenderResult { Route = path, Title = "Outcome Trail", Html = RenderOutcomeTrail(await ExecuteOutcomeTrailReadAsync(request, query, ct)) },
             "/offline-events" => new WebRenderResult { Route = path, Title = "Offline Events", Html = RenderOfflineEvents(await _webReadService.GetOfflineEventsAsync(request, ct)) },
             "/review" => new WebRenderResult { Route = path, Title = "Review", Html = RenderReviewBoard(await _webReviewService.GetBoardAsync(request, ct), request) },
-            "/review-action" => new WebRenderResult { Route = path, Title = "Review Action", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request) },
-            "/review-edit-period" => new WebRenderResult { Route = path, Title = "Edit Period", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request) },
+            "/review-action" => new WebRenderResult { Route = path, Title = "Review Action", Html = RenderReviewAction(await ExecuteReviewActionAsync(request, query, ct), request, query) },
+            "/review-edit-period" => new WebRenderResult { Route = path, Title = "Edit Period", Html = RenderReviewAction(await ExecutePeriodEditAsync(request, query, ct), request, query) },
             "/ops-budget" => new WebRenderResult { Route = path, Title = "Ops Budget", Html = RenderOpsBudget(await ExecuteOpsBudgetReadAsync(query, ct), query) },
             "/ops-eval" => new WebRenderResult { Route = path, Title = "Ops Eval", Html = RenderOpsEval(await ExecuteOpsEvalReadAsync(query, ct), query) },
             "/ops-ab-candidates" => new WebRenderResult { Route = path, Title = "Ops A/B Candidates", Html = RenderOpsAbCandidates(await ExecuteOpsAbCandidatesReadAsync(request, query, ct), query) },
@@ -126,6 +126,8 @@ public class WebRouteRenderer : IWebRouteRenderer
             caseType: EmptyToNull(GetQuery(query, "caseType")),
             artifactType: EmptyToNull(GetQuery(query, "artifactType")),
             query: EmptyToNull(GetQuery(query, "q")),
+            sortBy: EmptyToNull(GetQuery(query, "sortBy")),
+            sortDirection: EmptyToNull(GetQuery(query, "sortDirection")),
             ct: ct);
     }
 
@@ -162,12 +164,26 @@ public class WebRouteRenderer : IWebRouteRenderer
             };
         }
 
+        var action = EmptyToNull(GetQuery(query, "action")) ?? string.Empty;
+        if (RequiresCaseActionConfirmation(action)
+            && !IsConfirmationAccepted(query))
+        {
+            return new WebStage6CaseActionResult
+            {
+                Success = false,
+                Stage6CaseId = caseId,
+                Action = action,
+                Message = $"Confirmation required for '{action}' action.",
+                RequiresConfirmation = true
+            };
+        }
+
         return await _webOpsService.ApplyCaseActionAsync(new WebStage6CaseActionRequest
         {
             ScopeCaseId = request.CaseId,
             ChatId = request.ChatId,
             Stage6CaseId = caseId,
-            Action = EmptyToNull(GetQuery(query, "action")) ?? string.Empty,
+            Action = action,
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
             Reason = EmptyToNull(GetQuery(query, "reason")),
             Note = EmptyToNull(GetQuery(query, "note")),
@@ -194,13 +210,27 @@ public class WebRouteRenderer : IWebRouteRenderer
             };
         }
 
+        var answer = EmptyToNull(GetQuery(query, "answer")) ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(answer)
+            && !IsConfirmationAccepted(query))
+        {
+            return new WebStage6ClarificationAnswerResult
+            {
+                Success = false,
+                Stage6CaseId = caseId,
+                Message = "Confirmation required before submitting clarification answer.",
+                AnswerValue = answer,
+                RequiresConfirmation = true
+            };
+        }
+
         return await _webOpsService.ApplyClarificationAnswerAsync(new WebStage6ClarificationAnswerRequest
         {
             ScopeCaseId = request.CaseId,
             ChatId = request.ChatId,
             Stage6CaseId = caseId,
             AnswerType = EmptyToNull(GetQuery(query, "answerType")) ?? "text",
-            AnswerValue = EmptyToNull(GetQuery(query, "answer")) ?? string.Empty,
+            AnswerValue = answer,
             SourceClass = EmptyToNull(GetQuery(query, "sourceClass")) ?? "operator_web",
             AnswerConfidence = ParseNullableSingle(GetQuery(query, "answerConfidence")) ?? 0.8f,
             MarkResolved = !string.Equals(EmptyToNull(GetQuery(query, "markResolved")), "false", StringComparison.OrdinalIgnoreCase),
@@ -259,13 +289,28 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private async Task<WebReviewActionResult> ExecuteReviewActionAsync(WebReadRequest request, IReadOnlyDictionary<string, string> query, CancellationToken ct)
     {
+        var action = GetQuery(query, "action");
+        if (RequiresReviewActionConfirmation(action)
+            && !IsConfirmationAccepted(query))
+        {
+            return new WebReviewActionResult
+            {
+                Success = false,
+                ObjectType = GetQuery(query, "objectType"),
+                ObjectId = GetQuery(query, "objectId"),
+                Action = action,
+                Message = $"Confirmation required for '{action}' action.",
+                RequiresConfirmation = true
+            };
+        }
+
         return await _webReviewService.ApplyActionAsync(new WebReviewActionRequest
         {
             CaseId = request.CaseId,
             ChatId = request.ChatId,
             ObjectType = GetQuery(query, "objectType"),
             ObjectId = GetQuery(query, "objectId"),
-            Action = GetQuery(query, "action"),
+            Action = action,
             Actor = string.IsNullOrWhiteSpace(GetQuery(query, "actor")) ? request.Actor : GetQuery(query, "actor"),
             Reason = EmptyToNull(GetQuery(query, "reason"))
         }, ct);
@@ -527,28 +572,75 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderCaseQueue(Stage6CaseQueueReadModel model, WebReadRequest request)
     {
         var sb = CreateShell("Case Queue");
-        var activeLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" });
-        var needsInputLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.NeedsUserInput });
-        var readyLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.Ready });
-        var blockingLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["priority"] = "blocking" });
-        var allLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "all" });
+        var currentQueuePath = BuildQueueScopedPath(
+            request,
+            model.StatusFilter,
+            model.PriorityFilter,
+            model.CaseTypeFilter,
+            model.ArtifactTypeFilter,
+            model.Query,
+            model.SortBy,
+            model.SortDirection);
+        var activeLink = BuildQueueScopedPath(request, "active", null, null, null, null, model.SortBy, model.SortDirection);
+        var needsInputLink = BuildQueueScopedPath(request, Stage6CaseStatuses.NeedsUserInput, null, null, null, null, model.SortBy, model.SortDirection);
+        var readyLink = BuildQueueScopedPath(request, Stage6CaseStatuses.Ready, null, null, null, null, model.SortBy, model.SortDirection);
+        var blockingLink = BuildQueueScopedPath(request, model.StatusFilter, "blocking", null, null, null, model.SortBy, model.SortDirection);
+        var allLink = BuildQueueScopedPath(request, "active", null, null, null, null, "priority", "desc");
 
         sb.AppendLine("<h1>Stage 6 Queue</h1>");
         sb.AppendLine($"<p>visible={model.VisibleCases} of total={model.TotalCases} | needs-input={model.NeedsInputCases} | ready={model.ReadyCases} | stale={model.StaleCases} | resolved={model.ResolvedCases}</p>");
-        sb.AppendLine($"<p>scope: case={request.CaseId}, chat={request.ChatId}</p>");
-        sb.AppendLine("<section><h2>Filters</h2>");
+        sb.AppendLine($"<p>scope: case={request.CaseId}, chat={request.ChatId} | sort={E(model.SortBy)}:{E(model.SortDirection)}</p>");
+        sb.AppendLine("<section><h2>Triage Controls</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
         sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
         sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
-        sb.AppendLine($"<label>status <input name='status' value='{E(model.StatusFilter)}'></label> ");
-        sb.AppendLine($"<label>priority <input name='priority' value='{E(model.PriorityFilter ?? string.Empty)}'></label> ");
-        sb.AppendLine($"<label>caseType <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}'></label> ");
-        sb.AppendLine($"<label>artifactType <input name='artifactType' value='{E(model.ArtifactTypeFilter ?? string.Empty)}'></label> ");
-        sb.AppendLine($"<label>q <input name='q' value='{E(model.Query ?? string.Empty)}'></label> ");
+        sb.AppendLine("<label>status <select name='status'>");
+        RenderOption(sb, "active", model.StatusFilter);
+        RenderOption(sb, "all", model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.NeedsUserInput, model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.Ready, model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.New, model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.Stale, model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.Resolved, model.StatusFilter);
+        RenderOption(sb, Stage6CaseStatuses.Rejected, model.StatusFilter);
+        sb.AppendLine("</select></label> ");
+        sb.AppendLine("<label>priority <select name='priority'>");
+        RenderOption(sb, string.Empty, "all", model.PriorityFilter);
+        RenderOption(sb, "blocking", "blocking", model.PriorityFilter);
+        RenderOption(sb, "important", "important", model.PriorityFilter);
+        RenderOption(sb, "optional", "optional", model.PriorityFilter);
+        sb.AppendLine("</select></label> ");
+        sb.AppendLine($"<label>caseType <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}' placeholder='needs_review'></label> ");
+        sb.AppendLine("<label>artifactType <select name='artifactType'>");
+        RenderOption(sb, string.Empty, "all", model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Dossier, Stage6ArtifactTypes.Dossier, model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.CurrentState, Stage6ArtifactTypes.CurrentState, model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Strategy, Stage6ArtifactTypes.Strategy, model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Draft, Stage6ArtifactTypes.Draft, model.ArtifactTypeFilter);
+        RenderOption(sb, Stage6ArtifactTypes.Review, Stage6ArtifactTypes.Review, model.ArtifactTypeFilter);
+        sb.AppendLine("</select></label> ");
+        sb.AppendLine($"<label>q <input name='q' value='{E(model.Query ?? string.Empty)}' placeholder='text/type/object'></label> ");
+        sb.AppendLine("<label>sortBy <select name='sortBy'>");
+        RenderOption(sb, "priority", model.SortBy);
+        RenderOption(sb, "updated", model.SortBy);
+        RenderOption(sb, "status", model.SortBy);
+        RenderOption(sb, "confidence", model.SortBy);
+        sb.AppendLine("</select></label> ");
+        sb.AppendLine("<label>direction <select name='sortDirection'>");
+        RenderOption(sb, "desc", model.SortDirection);
+        RenderOption(sb, "asc", model.SortDirection);
+        sb.AppendLine("</select></label> ");
         sb.AppendLine("<button type='submit'>apply</button>");
+        sb.AppendLine($" <a href='{E(allLink)}'>reset</a>");
         sb.AppendLine("</form>");
-        sb.AppendLine($"<p>common filters: <a href='{E(activeLink)}'>active</a> | <a href='{E(needsInputLink)}'>needs input</a> | <a href='{E(readyLink)}'>ready</a> | <a href='{E(blockingLink)}'>blocking</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>state work</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft work</a> | <a href='{E(allLink)}'>all</a></p>");
-        sb.AppendLine($"<p>artifact views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
+        RenderStateCallout(
+            sb,
+            "info",
+            "Working set",
+            $"status={model.StatusFilter}, priority={model.PriorityFilter ?? "all"}, caseType={model.CaseTypeFilter ?? "all"}, artifact={model.ArtifactTypeFilter ?? "all"}, q={model.Query ?? "-"}, order={model.SortBy}/{model.SortDirection}",
+            ("Reset filters", allLink));
+        sb.AppendLine($"<p>common filters: <a href='{E(activeLink)}'>active</a> | <a href='{E(needsInputLink)}'>needs input</a> | <a href='{E(readyLink)}'>ready</a> | <a href='{E(blockingLink)}'>blocking</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.CurrentState, null, model.SortBy, model.SortDirection))}'>state work</a> | <a href='{E(BuildQueueScopedPath(request, model.StatusFilter, null, null, Stage6ArtifactTypes.Draft, null, model.SortBy, model.SortDirection))}'>draft work</a> | <a href='{E(allLink)}'>default</a></p>");
+        sb.AppendLine($"<p>artifact views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier, ["returnTo"] = currentQueuePath }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState, ["returnTo"] = currentQueuePath }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy, ["returnTo"] = currentQueuePath }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft, ["returnTo"] = currentQueuePath }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review, ["returnTo"] = currentQueuePath }))}'>review</a></p>");
         sb.AppendLine("</section>");
 
         var topNeedsInput = model.Cases
@@ -567,25 +659,46 @@ public class WebRouteRenderer : IWebRouteRenderer
             .Take(30)
             .ToList();
 
-        RenderQueueSection(sb, "Needs Input", topNeedsInput, request);
-        RenderQueueSection(sb, "Ready / New", topReady, request);
-        RenderQueueSection(sb, "Other", topOther, request);
-
         if (model.Cases.Count == 0)
         {
-            sb.AppendLine("<p>No Stage 6 cases matched the current filter.</p>");
+            RenderStateCallout(
+                sb,
+                "empty",
+                "No matching cases",
+                "Nothing matched the current queue filters. Remove the text filter, widen status scope, or reset to the default queue.",
+                ("Reset filters", allLink),
+                ("Open active queue", activeLink));
+        }
+        else
+        {
+            RenderQueueSection(sb, $"Needs Input ({topNeedsInput.Count})", topNeedsInput, request, currentQueuePath);
+            RenderQueueSection(sb, $"Ready / New ({topReady.Count})", topReady, request, currentQueuePath);
+            RenderQueueSection(sb, $"Other ({topOther.Count})", topOther, request, currentQueuePath);
+        }
+
+        if (model.TotalCases == 0)
+        {
+            RenderStateCallout(
+                sb,
+                "empty",
+                "Queue is empty",
+                "There are no Stage 6 cases for this scope yet. This usually means upstream processing has not produced reviewable cases.",
+                ("Open dashboard", BuildScopedPath("/dashboard", request)));
         }
 
         return CloseShell(sb);
     }
 
-    private static string RenderCaseDetail(Stage6CaseDetailReadModel model, WebReadRequest request)
+    private static string RenderCaseDetail(Stage6CaseDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Case Detail");
         sb.AppendLine("<h1>Case Detail</h1>");
         if (!model.Exists)
         {
+            sb.AppendLine("<section><h2>Case Not Found</h2>");
             sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
+            sb.AppendLine("</section>");
             return CloseShell(sb);
         }
 
@@ -825,7 +938,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
-    private static string RenderArtifactDetail(Stage6ArtifactDetailReadModel model, WebReadRequest request)
+    private static string RenderArtifactDetail(Stage6ArtifactDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Artifact Detail");
         sb.AppendLine($"<h1>Artifact Detail: {E(model.ArtifactType)}</h1>");
@@ -833,6 +946,12 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<p>views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
         sb.AppendLine($"<p>status={E(model.Status)} reason={E(model.Reason ?? "-")}</p>");
         sb.AppendLine($"<p>summary={E(model.Summary)}</p>");
+        if (!model.Exists)
+        {
+            sb.AppendLine("<section><h2>Artifact Unavailable</h2>");
+            sb.AppendLine("<p>No current artifact payload is available yet. You can return to queue or request refresh when source evidence becomes available.</p>");
+            sb.AppendLine("</section>");
+        }
         sb.AppendLine($"<p>confidence={E(model.ConfidenceLabel ?? "-")} payload={E(model.PayloadObjectType ?? "-")}:{E(model.PayloadObjectId ?? "-")}</p>");
         sb.AppendLine($"<p>generated={E(model.GeneratedAt?.ToString("u") ?? "-")} refreshed={E(model.RefreshedAt?.ToString("u") ?? "-")} latest_evidence={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
         var refreshLink = BuildScopedPath("/artifact-action", request, new Dictionary<string, string?>
@@ -886,7 +1005,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
-    private static string RenderCaseEvidence(Stage6CaseDetailReadModel model, WebReadRequest request)
+    private static string RenderCaseEvidence(Stage6CaseDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Case Evidence");
         sb.AppendLine("<h1>Case Evidence Drill-Down</h1>");
@@ -942,30 +1061,80 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
-    private static string RenderCaseAction(WebStage6CaseActionResult result, WebReadRequest request)
+    private static string RenderCaseAction(WebStage6CaseActionResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Case Action");
+        var returnTo = ResolveReturnToPath(query, request);
+        var detailLink = result.Stage6CaseId == Guid.Empty
+            ? string.Empty
+            : BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
+            {
+                ["caseId"] = result.Stage6CaseId.ToString(),
+                ["returnTo"] = returnTo
+            });
         sb.AppendLine("<h1>Case Action</h1>");
-        sb.AppendLine($"<p>success={result.Success} action={E(result.Action)} case={result.Stage6CaseId}</p>");
-        sb.AppendLine($"<p>{E(result.Message)}</p>");
+        if (result.RequiresConfirmation)
+        {
+            var proceed = BuildPathFromCurrentQuery("/case-action", query, new Dictionary<string, string?> { ["confirm"] = "1" });
+            RenderStateCallout(
+                sb,
+                "warning",
+                "Confirmation required",
+                string.IsNullOrWhiteSpace(result.Message) ? "This action changes case state." : result.Message,
+                ("Confirm action", proceed),
+                ("Cancel", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
+            return CloseShell(sb);
+        }
+
+        RenderStateCallout(
+            sb,
+            result.Success ? "success" : "error",
+            result.Success ? "Case action applied" : "Case action failed",
+            $"action={result.Action}, case={result.Stage6CaseId}. {result.Message}",
+            ("Back to queue", returnTo));
         if (result.RefreshedArtifactTypes.Count > 0)
         {
             sb.AppendLine($"<p>refreshed artifacts: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
         }
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "all" }))}'>open queue (all)</a></p>");
-        if (result.Stage6CaseId != Guid.Empty)
+        if (!string.IsNullOrWhiteSpace(detailLink))
         {
-            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-detail", request, new Dictionary<string, string?> { ["caseId"] = result.Stage6CaseId.ToString() }))}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(detailLink)}'>back to case detail</a></p>");
         }
         return CloseShell(sb);
     }
 
-    private static string RenderClarificationAnswer(WebStage6ClarificationAnswerResult result, WebReadRequest request)
+    private static string RenderClarificationAnswer(WebStage6ClarificationAnswerResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Clarification Answer");
+        var returnTo = ResolveReturnToPath(query, request);
+        var detailLink = result.Stage6CaseId == Guid.Empty
+            ? string.Empty
+            : BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
+            {
+                ["caseId"] = result.Stage6CaseId.ToString(),
+                ["returnTo"] = returnTo
+            });
         sb.AppendLine("<h1>Clarification Answer</h1>");
-        sb.AppendLine($"<p>success={result.Success} case={result.Stage6CaseId} question={E(result.QuestionId?.ToString() ?? "-")}</p>");
-        sb.AppendLine($"<p>{E(result.Message)}</p>");
+        if (result.RequiresConfirmation)
+        {
+            var proceed = BuildPathFromCurrentQuery("/clarification-answer", query, new Dictionary<string, string?> { ["confirm"] = "1" });
+            RenderStateCallout(
+                sb,
+                "warning",
+                "Submit this answer?",
+                "The answer will be recorded and the case may be marked resolved.",
+                ("Confirm answer", proceed),
+                ("Cancel", string.IsNullOrWhiteSpace(detailLink) ? returnTo : detailLink));
+            sb.AppendLine($"<p>answer preview: {E(BuildSnippet(result.AnswerValue, 220))}</p>");
+            return CloseShell(sb);
+        }
+
+        RenderStateCallout(
+            sb,
+            result.Success ? "success" : "error",
+            result.Success ? "Clarification answer recorded" : "Clarification answer failed",
+            $"case={result.Stage6CaseId}, question={result.QuestionId?.ToString() ?? "-"}. {result.Message}",
+            ("Back to queue", returnTo));
         if (!string.IsNullOrWhiteSpace(result.QuestionText))
         {
             sb.AppendLine($"<p>question: {E(result.QuestionText)}</p>");
@@ -979,24 +1148,27 @@ public class WebRouteRenderer : IWebRouteRenderer
         {
             sb.AppendLine($"<p>artifacts marked stale: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
         }
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.NeedsUserInput }))}'>open queue (needs input)</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a></p>");
-        if (result.Stage6CaseId != Guid.Empty)
+        if (!string.IsNullOrWhiteSpace(detailLink))
         {
-            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-detail", request, new Dictionary<string, string?> { ["caseId"] = result.Stage6CaseId.ToString() }))}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(detailLink)}'>back to case detail</a></p>");
         }
         return CloseShell(sb);
     }
 
-    private static string RenderArtifactAction(WebStage6ArtifactActionResult result, WebReadRequest request)
+    private static string RenderArtifactAction(WebStage6ArtifactActionResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Artifact Action");
+        var returnTo = ResolveReturnToPath(query, request);
         sb.AppendLine("<h1>Artifact Action</h1>");
-        sb.AppendLine($"<p>success={result.Success} action={E(result.Action)} artifact={E(result.ArtifactType)}</p>");
-        sb.AppendLine($"<p>{E(result.Message)}</p>");
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a></p>");
+        RenderStateCallout(
+            sb,
+            result.Success ? "success" : "error",
+            result.Success ? "Artifact action applied" : "Artifact action failed",
+            $"action={result.Action}, artifact={result.ArtifactType}. {result.Message}",
+            ("Back to queue", returnTo));
         if (!string.IsNullOrWhiteSpace(result.ArtifactType))
         {
-            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = result.ArtifactType }))}'>open artifact detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = result.ArtifactType, ["returnTo"] = returnTo }))}'>open artifact detail</a></p>");
         }
         return CloseShell(sb);
     }
@@ -1005,12 +1177,13 @@ public class WebRouteRenderer : IWebRouteRenderer
         StringBuilder sb,
         string title,
         IReadOnlyCollection<Stage6CaseQueueItemReadModel> items,
-        WebReadRequest request)
+        WebReadRequest request,
+        string currentQueuePath)
     {
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
         foreach (var item in items)
         {
-            RenderQueueItemCard(sb, item, request);
+            RenderQueueItemCard(sb, item, request, currentQueuePath);
         }
 
         if (items.Count == 0)
@@ -1021,7 +1194,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("</section>");
     }
 
-    private static void RenderQueueItemCard(StringBuilder sb, Stage6CaseQueueItemReadModel item, WebReadRequest request)
+    private static void RenderQueueItemCard(StringBuilder sb, Stage6CaseQueueItemReadModel item, WebReadRequest request, string currentQueuePath)
     {
         var objectTrail = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
         {
@@ -1030,22 +1203,26 @@ public class WebRouteRenderer : IWebRouteRenderer
         });
         var detailLink = BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
         {
-            ["caseId"] = item.Id.ToString()
+            ["caseId"] = item.Id.ToString(),
+            ["returnTo"] = currentQueuePath
         });
         var resolveLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
         {
             ["caseId"] = item.Id.ToString(),
-            ["action"] = "resolve"
+            ["action"] = "resolve",
+            ["returnTo"] = currentQueuePath
         });
         var rejectLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
         {
             ["caseId"] = item.Id.ToString(),
-            ["action"] = "reject"
+            ["action"] = "reject",
+            ["returnTo"] = currentQueuePath
         });
         var refreshLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
         {
             ["caseId"] = item.Id.ToString(),
-            ["action"] = "refresh"
+            ["action"] = "refresh",
+            ["returnTo"] = currentQueuePath
         });
 
         sb.AppendLine("<article>");
@@ -1063,15 +1240,16 @@ public class WebRouteRenderer : IWebRouteRenderer
         var detailActions = new List<string>
         {
             $"<a href='{E(detailLink)}'>open case</a>",
-            $"<a href='{E(resolveLink)}'>resolve</a>",
-            $"<a href='{E(rejectLink)}'>reject</a>",
+            $"<a href='{E(resolveLink)}'>resolve (confirm)</a>",
+            $"<a href='{E(rejectLink)}'>reject (confirm)</a>",
             $"<a href='{E(refreshLink)}'>refresh</a>"
         };
         if (item.TargetArtifactTypes.Count > 0)
         {
             var artifactLink = BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?>
             {
-                ["artifactType"] = item.TargetArtifactTypes[0]
+                ["artifactType"] = item.TargetArtifactTypes[0],
+                ["returnTo"] = currentQueuePath
             });
             detailActions.Add($"<a href='{E(artifactLink)}'>open artifact</a>");
         }
@@ -1526,7 +1704,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p><strong>suggested:</strong> {E(card.SuggestedInterpretation)}</p>");
             sb.AppendLine($"<p><strong>context:</strong> {E(card.LinkedContext)}</p>");
             sb.AppendLine($"<p><strong>confidence:</strong> {(card.Confidence.HasValue ? card.Confidence.Value.ToString("0.00") : "-")}</p>");
-            sb.AppendLine($"<p><a href='{E(confirm)}'>confirm</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(defer)}'>defer</a> | <a href='{E(trail)}'>history trail</a></p>");
+            sb.AppendLine($"<p><a href='{E(confirm)}'>confirm (confirm)</a> | <a href='{E(reject)}'>reject (confirm)</a> | <a href='{E(defer)}'>defer</a> | <a href='{E(trail)}'>history trail</a></p>");
 
             if (card.CanEdit && card.ObjectType == "period")
             {
@@ -1540,10 +1718,26 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
-    private static string RenderReviewAction(WebReviewActionResult result, WebReadRequest request)
+    private static string RenderReviewAction(WebReviewActionResult result, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Review Action");
         sb.AppendLine("<h1>Review Action</h1>");
+        if (result.RequiresConfirmation)
+        {
+            var proceed = BuildScopedPath("/review-action", request, new Dictionary<string, string?>
+            {
+                ["objectType"] = result.ObjectType,
+                ["objectId"] = result.ObjectId,
+                ["action"] = result.Action,
+                ["confirm"] = "1"
+            });
+            sb.AppendLine("<section><h2>Confirmation Required</h2>");
+            sb.AppendLine($"<p>{E(result.Message)}</p>");
+            sb.AppendLine($"<p><a href='{E(proceed)}'>confirm and continue</a> | <a href='/review'>cancel</a></p>");
+            sb.AppendLine("</section>");
+            return CloseShell(sb);
+        }
+
         sb.AppendLine($"<p>success: {result.Success}</p>");
         sb.AppendLine($"<p>object: {E(result.ObjectType)}:{E(result.ObjectId)}</p>");
         sb.AppendLine($"<p>action: {E(result.Action)}</p>");
@@ -1772,6 +1966,144 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
     }
 
+    private static void RenderOption(StringBuilder sb, string value, string? selected)
+    {
+        var isSelected = value.Equals(selected ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        var selectedAttribute = isSelected ? " selected" : string.Empty;
+        sb.AppendLine($"<option value='{E(value)}'{selectedAttribute}>{E(value)}</option>");
+    }
+
+    private static void RenderOption(StringBuilder sb, string value, string label, string? selected)
+    {
+        var isSelected = value.Equals(selected ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        var selectedAttribute = isSelected ? " selected" : string.Empty;
+        sb.AppendLine($"<option value='{E(value)}'{selectedAttribute}>{E(label)}</option>");
+    }
+
+    private static string BuildQueueScopedPath(
+        WebReadRequest request,
+        string? status,
+        string? priority,
+        string? caseType,
+        string? artifactType,
+        string? query,
+        string? sortBy,
+        string? sortDirection)
+    {
+        return BuildScopedPath("/inbox", request, new Dictionary<string, string?>
+        {
+            ["status"] = EmptyToNull(status),
+            ["priority"] = EmptyToNull(priority),
+            ["caseType"] = EmptyToNull(caseType),
+            ["artifactType"] = EmptyToNull(artifactType),
+            ["q"] = EmptyToNull(query),
+            ["sortBy"] = EmptyToNull(sortBy),
+            ["sortDirection"] = EmptyToNull(sortDirection)
+        });
+    }
+
+    private static string ResolveReturnToPath(IReadOnlyDictionary<string, string> query, WebReadRequest request)
+    {
+        var returnTo = EmptyToNull(GetQuery(query, "returnTo"));
+        if (!string.IsNullOrWhiteSpace(returnTo) && returnTo.StartsWith('/'))
+        {
+            return returnTo;
+        }
+
+        return BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" });
+    }
+
+    private static string BuildPathFromCurrentQuery(
+        string route,
+        IReadOnlyDictionary<string, string> currentQuery,
+        IReadOnlyDictionary<string, string?> overrides)
+    {
+        var merged = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in currentQuery)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+
+        foreach (var pair in overrides)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+
+        var parts = merged
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key) && !string.IsNullOrWhiteSpace(x.Value))
+            .Select(x => $"{UrlEncode(x.Key)}={UrlEncode(x.Value!)}")
+            .ToList();
+
+        return parts.Count == 0 ? route : $"{route}?{string.Join("&", parts)}";
+    }
+
+    private static string BuildSnippet(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxLength - 1)] + "…";
+    }
+
+    private static void RenderStateCallout(
+        StringBuilder sb,
+        string tone,
+        string title,
+        string message,
+        params (string Label, string Href)[] actions)
+    {
+        var background = tone switch
+        {
+            "success" => "#e9f8ef",
+            "warning" => "#fff7e8",
+            "error" => "#fdeeee",
+            "empty" => "#f6f8fc",
+            _ => "#eef3fb"
+        };
+
+        sb.AppendLine($"<section style='background:{background}'><h2>{E(title)}</h2><p>{E(message)}</p>");
+        if (actions.Length > 0)
+        {
+            var links = actions
+                .Where(x => !string.IsNullOrWhiteSpace(x.Href))
+                .Select(x => $"<a href='{E(x.Href)}'>{E(x.Label)}</a>")
+                .ToList();
+            if (links.Count > 0)
+            {
+                sb.AppendLine($"<p>{string.Join(" | ", links)}</p>");
+            }
+        }
+
+        sb.AppendLine("</section>");
+    }
+
+    private static bool RequiresCaseActionConfirmation(string action)
+    {
+        return action.Trim().ToLowerInvariant() is "resolve" or "reject";
+    }
+
+    private static bool RequiresReviewActionConfirmation(string action)
+    {
+        return action.Trim().ToLowerInvariant() is "confirm" or "reject";
+    }
+
+    private static bool IsConfirmationAccepted(IReadOnlyDictionary<string, string> query)
+    {
+        var raw = EmptyToNull(GetQuery(query, "confirm"));
+        return raw is not null
+               && (raw.Equals("1", StringComparison.OrdinalIgnoreCase)
+                   || raw.Equals("yes", StringComparison.OrdinalIgnoreCase)
+                   || raw.Equals("true", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static (string Path, Dictionary<string, string> Query) ParseRoute(string route)
     {
         if (string.IsNullOrWhiteSpace(route))
@@ -1822,7 +2154,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         return query.TryGetValue(key, out var value) ? value : string.Empty;
     }
 
-    private static string? EmptyToNull(string value)
+    private static string? EmptyToNull(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
@@ -1863,7 +2195,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         var sb = new StringBuilder();
         sb.AppendLine("<!doctype html>");
         sb.AppendLine("<html><head><meta charset='utf-8'><title>" + E(title) + "</title>");
-        sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;max-width:980px;margin:20px auto;padding:0 12px;color:#1f2937}nav a{margin-right:10px}section,article{border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin:10px 0}h1,h2,h3{margin:6px 0}</style>");
+        sb.AppendLine("<style>body{font-family:ui-sans-serif,system-ui;background:#f4f6fa;max-width:1060px;margin:16px auto;padding:0 14px 20px;color:#1f2937;line-height:1.45}nav{display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:#e9edf5;border:1px solid #d5dde9;border-radius:10px}nav a{font-size:.92rem;text-decoration:none;color:#1d3557;background:#fff;border:1px solid #ccd7ea;border-radius:8px;padding:4px 8px}section,article{background:#fff;border:1px solid #e1e7f0;border-radius:10px;padding:10px 12px;margin:10px 0}h1,h2,h3{margin:6px 0}code{background:#eef2f8;padding:1px 5px;border-radius:5px}form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}input,select,textarea,button{font:inherit}textarea{max-width:100%}</style>");
         sb.AppendLine("</head><body>");
         sb.AppendLine("<nav><a href='/dashboard'>Dashboard</a><a href='/search'>Search</a><a href='/dossier'>Dossier</a><a href='/view/blocking'>View:Blocking</a><a href='/view/current-period'>View:Current</a><a href='/view/conflicts'>View:Conflicts</a><a href='/inbox'>Queue</a><a href='/history'>History</a><a href='/state'>Current State</a><a href='/timeline'>Timeline</a><a href='/profiles'>Profiles</a><a href='/clarifications'>Clarifications</a><a href='/strategy'>Strategy</a><a href='/drafts-reviews'>Drafts/Reviews</a><a href='/outcomes'>Outcomes</a><a href='/offline-events'>Offline Events</a><a href='/review'>Review</a><a href='/ops-budget'>Ops Budget</a><a href='/ops-eval'>Ops Eval</a><a href='/ops-ab-candidates'>Ops A/B Candidates</a></nav>");
         return sb;
