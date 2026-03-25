@@ -15,7 +15,7 @@ public class TelegramSettings
 public class RedisSettings
 {
     public const string Section = "Redis";
-    public string ConnectionString { get; set; } = "localhost:6379";
+    public string ConnectionString { get; set; } = string.Empty;
     public string StreamName { get; set; } = "tg-messages";
     public string ConsumerGroup { get; set; } = "batch-workers";
     public string ConsumerName { get; set; } = "worker-1";

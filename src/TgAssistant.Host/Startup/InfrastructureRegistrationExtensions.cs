@@ -14,18 +14,27 @@ public static partial class ServiceRegistrationExtensions
 {
     public static IServiceCollection AddTelegramAssistantInfrastructure(this IServiceCollection services, IConfiguration config)
     {
+        var redisConnectionString = config.GetSection(RedisSettings.Section).GetValue<string>("ConnectionString");
+        if (string.IsNullOrWhiteSpace(redisConnectionString))
+        {
+            throw new InvalidOperationException("Redis:ConnectionString is required.");
+        }
+
         services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(
-                config.GetSection(RedisSettings.Section).GetValue<string>("ConnectionString") ?? "localhost:6379"));
+            ConnectionMultiplexer.Connect(redisConnectionString));
 
         services.AddSingleton<RedisMessageQueue>();
         services.AddSingleton<IMessageQueue>(sp => sp.GetRequiredService<RedisMessageQueue>());
 
+        var connectionString = config.GetSection(DatabaseSettings.Section).GetValue<string>("ConnectionString");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Database:ConnectionString is required.");
+        }
+
         services.AddDbContextFactory<TgAssistantDbContext>(opt =>
         {
-            var cs = config.GetSection(DatabaseSettings.Section).GetValue<string>("ConnectionString")
-                        ?? "Host=localhost;Database=tgassistant;Username=tgassistant;Password=changeme";
-            opt.UseNpgsql(cs);
+            opt.UseNpgsql(connectionString);
         });
 
         services.AddSingleton<DatabaseInitializer>();
