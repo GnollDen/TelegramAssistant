@@ -17,6 +17,7 @@ public class ClarificationOrchestrator : IClarificationOrchestrator
     private readonly IClarificationDependencyResolver _dependencyResolver;
     private readonly IRecomputeTargetPlanner _recomputeTargetPlanner;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly ILogger<ClarificationOrchestrator> _logger;
 
@@ -27,6 +28,7 @@ public class ClarificationOrchestrator : IClarificationOrchestrator
         IClarificationDependencyResolver dependencyResolver,
         IRecomputeTargetPlanner recomputeTargetPlanner,
         IDomainReviewEventRepository domainReviewEventRepository,
+        IStage6CaseRepository stage6CaseRepository,
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         ILogger<ClarificationOrchestrator> logger)
     {
@@ -36,6 +38,7 @@ public class ClarificationOrchestrator : IClarificationOrchestrator
         _dependencyResolver = dependencyResolver;
         _recomputeTargetPlanner = recomputeTargetPlanner;
         _domainReviewEventRepository = domainReviewEventRepository;
+        _stage6CaseRepository = stage6CaseRepository;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -103,9 +106,39 @@ public class ClarificationOrchestrator : IClarificationOrchestrator
 
     public async Task<IReadOnlyList<ClarificationQueueItem>> BuildQueueAsync(long caseId, CancellationToken ct = default)
     {
-        var openQuestions = await _clarificationRepository.GetQuestionsAsync(caseId, status: "open", ct: ct);
-        var inProgressQuestions = await _clarificationRepository.GetQuestionsAsync(caseId, status: "in_progress", ct: ct);
-        var candidates = openQuestions.Concat(inProgressQuestions).ToList();
+        var activeCases = await _stage6CaseRepository.GetCasesAsync(caseId, ct: ct);
+        var candidateCases = activeCases
+            .Where(x =>
+                x.Status is Stage6CaseStatuses.New or Stage6CaseStatuses.Ready or Stage6CaseStatuses.NeedsUserInput)
+            .Where(x => IsClarificationCaseType(x.CaseType))
+            .ToList();
+
+        var candidates = new List<ClarificationQuestion>();
+        foreach (var caseRecord in candidateCases)
+        {
+            if (!string.Equals(caseRecord.SourceObjectType, "clarification_question", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!Guid.TryParse(caseRecord.SourceObjectId, out var questionId))
+            {
+                continue;
+            }
+
+            var question = await _clarificationRepository.GetQuestionByIdAsync(questionId, ct);
+            if (question != null)
+            {
+                candidates.Add(question);
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            var openQuestions = await _clarificationRepository.GetQuestionsAsync(caseId, status: "open", ct: ct);
+            var inProgressQuestions = await _clarificationRepository.GetQuestionsAsync(caseId, status: "in_progress", ct: ct);
+            candidates = openQuestions.Concat(inProgressQuestions).ToList();
+        }
 
         var queueItems = new List<ClarificationQueueItem>(candidates.Count);
         foreach (var question in candidates)
@@ -129,6 +162,19 @@ public class ClarificationOrchestrator : IClarificationOrchestrator
             .OrderByDescending(x => x.QueueScore)
             .ThenByDescending(x => x.Question.CreatedAt)
             .ToList();
+    }
+
+    private static bool IsClarificationCaseType(string caseType)
+    {
+        return caseType switch
+        {
+            Stage6CaseTypes.NeedsInput => true,
+            Stage6CaseTypes.ClarificationMissingData => true,
+            Stage6CaseTypes.ClarificationAmbiguity => true,
+            Stage6CaseTypes.ClarificationEvidenceInterpretationConflict => true,
+            Stage6CaseTypes.ClarificationNextStepBlocked => true,
+            _ => false
+        };
     }
 
     public async Task<ClarificationApplyResult> ApplyAnswerAsync(ClarificationApplyRequest request, CancellationToken ct = default)

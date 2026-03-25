@@ -9,17 +9,23 @@ public class ClarificationOrchestrationVerificationService
     private readonly IClarificationOrchestrator _clarificationOrchestrator;
     private readonly IDependencyLinkRepository _dependencyLinkRepository;
     private readonly IClarificationRepository _clarificationRepository;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
+    private readonly IStage6UserContextRepository _stage6UserContextRepository;
     private readonly ILogger<ClarificationOrchestrationVerificationService> _logger;
 
     public ClarificationOrchestrationVerificationService(
         IClarificationOrchestrator clarificationOrchestrator,
         IDependencyLinkRepository dependencyLinkRepository,
         IClarificationRepository clarificationRepository,
+        IStage6CaseRepository stage6CaseRepository,
+        IStage6UserContextRepository stage6UserContextRepository,
         ILogger<ClarificationOrchestrationVerificationService> logger)
     {
         _clarificationOrchestrator = clarificationOrchestrator;
         _dependencyLinkRepository = dependencyLinkRepository;
         _clarificationRepository = clarificationRepository;
+        _stage6CaseRepository = stage6CaseRepository;
+        _stage6UserContextRepository = stage6UserContextRepository;
         _logger = logger;
     }
 
@@ -69,6 +75,13 @@ public class ClarificationOrchestrationVerificationService
         if (created.Count != 3)
         {
             throw new InvalidOperationException($"Clarification smoke failed during queue creation. Expected 3 questions, got {created.Count}.");
+        }
+
+        var createdCases = await _stage6CaseRepository.GetCasesAsync(caseId, caseType: Stage6CaseTypes.NeedsInput, ct: ct);
+        var clarificationTypedCases = await _stage6CaseRepository.GetCasesAsync(caseId, caseType: Stage6CaseTypes.ClarificationMissingData, ct: ct);
+        if (createdCases.Count + clarificationTypedCases.Count == 0)
+        {
+            throw new InvalidOperationException("Clarification smoke failed: unified stage6 case records were not created.");
         }
 
         var parent = created[0];
@@ -158,11 +171,46 @@ public class ClarificationOrchestrationVerificationService
             throw new InvalidOperationException("Clarification smoke recompute target planning check failed: required layers are missing.");
         }
 
+        var parentCase = await _stage6CaseRepository.GetBySourceAsync(
+            caseId,
+            Stage6CaseTypes.NeedsInput,
+            "clarification_question",
+            parent.Id.ToString(),
+            ct);
+        parentCase ??= await _stage6CaseRepository.GetBySourceAsync(
+            caseId,
+            Stage6CaseTypes.ClarificationAmbiguity,
+            "clarification_question",
+            parent.Id.ToString(),
+            ct);
+        if (parentCase == null || parentCase.Status != Stage6CaseStatuses.Resolved)
+        {
+            throw new InvalidOperationException("Clarification smoke failed: clarification case was not resolved through unified case lifecycle.");
+        }
+
+        var parentLinks = await _stage6CaseRepository.GetLinksAsync(parentCase.Id, ct);
+        if (!parentLinks.Any(x => x.LinkRole == Stage6CaseLinkRoles.Source && x.LinkedObjectType == "clarification_question"))
+        {
+            throw new InvalidOperationException("Clarification smoke failed: source linkage to clarification question is missing.");
+        }
+
+        if (!parentLinks.Any(x => x.LinkRole == Stage6CaseLinkRoles.ArtifactTarget))
+        {
+            throw new InvalidOperationException("Clarification smoke failed: artifact-target linkage is missing.");
+        }
+
+        var contextEntries = await _stage6UserContextRepository.GetByScopeCaseAsync(caseId, 50, ct);
+        if (!contextEntries.Any(x => x.ClarificationQuestionId == parent.Id && x.SourceKind == UserContextSourceKinds.ClarificationAnswer))
+        {
+            throw new InvalidOperationException("Clarification smoke failed: user context entry for clarification answer was not persisted.");
+        }
+
         _logger.LogInformation(
-            "Clarification smoke passed. case_id={CaseId}, queue={QueueCount}, conflicts={ConflictCount}, targets={TargetCount}",
+            "Clarification smoke passed. case_id={CaseId}, queue={QueueCount}, conflicts={ConflictCount}, targets={TargetCount}, context_entries={ContextEntries}",
             caseId,
             queue.Count,
             secondApply.Conflicts.Count,
-            secondApply.RecomputePlan.Targets.Count);
+            secondApply.RecomputePlan.Targets.Count,
+            contextEntries.Count);
     }
 }
