@@ -518,10 +518,19 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderCaseQueue(Stage6CaseQueueReadModel model, WebReadRequest request)
     {
         var sb = CreateShell("Case Queue");
+        var activeLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" });
+        var needsInputLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.NeedsUserInput });
+        var readyLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.Ready });
+        var blockingLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["priority"] = "blocking" });
+        var allLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "all" });
+
         sb.AppendLine("<h1>Stage 6 Queue</h1>");
         sb.AppendLine($"<p>visible={model.VisibleCases} of total={model.TotalCases} | needs-input={model.NeedsInputCases} | ready={model.ReadyCases} | stale={model.StaleCases} | resolved={model.ResolvedCases}</p>");
+        sb.AppendLine($"<p>scope: case={request.CaseId}, chat={request.ChatId}</p>");
         sb.AppendLine("<section><h2>Filters</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
+        sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
+        sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
         sb.AppendLine($"<label>status <input name='status' value='{E(model.StatusFilter)}'></label> ");
         sb.AppendLine($"<label>priority <input name='priority' value='{E(model.PriorityFilter ?? string.Empty)}'></label> ");
         sb.AppendLine($"<label>caseType <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}'></label> ");
@@ -529,36 +538,29 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<label>q <input name='q' value='{E(model.Query ?? string.Empty)}'></label> ");
         sb.AppendLine("<button type='submit'>apply</button>");
         sb.AppendLine("</form>");
-        sb.AppendLine("<p>common filters: <a href='/inbox?status=active'>active</a> | <a href='/inbox?status=needs_user_input'>needs input</a> | <a href='/inbox?status=ready'>ready</a> | <a href='/inbox?priority=blocking'>blocking</a> | <a href='/inbox?artifactType=current_state'>state work</a> | <a href='/inbox?artifactType=draft'>draft work</a> | <a href='/inbox?status=all'>all</a></p>");
+        sb.AppendLine($"<p>common filters: <a href='{E(activeLink)}'>active</a> | <a href='{E(needsInputLink)}'>needs input</a> | <a href='{E(readyLink)}'>ready</a> | <a href='{E(blockingLink)}'>blocking</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>state work</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft work</a> | <a href='{E(allLink)}'>all</a></p>");
+        sb.AppendLine($"<p>artifact views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
         sb.AppendLine("</section>");
 
-        foreach (var item in model.Cases.Take(80))
-        {
-            var objectTrail = $"/history-object?objectType={UrlEncode(item.SourceObjectType)}&objectId={UrlEncode(item.SourceObjectId)}";
-            var detailLink = $"/case-detail?caseId={item.Id}";
-            sb.AppendLine("<article>");
-            sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(item.CaseType)}</a> | {E(item.Priority)} | {E(item.Status)}</h3>");
-            sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
-            if (!string.IsNullOrWhiteSpace(item.QuestionText))
-            {
-                sb.AppendLine($"<p>question: {E(item.QuestionText)}</p>");
-            }
-            sb.AppendLine($"<p>confidence={FormatConfidence(item.Confidence)} evidence_refs={item.EvidenceCount} updated={E(item.UpdatedAt.ToString("u"))}</p>");
-            sb.AppendLine($"<p>source=<a href='{E(objectTrail)}'>{E(item.SourceObjectType)}:{E(item.SourceObjectId)}</a></p>");
-            sb.AppendLine($"<p>targets: {(item.TargetArtifactTypes.Count == 0 ? "-" : E(string.Join(", ", item.TargetArtifactTypes)))}</p>");
-            var detailActions = new List<string> { $"<a href='{E(detailLink)}'>open case</a>" };
-            if (item.TargetArtifactTypes.Count > 0)
-            {
-                var artifactLink = $"/artifact-detail?artifactType={UrlEncode(item.TargetArtifactTypes[0])}";
-                detailActions.Add($"<a href='{E(artifactLink)}'>open artifact</a>");
-            }
-            if (item.NeedsAnswer)
-            {
-                detailActions.Add("needs answer");
-            }
-            sb.AppendLine($"<p>{string.Join(" | ", detailActions)}</p>");
-            sb.AppendLine("</article>");
-        }
+        var topNeedsInput = model.Cases
+            .Where(x => x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase))
+            .Take(25)
+            .ToList();
+        var topReady = model.Cases
+            .Where(x => x.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase)
+                        || x.Status.Equals(Stage6CaseStatuses.New, StringComparison.OrdinalIgnoreCase))
+            .Take(25)
+            .ToList();
+        var topOther = model.Cases
+            .Where(x => !x.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase)
+                        && !x.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase)
+                        && !x.Status.Equals(Stage6CaseStatuses.New, StringComparison.OrdinalIgnoreCase))
+            .Take(30)
+            .ToList();
+
+        RenderQueueSection(sb, "Needs Input", topNeedsInput, request);
+        RenderQueueSection(sb, "Ready / New", topReady, request);
+        RenderQueueSection(sb, "Other", topOther, request);
 
         if (model.Cases.Count == 0)
         {
@@ -578,6 +580,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             return CloseShell(sb);
         }
 
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
         sb.AppendLine($"<p>id={model.Id}</p>");
         sb.AppendLine($"<p>type={E(model.CaseType)} subtype={E(model.CaseSubtype ?? "-")} status={E(model.Status)} priority={E(model.Priority)} conf={FormatConfidence(model.Confidence)}</p>");
         sb.AppendLine($"<p>reason: {E(model.ReasonSummary)}</p>");
@@ -607,10 +610,18 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("</section>");
 
         sb.AppendLine("<section><h2>Artifacts</h2>");
+        sb.AppendLine($"<p>quick views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
         foreach (var artifact in model.Artifacts)
         {
-            var detailLink = $"/artifact-detail?artifactType={UrlEncode(artifact.ArtifactType)}";
-            var refreshLink = $"/artifact-action?artifactType={UrlEncode(artifact.ArtifactType)}&action=refresh";
+            var detailLink = BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?>
+            {
+                ["artifactType"] = artifact.ArtifactType
+            });
+            var refreshLink = BuildScopedPath("/artifact-action", request, new Dictionary<string, string?>
+            {
+                ["artifactType"] = artifact.ArtifactType,
+                ["action"] = "refresh"
+            });
             sb.AppendLine($"<div>{E(artifact.ArtifactType)} | status={E(artifact.Status)} | reason={E(artifact.Reason ?? "-")} | conf={E(artifact.ConfidenceLabel ?? "-")} | {E(artifact.Summary)} | <a href='{E(detailLink)}'>detail</a> | <a href='{E(refreshLink)}'>refresh</a></div>");
         }
         if (model.Artifacts.Count == 0)
@@ -631,11 +642,25 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("</section>");
 
         sb.AppendLine("<section><h2>Actions</h2>");
-        var resolve = $"/case-action?caseId={model.Id}&action=resolve";
-        var reject = $"/case-action?caseId={model.Id}&action=reject";
-        var refresh = $"/case-action?caseId={model.Id}&action=refresh";
+        var resolve = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = model.Id.ToString(),
+            ["action"] = "resolve"
+        });
+        var reject = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = model.Id.ToString(),
+            ["action"] = "reject"
+        });
+        var refresh = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = model.Id.ToString(),
+            ["action"] = "refresh"
+        });
         sb.AppendLine($"<p><a href='{E(resolve)}'>resolve</a> | <a href='{E(reject)}'>reject</a> | <a href='{E(refresh)}'>refresh</a></p>");
         sb.AppendLine("<form method='get' action='/case-action'>");
+        sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
+        sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
         sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
         sb.AppendLine("<input type='hidden' name='action' value='annotate'>");
         sb.AppendLine("<label>annotation <input name='note' value=''></label> ");
@@ -661,6 +686,8 @@ public class WebRouteRenderer : IWebRouteRenderer
                 }
             }
             sb.AppendLine("<form method='get' action='/clarification-answer'>");
+            sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
+            sb.AppendLine($"<input type='hidden' name='chatId' value='{E(request.ChatId.ToString())}'>");
             sb.AppendLine($"<input type='hidden' name='caseId' value='{E(model.Id.ToString())}'>");
             sb.AppendLine("<label>answer <input name='answer' value=''></label> ");
             sb.AppendLine("<label>reason <input name='reason' value=''></label> ");
@@ -705,11 +732,17 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Artifact Detail");
         sb.AppendLine($"<h1>Artifact Detail: {E(model.ArtifactType)}</h1>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>back to queue</a></p>");
+        sb.AppendLine($"<p>views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
         sb.AppendLine($"<p>status={E(model.Status)} reason={E(model.Reason ?? "-")}</p>");
         sb.AppendLine($"<p>summary={E(model.Summary)}</p>");
         sb.AppendLine($"<p>confidence={E(model.ConfidenceLabel ?? "-")} payload={E(model.PayloadObjectType ?? "-")}:{E(model.PayloadObjectId ?? "-")}</p>");
         sb.AppendLine($"<p>generated={E(model.GeneratedAt?.ToString("u") ?? "-")} refreshed={E(model.RefreshedAt?.ToString("u") ?? "-")} latest_evidence={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
-        var refreshLink = $"/artifact-action?artifactType={UrlEncode(model.ArtifactType)}&action=refresh";
+        var refreshLink = BuildScopedPath("/artifact-action", request, new Dictionary<string, string?>
+        {
+            ["artifactType"] = model.ArtifactType,
+            ["action"] = "refresh"
+        });
         sb.AppendLine($"<p><a href='{E(refreshLink)}'>refresh artifact</a></p>");
         sb.AppendLine("<section><h2>Evidence Summary</h2>");
         foreach (var evidence in model.Evidence.Take(12))
@@ -724,7 +757,10 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<section><h2>Linked Cases</h2>");
         foreach (var item in model.LinkedCases)
         {
-            var link = $"/case-detail?caseId={item.Id}";
+            var link = BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
+            {
+                ["caseId"] = item.Id.ToString()
+            });
             sb.AppendLine($"<div><a href='{E(link)}'>{item.Id}</a> | {E(item.CaseType)} | {E(item.Status)} | {E(item.ReasonSummary)}</div>");
         }
         if (model.LinkedCases.Count == 0)
@@ -758,9 +794,10 @@ public class WebRouteRenderer : IWebRouteRenderer
         {
             sb.AppendLine($"<p>refreshed artifacts: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
         }
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "all" }))}'>open queue (all)</a></p>");
         if (result.Stage6CaseId != Guid.Empty)
         {
-            sb.AppendLine($"<p><a href='/case-detail?caseId={result.Stage6CaseId}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-detail", request, new Dictionary<string, string?> { ["caseId"] = result.Stage6CaseId.ToString() }))}'>back to case detail</a></p>");
         }
         return CloseShell(sb);
     }
@@ -784,9 +821,10 @@ public class WebRouteRenderer : IWebRouteRenderer
         {
             sb.AppendLine($"<p>artifacts marked stale: {E(string.Join(", ", result.RefreshedArtifactTypes))}</p>");
         }
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = Stage6CaseStatuses.NeedsUserInput }))}'>open queue (needs input)</a> | <a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a></p>");
         if (result.Stage6CaseId != Guid.Empty)
         {
-            sb.AppendLine($"<p><a href='/case-detail?caseId={result.Stage6CaseId}'>back to case detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-detail", request, new Dictionary<string, string?> { ["caseId"] = result.Stage6CaseId.ToString() }))}'>back to case detail</a></p>");
         }
         return CloseShell(sb);
     }
@@ -797,11 +835,96 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<h1>Artifact Action</h1>");
         sb.AppendLine($"<p>success={result.Success} action={E(result.Action)} artifact={E(result.ArtifactType)}</p>");
         sb.AppendLine($"<p>{E(result.Message)}</p>");
+        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>open queue (active)</a></p>");
         if (!string.IsNullOrWhiteSpace(result.ArtifactType))
         {
-            sb.AppendLine($"<p><a href='/artifact-detail?artifactType={UrlEncode(result.ArtifactType)}'>open artifact detail</a></p>");
+            sb.AppendLine($"<p><a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = result.ArtifactType }))}'>open artifact detail</a></p>");
         }
         return CloseShell(sb);
+    }
+
+    private static void RenderQueueSection(
+        StringBuilder sb,
+        string title,
+        IReadOnlyCollection<Stage6CaseQueueItemReadModel> items,
+        WebReadRequest request)
+    {
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var item in items)
+        {
+            RenderQueueItemCard(sb, item, request);
+        }
+
+        if (items.Count == 0)
+        {
+            sb.AppendLine("<p>No cases in this section for current filters.</p>");
+        }
+
+        sb.AppendLine("</section>");
+    }
+
+    private static void RenderQueueItemCard(StringBuilder sb, Stage6CaseQueueItemReadModel item, WebReadRequest request)
+    {
+        var objectTrail = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
+        {
+            ["objectType"] = item.SourceObjectType,
+            ["objectId"] = item.SourceObjectId
+        });
+        var detailLink = BuildScopedPath("/case-detail", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = item.Id.ToString()
+        });
+        var resolveLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = item.Id.ToString(),
+            ["action"] = "resolve"
+        });
+        var rejectLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = item.Id.ToString(),
+            ["action"] = "reject"
+        });
+        var refreshLink = BuildScopedPath("/case-action", request, new Dictionary<string, string?>
+        {
+            ["caseId"] = item.Id.ToString(),
+            ["action"] = "refresh"
+        });
+
+        sb.AppendLine("<article>");
+        sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(item.CaseType)}</a> | type={E(item.CaseType)} | priority={E(item.Priority)} | status={E(item.Status)}</h3>");
+        sb.AppendLine($"<p>reason: {E(item.ReasonSummary)}</p>");
+        if (!string.IsNullOrWhiteSpace(item.QuestionText))
+        {
+            sb.AppendLine($"<p>question: {E(item.QuestionText)}</p>");
+        }
+
+        sb.AppendLine($"<p>confidence={FormatConfidence(item.Confidence)} evidence_refs={item.EvidenceCount} updated={E(item.UpdatedAt.ToString("u"))}</p>");
+        sb.AppendLine($"<p>source=<a href='{E(objectTrail)}'>{E(item.SourceObjectType)}:{E(item.SourceObjectId)}</a></p>");
+        sb.AppendLine($"<p>targets: {(item.TargetArtifactTypes.Count == 0 ? "-" : E(string.Join(", ", item.TargetArtifactTypes)))}</p>");
+
+        var detailActions = new List<string>
+        {
+            $"<a href='{E(detailLink)}'>open case</a>",
+            $"<a href='{E(resolveLink)}'>resolve</a>",
+            $"<a href='{E(rejectLink)}'>reject</a>",
+            $"<a href='{E(refreshLink)}'>refresh</a>"
+        };
+        if (item.TargetArtifactTypes.Count > 0)
+        {
+            var artifactLink = BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?>
+            {
+                ["artifactType"] = item.TargetArtifactTypes[0]
+            });
+            detailActions.Add($"<a href='{E(artifactLink)}'>open artifact</a>");
+        }
+
+        if (item.NeedsAnswer)
+        {
+            detailActions.Add("needs answer");
+        }
+
+        sb.AppendLine($"<p>{string.Join(" | ", detailActions)}</p>");
+        sb.AppendLine("</article>");
     }
 
     private static string RenderInbox(InboxReadModel model, WebReadRequest request)
@@ -1678,5 +1801,34 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string UrlEncode(string value) => Uri.EscapeDataString(value ?? string.Empty);
     private static string FormatConfidence(float? value) => value.HasValue ? value.Value.ToString("0.00") : "-";
+    private static string BuildScopedPath(string route, WebReadRequest request, IReadOnlyDictionary<string, string?>? query = null)
+    {
+        var segments = new List<string>();
+        if (request.CaseId > 0)
+        {
+            segments.Add($"caseScopeId={UrlEncode(request.CaseId.ToString())}");
+        }
+
+        if (request.ChatId > 0)
+        {
+            segments.Add($"chatId={UrlEncode(request.ChatId.ToString())}");
+        }
+
+        if (query != null)
+        {
+            foreach (var pair in query)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || string.IsNullOrWhiteSpace(pair.Value))
+                {
+                    continue;
+                }
+
+                segments.Add($"{UrlEncode(pair.Key)}={UrlEncode(pair.Value)}");
+            }
+        }
+
+        return segments.Count == 0 ? route : $"{route}?{string.Join("&", segments)}";
+    }
+
     private static string E(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
 }
