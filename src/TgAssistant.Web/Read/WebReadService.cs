@@ -189,6 +189,26 @@ public class WebReadService : IWebReadService
         }, ct);
 
         var strategy = await GetStrategyAsync(request, ct);
+        var openQuestions = (await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .Where(x => IsOpenWorkflowStatus(x.Status))
+            .OrderByDescending(x => PriorityWeight(x.Priority))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Take(4)
+            .ToList();
+        var openConflicts = (await _inboxConflictRepository.GetConflictRecordsAsync(request.CaseId, "open", ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(4)
+            .ToList();
+        var keySignals = ParseJsonStringList(snapshot.KeySignalRefsJson, 6);
+        var mainRisks = ParseJsonStringList(snapshot.RiskRefsJson, 6);
+        var overallSignal = BuildOverallSignalStrength(snapshot.Confidence, snapshot.AmbiguityScore, openConflicts.Count);
+        var observedFacts = BuildStateObservedFacts(snapshot, keySignals, openQuestions.Count, openConflicts.Count, overallSignal);
+        var likelyInterpretation = BuildStateLikelyInterpretation(snapshot, strategy, overallSignal);
+        var uncertainties = BuildStateUncertainties(snapshot, openQuestions, openConflicts);
+        var missingInformation = BuildStateMissingInformation(openQuestions);
+
         return new CurrentStateReadModel
         {
             AsOfUtc = snapshot.AsOf,
@@ -208,9 +228,14 @@ public class WebReadService : IWebReadService
                 ["escalation_readiness"] = snapshot.EscalationReadinessScore,
                 ["external_pressure"] = snapshot.ExternalPressureScore
             },
-            KeySignals = ParseJsonStringList(snapshot.KeySignalRefsJson, 6),
-            MainRisks = ParseJsonStringList(snapshot.RiskRefsJson, 6),
-            NextMoveSummary = strategy.PrimarySummary
+            KeySignals = keySignals,
+            MainRisks = mainRisks,
+            NextMoveSummary = strategy.PrimarySummary,
+            ObservedFacts = observedFacts,
+            LikelyInterpretation = likelyInterpretation,
+            Uncertainties = uncertainties,
+            MissingInformation = missingInformation,
+            OverallSignalStrength = overallSignal
         };
     }
 
@@ -938,6 +963,193 @@ public class WebReadService : IWebReadService
             "important" => 2,
             _ => 1
         };
+    }
+
+    private static bool IsOpenWorkflowStatus(string status)
+    {
+        return status.Equals("open", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("ready", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("needs_user_input", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("review", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildOverallSignalStrength(float confidence, float ambiguity, int openConflicts)
+    {
+        if (openConflicts > 0 && ambiguity >= 0.7f)
+        {
+            return "contradictory";
+        }
+
+        if (confidence >= 0.74f && ambiguity <= 0.45f)
+        {
+            return "strong";
+        }
+
+        if (confidence >= 0.55f)
+        {
+            return "medium";
+        }
+
+        return "weak";
+    }
+
+    private static List<StateInsightReadModel> BuildStateObservedFacts(
+        StateSnapshot snapshot,
+        IReadOnlyCollection<string> keySignals,
+        int openQuestionCount,
+        int openConflictCount,
+        string overallSignal)
+    {
+        var items = new List<StateInsightReadModel>
+        {
+            new()
+            {
+                Title = "Current relationship label",
+                Detail = $"{snapshot.DynamicLabel} / {snapshot.RelationshipStatus}",
+                SignalStrength = overallSignal,
+                Evidence = $"state_snapshot:{snapshot.Id}"
+            },
+            new()
+            {
+                Title = "Communication responsiveness",
+                Detail = $"responsiveness={snapshot.ResponsivenessScore:0.00}, reciprocity={snapshot.ReciprocityScore:0.00}",
+                SignalStrength = ScoreBand(snapshot.ResponsivenessScore),
+                Evidence = "state_score:responsiveness,reciprocity"
+            },
+            new()
+            {
+                Title = "Open clarification/conflict load",
+                Detail = $"open_clarifications={openQuestionCount}, open_conflicts={openConflictCount}",
+                SignalStrength = openConflictCount > 0 ? "contradictory" : openQuestionCount > 0 ? "medium" : "weak",
+                Evidence = "clarification_and_conflict_counts"
+            }
+        };
+
+        if (keySignals.Count > 0)
+        {
+            items.Add(new StateInsightReadModel
+            {
+                Title = "Top observed signal references",
+                Detail = string.Join("; ", keySignals.Take(3)),
+                SignalStrength = overallSignal,
+                Evidence = "state_snapshot:key_signal_refs"
+            });
+        }
+
+        return items.Take(5).ToList();
+    }
+
+    private static List<StateInsightReadModel> BuildStateLikelyInterpretation(
+        StateSnapshot snapshot,
+        StrategyReadModel strategy,
+        string overallSignal)
+    {
+        var items = new List<StateInsightReadModel>
+        {
+            new()
+            {
+                Title = "Likely current posture",
+                Detail = $"High ambiguity ({snapshot.AmbiguityScore:0.00}) with confidence {snapshot.Confidence:0.00} suggests cautious interpretation, not certainty.",
+                SignalStrength = overallSignal,
+                Evidence = "state_snapshot:ambiguity,confidence"
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(strategy.PrimarySummary))
+        {
+            items.Add(new StateInsightReadModel
+            {
+                Title = "Strategy alignment",
+                Detail = strategy.PrimarySummary,
+                SignalStrength = strategy.Confidence >= 0.72f ? "strong" : strategy.Confidence >= 0.55f ? "medium" : "weak",
+                Evidence = $"strategy_record:{strategy.RecordId}"
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(snapshot.AlternativeStatus))
+        {
+            items.Add(new StateInsightReadModel
+            {
+                Title = "Alternative reading remains plausible",
+                Detail = $"Alternative status: {snapshot.AlternativeStatus}.",
+                SignalStrength = "medium",
+                Evidence = "state_snapshot:alternative_status"
+            });
+        }
+
+        return items.Take(4).ToList();
+    }
+
+    private static List<StateInsightReadModel> BuildStateUncertainties(
+        StateSnapshot snapshot,
+        IReadOnlyCollection<ClarificationQuestion> openQuestions,
+        IReadOnlyCollection<ConflictRecord> openConflicts)
+    {
+        var items = new List<StateInsightReadModel>();
+
+        if (snapshot.AmbiguityScore >= 0.62f)
+        {
+            items.Add(new StateInsightReadModel
+            {
+                Title = "High ambiguity",
+                Detail = $"Ambiguity score is {snapshot.AmbiguityScore:0.00}; interpretation confidence should be capped.",
+                SignalStrength = snapshot.AmbiguityScore >= 0.75f ? "contradictory" : "medium",
+                Evidence = "state_score:ambiguity"
+            });
+        }
+
+        items.AddRange(openConflicts.Take(2).Select(x => new StateInsightReadModel
+        {
+            Title = $"Open conflict: {x.ConflictType}",
+            Detail = x.Summary,
+            SignalStrength = x.Severity.Equals("high", StringComparison.OrdinalIgnoreCase)
+                || x.Severity.Equals("critical", StringComparison.OrdinalIgnoreCase)
+                ? "contradictory"
+                : "medium",
+            Evidence = $"conflict_record:{x.Id}"
+        }));
+
+        items.AddRange(openQuestions.Take(2).Select(x => new StateInsightReadModel
+        {
+            Title = $"Unresolved question ({x.Priority})",
+            Detail = x.QuestionText,
+            SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "contradictory" : "weak",
+            Evidence = $"clarification_question:{x.Id}"
+        }));
+
+        return items.Take(5).ToList();
+    }
+
+    private static List<StateInsightReadModel> BuildStateMissingInformation(
+        IReadOnlyCollection<ClarificationQuestion> openQuestions)
+    {
+        return openQuestions
+            .Take(3)
+            .Select(x => new StateInsightReadModel
+            {
+                Title = "Missing input",
+                Detail = x.QuestionText,
+                SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "medium" : "weak",
+                Evidence = string.IsNullOrWhiteSpace(x.WhyItMatters)
+                    ? $"clarification_question:{x.Id}"
+                    : x.WhyItMatters
+            })
+            .ToList();
+    }
+
+    private static string ScoreBand(float score)
+    {
+        if (score >= 0.75f)
+        {
+            return "strong";
+        }
+
+        if (score >= 0.55f)
+        {
+            return "medium";
+        }
+
+        return "weak";
     }
 
     private static List<string> ParseRiskLabels(string? riskJson)

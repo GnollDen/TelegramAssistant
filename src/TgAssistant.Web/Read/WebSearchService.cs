@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -131,7 +132,7 @@ public class WebSearchService : IWebSearchService
             if (!freshness.IsStale)
             {
                 var persisted = Deserialize<DossierReadModel>(artifact.PayloadJson);
-                if (persisted != null)
+                if (persisted != null && IsStructuredDossier(persisted))
                 {
                     _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
                     return persisted;
@@ -142,34 +143,45 @@ public class WebSearchService : IWebSearchService
         }
 
         var questions = (await _clarificationRepository.GetQuestionsAsync(request.CaseId, null, null, ct))
-            .Where(x => (x.ChatId == null || x.ChatId == request.ChatId)
-                        && x.Status.Equals("resolved", StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
             .OrderByDescending(x => x.UpdatedAt)
-            .Take(limit)
+            .Take(Math.Max(limit, 80))
             .ToList();
 
-        var confirmed = new List<DossierItemReadModel>();
+        var questionAnswers = new List<(ClarificationQuestion Question, ClarificationAnswer? Answer)>();
         foreach (var question in questions)
         {
             var latestAnswer = (await _clarificationRepository.GetAnswersByQuestionIdAsync(question.Id, ct))
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefault();
-            if (latestAnswer == null)
-            {
-                continue;
-            }
+            questionAnswers.Add((question, latestAnswer));
+        }
 
-            confirmed.Add(new DossierItemReadModel
+        var resolvedAnswers = questionAnswers
+            .Where(x => x.Answer != null && x.Question.Status.Equals("resolved", StringComparison.OrdinalIgnoreCase))
+            .Select(x => new { x.Question, Answer = x.Answer! })
+            .OrderByDescending(x => x.Answer.CreatedAt)
+            .ToList();
+
+        var openQuestions = questionAnswers
+            .Where(x => x.Answer == null || IsOpenWorkflowStatus(x.Question.Status))
+            .Select(x => x.Question)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToList();
+
+        var confirmed = resolvedAnswers
+            .Take(limit)
+            .Select(x => new DossierItemReadModel
             {
                 ObjectType = "clarification_answer",
-                ObjectId = latestAnswer.Id.ToString(),
-                Title = question.QuestionText,
-                Summary = latestAnswer.AnswerValue,
-                ConfidenceLabel = latestAnswer.AnswerConfidence.ToString("0.00"),
-                Link = $"/history-object?objectType=clarification_question&objectId={question.Id}",
-                UpdatedAt = latestAnswer.CreatedAt
-            });
-        }
+                ObjectId = x.Answer.Id.ToString(),
+                Title = x.Question.QuestionText,
+                Summary = x.Answer.AnswerValue,
+                ConfidenceLabel = x.Answer.AnswerConfidence.ToString("0.00"),
+                Link = $"/history-object?objectType=clarification_question&objectId={x.Question.Id}",
+                UpdatedAt = x.Answer.CreatedAt
+            })
+            .ToList();
 
         var hypotheses = (await _periodRepository.GetHypothesesByCaseAsync(request.CaseId, null, ct))
             .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
@@ -203,8 +215,220 @@ public class WebSearchService : IWebSearchService
             })
             .ToList();
 
+        var periods = (await _periodRepository.GetPeriodsByCaseAsync(request.CaseId, ct))
+            .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
+            .OrderByDescending(x => x.StartAt)
+            .Take(Math.Max(limit, 20))
+            .ToList();
+
+        var messages = (await _messageRepository.GetByChatAndPeriodAsync(
+                request.ChatId,
+                DateTime.UtcNow.AddDays(-45),
+                DateTime.UtcNow,
+                400,
+                ct))
+            .OrderByDescending(x => x.Timestamp)
+            .ToList();
+
+        var observedFacts = resolvedAnswers
+            .Take(5)
+            .Select(x => new DossierInsightReadModel
+            {
+                Title = x.Question.QuestionText,
+                Detail = x.Answer.AnswerValue,
+                SignalStrength = SignalFromConfidence(x.Answer.AnswerConfidence),
+                Evidence = $"clarification_answer:{x.Answer.Id}",
+                SourceObjectType = "clarification_answer",
+                SourceObjectId = x.Answer.Id.ToString(),
+                Link = $"/history-object?objectType=clarification_question&objectId={x.Question.Id}",
+                UpdatedAt = x.Answer.CreatedAt
+            })
+            .ToList();
+
+        if (messages.Count > 0)
+        {
+            var latestMessageAt = messages.Max(x => x.Timestamp);
+            observedFacts.Add(new DossierInsightReadModel
+            {
+                Title = "Recent chat activity window",
+                Detail = $"Observed {messages.Count} messages in the last 45 days; latest message at {latestMessageAt:yyyy-MM-dd HH:mm} UTC.",
+                SignalStrength = messages.Count >= 30 ? "strong" : messages.Count >= 12 ? "medium" : "weak",
+                Evidence = $"message_count:{messages.Count}",
+                SourceObjectType = "message",
+                SourceObjectId = messages.First().Id.ToString(),
+                Link = $"/search?objectType=period&q={Uri.EscapeDataString("current")}",
+                UpdatedAt = latestMessageAt
+            });
+        }
+
+        var relationshipRead = periods
+            .Take(4)
+            .Select(x => new DossierInsightReadModel
+            {
+                Title = x.CustomLabel ?? x.Label,
+                Detail = string.IsNullOrWhiteSpace(x.Summary)
+                    ? "Period exists but summary is sparse."
+                    : x.Summary,
+                SignalStrength = SignalFromConfidence(x.InterpretationConfidence),
+                Evidence = $"period:{x.Id}",
+                SourceObjectType = "period",
+                SourceObjectId = x.Id.ToString(),
+                Link = $"/history-object?objectType=period&objectId={x.Id}",
+                UpdatedAt = x.UpdatedAt
+            })
+            .ToList();
+
+        var notableEvents = new List<DossierInsightReadModel>();
+        notableEvents.AddRange(conflicts.Take(3).Select(x => new DossierInsightReadModel
+        {
+            Title = x.Title,
+            Detail = x.Summary,
+            SignalStrength = SignalFromConflictSeverity(x.ConfidenceLabel),
+            Evidence = $"conflict:{x.ObjectId}",
+            SourceObjectType = x.ObjectType,
+            SourceObjectId = x.ObjectId,
+            Link = x.Link,
+            UpdatedAt = x.UpdatedAt
+        }));
+        notableEvents.AddRange(resolvedAnswers.Take(2).Select(x => new DossierInsightReadModel
+        {
+            Title = "Clarification resolved",
+            Detail = $"{x.Question.QuestionText}: {x.Answer.AnswerValue}",
+            SignalStrength = SignalFromConfidence(x.Answer.AnswerConfidence),
+            Evidence = $"clarification_answer:{x.Answer.Id}",
+            SourceObjectType = "clarification_answer",
+            SourceObjectId = x.Answer.Id.ToString(),
+            Link = $"/history-object?objectType=clarification_question&objectId={x.Question.Id}",
+            UpdatedAt = x.Answer.CreatedAt
+        }));
+
+        var likelyInterpretation = hypotheses
+            .Take(4)
+            .Select(x => new DossierInsightReadModel
+            {
+                Title = x.Title,
+                Detail = x.Summary,
+                SignalStrength = SignalFromHypothesisStatus(x.ConfidenceLabel),
+                Evidence = $"hypothesis:{x.ObjectId}",
+                SourceObjectType = x.ObjectType,
+                SourceObjectId = x.ObjectId,
+                Link = x.Link,
+                UpdatedAt = x.UpdatedAt
+            })
+            .ToList();
+
+        if (likelyInterpretation.Count == 0)
+        {
+            likelyInterpretation.Add(new DossierInsightReadModel
+            {
+                Title = "Interpretation coverage is limited",
+                Detail = "Current data has few explicit hypotheses, so interpretation remains provisional.",
+                SignalStrength = "weak",
+                Evidence = "hypothesis:none",
+                Link = "/search?objectType=hypothesis",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        var uncertainties = new List<DossierInsightReadModel>();
+        uncertainties.AddRange(openQuestions.Take(4).Select(x => new DossierInsightReadModel
+        {
+            Title = x.QuestionText,
+            Detail = string.IsNullOrWhiteSpace(x.WhyItMatters)
+                ? "Open clarification without explicit rationale."
+                : x.WhyItMatters,
+            SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "contradictory" : "weak",
+            Evidence = $"clarification_question:{x.Id}",
+            SourceObjectType = "clarification_question",
+            SourceObjectId = x.Id.ToString(),
+            Link = $"/history-object?objectType=clarification_question&objectId={x.Id}",
+            UpdatedAt = x.UpdatedAt
+        }));
+        uncertainties.AddRange(conflicts
+            .Where(x => x.ConfidenceLabel.Contains("open", StringComparison.OrdinalIgnoreCase)
+                        || x.ConfidenceLabel.Contains("review", StringComparison.OrdinalIgnoreCase))
+            .Take(2)
+            .Select(x => new DossierInsightReadModel
+            {
+                Title = $"Conflict: {x.Title}",
+                Detail = x.Summary,
+                SignalStrength = "contradictory",
+                Evidence = $"conflict:{x.ObjectId}",
+                SourceObjectType = x.ObjectType,
+                SourceObjectId = x.ObjectId,
+                Link = x.Link,
+                UpdatedAt = x.UpdatedAt
+            }));
+
+        var missingInformation = openQuestions
+            .Take(4)
+            .Select(x => new DossierInsightReadModel
+            {
+                Title = "Missing clarification input",
+                Detail = x.QuestionText,
+                SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "medium" : "weak",
+                Evidence = $"clarification_question:{x.Id}",
+                SourceObjectType = "clarification_question",
+                SourceObjectId = x.Id.ToString(),
+                Link = $"/history-object?objectType=clarification_question&objectId={x.Id}",
+                UpdatedAt = x.UpdatedAt
+            })
+            .ToList();
+
+        var practicalInterpretation = new List<DossierInsightReadModel>();
+        if (uncertainties.Any(x => x.SignalStrength == "contradictory"))
+        {
+            practicalInterpretation.Add(new DossierInsightReadModel
+            {
+                Title = "Stabilize before escalation",
+                Detail = "Contradictory signals are active. Treat any strong conclusion as provisional until top conflicts are reviewed.",
+                SignalStrength = "medium",
+                Evidence = "conflict_and_uncertainty_present",
+                Link = "/view/conflicts",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        if (openQuestions.Count > 0)
+        {
+            practicalInterpretation.Add(new DossierInsightReadModel
+            {
+                Title = "Priority next step",
+                Detail = "Resolve the highest-priority clarification before refreshing strategy or draft decisions.",
+                SignalStrength = openQuestions.Any(x => x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase))
+                    ? "strong"
+                    : "medium",
+                Evidence = $"open_clarifications:{openQuestions.Count}",
+                Link = "/clarifications",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        if (practicalInterpretation.Count == 0)
+        {
+            practicalInterpretation.Add(new DossierInsightReadModel
+            {
+                Title = "Low immediate risk",
+                Detail = "No high-impact contradiction is visible in this dossier slice; continue with routine monitoring.",
+                SignalStrength = "weak",
+                Evidence = "no_blocking_signal",
+                Link = "/dashboard",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        var summary = BuildDossierSummary(observedFacts, likelyInterpretation, uncertainties, missingInformation);
+
         var model = new DossierReadModel
         {
+            Summary = summary,
+            ObservedFacts = CapByRecency(observedFacts, 6),
+            RelationshipRead = CapByRecency(relationshipRead, 5),
+            NotableEvents = CapByRecency(notableEvents, 5),
+            LikelyInterpretation = CapByRecency(likelyInterpretation, 5),
+            Uncertainties = CapByRecency(uncertainties, 5),
+            MissingInformation = CapByRecency(missingInformation, 5),
+            PracticalInterpretation = CapByRecency(practicalInterpretation, 4),
             Confirmed = confirmed,
             Hypotheses = hypotheses,
             Conflicts = conflicts
@@ -234,6 +458,93 @@ public class WebSearchService : IWebSearchService
         }, ct);
 
         return model;
+    }
+
+    private static bool IsStructuredDossier(DossierReadModel model)
+    {
+        return !string.IsNullOrWhiteSpace(model.Summary)
+               || model.ObservedFacts.Count > 0
+               || model.LikelyInterpretation.Count > 0
+               || model.Uncertainties.Count > 0
+               || model.MissingInformation.Count > 0;
+    }
+
+    private static string SignalFromConfidence(float confidence)
+    {
+        if (confidence >= 0.78f)
+        {
+            return "strong";
+        }
+
+        if (confidence >= 0.55f)
+        {
+            return "medium";
+        }
+
+        return "weak";
+    }
+
+    private static string SignalFromHypothesisStatus(string confidenceLabel)
+    {
+        if (confidenceLabel.Contains("rejected", StringComparison.OrdinalIgnoreCase)
+            || confidenceLabel.Contains("conflict", StringComparison.OrdinalIgnoreCase))
+        {
+            return "contradictory";
+        }
+
+        var marker = confidenceLabel.Split(':').LastOrDefault();
+        if (marker != null
+            && float.TryParse(marker, NumberStyles.Float, CultureInfo.InvariantCulture, out var numeric))
+        {
+            return SignalFromConfidence(numeric);
+        }
+
+        return "weak";
+    }
+
+    private static string SignalFromConflictSeverity(string confidenceLabel)
+    {
+        if (confidenceLabel.Contains("critical", StringComparison.OrdinalIgnoreCase)
+            || confidenceLabel.Contains("high", StringComparison.OrdinalIgnoreCase))
+        {
+            return "contradictory";
+        }
+
+        if (confidenceLabel.Contains("medium", StringComparison.OrdinalIgnoreCase))
+        {
+            return "medium";
+        }
+
+        return "weak";
+    }
+
+    private static bool IsOpenWorkflowStatus(string status)
+    {
+        return status.Equals("open", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("ready", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("needs_user_input", StringComparison.OrdinalIgnoreCase)
+               || status.Equals("review", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<DossierInsightReadModel> CapByRecency(
+        IEnumerable<DossierInsightReadModel> rows,
+        int max)
+    {
+        return rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.Title) && !string.IsNullOrWhiteSpace(x.Detail))
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(max)
+            .ToList();
+    }
+
+    private static string BuildDossierSummary(
+        IReadOnlyCollection<DossierInsightReadModel> observedFacts,
+        IReadOnlyCollection<DossierInsightReadModel> likelyInterpretation,
+        IReadOnlyCollection<DossierInsightReadModel> uncertainties,
+        IReadOnlyCollection<DossierInsightReadModel> missingInformation)
+    {
+        var contradictionCount = uncertainties.Count(x => x.SignalStrength == "contradictory");
+        return $"Facts={observedFacts.Count}, interpretations={likelyInterpretation.Count}, uncertainties={uncertainties.Count} (contradictory={contradictionCount}), missing={missingInformation.Count}.";
     }
 
     private static T? Deserialize<T>(string json)
