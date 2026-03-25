@@ -1,6 +1,6 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +9,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
+using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Models;
 using TgAssistant.Host.Startup;
 using TgAssistant.Web.Read;
 
@@ -77,7 +79,15 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
 
         app.MapGet("/", async (HttpContext context, CancellationToken ct) =>
         {
-            var request = CreateReadRequest(context.Request, settings);
+            var scope = await ResolveScopeAsync(context.Request, settings, ct);
+            if (!scope.IsResolved)
+            {
+                var onboardingBody = RenderScopeOnboardingHtml("/queue", context.Request, scope);
+                var html = WrapShellHtml("Нужен рабочий контекст", "/", onboardingBody, context.Request, scope);
+                return Results.Content(html, "text/html; charset=utf-8");
+            }
+
+            var request = CreateReadRequest(context.Request, settings, scope);
             var body = "<p>Предпросмотр очереди временно недоступен.</p>";
             try
             {
@@ -92,8 +102,8 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
                 body = $"<h2>Не удалось открыть очередь</h2><p>{WebUtility.HtmlEncode(ex.Message)}</p><p>Попробуйте перейти на <a href='/queue'>/queue</a>.</p>";
             }
 
-            var html = WrapShellHtml("Операторская панель", "/", body, context.Request, settings);
-            return Results.Content(html, "text/html; charset=utf-8");
+            var htmlReady = WrapShellHtml("Операторская панель", "/", body, context.Request, scope);
+            return Results.Content(htmlReady, "text/html; charset=utf-8");
         });
 
         app.MapGet("/queue", async (HttpContext context, CancellationToken ct) =>
@@ -149,7 +159,15 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
     {
         try
         {
-            var request = CreateReadRequest(context.Request, settings);
+            var scope = await ResolveScopeAsync(context.Request, settings, ct);
+            if (!scope.IsResolved)
+            {
+                var onboardingHtml = RenderScopeOnboardingHtml(route, context.Request, scope);
+                var onboardingPage = WrapShellHtml("Нужен рабочий контекст", route, onboardingHtml, context.Request, scope);
+                return Results.Content(onboardingPage, "text/html; charset=utf-8");
+            }
+
+            var request = CreateReadRequest(context.Request, settings, scope);
             var routeWithQuery = $"{route}{context.Request.QueryString}";
             var result = await GetRenderer().RenderAsync(routeWithQuery, request, ct);
             if (result is null)
@@ -159,11 +177,11 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
                     route,
                     $"<h2>Страница недоступна</h2><p>Маршрут <code>{WebUtility.HtmlEncode(route)}</code> не поддерживается.</p><p>Перейдите в <a href='/queue'>очередь</a> или на <a href='/dashboard'>панель</a>.</p>",
                     context.Request,
-                    settings));
+                    scope));
             }
 
             var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Операторская панель" : result.Title;
-            var html = WrapShellHtml(title, route, result.Html, context.Request, settings);
+            var html = WrapShellHtml(title, route, result.Html, context.Request, scope);
             return Results.Content(html, "text/html; charset=utf-8");
         }
         catch (Exception ex)
@@ -174,31 +192,79 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             var errorHtml = $"<h2>Результат временно недоступен</h2><p>Не удалось открыть страницу <code>{safeRoute}</code>.</p><p>{safeError}</p><p><a href='/queue'>Открыть очередь</a></p>";
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             return Results.Content(
-                WrapShellHtml("Временная ошибка", route, errorHtml, context.Request, settings),
+                WrapShellHtml("Временная ошибка", route, errorHtml, context.Request, ScopeResolution.Unresolved("error")),
                 "text/html; charset=utf-8");
         }
     }
 
     private IWebRouteRenderer GetRenderer() => _services.GetRequiredService<IWebRouteRenderer>();
 
-    private static WebReadRequest CreateReadRequest(HttpRequest request, WebSettings settings)
+    private async Task<ScopeResolution> ResolveScopeAsync(HttpRequest request, WebSettings settings, CancellationToken ct)
+    {
+        var hasExplicitCaseParam = request.Query.ContainsKey("caseScopeId");
+        var hasExplicitChatParam = request.Query.ContainsKey("chatId");
+        var hasExplicitScopeInput = hasExplicitCaseParam || hasExplicitChatParam;
+
+        var hasValidExplicitCase = TryReadPositiveLong(request.Query, "caseScopeId", out var explicitCaseId);
+        var hasValidExplicitChat = TryReadPositiveLong(request.Query, "chatId", out var explicitChatId);
+        if (hasValidExplicitCase && hasValidExplicitChat)
+        {
+            return ScopeResolution.Resolved(explicitCaseId, explicitChatId, "explicit");
+        }
+
+        if (hasExplicitScopeInput)
+        {
+            var invalidCandidates = await GetScopeCandidatesAsync(ct);
+            return ScopeResolution.Unresolved(
+                "Переданы неполные или невалидные параметры scope. Для web-нужен pair caseScopeId + chatId > 0.",
+                invalidCandidates);
+        }
+
+        if (settings.DefaultCaseId > 0 && settings.DefaultChatId > 0)
+        {
+            return ScopeResolution.Resolved(settings.DefaultCaseId, settings.DefaultChatId, "configured_default");
+        }
+
+        var candidates = await GetScopeCandidatesAsync(ct);
+        if (candidates.Count == 0)
+        {
+            return ScopeResolution.Unresolved(
+                "Рабочий контекст пока не найден: нет сконфигурированного default scope и нет stage6-кейсов для авто-выбора.",
+                candidates);
+        }
+
+        if (candidates.Count == 1)
+        {
+            var single = candidates[0];
+            return ScopeResolution.Resolved(single.ScopeCaseId, single.ChatId, "inferred_single", candidates);
+        }
+
+        var top = candidates[0];
+        var second = candidates[1];
+        if (top.ActiveCaseCount > second.ActiveCaseCount)
+        {
+            return ScopeResolution.Resolved(top.ScopeCaseId, top.ChatId, "inferred_top_active", candidates);
+        }
+
+        return ScopeResolution.Unresolved(
+            "Найдено несколько конкурирующих рабочих контекстов с одинаковым приоритетом. Автовыбор отключен, чтобы не открыть неверный scope.",
+            candidates);
+    }
+
+    private async Task<List<Stage6ScopeCandidate>> GetScopeCandidatesAsync(CancellationToken ct)
+    {
+        var repository = _services.GetRequiredService<IStage6CaseRepository>();
+        return await repository.GetScopeCandidatesAsync(limit: 8, ct);
+    }
+
+    private static WebReadRequest CreateReadRequest(HttpRequest request, WebSettings settings, ScopeResolution scope)
     {
         var readRequest = new WebReadRequest
         {
             Actor = settings.OperatorIdentity,
-            CaseId = settings.DefaultCaseId,
-            ChatId = settings.DefaultChatId
+            CaseId = scope.CaseId,
+            ChatId = scope.ChatId
         };
-
-        if (long.TryParse(request.Query["caseScopeId"], out var scopeCaseId))
-        {
-            readRequest.CaseId = scopeCaseId;
-        }
-
-        if (long.TryParse(request.Query["chatId"], out var chatId))
-        {
-            readRequest.ChatId = chatId;
-        }
 
         if (DateTime.TryParse(
                 request.Query["asOfUtc"],
@@ -287,12 +353,12 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             $"<html><body><h1>Нужен доступ оператора</h1><p>Передайте токен через заголовок <code>{encodedHeader}</code> или query-параметр <code>access_token</code>.</p></body></html>";
     }
 
-    private static string WrapShellHtml(string title, string activeRoute, string bodyHtml, HttpRequest request, WebSettings settings)
+    private static string WrapShellHtml(string title, string activeRoute, string bodyHtml, HttpRequest request, ScopeResolution scope)
     {
-        var queuePath = BuildNavigationPath("/queue", request, settings);
-        var casePath = BuildNavigationPath("/case-detail", request, settings);
-        var artifactPath = BuildNavigationPath("/artifact-detail", request, settings);
-        var shellPath = BuildNavigationPath("/", request, settings);
+        var queuePath = BuildNavigationPath("/queue", request, scope);
+        var casePath = BuildNavigationPath("/case-detail", request, scope);
+        var artifactPath = BuildNavigationPath("/artifact-detail", request, scope);
+        var shellPath = BuildNavigationPath("/", request, scope);
         var escapedTitle = WebUtility.HtmlEncode(title);
 
         var sb = new StringBuilder();
@@ -318,7 +384,7 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         return sb.ToString();
     }
 
-    private static string BuildNavigationPath(string route, HttpRequest request, WebSettings settings)
+    private static string BuildNavigationPath(string route, HttpRequest request, ScopeResolution scope)
     {
         var query = new List<string>();
         if (request.Query.TryGetValue("caseId", out var caseId) && !string.IsNullOrWhiteSpace(caseId))
@@ -331,21 +397,79 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             query.Add($"artifactType={WebUtility.UrlEncode(artifactType)}");
         }
 
-        if (request.Query.TryGetValue("chatId", out var chatId) && !string.IsNullOrWhiteSpace(chatId))
+        if (TryReadPositiveLong(request.Query, "caseScopeId", out var explicitCaseId))
         {
-            query.Add($"chatId={WebUtility.UrlEncode(chatId)}");
+            query.Add($"caseScopeId={explicitCaseId}");
         }
-        else if (settings.DefaultChatId > 0)
+        else if (scope.IsResolved)
         {
-            query.Add($"chatId={settings.DefaultChatId}");
+            query.Add($"caseScopeId={scope.CaseId}");
         }
 
-        if (settings.DefaultCaseId > 0)
+        if (TryReadPositiveLong(request.Query, "chatId", out var explicitChatId))
         {
-            query.Add($"caseScopeId={settings.DefaultCaseId}");
+            query.Add($"chatId={explicitChatId}");
+        }
+        else if (scope.IsResolved)
+        {
+            query.Add($"chatId={scope.ChatId}");
         }
 
         return query.Count == 0 ? route : $"{route}?{string.Join("&", query)}";
+    }
+
+    private static string RenderScopeOnboardingHtml(string route, HttpRequest request, ScopeResolution scope)
+    {
+        var sb = new StringBuilder();
+        sb.Append("<h2>Нужен рабочий контекст</h2>");
+        sb.Append("<p>Система не открывает web в техническом scope <code>case=0, chat=0</code>. Сначала выберите рабочую область.</p>");
+        sb.Append($"<p>{WebUtility.HtmlEncode(scope.Message)}</p>");
+
+        if (scope.Candidates.Count > 0)
+        {
+            sb.Append("<h3>Доступные рабочие контексты</h3><ul>");
+            foreach (var candidate in scope.Candidates)
+            {
+                var link = BuildScopedRoute(route, request, candidate.ScopeCaseId, candidate.ChatId);
+                sb.Append($"<li><a href='{WebUtility.HtmlEncode(link)}'>case={candidate.ScopeCaseId}, chat={candidate.ChatId}</a> — active={candidate.ActiveCaseCount}, total={candidate.TotalCaseCount}, updated={candidate.LastCaseUpdatedAtUtc:yyyy-MM-dd HH:mm} UTC</li>");
+            }
+
+            sb.Append("</ul>");
+        }
+
+        sb.Append("<p>Что сделать дальше: задайте <code>Web:DefaultCaseId</code> и <code>Web:DefaultChatId</code> или откройте один из доступных контекстов выше.</p>");
+        sb.Append("<details><summary>Технические детали</summary>");
+        sb.Append($"<p>route={WebUtility.HtmlEncode(route)}, resolution={WebUtility.HtmlEncode(scope.Source)}</p>");
+        sb.Append("</details>");
+        return sb.ToString();
+    }
+
+    private static string BuildScopedRoute(string route, HttpRequest request, long caseId, long chatId)
+    {
+        var segments = new List<string>
+        {
+            $"caseScopeId={caseId}",
+            $"chatId={chatId}"
+        };
+
+        foreach (var pair in request.Query)
+        {
+            if (pair.Key.Equals("caseScopeId", StringComparison.OrdinalIgnoreCase)
+                || pair.Key.Equals("chatId", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = pair.ToString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            segments.Add($"{WebUtility.UrlEncode(pair.Key)}={WebUtility.UrlEncode(value)}");
+        }
+
+        return segments.Count == 0 ? route : $"{route}?{string.Join("&", segments)}";
     }
 
     private static string RenderNavLink(string href, string label, bool active)
@@ -368,5 +492,47 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         }
 
         return normalized;
+    }
+
+    private static bool TryReadPositiveLong(IQueryCollection query, string key, out long value)
+    {
+        value = 0;
+        return query.TryGetValue(key, out var raw)
+               && long.TryParse(raw, out value)
+               && value > 0;
+    }
+
+    private sealed class ScopeResolution
+    {
+        public bool IsResolved { get; init; }
+        public long CaseId { get; init; }
+        public long ChatId { get; init; }
+        public string Source { get; init; } = "none";
+        public string Message { get; init; } = string.Empty;
+        public IReadOnlyList<Stage6ScopeCandidate> Candidates { get; init; } = [];
+
+        public static ScopeResolution Resolved(long caseId, long chatId, string source, IReadOnlyList<Stage6ScopeCandidate>? candidates = null)
+        {
+            return new ScopeResolution
+            {
+                IsResolved = true,
+                CaseId = caseId,
+                ChatId = chatId,
+                Source = source,
+                Message = "Рабочий контекст успешно определен.",
+                Candidates = candidates ?? []
+            };
+        }
+
+        public static ScopeResolution Unresolved(string message, IReadOnlyList<Stage6ScopeCandidate>? candidates = null)
+        {
+            return new ScopeResolution
+            {
+                IsResolved = false,
+                Source = "unresolved",
+                Message = message,
+                Candidates = candidates ?? []
+            };
+        }
     }
 }

@@ -440,6 +440,7 @@ public interface IStage6CaseRepository
         string? status = null,
         string? caseType = null,
         CancellationToken ct = default);
+    Task<List<Stage6ScopeCandidate>> GetScopeCandidatesAsync(int limit = 10, CancellationToken ct = default);
     Task<bool> UpdateStatusAsync(Guid id, string status, string actor, string? reason = null, CancellationToken ct = default);
     Task<Stage6CaseLink> UpsertLinkAsync(Stage6CaseLink link, CancellationToken ct = default);
     Task<List<Stage6CaseLink>> GetLinksAsync(Guid stage6CaseId, CancellationToken ct = default);
