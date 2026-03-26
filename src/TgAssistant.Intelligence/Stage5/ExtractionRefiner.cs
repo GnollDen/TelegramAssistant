@@ -357,7 +357,7 @@ public static class ExtractionRefiner
             {
                 SubjectName = signal.SubjectName,
                 Trait = ExtractionSemanticContract.CanonicalizeTrait(signal.Trait),
-                Direction = signal.Direction,
+                Direction = ExtractionSemanticContract.CanonicalizeProfileSignalDirection(signal.Direction),
                 Evidence = signal.Evidence,
                 Confidence = signal.Confidence
             })

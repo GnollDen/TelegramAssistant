@@ -53,6 +53,10 @@ Type guidance:
 - use Title Case or the normal native-script canonical form for entity names; do not emit lowercase-only person names unless the message itself clearly uses a stylized handle
 - categories, claim_type, relationship types, event types, profile traits, and observation types must be lowercase snake_case only
 - keys must be canonical: trimmed, lowercase snake_case, and reused consistently; never invent spelling variants, mixed-case forms, trailing spaces, or synonymous duplicates
+- profile_signals must report canonical ascii snake_case trait IDs (examples: emotional_attachment, anxiety, supportiveness, affection, emotional_instability, emotional_state, friendliness, support_network, helpfulness, few_friends) instead of Russian adjectives or descriptive sentences; trim whitespace and collapse duplicates before emitting
+- profile_signals.direction must be one of `positive`, `negative`, `neutral`, or `mixed`; avoid extra elaboration such as `positive towards pair programming concept` or `положительная`. When uncertain default to `neutral`.
+- Bad profile signal: {"subject_name":"Alena","trait":"ласковый","direction":"positive towards pair programming concept","evidence":"...","confidence":0.9}
+- Good profile signal: {"subject_name":"Alena","trait":"affection","direction":"positive","evidence":"...","confidence":0.9}
 
 Rules:
 - use real participant names from sender_name/text/reply_context; never use placeholders like sender, author, me, self, i
