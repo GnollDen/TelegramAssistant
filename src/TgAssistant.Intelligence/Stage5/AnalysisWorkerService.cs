@@ -524,10 +524,22 @@ public partial class AnalysisWorkerService : BackgroundService
         }
         var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([session.ChatId], ct);
         var chatSessions = sessionsByChat.GetValueOrDefault(session.ChatId) ?? [];
-        var previousSliceSummary = chatSessions
-            .FirstOrDefault(x => x.SessionIndex == session.SessionIndex - 1)
-            ?.Summary;
+        var previousSessionSummary = chatSessions
+            .FirstOrDefault(x => x.SessionIndex == session.SessionIndex - 1)?
+            .Summary;
+        var previousChunkSummary = startIndex > 0 && startIndex - 1 < chunks.Count
+            ? BuildChunkSummary(chunks[startIndex - 1], [])
+            : null;
         var sessionChunkParallelism = GetSessionChunkParallelism();
+        if (sessionChunkParallelism > 1)
+        {
+            _logger.LogInformation(
+                "Stage5 chunk continuity guard enabled: forcing sequential chunk mode for strict CHUNK_SUMMARY_PREV semantics. chat_id={ChatId}, session_index={SessionIndex}, requested_parallelism={RequestedParallelism}",
+                session.ChatId,
+                session.SessionIndex,
+                sessionChunkParallelism);
+            sessionChunkParallelism = 1;
+        }
 
         if (sessionChunkParallelism <= 1 || (chunks.Count - startIndex) <= 1)
         {
@@ -538,7 +550,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
                     session,
                     i,
-                    previousSliceSummary,
+                    previousChunkSummary,
                     replySliceContext);
 
                 var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, ct);
@@ -569,6 +581,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     break;
                 }
 
+                previousChunkSummary = BuildChunkSummary(chunk, []);
                 await _stateRepository.SetWatermarkAsync(checkpointKey, i + 1, ct);
                 if (balanceIssueDetected == 1)
                 {
@@ -609,7 +622,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     var effectiveChunkSummaryPrev = BuildPreviousSlicePrompt(
                         session,
                         i,
-                        previousSliceSummary,
+                        i > 0 ? BuildChunkSummary(chunks[i - 1], []) : previousSessionSummary,
                         replySliceContext);
                     var ragContext = await BuildRagContextAsync(session, chunk, effectiveChunkSummaryPrev, replySliceContext, token);
                     var result = await ProcessCheapBatchesAsync(
@@ -702,10 +715,10 @@ public partial class AnalysisWorkerService : BackgroundService
         string? previousSliceSummary,
         string? preDialogContext)
     {
-        if (session.SessionIndex <= 0)
+        if (chunkIndex <= 0)
         {
             return BuildBootstrapChunkContext(
-                "dialog_start",
+                "chunk_start",
                 session,
                 chunkIndex,
                 preDialogContext);

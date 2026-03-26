@@ -137,7 +137,7 @@ public class ExtractionApplier
             {
                 FromEntityId = from.Id,
                 ToEntityId = to.Id,
-                Type = rel.Type.Trim().ToLowerInvariant(),
+                Type = ExtractionSemanticContract.CanonicalizeRelationshipType(rel.Type),
                 Status = ConfidenceStatus.Inferred,
                 Confidence = rel.Confidence,
                 SourceMessageId = messageId
@@ -165,7 +165,7 @@ public class ExtractionApplier
             {
                 MessageId = messageId,
                 EntityId = subjectEntity.Id,
-                EventType = evt.Type.Trim().ToLowerInvariant(),
+                EventType = ExtractionSemanticContract.CanonicalizeEventType(evt.Type),
                 ObjectName = string.IsNullOrWhiteSpace(evt.ObjectName) ? null : evt.ObjectName.Trim(),
                 Sentiment = string.IsNullOrWhiteSpace(evt.Sentiment) ? null : evt.Sentiment.Trim().ToLowerInvariant(),
                 Summary = string.IsNullOrWhiteSpace(evt.Summary) ? null : evt.Summary.Trim(),
@@ -253,7 +253,7 @@ public class ExtractionApplier
                 MessageId = messageId,
                 EntityId = subjectEntity?.Id,
                 SubjectName = subjectName,
-                ObservationType = observation.Type.Trim().ToLowerInvariant(),
+                ObservationType = ExtractionSemanticContract.CanonicalizeObservationType(observation.Type),
                 ObjectName = string.IsNullOrWhiteSpace(observation.ObjectName) ? null : observation.ObjectName.Trim(),
                 Value = string.IsNullOrWhiteSpace(observation.Value) ? null : observation.Value.Trim(),
                 Evidence = string.IsNullOrWhiteSpace(observation.Evidence) ? null : observation.Evidence.Trim(),
@@ -279,15 +279,17 @@ public class ExtractionApplier
                 senderName,
                 null,
                 ct);
-            var normalizedCategory = string.IsNullOrWhiteSpace(claim.Category) ? "general" : claim.Category.Trim().ToLowerInvariant();
+            var normalizedCategory = ExtractionSemanticContract.CanonicalizeCategory(claim.Category);
             claimRows.Add(new IntelligenceClaim
             {
                 MessageId = messageId,
                 EntityId = entity?.Id,
                 EntityName = entityName,
-                ClaimType = string.IsNullOrWhiteSpace(claim.ClaimType) ? "fact" : claim.ClaimType.Trim().ToLowerInvariant(),
+                ClaimType = string.IsNullOrWhiteSpace(claim.ClaimType)
+                    ? "fact"
+                    : ExtractionSemanticContract.CanonicalizeClaimType(claim.ClaimType),
                 Category = normalizedCategory,
-                Key = claim.Key.Trim(),
+                Key = ExtractionSemanticContract.CanonicalizeKey(normalizedCategory, claim.Key),
                 Value = claim.Value.Trim(),
                 Evidence = string.IsNullOrWhiteSpace(claim.Evidence) ? null : claim.Evidence.Trim(),
                 Status = ResolveFactStatus(normalizedCategory, claim.Confidence),
@@ -479,7 +481,7 @@ public class ExtractionApplier
 
             var fromEntityName = claim.EntityName.Trim();
             var toEntityName = claim.Value.Trim();
-            var relationshipType = claim.Key.Trim().ToLowerInvariant();
+            var relationshipType = ExtractionSemanticContract.CanonicalizeRelationshipType(claim.Key);
             if (fromEntityName.Length == 0
                 || toEntityName.Length == 0
                 || relationshipType.Length == 0
@@ -557,8 +559,8 @@ public class ExtractionApplier
             return;
         }
 
-        var normalizedCategory = string.IsNullOrWhiteSpace(category) ? "general" : category.Trim();
-        var normalizedKey = key.Trim();
+        var normalizedCategory = ExtractionSemanticContract.CanonicalizeCategory(category);
+        var normalizedKey = ExtractionSemanticContract.CanonicalizeKey(normalizedCategory, key);
         var normalizedValue = (value ?? string.Empty).Trim();
         var factThreshold = IsSensitiveCategory(normalizedCategory)
             ? _settings.MinSensitiveFactConfidence
