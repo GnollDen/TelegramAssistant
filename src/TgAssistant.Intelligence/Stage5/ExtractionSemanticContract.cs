@@ -159,7 +159,9 @@ public static class ExtractionSemanticContract
         {
             ["должность"] = "job_title",
             ["место_работы"] = "workplace",
-            ["команда"] = "team"
+            ["команда"] = "team",
+            ["work_plan"] = "schedule",
+            ["work_plans"] = "schedule"
         },
         ["travel"] = new(StringComparer.Ordinal)
         {
@@ -197,8 +199,7 @@ public static class ExtractionSemanticContract
 
     public static bool IsAllowedKey(string category, string key)
     {
-        var canonicalCategory = CanonicalizeCategory(category);
-        var canonicalKey = CanonicalizeKey(canonicalCategory, key);
+        var (canonicalCategory, canonicalKey) = CanonicalizeCategoryAndKey(category, key);
         if (!AllowedKeysByCategory.TryGetValue(canonicalCategory, out var keys))
         {
             return false;
@@ -297,10 +298,37 @@ public static class ExtractionSemanticContract
         var canonicalKey = CanonicalizeKey(canonicalCategory, key);
 
         // Deterministic drift remap for stable reruns. Keep this list narrow and explicit.
-        if (canonicalCategory == "work" &&
-            (canonicalKey == "schedule" || canonicalKey == "work_schedule" || canonicalKey == "job_schedule"))
+        if (canonicalCategory == "work")
         {
-            return ("schedule", "schedule");
+            if (canonicalKey == "busy_status")
+            {
+                return ("availability", "busy_status");
+            }
+
+            if (canonicalKey == "constraints")
+            {
+                return ("schedule", "schedule");
+            }
+
+            if (canonicalKey == "schedule" ||
+                canonicalKey == "work_schedule" ||
+                canonicalKey == "job_schedule")
+            {
+                return ("schedule", "schedule");
+            }
+        }
+
+        if (canonicalCategory == "schedule")
+        {
+            if (canonicalKey == "busy_status")
+            {
+                return ("availability", "busy_status");
+            }
+
+            if (canonicalKey == "free_time")
+            {
+                return ("availability", "free_time");
+            }
         }
 
         return (canonicalCategory, canonicalKey);
@@ -313,6 +341,11 @@ public static class ExtractionSemanticContract
         if (canonicalCategory == "work" && normalizedKey == "job_status")
         {
             return "unsupported_drift:work.job_status;use_work.job_title_or_schedule.schedule";
+        }
+
+        if (canonicalCategory == "work" && normalizedKey == "work")
+        {
+            return "unsupported_drift:work.work;use_work.job_title_or_work.workplace_or_schedule.schedule_or_availability.free_time";
         }
 
         if (canonicalCategory == "contact" && normalizedKey == "share_info")
