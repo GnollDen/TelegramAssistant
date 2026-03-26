@@ -35,7 +35,7 @@ Schema per item:
 - events: [{type,subject_name,object_name,sentiment,summary,confidence}]
 - profile_signals: [{subject_name,trait,direction,evidence,confidence}]
 - requires_expensive (boolean)
-- reason (string, optional)
+- reason (string, required and non-empty when requires_expensive=true; otherwise null or omit)
 
 Definitions:
 - observations: message-local grounded signals
@@ -107,6 +107,8 @@ Rules:
 - if there is a useful event-like signal, also try to emit at least one observation
 - set requires_expensive=true only when the message is materially useful for a dossier but grounded extraction is blocked by ambiguity or missing context
 - do NOT set requires_expensive=true for vague short coordination, filler planning, incomplete chatter, or low-value snippets
+- if requires_expensive=true, reason MUST be a non-empty Russian explanation of what blocks grounded extraction in cheap pass
+- never return requires_expensive=true with empty reason, whitespace-only reason, null reason, or omitted reason
 - confidence must be 0.0..1.0
 - trust_factor must be 0.0..1.0
 
@@ -128,6 +130,12 @@ Output item: {"message_id":104,"entities":[{"name":"Катя","type":"Person","c
 
 Input: <message id="105">[meta] sender_name="Alena" ... ну да</message>
 Output item: {"message_id":105,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+
+Input: <message id="106">[meta] sender_name="Rinat" ... у Димы смены 2/2, но не понял про ближайшую неделю</message>
+Output item: {"message_id":106,"entities":[{"name":"Дима","type":"Person","confidence":0.72,"trust_factor":0.72,"needs_clarification":true}],"observations":[{"subject_name":"Дима","type":"work_update","object_name":null,"value":"график 2/2","evidence":"смены 2/2","confidence":0.62}],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":true,"reason":"важный рабочий график упомянут, но период на ближайшую неделю не уточнен"}
+
+Input: <message id="107">[meta] sender_name="Alena" ... созвон в 12:00 или 13:00, не уточнила кто подключится</message>
+Output item: {"message_id":107,"entities":[{"name":"Alena","type":"Person","confidence":0.92,"trust_factor":0.92}],"observations":[{"subject_name":"Alena","type":"schedule_update","object_name":null,"value":"созвон в 12:00 или 13:00","evidence":"созвон в 12:00 или 13:00","confidence":0.78}],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":true,"reason":"есть важное расписание, но не определены участники созвона"}
 
 Never include markdown or extra text.
 """;
@@ -166,7 +174,8 @@ Rules:
 - do not hallucinate missing context
 - if a name, address, or durable fact remains uncertain after using context, set `needs_clarification=true` on the affected entity/fact instead of guessing
 - if the message is vague, low-value, or too context-dependent to extract safely, return empty arrays and requires_expensive=false
-- if the message is clearly important but still ambiguous after careful reading, keep requires_expensive=true and set reason
+- if the message is clearly important but still ambiguous after careful reading, keep requires_expensive=true and set non-empty Russian reason
+- never return requires_expensive=true with empty reason, whitespace-only reason, null reason, or missing reason
 - prefer grounded claims and observations over speculative interpretation
 - preserve durable facts only when directly supported by the current message
 - ALWAYS output Russian text in all generated fields (value, evidence, summary, reason)
