@@ -131,9 +131,24 @@ public class BatchWorkerService : BackgroundService
         _logger.LogInformation("Flushing batch: chat {ChatId}, {Count} messages", chatId, buffer.Messages.Count);
 
         var dbMessages = new List<Message>();
-        var streamIds = new List<string>();
+        var streamIds = buffer.Messages
+            .Select(x => x.StreamId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
 
-        var skippedPhotoIds = BuildPhotoBurstSkipSet(buffer.Messages);
+        var uniqueMessages = DeduplicateByLogicalKey(buffer.Messages);
+        var duplicateCount = buffer.Messages.Count - uniqueMessages.Count;
+        if (duplicateCount > 0)
+        {
+            _logger.LogWarning(
+                "Detected duplicate logical messages in realtime batch: chat_id={ChatId}, input_count={InputCount}, unique_count={UniqueCount}, duplicate_count={DuplicateCount}",
+                chatId,
+                buffer.Messages.Count,
+                uniqueMessages.Count,
+                duplicateCount);
+        }
+
+        var skippedPhotoIds = BuildPhotoBurstSkipSet(uniqueMessages);
         if (skippedPhotoIds.Count > 0)
         {
             _logger.LogInformation(
@@ -142,15 +157,22 @@ public class BatchWorkerService : BackgroundService
                 skippedPhotoIds.Count);
         }
 
-        var mediaTasks = buffer.Messages
+        var mediaTasks = uniqueMessages
             .Where(m => m.MediaType != MediaType.None && m.MediaPath != null && !skippedPhotoIds.Contains(m.MessageId))
             .Select(async msg => (msg, result: await _mediaProcessor.ProcessAsync(msg.MediaPath!, msg.MediaType, ct)))
             .ToList();
 
         var mediaResults = await Task.WhenAll(mediaTasks);
-        var mediaLookup = mediaResults.ToDictionary(r => r.msg.MessageId, r => r.result);
+        var mediaLookup = mediaResults
+            .GroupBy(r => r.msg.MessageId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => x.msg.EditTimestamp ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.msg.Timestamp)
+                    .Select(x => x.result)
+                    .First());
 
-        foreach (var raw in buffer.Messages)
+        foreach (var raw in uniqueMessages)
         {
             var dbMsg = new Message
             {
@@ -190,12 +212,32 @@ public class BatchWorkerService : BackgroundService
             }
 
             dbMessages.Add(dbMsg);
-            streamIds.Add(raw.StreamId);
         }
 
         await _messageRepo.SaveBatchAsync(dbMessages, ct);
         await _queue.AcknowledgeAsync(streamIds, ct);
         _logger.LogInformation("Batch flushed: chat {ChatId}, {Count} saved", chatId, dbMessages.Count);
+    }
+
+    private static List<RawTelegramMessage> DeduplicateByLogicalKey(List<RawTelegramMessage> messages)
+    {
+        return messages
+            .GroupBy(x => BuildLogicalMessageKey(x.ChatId, x.MessageId), StringComparer.Ordinal)
+            .Select(g => SelectPreferredMessage(g))
+            .ToList();
+    }
+
+    private static string BuildLogicalMessageKey(long chatId, long messageId)
+        => $"{chatId}:{messageId}";
+
+    private static RawTelegramMessage SelectPreferredMessage(IEnumerable<RawTelegramMessage> group)
+    {
+        return group
+            .OrderByDescending(x => x.EditTimestamp ?? DateTime.MinValue)
+            .ThenByDescending(x => x.Timestamp)
+            .ThenByDescending(x => x.MediaType != MediaType.None && !string.IsNullOrWhiteSpace(x.MediaPath))
+            .ThenByDescending(x => x.Text?.Length ?? 0)
+            .First();
     }
 
     private HashSet<long> BuildPhotoBurstSkipSet(List<RawTelegramMessage> messages)
