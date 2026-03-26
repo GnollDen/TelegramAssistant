@@ -87,7 +87,11 @@ public static class ExtractionSemanticContract
         ["отношение"] = "relationship",
         ["состояние"] = "state",
         ["потребность"] = "need",
-        ["profile"] = "profile_signal"
+        ["profile"] = "profile_signal",
+        ["status"] = "state",
+        ["info"] = "fact",
+        ["information"] = "fact",
+        ["update"] = "fact"
     };
 
     private static readonly Dictionary<string, string> RelationshipTypeAliases = new(StringComparer.Ordinal)
@@ -132,12 +136,17 @@ public static class ExtractionSemanticContract
             ["текущее_местоположение"] = "current_location",
             ["домашний_адрес"] = "home_address",
             ["рабочий_адрес"] = "work_address",
-            ["current_place"] = "current_location"
+            ["current_place"] = "current_location",
+            ["share_info"] = "shared_location",
+            ["location_share"] = "shared_location",
+            ["shared_info"] = "shared_location"
         },
         ["schedule"] = new(StringComparer.Ordinal)
         {
             ["расписание"] = "schedule",
-            ["время_встречи"] = "meeting_time"
+            ["время_встречи"] = "meeting_time",
+            ["work_schedule"] = "schedule",
+            ["job_schedule"] = "schedule"
         },
         ["health"] = new(StringComparer.Ordinal)
         {
@@ -282,6 +291,38 @@ public static class ExtractionSemanticContract
         return normalizedKey;
     }
 
+    public static (string Category, string Key) CanonicalizeCategoryAndKey(string? category, string? key)
+    {
+        var canonicalCategory = CanonicalizeCategory(category);
+        var canonicalKey = CanonicalizeKey(canonicalCategory, key);
+
+        // Deterministic drift remap for stable reruns. Keep this list narrow and explicit.
+        if (canonicalCategory == "work" &&
+            (canonicalKey == "schedule" || canonicalKey == "work_schedule" || canonicalKey == "job_schedule"))
+        {
+            return ("schedule", "schedule");
+        }
+
+        return (canonicalCategory, canonicalKey);
+    }
+
+    public static string? GetUnsupportedKeyDriftHint(string? category, string? key)
+    {
+        var canonicalCategory = CanonicalizeCategory(category);
+        var normalizedKey = NormalizeToken(key);
+        if (canonicalCategory == "work" && normalizedKey == "job_status")
+        {
+            return "unsupported_drift:work.job_status;use_work.job_title_or_schedule.schedule";
+        }
+
+        if (canonicalCategory == "contact" && normalizedKey == "share_info")
+        {
+            return "unsupported_drift:contact.share_info;use_contact.phone_or_contact.telegram_handle";
+        }
+
+        return null;
+    }
+
     public static string NormalizeToken(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -292,6 +333,7 @@ public static class ExtractionSemanticContract
         var normalized = value.Trim()
             .ToLowerInvariant()
             .Replace('-', '_')
+            .Replace(':', '_')
             .Replace(' ', '_');
         while (normalized.Contains("__", StringComparison.Ordinal))
         {

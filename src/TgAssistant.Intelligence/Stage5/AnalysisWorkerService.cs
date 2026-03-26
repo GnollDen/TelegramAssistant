@@ -2590,7 +2590,7 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private string ResolveSingleFallbackModel(string sourceModel, Exception ex)
     {
-        if (ex is TaskCanceledException or TimeoutException or HttpRequestException)
+        if (ex is TaskCanceledException or TimeoutException or HttpRequestException or InvalidDataException or JsonException)
         {
             var baseline = _settings.CheapBaselineModel?.Trim();
             if (!string.IsNullOrWhiteSpace(baseline) &&
