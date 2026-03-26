@@ -97,6 +97,9 @@ Rules:
   contact (phone, telegram_handle),
   finance (income, expenses).
   do not create variations.
+- Availability and schedule signals must be represented under availability.free_time, availability.busy_status, schedule.schedule, or schedule.meeting_time; do not push scheduling/availability details into the work category or invent near-miss keys such as work_plan, work_update, workload, job_status, job_intent, participation, meeting_invitation, or productivity.
+- If a message is about workload, capacity, or availability due to work, map it to availability.free_time or availability.busy_status instead of inventing work.busy_status or work.constraints; keep generic work updates inside the `work.job_title`, `work.workplace`, or `schedule.schedule` values and never introduce work.work as a new key.
+- Reserve the work category for job_title, workplace, or team only. If the message talks about workload, productivity, or job status, keep those nuances in the value/evidence of those keys instead of inventing new claim/fact keys.
 - For relationships use ONLY these types: family, friend, colleague, acquaintance, partner, neighbor. Do not create free-form types.
 - Skip technical facts like adblock_status, system_status, apple_pay_issue, server errors.
 - DEDUPLICATION: do not emit near-duplicate facts or claims with the same meaning (if video_content is extracted, do not also emit video_content_assumption)
@@ -171,6 +174,9 @@ Rules:
 - improve the cheap candidate only when the current message contains grounded, useful information
 - keep labels reusable and normalized
 - enforce canonical output formatting: entity names trimmed and canonicalized, categories/relationship types/event types/traits lowercase snake_case, keys trimmed lowercase snake_case with no variants
+- Map availability or schedule updates to availability.free_time, availability.busy_status, schedule.schedule, or schedule.meeting_time; do not flee scheduling/availability data into the work category or invent keys like work_plan, work_update, workload, job_status, job_intent, participation, meeting_invitation, or productivity.
+- Restate that any work-related load/constraint details belong under availability.free_time or availability.busy_status, and keep general work status in the value/evidence of `work.job_title`, `work.workplace`, or `schedule.schedule`; do not emit work.busy_status, work.constraints, or work.work as independent keys.
+- Keep the work category limited to job_title, workplace, or team. If the message details workload, productivity, or status changes, record them inside the value/evidence of those keys rather than generating new snake_case labels.
 - do not hallucinate missing context
 - if a name, address, or durable fact remains uncertain after using context, set `needs_clarification=true` on the affected entity/fact instead of guessing
 - if the message is vague, low-value, or too context-dependent to extract safely, return empty arrays and requires_expensive=false
