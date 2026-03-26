@@ -48,8 +48,42 @@ public class MessageRepository : IMessageRepository
             .Select(g => SelectPreferredIncoming(g))
             .ToList();
 
-        var chatKeys = unique.Select(x => x.ChatId).Distinct().ToList();
-        var telegramKeys = unique.Select(x => x.TelegramMessageId).Distinct().ToList();
+        var updatedAndMarkedForReanalysis = await MergeBatchIntoContextAsync(db, unique, ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            _logger.LogWarning(
+                "Message batch save hit unique-key race; retrying with fresh DB snapshot. count={Count}",
+                unique.Count);
+
+            await using var retryDb = await _dbFactory.CreateDbContextAsync(ct);
+            updatedAndMarkedForReanalysis = await MergeBatchIntoContextAsync(retryDb, unique, ct);
+            await retryDb.SaveChangesAsync(ct);
+        }
+        if (updatedAndMarkedForReanalysis > 0)
+        {
+            _logger.LogInformation(
+                "Marked messages for reanalysis: count={Count}, reason={ReasonCode}",
+                updatedAndMarkedForReanalysis,
+                "message_updated");
+        }
+        _logger.LogDebug("Saved batch of {Count} messages", unique.Count);
+        return unique.Count;
+    }
+
+    private static string BuildDedupKey(long chatId, long telegramMessageId)
+        => $"{chatId}:{telegramMessageId}";
+
+    private async Task<int> MergeBatchIntoContextAsync(
+        TgAssistantDbContext db,
+        IReadOnlyCollection<Message> uniqueMessages,
+        CancellationToken ct)
+    {
+        var chatKeys = uniqueMessages.Select(x => x.ChatId).Distinct().ToList();
+        var telegramKeys = uniqueMessages.Select(x => x.TelegramMessageId).Distinct().ToList();
 
         var existing = await db.Messages
             .Where(x => chatKeys.Contains(x.ChatId) && telegramKeys.Contains(x.TelegramMessageId))
@@ -77,7 +111,7 @@ public class MessageRepository : IMessageRepository
         }
 
         var updatedAndMarkedForReanalysis = 0;
-        foreach (var msg in unique)
+        foreach (var msg in uniqueMessages)
         {
             var key = BuildDedupKey(msg.ChatId, msg.TelegramMessageId);
             if (existingMap.TryGetValue(key, out var current))
@@ -115,20 +149,14 @@ public class MessageRepository : IMessageRepository
             });
         }
 
-        await db.SaveChangesAsync(ct);
-        if (updatedAndMarkedForReanalysis > 0)
-        {
-            _logger.LogInformation(
-                "Marked messages for reanalysis: count={Count}, reason={ReasonCode}",
-                updatedAndMarkedForReanalysis,
-                "message_updated");
-        }
-        _logger.LogDebug("Saved batch of {Count} messages", unique.Count);
-        return unique.Count;
+        return updatedAndMarkedForReanalysis;
     }
 
-    private static string BuildDedupKey(long chatId, long telegramMessageId)
-        => $"{chatId}:{telegramMessageId}";
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException pg
+               && pg.SqlState == PostgresErrorCodes.UniqueViolation;
+    }
 
     private static Message SelectPreferredIncoming(IEnumerable<Message> group)
     {
