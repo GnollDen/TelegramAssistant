@@ -46,7 +46,7 @@ Type guidance:
 - observation.type should be short snake_case and reusable
 - prefer stable labels like availability_update, movement, request, question, intent, schedule_update, work_update, work_assessment, health_update, location_update, contact_share, relationship_signal, communication, other
 - claim.claim_type should usually be one of: fact, intent, preference, relationship, state, need
-- category should be broad and reusable: availability, schedule, travel, transportation, work, finance, health, relationship, communication, activity, purchase, location, contact, education, family, project, other
+- category must be one of the canonical contract buckets: availability, location, schedule, health, work, travel, relationship, contact, finance
 - do not create near-duplicate labels just because wording differs
 - CANONICALIZATION: entity names must be canonical and trimmed
 - person/organization/place/pet/event names must not have leading/trailing spaces or duplicate internal spaces
@@ -72,7 +72,7 @@ Rules:
 - if a third party is explicit in the message or reply_context, attribute the signal to that third party instead of automatically using the sender
 - if the subject is unresolved and the signal is low-value, return empty arrays
 - when a Russian person or place is in oblique case and the canonical form is obvious, normalize to the canonical form; otherwise keep the observed form
-- LANGUAGE: ALWAYS use Russian for all generated text fields in extraction JSON (value, evidence, summary, reason, keys that are semantic labels).
+- LANGUAGE: ALWAYS use Russian for generated text fields in extraction JSON (value, evidence, summary, reason).
 - do not output English paraphrases when Russian wording is possible; translate short English fragments to natural Russian while preserving meaning
 - if an entity name, address, place, or durable fact is uncertain, incomplete, or only weakly implied, set `needs_clarification=true` on that entity/fact and avoid hallucinating a precise value
 - never invent a concrete address, canonical person name, or durable fact when the source is ambiguous; prefer `needs_clarification=true` over guessing
@@ -82,23 +82,22 @@ Rules:
 - skip boolean-only facts without context (value must not be just true/yes/no)
 - skip temporary UI/app interactions as facts (viewed photos, shared a link)
 - never create facts or claims with these categories: system_status, error, access, debug, technical (these are IT conversations, not personal dossier data)
-- good fact example: category=health, key=принимает_лекарства, value=антибиотики и чай
+- good fact example: category=health, key=medication_usage, value=антибиотики и чай
 - bad fact example: category=system_status, key=error_report, value=502
-- KEY NAMING: for Russian chats, fact keys and claim keys must be snake_case Russian (e.g., свободное_время, место_работы, принимает_лекарства), not English keys like free_time/work_status/medication_usage
-- keys that describe work situations should be in Russian when chat is Russian: отгулы, больничный, реорганизация, instead of days_off_status, sick_leave_status
+- KEY NAMING: fact keys and claim keys must be canonical EN snake_case keys from the contract (for example free_time, workplace, medication_usage); do not output RU keys
 - before returning, normalize every string enum-like field: trim whitespace, collapse duplicates, and ensure canonical casing
 - Use ONLY canonical keys and categories below:
-  availability (свободное_время, занятость),
-  location (текущее_местоположение, shared_location, домашний_адрес, рабочий_адрес),
-  schedule (расписание, время_встречи),
-  health (состояние_здоровья, принимает_лекарства, диагноз),
-  work (должность, место_работы, команда),
-  travel (план_поездки, направление),
-  relationship (статус_отношений, семейное_положение),
-  contact (телефон, telegram_handle),
-  finance (доход, расход).
+  availability (free_time, busy_status),
+  location (current_location, shared_location, home_address, work_address),
+  schedule (schedule, meeting_time),
+  health (health_status, medication_usage, diagnosis),
+  work (job_title, workplace, team),
+  travel (travel_plan, destination),
+  relationship (relationship_status, family_status),
+  contact (phone, telegram_handle),
+  finance (income, expenses).
   do not create variations.
-- For relationships use ONLY these types: семья, друг, коллега, знакомый, партнер, сосед. Do not create free-form types.
+- For relationships use ONLY these types: family, friend, colleague, acquaintance, partner, neighbor. Do not create free-form types.
 - Skip technical facts like adblock_status, system_status, apple_pay_issue, server errors.
 - DEDUPLICATION: do not emit near-duplicate facts or claims with the same meaning (if video_content is extracted, do not also emit video_content_assumption)
 - extract shared addresses, map links, @handles, pickup/dropoff logistics, and destination options as location/contact/travel signals
@@ -113,7 +112,7 @@ Rules:
 
 Examples:
 Input: <message id="101">[meta] sender_name="Rinat" ... I will be free in 20 minutes</message>
-Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"будет свободен через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"свободное_время","value":"через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"свободное_время","value":"через 20 минут","confidence":0.88,"trust_factor":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"сообщил, когда будет свободен","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":101,"entities":[{"name":"Rinat","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Rinat","type":"availability_update","object_name":null,"value":"будет свободен через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"availability","key":"free_time","value":"через 20 минут","evidence":"буду свободен через 20 минут","confidence":0.88}],"facts":[{"entity_name":"Rinat","category":"availability","key":"free_time","value":"через 20 минут","confidence":0.88,"trust_factor":0.88}],"relationships":[],"events":[{"type":"availability_update","subject_name":"Rinat","object_name":null,"sentiment":"neutral","summary":"сообщил, когда будет свободен","confidence":0.82}],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="102">[meta] sender_name="Rinat" ... улица Шавалеева, 1 ... https://yandex.ru/maps/...</message>
 Output item: {"message_id":102,"entities":[{"name":"Rinat","type":"Person","confidence":0.98,"trust_factor":0.98,"needs_clarification":false},{"name":"улица Шавалеева, 1","type":"Place","confidence":0.92,"trust_factor":0.92,"needs_clarification":false}],"observations":[{"subject_name":"Rinat","type":"location_update","object_name":"улица Шавалеева, 1","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"claims":[{"entity_name":"Rinat","claim_type":"fact","category":"location","key":"shared_location","value":"улица Шавалеева, 1","evidence":"улица Шавалеева, 1","confidence":0.86}],"facts":[{"entity_name":"Rinat","category":"location","key":"shared_location","value":"улица Шавалеева, 1","confidence":0.86,"trust_factor":0.86,"needs_clarification":false}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
@@ -125,7 +124,7 @@ Input: <message id="103">[meta] sender_name="Alena" ... Катя @Kotyonoksok</m
 Output item: {"message_id":103,"entities":[{"name":"Alena","type":"Person","confidence":0.98,"trust_factor":0.98},{"name":"Катя","type":"Person","confidence":0.9,"trust_factor":0.9}],"observations":[{"subject_name":"Alena","type":"contact_share","object_name":"Катя","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","evidence":"Катя @Kotyonoksok","confidence":0.84}],"facts":[{"entity_name":"Alena","category":"contact","key":"telegram_handle","value":"@Kotyonoksok","confidence":0.84,"trust_factor":0.84}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="104">[reply_context] from_sender="Alena" text="Катя уже неделю болеет" [meta] sender_name="Rinat" ... Она все еще на антибиотиках</message>
-Output item: {"message_id":104,"entities":[{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Катя","type":"health_update","object_name":"антибиотики","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"claims":[{"entity_name":"Катя","claim_type":"state","category":"health","key":"принимает_лекарства","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":104,"entities":[{"name":"Катя","type":"Person","confidence":0.9}],"observations":[{"subject_name":"Катя","type":"health_update","object_name":"антибиотики","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"claims":[{"entity_name":"Катя","claim_type":"state","category":"health","key":"medication_usage","value":"на антибиотиках","evidence":"Она все еще на антибиотиках","confidence":0.86}],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input: <message id="105">[meta] sender_name="Alena" ... ну да</message>
 Output item: {"message_id":105,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
@@ -176,7 +175,7 @@ Rules:
 
 Examples:
 Input message: [meta] sender_name="Alena" ... My income is stable around 5000 per month
-Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"доход","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"доход","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"facts":[{"entity_name":"Alena","category":"finance","key":"доход","value":"около 5000 в месяц","confidence":0.9,"trust_factor":0.9}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
+Output item: {"message_id":102,"entities":[{"name":"Alena","type":"Person","confidence":0.98,"trust_factor":0.98}],"observations":[{"subject_name":"Alena","type":"status_update","object_name":"доход","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"claims":[{"entity_name":"Alena","claim_type":"fact","category":"finance","key":"income","value":"около 5000 в месяц","evidence":"доход стабилен около 5000 в месяц","confidence":0.9}],"facts":[{"entity_name":"Alena","category":"finance","key":"income","value":"около 5000 в месяц","confidence":0.9,"trust_factor":0.9}],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}
 
 Input message: [meta] sender_name="Alena" ... and then I'll go
 Output item: {"message_id":104,"entities":[],"observations":[],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":false}

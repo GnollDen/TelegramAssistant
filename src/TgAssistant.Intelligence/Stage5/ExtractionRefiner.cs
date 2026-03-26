@@ -61,7 +61,7 @@ public static class ExtractionRefiner
     public static ExtractionItem NormalizeExtractionForMessage(ExtractionItem item, Message message)
     {
         _ = message;
-        return item;
+        return NormalizeContractIds(item);
     }
 
     public static ExtractionItem SanitizeExtraction(ExtractionItem item)
@@ -198,7 +198,8 @@ public static class ExtractionRefiner
 
     public static ExtractionItem FinalizeResolvedExtraction(ExtractionItem item)
     {
-        var effective = SanitizeExtraction(item);
+        var effective = NormalizeContractIds(item);
+        effective = SanitizeExtraction(effective);
         effective.RequiresExpensive = false;
         return effective;
     }
@@ -220,16 +221,7 @@ public static class ExtractionRefiner
 
     private static string NormalizeEnumToken(string value)
     {
-        var normalized = NormalizeRequired(value)
-            .ToLowerInvariant()
-            .Replace('-', '_')
-            .Replace(' ', '_');
-        while (normalized.Contains("__", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("__", "_", StringComparison.Ordinal);
-        }
-
-        return normalized;
+        return ExtractionSemanticContract.NormalizeToken(value);
     }
 
     private static string NormalizeEntityType(string value)
@@ -288,6 +280,90 @@ public static class ExtractionRefiner
     private static float Clamp01(float value)
     {
         return Math.Clamp(value, 0f, 1f);
+    }
+
+    private static ExtractionItem NormalizeContractIds(ExtractionItem item)
+    {
+        item.Claims = item.Claims
+            .Select(claim =>
+            {
+                var category = ExtractionSemanticContract.CanonicalizeCategory(claim.Category);
+                return new ExtractionClaim
+                {
+                    EntityName = claim.EntityName,
+                    ClaimType = ExtractionSemanticContract.CanonicalizeClaimType(claim.ClaimType),
+                    Category = category,
+                    Key = ExtractionSemanticContract.CanonicalizeKey(category, claim.Key),
+                    Value = claim.Value,
+                    Evidence = claim.Evidence,
+                    Confidence = claim.Confidence
+                };
+            })
+            .ToList();
+
+        item.Facts = item.Facts
+            .Select(fact =>
+            {
+                var category = ExtractionSemanticContract.CanonicalizeCategory(fact.Category);
+                return new ExtractionFact
+                {
+                    EntityName = fact.EntityName,
+                    Category = category,
+                    Key = ExtractionSemanticContract.CanonicalizeKey(category, fact.Key),
+                    Value = fact.Value,
+                    Confidence = fact.Confidence,
+                    TrustFactor = fact.TrustFactor,
+                    NeedsClarification = fact.NeedsClarification
+                };
+            })
+            .ToList();
+
+        item.Relationships = item.Relationships
+            .Select(relationship => new ExtractionRelationship
+            {
+                FromEntityName = relationship.FromEntityName,
+                ToEntityName = relationship.ToEntityName,
+                Type = ExtractionSemanticContract.CanonicalizeRelationshipType(relationship.Type),
+                Confidence = relationship.Confidence
+            })
+            .ToList();
+
+        item.Observations = item.Observations
+            .Select(observation => new ExtractionObservation
+            {
+                SubjectName = observation.SubjectName,
+                Type = ExtractionSemanticContract.CanonicalizeObservationType(observation.Type),
+                ObjectName = observation.ObjectName,
+                Value = observation.Value,
+                Evidence = observation.Evidence,
+                Confidence = observation.Confidence
+            })
+            .ToList();
+
+        item.Events = item.Events
+            .Select(evt => new ExtractionEvent
+            {
+                Type = ExtractionSemanticContract.CanonicalizeEventType(evt.Type),
+                SubjectName = evt.SubjectName,
+                ObjectName = evt.ObjectName,
+                Sentiment = evt.Sentiment,
+                Summary = evt.Summary,
+                Confidence = evt.Confidence
+            })
+            .ToList();
+
+        item.ProfileSignals = item.ProfileSignals
+            .Select(signal => new ExtractionProfileSignal
+            {
+                SubjectName = signal.SubjectName,
+                Trait = ExtractionSemanticContract.CanonicalizeTrait(signal.Trait),
+                Direction = signal.Direction,
+                Evidence = signal.Evidence,
+                Confidence = signal.Confidence
+            })
+            .ToList();
+
+        return item;
     }
 
     private static ExtractionItem ApplyMediaTrustCaps(ExtractionItem item, Message message)
