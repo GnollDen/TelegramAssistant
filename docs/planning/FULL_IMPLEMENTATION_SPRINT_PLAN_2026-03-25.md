@@ -922,3 +922,34 @@ That work is tracked separately in:
 Key rule:
 - do not reopen the backend sprint program just to deliver the web layer
 - treat web implementation as a separate execution track built on the completed backend substrate
+
+## Separate Chronology Reconstruction Track
+
+Another remaining gap is the chronology-first initialization path:
+- a large first pass from the beginning of history to the current moment
+- a bounded pilot such as the first year
+- chronology-driven artifact and case provenance
+- cost/runtime control for big historical runs
+
+This work is tracked separately in:
+- [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
+
+Key rule:
+- do not treat incremental Stage 6 maintenance as a substitute for an initial chronology pass
+- do not start with a blind full-history run; use contract + pilot-first execution
+
+## Separate Stage 6 Remediation Track
+
+Another remaining gap is the post-audit Stage 6 repair program:
+- RU-aware Stage 6 semantics on top of the repaired Stage 5 substrate
+- participant/sender safety after identity and contract fixes
+- chronology-aware and operator-explainable case provenance
+- single-user context quality and real-scope prioritization
+- controlled Stage 6 rebuild after the global Stage 5 rerun
+
+This work is tracked separately in:
+- [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+
+Key rule:
+- do not treat old Stage 6 artifacts/cases as trustworthy after the Stage 5 corpus rebuild
+- do not start the Stage 6 rebuild before runtime/provider/dev-environment prerequisites are made explicit
