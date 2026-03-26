@@ -65,6 +65,8 @@ public class ExtractionSchemaValidator
     private static bool ValidateItem(JsonElement item, int index, out string? error)
     {
         error = null;
+        var requiresExpensiveValue = false;
+        var hasRequiresExpensive = false;
 
         if (item.TryGetProperty("message_id", out var messageId) &&
             messageId.ValueKind is not JsonValueKind.Number)
@@ -115,12 +117,29 @@ public class ExtractionSchemaValidator
             return false;
         }
 
+        if (item.TryGetProperty("requires_expensive", out requiresExpensive))
+        {
+            hasRequiresExpensive = true;
+            requiresExpensiveValue = requiresExpensive.ValueKind == JsonValueKind.True;
+        }
+
         if (item.TryGetProperty("reason", out var reason) &&
             reason.ValueKind != JsonValueKind.String &&
             reason.ValueKind != JsonValueKind.Null)
         {
             error = $"item_{index}_reason_not_string";
             return false;
+        }
+
+        if (hasRequiresExpensive && requiresExpensiveValue)
+        {
+            if (!item.TryGetProperty("reason", out reason) ||
+                reason.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(reason.GetString()))
+            {
+                error = $"item_{index}_requires_expensive_without_reason";
+                return false;
+            }
         }
 
         return true;

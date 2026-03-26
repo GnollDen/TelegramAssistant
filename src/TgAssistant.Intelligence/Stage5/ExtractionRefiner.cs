@@ -287,13 +287,13 @@ public static class ExtractionRefiner
         item.Claims = item.Claims
             .Select(claim =>
             {
-                var category = ExtractionSemanticContract.CanonicalizeCategory(claim.Category);
+                var (category, key) = ExtractionSemanticContract.CanonicalizeCategoryAndKey(claim.Category, claim.Key);
                 return new ExtractionClaim
                 {
                     EntityName = claim.EntityName,
                     ClaimType = ExtractionSemanticContract.CanonicalizeClaimType(claim.ClaimType),
                     Category = category,
-                    Key = ExtractionSemanticContract.CanonicalizeKey(category, claim.Key),
+                    Key = key,
                     Value = claim.Value,
                     Evidence = claim.Evidence,
                     Confidence = claim.Confidence
@@ -304,12 +304,12 @@ public static class ExtractionRefiner
         item.Facts = item.Facts
             .Select(fact =>
             {
-                var category = ExtractionSemanticContract.CanonicalizeCategory(fact.Category);
+                var (category, key) = ExtractionSemanticContract.CanonicalizeCategoryAndKey(fact.Category, fact.Key);
                 return new ExtractionFact
                 {
                     EntityName = fact.EntityName,
                     Category = category,
-                    Key = ExtractionSemanticContract.CanonicalizeKey(category, fact.Key),
+                    Key = key,
                     Value = fact.Value,
                     Confidence = fact.Confidence,
                     TrustFactor = fact.TrustFactor,

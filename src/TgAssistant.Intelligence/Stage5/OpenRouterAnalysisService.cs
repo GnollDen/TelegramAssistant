@@ -19,6 +19,7 @@ public class OpenRouterAnalysisService
     private const int CheapTransientRetryBaseDelayMs = 600;
     private const string OpenRouterRequestIdHeader = "x-request-id";
     private const int ErrorBodySnippetLimit = 260;
+    private const int SchemaFailureSnippetLimit = 420;
 
     private readonly HttpClient _http;
     private readonly AnalysisSettings _analysis;
@@ -553,8 +554,14 @@ public class OpenRouterAnalysisService
     {
         if (!_schemaValidator.TryParseBatch(json, out var parsed, out var error))
         {
-            _logger.LogWarning("Stage5 schema validation failed: {Reason}", error ?? "invalid_schema");
-            throw new InvalidDataException($"stage5_schema_validation_failed:{error ?? "invalid_schema"}");
+            var reason = error ?? "invalid_schema";
+            var snippet = TruncateForLog(json, SchemaFailureSnippetLimit);
+            _logger.LogWarning(
+                "Stage5 schema validation failed: reason={Reason}, response_snippet={Snippet}",
+                reason,
+                snippet);
+            throw new InvalidDataException(
+                $"stage5_schema_validation_failed:{reason};response_snippet={snippet}");
         }
 
         return parsed;

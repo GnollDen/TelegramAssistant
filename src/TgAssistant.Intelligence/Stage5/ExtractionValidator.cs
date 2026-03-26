@@ -1,9 +1,16 @@
 using TgAssistant.Core.Models;
+using System.Text.RegularExpressions;
 
 namespace TgAssistant.Intelligence.Stage5;
 
 public static class ExtractionValidator
 {
+    private static readonly Regex TimeLikeRegex = new(@"^(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex DateLikeRegex = new(@"^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex RatioLikeRegex = new(@"^\d{1,4}\s*/\s*\d{1,4}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FormulaLikeRegex = new(@"^[0-9a-zA-Z().,+\-*/=^% ]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex CompactScheduleLikeRegex = new(@"^(?:\d{1,2}\s*[xх]\s*\d{1,2}|\d{1,2}[:.]\d{2}\s*[/-]\s*\d{1,2}[:.]\d{2})$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     /// <summary>
     /// Validates extraction payload against the source message context.
     /// </summary>
@@ -124,7 +131,8 @@ public static class ExtractionValidator
 
             if (!ExtractionSemanticContract.IsAllowedKey(claim.Category, claim.Key))
             {
-                error = "invalid_claim_key";
+                var hint = ExtractionSemanticContract.GetUnsupportedKeyDriftHint(claim.Category, claim.Key);
+                error = hint == null ? "invalid_claim_key" : $"invalid_claim_key:{hint}";
                 return false;
             }
 
@@ -135,8 +143,8 @@ public static class ExtractionValidator
             }
 
             if (enforceRussianOutput &&
-                !HasCyrillicOrEmpty(claim.Value) &&
-                !HasCyrillicOrEmpty(claim.Evidence))
+                !HasCyrillicOrStructuredOrEmpty(claim.Value) &&
+                !HasCyrillicOrStructuredOrEmpty(claim.Evidence))
             {
                 error = "claim_non_russian_output";
                 return false;
@@ -168,7 +176,8 @@ public static class ExtractionValidator
 
             if (!ExtractionSemanticContract.IsAllowedKey(fact.Category, fact.Key))
             {
-                error = "invalid_fact_key";
+                var hint = ExtractionSemanticContract.GetUnsupportedKeyDriftHint(fact.Category, fact.Key);
+                error = hint == null ? "invalid_fact_key" : $"invalid_fact_key:{hint}";
                 return false;
             }
 
@@ -178,7 +187,7 @@ public static class ExtractionValidator
                 return false;
             }
 
-            if (enforceRussianOutput && !HasCyrillicOrEmpty(fact.Value))
+            if (enforceRussianOutput && !HasCyrillicOrStructuredOrEmpty(fact.Value))
             {
                 error = "fact_non_russian_output";
                 return false;
@@ -320,5 +329,45 @@ public static class ExtractionValidator
     private static bool HasCyrillicOrEmpty(string? value)
     {
         return string.IsNullOrWhiteSpace(value) || ExtractionSemanticContract.IsLikelyRussianText(value);
+    }
+
+    private static bool HasCyrillicOrStructuredOrEmpty(string? value)
+    {
+        if (HasCyrillicOrEmpty(value))
+        {
+            return true;
+        }
+
+        return IsSafeStructuredValue(value);
+    }
+
+    private static bool IsSafeStructuredValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var compact = MessageContentBuilder.CollapseWhitespace(value).Trim();
+        if (compact.Length == 0 || compact.Length > 64)
+        {
+            return false;
+        }
+
+        if (TimeLikeRegex.IsMatch(compact) ||
+            DateLikeRegex.IsMatch(compact) ||
+            RatioLikeRegex.IsMatch(compact) ||
+            CompactScheduleLikeRegex.IsMatch(compact))
+        {
+            return true;
+        }
+
+        if (FormulaLikeRegex.IsMatch(compact) &&
+            compact.IndexOfAny(['+', '-', '*', '/', '=', '^', '%']) >= 0)
+        {
+            return true;
+        }
+
+        return false;
     }
 }
