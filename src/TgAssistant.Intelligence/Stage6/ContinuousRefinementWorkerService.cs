@@ -223,7 +223,8 @@ Use grounded facts only and keep empty arrays for low-value chatter.
 
     private async Task<ResolvedPrompt> GetCheapPromptAsync(CancellationToken ct)
     {
-        var prompt = await _promptTemplateRepository.GetByIdAsync(Stage5PromptCatalog.CheapExtraction.Id, ct);
+        var cheapPromptContract = Stage5PromptCatalog.ResolveCheapExtraction(_analysisSettings.CheapPromptId);
+        var prompt = await _promptTemplateRepository.GetByIdAsync(cheapPromptContract.Id, ct);
         if (prompt == null || string.IsNullOrWhiteSpace(prompt.SystemPrompt))
         {
             return new ResolvedPrompt

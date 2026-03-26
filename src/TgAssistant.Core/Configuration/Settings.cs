@@ -153,6 +153,7 @@ public class AnalysisSettings
     public bool ArchiveOnlyMode { get; set; } = false;
     public string ArchiveCutoffUtc { get; set; } = string.Empty;
     public string CheapModel { get; set; } = "deepseek/deepseek-v3.2";
+    public string CheapPromptId { get; set; } = "stage5_cheap_extract_v10";
     public bool CheapModelAbEnabled { get; set; } = false;
     public string CheapBaselineModel { get; set; } = "openai/gpt-4o-mini";
     public string CheapCandidateModel { get; set; } = "deepseek/deepseek-v3.2";
@@ -223,14 +224,14 @@ public class AnalysisSettings
     public int SessionChunkSize { get; set; } = 40;
     public int SessionAnalysisBatchSize { get; set; } = 20;
     public int SessionAnalysisMinIdleMinutes { get; set; } = 15;
-    public int SessionChunkTargetChars { get; set; } = 6000;
-    public int SessionChunkMaxChars { get; set; } = 9000;
+    public int SessionChunkTargetChars { get; set; } = 9000;
+    public int SessionChunkMaxChars { get; set; } = 14000;
     public int SessionChunkMinMessages { get; set; } = 12;
-    public int SessionChunkHardMaxMessages { get; set; } = 80;
+    public int SessionChunkHardMaxMessages { get; set; } = 120;
     public int SessionChunkPauseGapMinutes { get; set; } = 25;
     public int SessionChunkParallelism { get; set; } = 2;
-    public int CheapChunkTargetChars { get; set; } = 12000;
-    public int CheapChunkMaxChars { get; set; } = 15000;
+    public int CheapChunkTargetChars { get; set; } = 22000;
+    public int CheapChunkMaxChars { get; set; } = 28000;
     public int CheapChunkMinMessages { get; set; } = 6;
     public int CheapChunkPauseGapMinutes { get; set; } = 20;
 }

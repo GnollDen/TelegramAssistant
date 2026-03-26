@@ -5,12 +5,25 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public static class Stage5PromptCatalog
 {
-    public static readonly ManagedPromptTemplate CheapExtraction = new(
-        Id: "stage5_cheap_extract_v10",
+    public const string CheapExtractionV10Id = "stage5_cheap_extract_v10";
+    public const string CheapExtractionV11Id = "stage5_cheap_extract_v11";
+
+    public static readonly ManagedPromptTemplate CheapExtractionV10 = new(
+        Id: CheapExtractionV10Id,
         Name: "Stage5 Cheap Extraction v10",
         Description: "Primary cheap extraction prompt for Stage 5.",
         Version: "v10",
-        SystemPrompt: AnalysisWorkerService.DefaultCheapPrompt);
+        SystemPrompt: AnalysisWorkerService.DefaultCheapPromptV10);
+
+    public static readonly ManagedPromptTemplate CheapExtractionV11 = new(
+        Id: CheapExtractionV11Id,
+        Name: "Stage5 Cheap Extraction v11",
+        Description: "Compact cheap extraction prompt for Stage 5 with preserved semantic contract.",
+        Version: "v11",
+        SystemPrompt: AnalysisWorkerService.DefaultCheapPromptV11);
+
+    // Backward-compatible alias for legacy callsites.
+    public static ManagedPromptTemplate CheapExtraction => CheapExtractionV10;
 
     public static readonly ManagedPromptTemplate ExpensiveReasoning = new(
         Id: "stage5_expensive_reason_v5",
@@ -32,6 +45,26 @@ public static class Stage5PromptCatalog
         Description: "Cold path final daily crystallization prompt.",
         Version: "v1",
         SystemPrompt: DailyAggregateSystemPrompt);
+
+    public static IReadOnlyList<ManagedPromptTemplate> ManagedPrompts { get; } =
+    [
+        CheapExtractionV10,
+        CheapExtractionV11,
+        ExpensiveReasoning,
+        SessionSummary,
+        DailyAggregate
+    ];
+
+    public static ManagedPromptTemplate ResolveCheapExtraction(string? id)
+    {
+        var normalizedId = string.IsNullOrWhiteSpace(id) ? string.Empty : id.Trim();
+        if (string.Equals(normalizedId, CheapExtractionV11Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return CheapExtractionV11;
+        }
+
+        return CheapExtractionV10;
+    }
 
     private const string DailyAggregateSystemPrompt = """
 You are a nightly memory crystallization module.
