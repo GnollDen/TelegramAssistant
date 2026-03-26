@@ -23,7 +23,8 @@ public static class ExtractionSemanticContract
         "preference",
         "relationship",
         "state",
-        "need"
+        "need",
+        "profile_signal"
     ];
 
     public static readonly HashSet<string> AllowedCategories =
@@ -41,25 +42,138 @@ public static class ExtractionSemanticContract
 
     public static readonly HashSet<string> AllowedRelationshipTypes =
     [
-        "семья",
-        "друг",
-        "коллега",
-        "знакомый",
-        "партнер",
-        "сосед"
+        "family",
+        "friend",
+        "colleague",
+        "acquaintance",
+        "partner",
+        "neighbor"
     ];
 
     private static readonly Dictionary<string, HashSet<string>> AllowedKeysByCategory = new(StringComparer.Ordinal)
     {
-        ["availability"] = ["свободное_время", "занятость"],
-        ["location"] = ["текущее_местоположение", "shared_location", "домашний_адрес", "рабочий_адрес"],
-        ["schedule"] = ["расписание", "время_встречи"],
-        ["health"] = ["состояние_здоровья", "принимает_лекарства", "диагноз"],
-        ["work"] = ["должность", "место_работы", "команда"],
-        ["travel"] = ["план_поездки", "направление"],
-        ["relationship"] = ["статус_отношений", "семейное_положение"],
-        ["contact"] = ["телефон", "telegram_handle"],
-        ["finance"] = ["доход", "расход"]
+        ["availability"] = ["free_time", "busy_status"],
+        ["location"] = ["current_location", "shared_location", "home_address", "work_address"],
+        ["schedule"] = ["schedule", "meeting_time"],
+        ["health"] = ["health_status", "medication_usage", "diagnosis"],
+        ["work"] = ["job_title", "workplace", "team"],
+        ["travel"] = ["travel_plan", "destination"],
+        ["relationship"] = ["relationship_status", "family_status"],
+        ["contact"] = ["phone", "telegram_handle"],
+        ["finance"] = ["income", "expenses"]
+    };
+
+    private static readonly Dictionary<string, string> CategoryAliases = new(StringComparer.Ordinal)
+    {
+        ["доступность"] = "availability",
+        ["местоположение"] = "location",
+        ["локация"] = "location",
+        ["расписание"] = "schedule",
+        ["здоровье"] = "health",
+        ["работа"] = "work",
+        ["поездки"] = "travel",
+        ["путешествия"] = "travel",
+        ["отношения"] = "relationship",
+        ["контакт"] = "contact",
+        ["контакты"] = "contact",
+        ["финансы"] = "finance"
+    };
+
+    private static readonly Dictionary<string, string> ClaimTypeAliases = new(StringComparer.Ordinal)
+    {
+        ["факт"] = "fact",
+        ["намерение"] = "intent",
+        ["предпочтение"] = "preference",
+        ["отношение"] = "relationship",
+        ["состояние"] = "state",
+        ["потребность"] = "need",
+        ["profile"] = "profile_signal"
+    };
+
+    private static readonly Dictionary<string, string> RelationshipTypeAliases = new(StringComparer.Ordinal)
+    {
+        ["семья"] = "family",
+        ["друг"] = "friend",
+        ["коллега"] = "colleague",
+        ["знакомый"] = "acquaintance",
+        ["партнер"] = "partner",
+        ["сосед"] = "neighbor"
+    };
+
+    private static readonly Dictionary<string, string> ObservationTypeAliases = new(StringComparer.Ordinal)
+    {
+        ["availability_status"] = "availability_update",
+        ["location_share"] = "location_update",
+        ["contact_shared"] = "contact_share"
+    };
+
+    private static readonly Dictionary<string, string> EventTypeAliases = new(StringComparer.Ordinal)
+    {
+        ["status_update"] = "availability_update",
+        ["location_share"] = "location_update"
+    };
+
+    private static readonly Dictionary<string, string> TraitAliases = new(StringComparer.Ordinal)
+    {
+        ["stress_level"] = "stress_signal",
+        ["mood_status"] = "mood_signal"
+    };
+
+    private static readonly Dictionary<string, Dictionary<string, string>> KeyAliasesByCategory = new(StringComparer.Ordinal)
+    {
+        ["availability"] = new(StringComparer.Ordinal)
+        {
+            ["свободное_время"] = "free_time",
+            ["занятость"] = "busy_status",
+            ["availability_status"] = "busy_status"
+        },
+        ["location"] = new(StringComparer.Ordinal)
+        {
+            ["текущее_местоположение"] = "current_location",
+            ["домашний_адрес"] = "home_address",
+            ["рабочий_адрес"] = "work_address",
+            ["current_place"] = "current_location"
+        },
+        ["schedule"] = new(StringComparer.Ordinal)
+        {
+            ["расписание"] = "schedule",
+            ["время_встречи"] = "meeting_time"
+        },
+        ["health"] = new(StringComparer.Ordinal)
+        {
+            ["состояние_здоровья"] = "health_status",
+            ["принимает_лекарства"] = "medication_usage",
+            ["диагноз"] = "diagnosis",
+            ["medications"] = "medication_usage"
+        },
+        ["work"] = new(StringComparer.Ordinal)
+        {
+            ["должность"] = "job_title",
+            ["место_работы"] = "workplace",
+            ["команда"] = "team"
+        },
+        ["travel"] = new(StringComparer.Ordinal)
+        {
+            ["план_поездки"] = "travel_plan",
+            ["направление"] = "destination"
+        },
+        ["relationship"] = new(StringComparer.Ordinal)
+        {
+            ["статус_отношений"] = "relationship_status",
+            ["семейное_положение"] = "family_status"
+        },
+        ["contact"] = new(StringComparer.Ordinal)
+        {
+            ["телефон"] = "phone",
+            ["phone_number"] = "phone"
+        },
+        ["finance"] = new(StringComparer.Ordinal)
+        {
+            ["доход"] = "income",
+            ["расход"] = "expenses",
+            ["expense"] = "expenses",
+            ["salary"] = "income"
+        }
     };
 
     public static bool IsSnakeCase(string value)
@@ -74,11 +188,116 @@ public static class ExtractionSemanticContract
 
     public static bool IsAllowedKey(string category, string key)
     {
-        if (!AllowedKeysByCategory.TryGetValue(category, out var keys))
+        var canonicalCategory = CanonicalizeCategory(category);
+        var canonicalKey = CanonicalizeKey(canonicalCategory, key);
+        if (!AllowedKeysByCategory.TryGetValue(canonicalCategory, out var keys))
         {
             return false;
         }
 
-        return keys.Contains(key);
+        return keys.Contains(canonicalKey);
+    }
+
+    public static string CanonicalizeCategory(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return CategoryAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeClaimType(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return ClaimTypeAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeRelationshipType(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return RelationshipTypeAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeObservationType(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return ObservationTypeAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeEventType(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return EventTypeAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeTrait(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return TraitAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeKey(string? category, string? key)
+    {
+        var canonicalCategory = CanonicalizeCategory(category);
+        var normalizedKey = NormalizeToken(key);
+        if (canonicalCategory.Length == 0 || normalizedKey.Length == 0)
+        {
+            return normalizedKey;
+        }
+
+        if (KeyAliasesByCategory.TryGetValue(canonicalCategory, out var aliases) &&
+            aliases.TryGetValue(normalizedKey, out var canonicalKey))
+        {
+            return canonicalKey;
+        }
+
+        return normalizedKey;
+    }
+
+    public static string NormalizeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim()
+            .ToLowerInvariant()
+            .Replace('-', '_')
+            .Replace(' ', '_');
+        while (normalized.Contains("__", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return normalized;
     }
 }
