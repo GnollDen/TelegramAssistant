@@ -19,8 +19,11 @@ public partial class AnalysisWorkerService : BackgroundService
     private const string SessionChunkCheckpointPrefix = "stage5:session_chunk_checkpoint";
     private const string SessionSummaryCheckpointPrefix = "stage5:summary:session";
     private const string SessionSkipCounterPrefix = "stage5:skip:msg";
+    private const string ValidationRejectCounterPrefix = "stage5:validation:msg";
     private const int SessionSkipQuarantineThreshold = 3;
     private const string SessionSkipQuarantineReason = "session_limit_skipped_more_than_3_times";
+    private const int ValidationRejectQuarantineThreshold = 3;
+    private const string ValidationRejectQuarantineReason = "stage5_validation_rejected_retries_exhausted";
     private const int SessionSkipQuarantineRecoveryAgeHours = 6;
     private const int UncappedSessionSliceFetchWindowSessions = 200;
     private const int MaxCheapLlmBatchSize = 100;
@@ -1078,13 +1081,30 @@ public partial class AnalysisWorkerService : BackgroundService
 
         if (failedValidationMessageIds.Count > 0)
         {
-            await _messageRepository.MarkNeedsReanalysisAsync(
-                failedValidationMessageIds,
-                "stage5_validation_rejected",
-                ct);
+            var newlyQuarantined = await IncrementValidationRejectCountersAndQuarantineAsync(failedValidationMessageIds, ct);
+            foreach (var quarantinedId in newlyQuarantined)
+            {
+                failedChunkMessageIds.TryRemove(quarantinedId, out _);
+            }
+
+            var retryValidationIds = failedValidationMessageIds
+                .Where(x => !newlyQuarantined.Contains(x))
+                .ToList();
+            if (retryValidationIds.Count > 0)
+            {
+                await _messageRepository.MarkNeedsReanalysisAsync(
+                    retryValidationIds,
+                    "stage5_validation_rejected",
+                    ct);
+            }
+
             _logger.LogWarning(
-                "Stage5 queued validation-rejected messages for retry: count={Count}",
-                failedValidationMessageIds.Count);
+                "Stage5 handled validation-rejected messages: total={TotalCount}, queued_for_retry={RetryCount}, quarantined={QuarantinedCount}, quarantine_threshold={Threshold}, quarantine_reason={Reason}",
+                failedValidationMessageIds.Count,
+                retryValidationIds.Count,
+                newlyQuarantined.Count,
+                ValidationRejectQuarantineThreshold,
+                ValidationRejectQuarantineReason);
         }
 
         if (failedItemMessageIds.Count > 0)
@@ -1098,6 +1118,7 @@ public partial class AnalysisWorkerService : BackgroundService
                 failedItemMessageIds.Count);
         }
 
+        await ResetValidationRejectCountersAsync(successfulMessageIds, ct);
         await MarkProcessedMessagesAsync(successfulMessageIds, ct);
 
         var result = new CheapPassResult(failedChunkMessageIds.Keys.ToHashSet(), balanceIssueDetected == 1);
@@ -1987,6 +2008,48 @@ public partial class AnalysisWorkerService : BackgroundService
     private static string BuildSessionSkipCounterKey(long messageId)
     {
         return $"{SessionSkipCounterPrefix}:{messageId}";
+    }
+
+    private async Task ResetValidationRejectCountersAsync(IReadOnlyCollection<long> messageIds, CancellationToken ct)
+    {
+        var keys = messageIds
+            .Where(x => x > 0)
+            .Distinct()
+            .Select(BuildValidationRejectCounterKey)
+            .ToArray();
+        await _stateRepository.ResetWatermarksIfExistAsync(keys, ct);
+    }
+
+    private async Task<HashSet<long>> IncrementValidationRejectCountersAndQuarantineAsync(
+        IReadOnlyCollection<long> messageIds,
+        CancellationToken ct)
+    {
+        var quarantineIds = new HashSet<long>();
+        foreach (var messageId in messageIds.Where(x => x > 0).Distinct())
+        {
+            var key = BuildValidationRejectCounterKey(messageId);
+            var next = await _stateRepository.GetWatermarkAsync(key, ct) + 1;
+            await _stateRepository.SetWatermarkAsync(key, next, ct);
+            if (next > ValidationRejectQuarantineThreshold)
+            {
+                quarantineIds.Add(messageId);
+            }
+        }
+
+        if (quarantineIds.Count > 0)
+        {
+            await _extractionRepository.QuarantineMessagesAsync(
+                quarantineIds.ToArray(),
+                ValidationRejectQuarantineReason,
+                ct);
+        }
+
+        return quarantineIds;
+    }
+
+    private static string BuildValidationRejectCounterKey(long messageId)
+    {
+        return $"{ValidationRejectCounterPrefix}:{messageId}";
     }
 
     private async Task EnsureSessionSlicesForMessagesAsync(IReadOnlyCollection<Message> messages, CancellationToken ct)
