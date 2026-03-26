@@ -261,7 +261,7 @@ public static class ExtractionValidator
                 return false;
             }
 
-            if (!ExtractionSemanticContract.IsSnakeCase(signal.Trait) ||
+            if (!ExtractionSemanticContract.IsAllowedProfileTrait(signal.Trait) ||
                 !ExtractionSemanticContract.IsSnakeCase(signal.Direction))
             {
                 error = "invalid_profile_signal_semantics";

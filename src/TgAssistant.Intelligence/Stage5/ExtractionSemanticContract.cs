@@ -164,6 +164,7 @@ public static class ExtractionSemanticContract
         ["interes_k_zdorovomu_obrazu_zhizni"] = "healthy_lifestyle_interest",
         ["healthy_lifestyle_interest"] = "healthy_lifestyle_interest",
         ["emotsionalnaya_zavisimost"] = "emotional_dependency",
+        ["emotsionalnaya_zavisimost_ot_golosa"] = "emotional_dependency",
         ["emotional_dependency"] = "emotional_dependency",
         ["podderzhka_druzey"] = "support_network",
         ["support_network"] = "support_network",
@@ -244,6 +245,22 @@ public static class ExtractionSemanticContract
     public static bool IsSnakeCase(string value)
     {
         return !string.IsNullOrWhiteSpace(value) && SnakeCaseRegex.IsMatch(value);
+    }
+
+    public static bool IsAllowedProfileTrait(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (IsSnakeCase(value))
+        {
+            return true;
+        }
+
+        var normalized = NormalizeProfileToken(value);
+        return normalized.Length > 0 && ProfileTraitAliases.ContainsKey(normalized);
     }
 
     public static bool IsLikelyRussianText(string? value)
