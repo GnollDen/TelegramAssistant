@@ -50,6 +50,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private readonly SummaryHistoricalRetrievalService _historicalRetrievalService;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<AnalysisWorkerService> _logger;
+    private readonly ManagedPromptTemplate _cheapExtractionPromptContract;
     private readonly string _phaseOwnerId = $"stage5_worker:{Environment.ProcessId}:{Guid.NewGuid():N}";
     private readonly DateTime? _archiveCutoffUtc;
     private long _stage5PhaseGuardDeniedCount;
@@ -95,12 +96,24 @@ public partial class AnalysisWorkerService : BackgroundService
         _historicalRetrievalService = historicalRetrievalService;
         _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
+        _cheapExtractionPromptContract = Stage5PromptCatalog.ResolveCheapExtraction(_settings.CheapPromptId);
         _archiveCutoffUtc = ParseArchiveCutoffUtc(_settings.ArchiveCutoffUtc);
         if (!string.IsNullOrWhiteSpace(_settings.ArchiveCutoffUtc) && !_archiveCutoffUtc.HasValue)
         {
             _logger.LogWarning(
                 "Stage5 archive cutoff parse failed. value={ArchiveCutoffUtc}. Expected ISO-8601 UTC format, example: 2026-03-06T23:59:59Z",
                 _settings.ArchiveCutoffUtc);
+        }
+
+        if (!string.Equals(
+                _cheapExtractionPromptContract.Id,
+                (_settings.CheapPromptId ?? string.Empty).Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Stage5 cheap prompt id is unknown, fallback applied. configured={ConfiguredPromptId}, selected={SelectedPromptId}",
+                _settings.CheapPromptId,
+                _cheapExtractionPromptContract.Id);
         }
     }
 
@@ -114,8 +127,10 @@ public partial class AnalysisWorkerService : BackgroundService
 
         await EnsureDefaultPromptsAsync(stoppingToken);
         _logger.LogInformation(
-            "Stage5 analysis worker started. cheap_model={Cheap}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}, session_chunk_parallelism={SessionChunkParallelism}, cheap_chunk_target_chars={CheapChunkTargetChars}, cheap_chunk_max_chars={CheapChunkMaxChars}, cheap_chunk_min_messages={CheapChunkMinMessages}, cheap_chunk_pause_gap_min={CheapChunkPauseGapMinutes}, archive_only_mode={ArchiveOnlyMode}, archive_cutoff_utc={ArchiveCutoffUtc}",
+            "Stage5 analysis worker started. cheap_model={Cheap}, cheap_prompt_id={CheapPromptId}, cheap_prompt_version={CheapPromptVersion}, expensive_model={Expensive}, cheap_parallelism={CheapParallelism}, cheap_batch_workers={CheapBatchWorkers}, session_chunk_size={SessionChunkSize}, session_chunk_parallelism={SessionChunkParallelism}, cheap_chunk_target_chars={CheapChunkTargetChars}, cheap_chunk_max_chars={CheapChunkMaxChars}, cheap_chunk_min_messages={CheapChunkMinMessages}, cheap_chunk_pause_gap_min={CheapChunkPauseGapMinutes}, archive_only_mode={ArchiveOnlyMode}, archive_cutoff_utc={ArchiveCutoffUtc}",
             _settings.CheapModel,
+            _cheapExtractionPromptContract.Id,
+            _cheapExtractionPromptContract.Version,
             _settings.ExpensiveModel,
             GetCheapLlmParallelism(),
             GetCheapBatchWorkers(),
@@ -954,7 +969,7 @@ public partial class AnalysisWorkerService : BackgroundService
                     replyContext.GetValueOrDefault(m.Id))
             }).ToList();
 
-            var cheapPrompt = await GetPromptAsync(Stage5PromptCatalog.CheapExtraction, ct);
+            var cheapPrompt = await GetPromptAsync(_cheapExtractionPromptContract, ct);
             var (computedModelGroups, cheapChunks) = BuildCheapChunkRequests(batch, modelByMessageId);
             modelGroups = computedModelGroups;
             cheapChunkRequests = cheapChunks.Count;
@@ -1639,9 +1654,10 @@ public partial class AnalysisWorkerService : BackgroundService
 
     private async Task EnsureDefaultPromptsAsync(CancellationToken ct)
     {
-        await EnsurePromptAsync(Stage5PromptCatalog.CheapExtraction, ct);
-        await EnsurePromptAsync(Stage5PromptCatalog.ExpensiveReasoning, ct);
-        await EnsurePromptAsync(Stage5PromptCatalog.SessionSummary, ct);
+        foreach (var managedPrompt in Stage5PromptCatalog.ManagedPrompts)
+        {
+            await EnsurePromptAsync(managedPrompt, ct);
+        }
     }
 
     private async Task EnsurePromptAsync(ManagedPromptTemplate contract, CancellationToken ct)

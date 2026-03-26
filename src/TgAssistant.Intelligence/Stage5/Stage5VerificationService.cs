@@ -60,13 +60,7 @@ public class Stage5VerificationService
             throw new InvalidOperationException("Stage5 smoke failed: SummaryHistoricalHintsEnabled=true while SummaryEnabled=false.");
         }
 
-        var managedPrompts = new[]
-        {
-            Stage5PromptCatalog.CheapExtraction,
-            Stage5PromptCatalog.ExpensiveReasoning,
-            Stage5PromptCatalog.SessionSummary,
-            Stage5PromptCatalog.DailyAggregate
-        };
+        var managedPrompts = Stage5PromptCatalog.ManagedPrompts;
         foreach (var managedPrompt in managedPrompts)
         {
             var managedTemplate = managedPrompt.ToTemplate();
@@ -96,6 +90,18 @@ public class Stage5VerificationService
             }
         }
 
+        var selectedCheapPrompt = Stage5PromptCatalog.ResolveCheapExtraction(_analysisSettings.CheapPromptId);
+        var normalizedConfiguredCheapPromptId = string.IsNullOrWhiteSpace(_analysisSettings.CheapPromptId)
+            ? string.Empty
+            : _analysisSettings.CheapPromptId.Trim();
+        if (!string.Equals(normalizedConfiguredCheapPromptId, selectedCheapPrompt.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Stage5 smoke: unknown Analysis.CheapPromptId configured. configured={ConfiguredPromptId}, fallback_selected={SelectedPromptId}",
+                _analysisSettings.CheapPromptId,
+                selectedCheapPrompt.Id);
+        }
+
         var summaryInlinePath = _analysisSettings.Enabled
             ? (_analysisSettings.SummaryEnabled ? "inline_llm_plus_fallback" : "inline_fallback_only")
             : "disabled_with_stage5";
@@ -104,8 +110,10 @@ public class Stage5VerificationService
             : "disabled";
 
         _logger.LogInformation(
-            "Stage5 smoke passed. cheap_model={CheapModel}, expensive_pass_enabled={ExpensiveEnabled}, expensive_batch_limit={ExpensiveBatchLimit}, expensive_daily_budget_usd={ExpensiveDailyBudget:0.000000}, edit_diff_enabled={EditDiffEnabled}, summary_inline_path={SummaryInlinePath}, summary_worker_path={SummaryWorkerPath}, summary_model={SummaryModel}, historical_hints_enabled={HistoricalHintsEnabled}, summary_embedding_model={SummaryEmbeddingModel}, summary_embedding_from_config={SummaryEmbeddingFromConfig}, managed_prompt_count={ManagedPromptCount}",
+            "Stage5 smoke passed. cheap_model={CheapModel}, cheap_prompt_id={CheapPromptId}, cheap_prompt_version={CheapPromptVersion}, expensive_pass_enabled={ExpensiveEnabled}, expensive_batch_limit={ExpensiveBatchLimit}, expensive_daily_budget_usd={ExpensiveDailyBudget:0.000000}, edit_diff_enabled={EditDiffEnabled}, summary_inline_path={SummaryInlinePath}, summary_worker_path={SummaryWorkerPath}, summary_model={SummaryModel}, historical_hints_enabled={HistoricalHintsEnabled}, summary_embedding_model={SummaryEmbeddingModel}, summary_embedding_from_config={SummaryEmbeddingFromConfig}, managed_prompt_count={ManagedPromptCount}",
             _analysisSettings.CheapModel,
+            selectedCheapPrompt.Id,
+            selectedCheapPrompt.Version,
             expensiveEnabled,
             expensiveBatch,
             _analysisSettings.ExpensiveDailyBudgetUsd,
@@ -116,7 +124,7 @@ public class Stage5VerificationService
             summaryRouting.HistoricalHintsEnabled,
             summaryRouting.EmbeddingModel,
             summaryRouting.EmbeddingModelFromConfig,
-            managedPrompts.Length);
+            managedPrompts.Count);
 
         ct.ThrowIfCancellationRequested();
     }

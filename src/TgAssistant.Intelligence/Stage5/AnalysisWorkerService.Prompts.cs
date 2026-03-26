@@ -2,7 +2,7 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public partial class AnalysisWorkerService
 {
-    internal const string DefaultCheapPrompt = """
+    internal const string DefaultCheapPromptV10 = """
 You extract intelligence signals from chat logs.
 Return ONLY a valid JSON object with field `items`.
 For each input `<message id="...">` return exactly one item with the same `message_id`.
@@ -145,6 +145,88 @@ Input: <message id="107">[meta] sender_name="Alena" ... созвон в 12:00 и
 Output item: {"message_id":107,"entities":[{"name":"Alena","type":"Person","confidence":0.92,"trust_factor":0.92}],"observations":[{"subject_name":"Alena","type":"schedule_update","object_name":null,"value":"созвон в 12:00 или 13:00","evidence":"созвон в 12:00 или 13:00","confidence":0.78}],"claims":[],"facts":[],"relationships":[],"events":[],"profile_signals":[],"requires_expensive":true,"reason":"есть важное расписание, но не определены участники созвона"}
 
 Never include markdown or extra text.
+""";
+
+    internal const string DefaultCheapPromptV11 = """
+You extract intelligence signals from chat logs.
+Return ONLY valid JSON object with field `items`.
+For each input `<message id="...">` return exactly one item with the same `message_id`.
+
+Core context:
+- Each `<message>` includes `[temporal_context] message_date=...`. Use this as `{MessageDate}` and resolve relative dates ("завтра", "30-го") to absolute dates.
+- Archive may start mid-dialog (deleted history). You may use strong local cues for continuity, but never invent facts without confirmation in current message.
+- If message date is in the past, align tense accordingly (planned-then becomes past event/fact).
+
+Output item schema:
+- message_id (number)
+- entities: [{name,type,confidence,trust_factor,needs_clarification}] ; type in [Person, Organization, Place, Pet, Event]
+- observations: [{subject_name,type,object_name,value,evidence,confidence}]
+- claims: [{entity_name,claim_type,category,key,value,evidence,confidence}]
+- facts: [{entity_name,category,key,value,confidence,trust_factor,needs_clarification}]
+- relationships: [{from_entity_name,to_entity_name,type,confidence}]
+- events: [{type,subject_name,object_name,sentiment,summary,confidence}]
+- profile_signals: [{subject_name,trait,direction,evidence,confidence}]
+- requires_expensive (boolean)
+- reason (string; required and non-empty when requires_expensive=true; otherwise null or omit)
+
+Semantic contract:
+- claim_type: fact|intent|preference|relationship|state|need
+- category ONLY: availability, location, schedule, health, work, travel, relationship, contact, finance
+- canonical keys ONLY:
+  availability: free_time, busy_status
+  location: current_location, shared_location, home_address, work_address
+  schedule: schedule, meeting_time
+  health: health_status, medication_usage, diagnosis
+  work: job_title, workplace, team
+  travel: travel_plan, destination
+  relationship: relationship_status, family_status
+  contact: phone, telegram_handle
+  finance: income, expenses
+- relationship.type ONLY: family|friend|colleague|acquaintance|partner|neighbor
+
+Normalization rules:
+- Entity names canonical, trimmed, no duplicate spaces; no placeholders (`sender`, `author`, `me`, `self`, `i`).
+- Resolve `pN` labels from `[PARTICIPANTS]` to real names.
+- categories/claim_type/relationship.type/event.type/observation.type/profile_signals.trait/profile_signals.direction: lowercase snake_case.
+- profile_signals.trait must be canonical ascii snake_case id (e.g., affection, anxiety, supportiveness, support_network, few_friends).
+- profile_signals.direction should be one of: positive, negative, neutral, mixed.
+- keys must be canonical EN snake_case; no RU keys and no near-duplicate variants.
+- confidence and trust_factor in range 0.0..1.0.
+
+Context usage and grounding discipline:
+- `[PREVIOUS SESSION SUMMARY]`, `[CHUNK_SUMMARY_PREV]`, `[PRE_DIALOG_CONTEXT]`, `[REPLY_SLICE_CONTEXT]`, `[RAG_CONTEXT]`, `[EXTERNAL_REPLY_CONTEXT]`, [local_burst_context], [session_start_context], [historical_context] are supporting context only.
+- Never emit facts solely from context blocks; current `<message>` must confirm the signal.
+- Treat `[Voice Message: ...] "..."` transcript as primary text; tone marker is only supporting paralinguistic evidence.
+- If third party is explicit in message/reply context, attribute to that person (not auto-sender).
+
+Extraction policy:
+- Prioritize durable/actionable signals: availability, schedule, movement/pickup/dropoff, work state, finance, health, relationship, location/address, shared contacts.
+- Keep all arrays empty for low-value chatter (emoji/sticker/laughter-only, vague acknowledgements, generic filler, non-actionable talk).
+- Question/request/agreement is extractable only when actionable (time/place/movement/call/meeting/health/work/travel/money/address/contact).
+- If subject unresolved and signal is weak, prefer empty arrays.
+- If name/address/fact is uncertain or incomplete, set `needs_clarification=true`; never hallucinate precise values.
+- Skip technical/system chatter as facts/claims (errors, access/debug/app incidents). Do not use categories like system_status/error/access/debug/technical.
+- Avoid duplicate semantics across facts/claims.
+- Evidence is short grounded snippet or tight paraphrase from the same message.
+- If useful event-like signal exists, try to emit supporting observation; if useful fact/relationship exists, try to emit supporting claim.
+
+Availability/schedule/work boundary (strict):
+- Scheduling/availability must map to availability.free_time, availability.busy_status, schedule.schedule, or schedule.meeting_time.
+- Do NOT invent near-miss keys: work_plan, work_update, workload, job_status, job_intent, participation, meeting_invitation, productivity, work.busy_status, work.constraints, work.work.
+- Work category is only job_title/workplace/team. Workload/capacity nuances belong in value/evidence of allowed availability/schedule/work keys.
+
+requires_expensive:
+- Set `requires_expensive=true` only when message is materially useful but grounded extraction is blocked by ambiguity/missing context.
+- Do NOT use it for filler/short vague coordination/low-value snippets.
+- If `requires_expensive=true`, `reason` MUST be non-empty Russian text explaining the block.
+- Never return `requires_expensive=true` with empty/whitespace/null/missing reason.
+
+Language policy:
+- Generated text fields (`value`, `evidence`, `summary`, `reason`) MUST be Russian (Cyrillic) when possible.
+- Translate short English fragments to natural Russian while preserving meaning.
+
+Output hygiene:
+- No markdown, no explanations, no extra keys.
 """;
 
     internal const string DefaultExpensivePrompt = """
