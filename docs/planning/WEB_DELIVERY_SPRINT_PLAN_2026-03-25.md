@@ -266,3 +266,27 @@ Do not turn it into:
 - a public-product redesign
 - a frontend design exercise
 - a second implementation of backend logic that already exists
+<<<<<<< HEAD
+=======
+
+## Post-W4 Follow-Up Backlog
+
+The core web track is complete, but the following operator-facing cleanup remains important.
+
+### Real Scope Prioritization
+
+Problem:
+- single-user web scope bootstrap can currently surface technical or smoke contexts as candidate working scopes
+- this is correct technically, but wrong for default operator UX
+
+Required fix:
+- default scope resolution should prioritize real operator contexts above smoke/dev/test contexts
+- technical contexts should be excluded from default auto-resolution where possible
+- if shown at all, technical contexts should appear in a clearly separate secondary section
+
+Minimum expected behavior:
+- configured default scope stays highest priority
+- inferred scope should prefer real active operator cases
+- smoke/dev/generated contexts should not become the default operator landing context
+- onboarding list should explain real available contexts in operator language, not as raw technical scope candidates
+>>>>>>> 58c7268 (Add Stage 6 remediation planning track)

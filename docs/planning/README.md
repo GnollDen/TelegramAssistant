@@ -32,6 +32,13 @@ It consolidates the recent backlog, product, and sprint-planning work into one p
 - separate web delivery track
 - use when planning the internal operator web app
 
+7. [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
+- chronology-first reconstruction track
+- use when planning initial historical passes, pilot-year runs, and chronology-driven case provenance
+
+8. [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+- separate Stage 6 remediation track
+- use when planning post-audit Stage 6 fixes, rebuild prep, and Stage 6 rebuild hardening
 ## Current Source-of-Truth Rule
 
 For current implementation planning, use:
@@ -45,6 +52,8 @@ For supporting decision context, use:
 - [RUNTIME_TOPOLOGY_NOTE_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\RUNTIME_TOPOLOGY_NOTE_2026-03-25.md)
 - [STAGE6_FULL_IMPLEMENTATION_PLAN_2026-03-24.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_FULL_IMPLEMENTATION_PLAN_2026-03-24.md)
 - [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
+- [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
+- [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
 
 Do not use `docs/BACKLOG_STATUS.md` as an equal execution authority for sprint start.
 It is useful as historical status framing, but the active planning pack is authoritative for current implementation sequencing.
