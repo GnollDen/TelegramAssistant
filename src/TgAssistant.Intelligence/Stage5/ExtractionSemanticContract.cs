@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TgAssistant.Intelligence.Stage5;
@@ -117,10 +118,63 @@ public static class ExtractionSemanticContract
         ["location_share"] = "location_update"
     };
 
-    private static readonly Dictionary<string, string> TraitAliases = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, string> ProfileTraitAliases = new(StringComparer.Ordinal)
     {
         ["stress_level"] = "stress_signal",
-        ["mood_status"] = "mood_signal"
+        ["mood_status"] = "mood_signal",
+        ["emotional_attachment"] = "emotional_attachment",
+        ["emotsionalnaya_privyazannost"] = "emotional_attachment",
+        ["trevozhnost"] = "anxiety",
+        ["anxiety"] = "anxiety",
+        ["zabotlivyy"] = "supportiveness",
+        ["zabotlivaya"] = "supportiveness",
+        ["zabotlivost"] = "supportiveness",
+        ["supportiveness"] = "supportiveness",
+        ["laskovyy"] = "affection",
+        ["laskovost"] = "affection",
+        ["laskovaya"] = "affection",
+        ["affection"] = "affection",
+        ["emotsionalnyy"] = "emotionality",
+        ["emotsionalnost"] = "emotionality",
+        ["emotionality"] = "emotionality",
+        ["podderzhivayushchiy"] = "supportive",
+        ["supportive"] = "supportive",
+        ["emotsionalnaya_uyazvimost"] = "emotional_vulnerability",
+        ["emotional_vulnerability"] = "emotional_vulnerability",
+        ["emotsionalno_nestabilnyy"] = "emotional_instability",
+        ["emotsionalnaya_nestabilnost"] = "emotional_instability",
+        ["emotional_instability"] = "emotional_instability",
+        ["nenadezhnost"] = "unreliability",
+        ["unreliability"] = "unreliability",
+        ["druzhelyubnyy"] = "friendliness",
+        ["druzhestvennyy"] = "friendliness",
+        ["friendliness"] = "friendliness",
+        ["affektivnost"] = "affectivity",
+        ["affectivity"] = "affectivity",
+        ["emotsionalnoe_sostoyanie"] = "emotional_state",
+        ["emotional_state"] = "emotional_state",
+        ["emotsionalnaya_zabota"] = "emotional_care",
+        ["emotional_care"] = "emotional_care",
+        ["strakh_odinochestva"] = "fear_of_loneliness",
+        ["fear_of_loneliness"] = "fear_of_loneliness",
+        ["impulsivnost"] = "impulsiveness",
+        ["impulsiveness"] = "impulsiveness",
+        ["neuverennost_v_rabote"] = "work_insecurity",
+        ["work_insecurity"] = "work_insecurity",
+        ["interes_k_zdorovomu_obrazu_zhizni"] = "healthy_lifestyle_interest",
+        ["healthy_lifestyle_interest"] = "healthy_lifestyle_interest",
+        ["emotsionalnaya_zavisimost"] = "emotional_dependency",
+        ["emotional_dependency"] = "emotional_dependency",
+        ["podderzhka_druzey"] = "support_network",
+        ["support_network"] = "support_network",
+        ["pomogayushchaya"] = "helpfulness",
+        ["helpfulness"] = "helpfulness",
+        ["neterpelivost"] = "impatience",
+        ["impatience"] = "impatience",
+        ["malo_druzey"] = "few_friends",
+        ["few_friends"] = "few_friends",
+        ["uspeshnaya_v_rabote"] = "successful_at_work",
+        ["successful_at_work"] = "successful_at_work"
     };
 
     private static readonly Dictionary<string, Dictionary<string, string>> KeyAliasesByCategory = new(StringComparer.Ordinal)
@@ -265,13 +319,64 @@ public static class ExtractionSemanticContract
 
     public static string CanonicalizeTrait(string? value)
     {
-        var normalized = NormalizeToken(value);
+        var normalized = NormalizeProfileToken(value);
         if (normalized.Length == 0)
         {
             return string.Empty;
         }
 
-        return TraitAliases.GetValueOrDefault(normalized, normalized);
+        return ProfileTraitAliases.GetValueOrDefault(normalized, normalized);
+    }
+
+    public static string CanonicalizeProfileSignalDirection(string? value)
+    {
+        var normalized = NormalizeProfileToken(value);
+        if (normalized.Length == 0)
+        {
+            return "neutral";
+        }
+
+        if (ProfileDirectionAliases.TryGetValue(normalized, out var alias))
+        {
+            return alias;
+        }
+
+        if (normalized.StartsWith("positive", StringComparison.Ordinal))
+        {
+            return "positive";
+        }
+
+        if (normalized.StartsWith("negative", StringComparison.Ordinal))
+        {
+            return "negative";
+        }
+
+        if (normalized.StartsWith("neutral", StringComparison.Ordinal))
+        {
+            return "neutral";
+        }
+
+        if (normalized.StartsWith("mixed", StringComparison.Ordinal))
+        {
+            return "mixed";
+        }
+
+        if (normalized.Contains("positive", StringComparison.Ordinal))
+        {
+            return "positive";
+        }
+
+        if (normalized.Contains("negative", StringComparison.Ordinal))
+        {
+            return "negative";
+        }
+
+        if (normalized.Contains("mixed", StringComparison.Ordinal))
+        {
+            return "mixed";
+        }
+
+        return "neutral";
     }
 
     public static string CanonicalizeKey(string? category, string? key)
@@ -375,4 +480,79 @@ public static class ExtractionSemanticContract
 
         return normalized;
     }
+
+    private static string NormalizeProfileToken(string? value)
+    {
+        var normalized = NormalizeToken(value);
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (CyrillicTransliteration.TryGetValue(ch, out var transliterated))
+            {
+                builder.Append(transliterated);
+                continue;
+            }
+
+            builder.Append(ch);
+        }
+
+        var result = builder.ToString().Trim('_');
+        return result;
+    }
+
+    private static readonly Dictionary<char, string> CyrillicTransliteration = new()
+    {
+        ['а'] = "a",
+        ['б'] = "b",
+        ['в'] = "v",
+        ['г'] = "g",
+        ['д'] = "d",
+        ['е'] = "e",
+        ['ё'] = "yo",
+        ['ж'] = "zh",
+        ['з'] = "z",
+        ['и'] = "i",
+        ['й'] = "y",
+        ['к'] = "k",
+        ['л'] = "l",
+        ['м'] = "m",
+        ['н'] = "n",
+        ['о'] = "o",
+        ['п'] = "p",
+        ['р'] = "r",
+        ['с'] = "s",
+        ['т'] = "t",
+        ['у'] = "u",
+        ['ф'] = "f",
+        ['х'] = "kh",
+        ['ц'] = "ts",
+        ['ч'] = "ch",
+        ['ш'] = "sh",
+        ['щ'] = "shch",
+        ['ы'] = "y",
+        ['э'] = "e",
+        ['ю'] = "yu",
+        ['я'] = "ya",
+        ['ъ'] = string.Empty,
+        ['ь'] = string.Empty
+    };
+
+    private static readonly Dictionary<string, string> ProfileDirectionAliases = new(StringComparer.Ordinal)
+    {
+        ["positive"] = "positive",
+        ["negative"] = "negative",
+        ["neutral"] = "neutral",
+        ["mixed"] = "mixed",
+        ["polozhitelnaya"] = "positive",
+        ["smeshannyy"] = "mixed",
+        ["grust"] = "negative",
+        ["redkoe"] = "neutral",
+        ["text"] = "neutral",
+        ["occasional"] = "neutral"
+    };
 }
