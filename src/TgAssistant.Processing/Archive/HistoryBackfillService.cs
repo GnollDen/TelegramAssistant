@@ -64,6 +64,9 @@ public class HistoryBackfillService : BackgroundService
         }
 
         IReadOnlyList<long> targetChatIds;
+        // Bound backfill to recent window for chats that do not yet have persisted messages.
+        // This prevents accidental full-history pulls in routine runtime startups.
+        var startupUpperBoundSinceUtc = DateTime.UtcNow.AddHours(-24);
         if (_settings.Enabled)
         {
             targetChatIds = ResolveTargetChatIds();
@@ -167,7 +170,12 @@ public class HistoryBackfillService : BackgroundService
 
                 try
                 {
-                    await BackfillChatAsync(client, chatId, inputPeer, sinceUtc, leaseCt);
+                    var effectiveSinceUtc = await ResolveEffectiveSinceUtcAsync(
+                        chatId,
+                        sinceUtc,
+                        startupUpperBoundSinceUtc,
+                        leaseCt);
+                    await BackfillChatAsync(client, chatId, inputPeer, effectiveSinceUtc, leaseCt);
                     await EnsureFreshTailBeforeHandoverAsync(client, chatId, inputPeer, leaseCt);
 
                     if (_coordinationSettings.Enabled)
@@ -549,6 +557,41 @@ public class HistoryBackfillService : BackgroundService
             skippedOld);
     }
 
+    private async Task<DateTime> ResolveEffectiveSinceUtcAsync(
+        long chatId,
+        DateTime configuredSinceUtc,
+        DateTime? startupUpperBoundSinceUtc,
+        CancellationToken ct)
+    {
+        var latestProcessed = await _messageRepository.GetProcessedByChatAsync(chatId, limit: 1, ct);
+        if (latestProcessed.Count > 0)
+        {
+            var latestTimestamp = EnsureUtc(latestProcessed[^1].Timestamp);
+            var gapLookback = TimeSpan.FromMinutes(Math.Max(5, _coordinationSettings.DowntimeCatchupThresholdMinutes));
+            var gapSinceUtc = latestTimestamp.Subtract(gapLookback);
+            var effectiveFromLatest = MaxUtc(configuredSinceUtc, gapSinceUtc);
+            _logger.LogInformation(
+                "Backfill scope resolved from latest processed message: chat_id={ChatId}, configured_since_utc={ConfiguredSinceUtc:O}, latest_message_utc={LatestMessageUtc:O}, gap_since_utc={GapSinceUtc:O}, effective_since_utc={EffectiveSinceUtc:O}",
+                chatId,
+                configuredSinceUtc,
+                latestTimestamp,
+                gapSinceUtc,
+                effectiveFromLatest);
+            return effectiveFromLatest;
+        }
+
+        var startupBoundedSinceUtc = startupUpperBoundSinceUtc.HasValue
+            ? MaxUtc(configuredSinceUtc, startupUpperBoundSinceUtc.Value)
+            : configuredSinceUtc;
+        _logger.LogInformation(
+            "Backfill scope resolved without existing processed messages: chat_id={ChatId}, configured_since_utc={ConfiguredSinceUtc:O}, startup_bound_since_utc={StartupBoundSinceUtc:O}, effective_since_utc={EffectiveSinceUtc:O}",
+            chatId,
+            configuredSinceUtc,
+            startupUpperBoundSinceUtc ?? configuredSinceUtc,
+            startupBoundedSinceUtc);
+        return startupBoundedSinceUtc;
+    }
+
     private async Task EnsureFreshTailBeforeHandoverAsync(
         Client client,
         long chatId,
@@ -556,6 +599,7 @@ public class HistoryBackfillService : BackgroundService
         CancellationToken ct)
     {
         var totalQueued = 0;
+        var enqueuedLogicalKeys = new HashSet<string>(StringComparer.Ordinal);
         for (var pass = 1; pass <= HandoverFreshnessMaxPasses; pass++)
         {
             ct.ThrowIfCancellationRequested();
@@ -608,18 +652,42 @@ public class HistoryBackfillService : BackgroundService
                 return;
             }
 
-            foreach (var message in missing)
+            var missingToQueue = missing
+                .Where(x => enqueuedLogicalKeys.Add(BuildLogicalMessageKey(chatId, x.id)))
+                .ToList();
+            var dedupeSkipped = missing.Count - missingToQueue.Count;
+            if (dedupeSkipped > 0)
+            {
+                _logger.LogInformation(
+                    "Backfill handoff freshness guard suppressed duplicate tail re-enqueue within same handover run: chat_id={ChatId}, pass={Pass}, skipped_count={SkippedCount}",
+                    chatId,
+                    pass,
+                    dedupeSkipped);
+            }
+
+            if (missingToQueue.Count == 0)
+            {
+                _logger.LogInformation(
+                    "Backfill handoff freshness guard detected only already-queued tail gaps; continuing handover without duplicate re-enqueue: chat_id={ChatId}, pass={Pass}, missing_count={MissingCount}",
+                    chatId,
+                    pass,
+                    missing.Count);
+                return;
+            }
+
+            foreach (var message in missingToQueue)
             {
                 var raw = await BuildRawMessageAsync(client, chatId, history, message, ct);
                 await _messageQueue.EnqueueAsync(raw, ct);
             }
 
-            totalQueued += missing.Count;
+            totalQueued += missingToQueue.Count;
             _logger.LogWarning(
-                "Backfill handoff freshness guard queued missing tail messages before realtime handoff: chat_id={ChatId}, pass={Pass}, missing_count={MissingCount}, newest_tail_message_id={NewestTailMessageId}",
+                "Backfill handoff freshness guard queued missing tail messages before realtime handoff: chat_id={ChatId}, pass={Pass}, missing_count={MissingCount}, enqueued_count={EnqueuedCount}, newest_tail_message_id={NewestTailMessageId}",
                 chatId,
                 pass,
                 missing.Count,
+                missingToQueue.Count,
                 tailMessages[^1].id);
 
             if (pass < HandoverFreshnessMaxPasses)
@@ -634,6 +702,9 @@ public class HistoryBackfillService : BackgroundService
             totalQueued,
             HandoverFreshnessMaxPasses);
     }
+
+    private static string BuildLogicalMessageKey(long chatId, long messageId)
+        => $"{chatId}:{messageId}";
 
     private async Task<RawTelegramMessage> BuildRawMessageAsync(
         Client client,
@@ -884,20 +955,36 @@ public class HistoryBackfillService : BackgroundService
 
     private IReadOnlyList<long> ResolveTargetChatIds()
     {
+        var fromMonitored = _telegramSettings.MonitoredChatIds
+            .Where(id => id > 0)
+            .Distinct()
+            .ToList();
         var fromBackfill = _settings.ChatIds
             .Where(id => id > 0)
             .Distinct()
             .ToList();
 
-        if (fromBackfill.Count > 0)
+        if (fromMonitored.Count == 0)
         {
             return fromBackfill;
         }
 
-        return _telegramSettings.MonitoredChatIds
-            .Where(id => id > 0)
+        if (fromBackfill.Count == 0)
+        {
+            return fromMonitored;
+        }
+
+        return fromMonitored
+            .Concat(fromBackfill)
             .Distinct()
             .ToList();
+    }
+
+    private static DateTime MaxUtc(DateTime a, DateTime b)
+    {
+        var ua = EnsureUtc(a);
+        var ub = EnsureUtc(b);
+        return ua >= ub ? ua : ub;
     }
 
     private static bool TryParseSinceDate(string raw, out DateTime sinceUtc)
