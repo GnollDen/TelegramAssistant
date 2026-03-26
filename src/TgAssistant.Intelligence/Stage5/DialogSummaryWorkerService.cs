@@ -97,15 +97,33 @@ public class DialogSummaryWorkerService : BackgroundService
 
                 var staleBeforeUtc = DateTime.UtcNow - HotSessionIdleTimeout;
                 var candidatesByChat = await _chatSessionRepository.GetPendingAggregationCandidatesAsync(staleBeforeUtc, stoppingToken);
-                var candidates = candidatesByChat
+                var sortedCandidates = candidatesByChat
                     .Values
                     .SelectMany(x => x)
                     .OrderBy(x => string.IsNullOrWhiteSpace(x.Summary) ? 0 : 1)
                     .ThenBy(x => x.LastMessageAt)
                     .ThenBy(x => x.ChatId)
                     .ThenBy(x => x.SessionIndex)
-                    .Take(Math.Max(1, _settings.SummaryBatchSize))
                     .ToList();
+                var candidates = new List<ChatSession>(Math.Max(1, _settings.SummaryBatchSize));
+                foreach (var candidate in sortedCandidates)
+                {
+                    if (candidates.Count >= Math.Max(1, _settings.SummaryBatchSize))
+                    {
+                        break;
+                    }
+
+                    var checkpointKey = BuildSessionSummaryCheckpointKey(candidate.ChatId, candidate.SessionIndex);
+                    var checkpoint = await _stateRepository.GetWatermarkAsync(checkpointKey, stoppingToken);
+                    var sessionEndMs = new DateTimeOffset(candidate.EndDate).ToUnixTimeMilliseconds();
+                    var hasSummary = !string.IsNullOrWhiteSpace(candidate.Summary);
+                    if (hasSummary && checkpoint >= sessionEndMs)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(candidate);
+                }
                 if (candidates.Count == 0)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _settings.SummaryPollIntervalSeconds)), stoppingToken);
@@ -140,6 +158,19 @@ public class DialogSummaryWorkerService : BackgroundService
                         .ToList();
                     if (sessionMessages.Count == 0)
                     {
+                        if (string.IsNullOrWhiteSpace(session.Summary))
+                        {
+                            await _chatSessionRepository.TryUpdateSummaryIfShapeUnchangedAsync(
+                                session.Id,
+                                session.ChatId,
+                                session.SessionIndex,
+                                session.StartDate,
+                                session.EndDate,
+                                session.LastMessageAt,
+                                "Сводка сессии недоступна.",
+                                stoppingToken);
+                        }
+
                         await _stateRepository.SetWatermarkAsync(checkpointKey, sessionEndMs, stoppingToken);
                         skipped++;
                         continue;
