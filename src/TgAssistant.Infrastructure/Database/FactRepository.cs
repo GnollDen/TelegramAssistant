@@ -303,35 +303,70 @@ public class FactRepository : IFactRepository
     {
         await WithDbContextAsync(async db =>
         {
-            var old = await db.Facts.FirstOrDefaultAsync(x => x.Id == oldFactId, ct);
-            if (old != null)
-            {
-                old.IsCurrent = false;
-                old.ValidUntil = DateTime.UtcNow;
-                old.UpdatedAt = DateTime.UtcNow;
-            }
+            var now = DateTime.UtcNow;
+            var rowId = newFact.Id == Guid.Empty ? Guid.NewGuid() : newFact.Id;
+            var normalizedDecayClass = NormalizeDecayClass(newFact.DecayClass);
 
-            db.Facts.Add(new DbFact
-            {
-                Id = newFact.Id == Guid.Empty ? Guid.NewGuid() : newFact.Id,
-                EntityId = newFact.EntityId,
-                Category = newFact.Category,
-                Key = newFact.Key,
-                Value = newFact.Value,
-                Status = (short)newFact.Status,
-                Confidence = newFact.Confidence,
-                SourceMessageId = newFact.SourceMessageId,
-                ValidFrom = newFact.ValidFrom ?? DateTime.UtcNow,
-                ValidUntil = newFact.ValidUntil,
-                IsCurrent = true,
-                DecayClass = NormalizeDecayClass(newFact.DecayClass),
-                IsUserConfirmed = newFact.IsUserConfirmed,
-                TrustFactor = newFact.TrustFactor,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            });
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE facts
+                SET is_current = FALSE,
+                    valid_until = COALESCE(valid_until, {now}),
+                    updated_at = {now}
+                WHERE id = {oldFactId};
+                """, ct);
 
-            await db.SaveChangesAsync(ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO facts (
+                    id,
+                    entity_id,
+                    category,
+                    key,
+                    value,
+                    status,
+                    confidence,
+                    source_message_id,
+                    valid_from,
+                    valid_until,
+                    is_current,
+                    decay_class,
+                    is_user_confirmed,
+                    trust_factor,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    {rowId},
+                    {newFact.EntityId},
+                    {newFact.Category},
+                    {newFact.Key},
+                    {newFact.Value},
+                    {(short)newFact.Status},
+                    {newFact.Confidence},
+                    {newFact.SourceMessageId},
+                    {newFact.ValidFrom ?? now},
+                    {newFact.ValidUntil},
+                    TRUE,
+                    {normalizedDecayClass},
+                    {newFact.IsUserConfirmed},
+                    {newFact.TrustFactor},
+                    {now},
+                    {now}
+                )
+                ON CONFLICT (entity_id, category, key, value) WHERE is_current = TRUE
+                DO UPDATE
+                SET confidence = GREATEST(facts.confidence, EXCLUDED.confidence),
+                    status = CASE
+                        WHEN facts.status = {(short)ConfidenceStatus.Tentative}
+                         AND EXCLUDED.status = {(short)ConfidenceStatus.Confirmed}
+                            THEN facts.status
+                        ELSE EXCLUDED.status
+                    END,
+                    source_message_id = COALESCE(EXCLUDED.source_message_id, facts.source_message_id),
+                    decay_class = EXCLUDED.decay_class,
+                    is_user_confirmed = facts.is_user_confirmed OR EXCLUDED.is_user_confirmed,
+                    trust_factor = GREATEST(facts.trust_factor, EXCLUDED.trust_factor),
+                    updated_at = EXCLUDED.updated_at;
+                """, ct);
         }, ct);
     }
 
