@@ -39,6 +39,14 @@ It consolidates the recent backlog, product, and sprint-planning work into one p
 8. [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
 - separate Stage 6 remediation track
 - use when planning post-audit Stage 6 fixes, rebuild prep, and Stage 6 rebuild hardening
+
+9. [STAGE6_VERIFIED_BACKLOG_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- code-verified Stage 6 backlog snapshot
+- use when deciding what is actually true, what is partially true, and what is not a real blocker
+
+10. [STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md)
+- agent-ready execution cards for the current Stage 6 remediation entry sprints
+- use when delegating `S6-R0` and `S6-R1` without allowing broad redesign drift
 ## Current Source-of-Truth Rule
 
 For current implementation planning, use:
@@ -54,6 +62,8 @@ For supporting decision context, use:
 - [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
 - [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
 - [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+- [STAGE6_VERIFIED_BACKLOG_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md)
 
 Do not use `docs/BACKLOG_STATUS.md` as an equal execution authority for sprint start.
 It is useful as historical status framing, but the active planning pack is authoritative for current implementation sequencing.

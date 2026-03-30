@@ -949,7 +949,9 @@ Another remaining gap is the post-audit Stage 6 repair program:
 
 This work is tracked separately in:
 - [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+- [STAGE6_VERIFIED_BACKLOG_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
 
 Key rule:
 - do not treat old Stage 6 artifacts/cases as trustworthy after the Stage 5 corpus rebuild
 - do not start the Stage 6 rebuild before runtime/provider/dev-environment prerequisites are made explicit
+- do not treat unverified Stage 6 hypotheses as equal to code-verified backlog items
