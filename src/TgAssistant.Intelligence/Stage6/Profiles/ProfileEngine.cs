@@ -14,6 +14,7 @@ public class ProfileEngine : IProfileEngine
     private readonly IPeriodRepository _periodRepository;
     private readonly IClarificationRepository _clarificationRepository;
     private readonly IOfflineEventRepository _offlineEventRepository;
+    private readonly IIntelligenceRepository _intelligenceRepository;
     private readonly IStateProfileRepository _stateProfileRepository;
     private readonly IDomainReviewEventRepository _domainReviewEventRepository;
     private readonly IProfileTraitExtractor _traitExtractor;
@@ -28,6 +29,7 @@ public class ProfileEngine : IProfileEngine
         IPeriodRepository periodRepository,
         IClarificationRepository clarificationRepository,
         IOfflineEventRepository offlineEventRepository,
+        IIntelligenceRepository intelligenceRepository,
         IStateProfileRepository stateProfileRepository,
         IDomainReviewEventRepository domainReviewEventRepository,
         IProfileTraitExtractor traitExtractor,
@@ -41,6 +43,7 @@ public class ProfileEngine : IProfileEngine
         _periodRepository = periodRepository;
         _clarificationRepository = clarificationRepository;
         _offlineEventRepository = offlineEventRepository;
+        _intelligenceRepository = intelligenceRepository;
         _stateProfileRepository = stateProfileRepository;
         _domainReviewEventRepository = domainReviewEventRepository;
         _traitExtractor = traitExtractor;
@@ -361,7 +364,25 @@ public class ProfileEngine : IProfileEngine
             .Take(80)
             .ToList();
 
+        var claims = await _intelligenceRepository.GetClaimsByChatAndPeriodAsync(
+            request.ChatId,
+            fromUtc,
+            asOf,
+            limit: 12000,
+            ct);
+        var profileSignalClaims = claims
+            .Where(x => x.ClaimType.Equals("profile_signal", StringComparison.OrdinalIgnoreCase))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Value))
+            .ToList();
+
         var stateSnapshots = await _stateProfileRepository.GetStateSnapshotsByCaseAsync(request.CaseId, 30, ct);
+
+        _logger.LogInformation(
+            "Profile engine evidence loaded: chat_id={ChatId}, messages={MessageCount}, profile_signal_claims={ProfileSignalCount}",
+            request.ChatId,
+            messages.Count,
+            profileSignalClaims.Count);
 
         return new ProfileEvidenceContext
         {
@@ -376,7 +397,8 @@ public class ProfileEngine : IProfileEngine
             ClarificationQuestions = questions,
             ClarificationAnswers = answers.OrderByDescending(x => x.CreatedAt).ToList(),
             OfflineEvents = offlineEvents,
-            StateSnapshots = stateSnapshots.Where(x => x.AsOf <= asOf).OrderByDescending(x => x.AsOf).ToList()
+            StateSnapshots = stateSnapshots.Where(x => x.AsOf <= asOf).OrderByDescending(x => x.AsOf).ToList(),
+            ProfileSignalClaims = profileSignalClaims
         };
     }
 
