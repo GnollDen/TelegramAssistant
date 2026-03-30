@@ -22,6 +22,11 @@ public class BotChatService : IBotChatService
     private const int MaxToolCallsPerTurn = 3;
     private const int MaxToolResultChars = 8000;
     private const int DefaultDossierLimit = 40;
+    private const int Stage6ScopeCandidatesLimit = 20;
+    private const int Stage6ContextTraitsLimit = 3;
+    private const int Stage6ContextPeriodsLimit = 3;
+    private const int Stage6SectionCharsLimit = 420;
+    private const int Stage6ProfileSenderSampleLimit = 1200;
     private const string SessionSummaryCheckpointPrefix = "stage5:summary:session";
     private readonly ITextEmbeddingGenerator _embeddingGenerator;
     private readonly IMessageRepository _messageRepository;
@@ -32,9 +37,17 @@ public class BotChatService : IBotChatService
     private readonly IRelationshipRepository _relationshipRepository;
     private readonly ICommunicationEventRepository _communicationEventRepository;
     private readonly IBotCommandService _botCommandService;
+    private readonly IStateProfileRepository _stateProfileRepository;
+    private readonly IStrategyDraftRepository _strategyDraftRepository;
+    private readonly IPeriodRepository _periodRepository;
+    private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
+    private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
+    private readonly IStage6CaseRepository _stage6CaseRepository;
     private readonly OpenRouterAnalysisService _analysisService;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly AnalysisSettings _analysisSettings;
+    private readonly BotChatSettings _botChatSettings;
+    private readonly TelegramSettings _telegramSettings;
     private readonly ILogger<BotChatService> _logger;
 
     public BotChatService(
@@ -47,9 +60,17 @@ public class BotChatService : IBotChatService
         IRelationshipRepository relationshipRepository,
         ICommunicationEventRepository communicationEventRepository,
         IBotCommandService botCommandService,
+        IStateProfileRepository stateProfileRepository,
+        IStrategyDraftRepository strategyDraftRepository,
+        IPeriodRepository periodRepository,
+        IStage6ArtifactRepository stage6ArtifactRepository,
+        IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
+        IStage6CaseRepository stage6CaseRepository,
         OpenRouterAnalysisService analysisService,
         IOptions<EmbeddingSettings> embeddingSettings,
         IOptions<AnalysisSettings> analysisSettings,
+        IOptions<BotChatSettings> botChatSettings,
+        IOptions<TelegramSettings> telegramSettings,
         ILogger<BotChatService> logger)
     {
         _embeddingGenerator = embeddingGenerator;
@@ -61,9 +82,17 @@ public class BotChatService : IBotChatService
         _relationshipRepository = relationshipRepository;
         _communicationEventRepository = communicationEventRepository;
         _botCommandService = botCommandService;
+        _stateProfileRepository = stateProfileRepository;
+        _strategyDraftRepository = strategyDraftRepository;
+        _periodRepository = periodRepository;
+        _stage6ArtifactRepository = stage6ArtifactRepository;
+        _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
+        _stage6CaseRepository = stage6CaseRepository;
         _analysisService = analysisService;
         _embeddingSettings = embeddingSettings.Value;
         _analysisSettings = analysisSettings.Value;
+        _botChatSettings = botChatSettings.Value;
+        _telegramSettings = telegramSettings.Value;
         _logger = logger;
     }
 
@@ -130,7 +159,8 @@ public class BotChatService : IBotChatService
             ct);
 
         var localContext = await BuildLocalChatContextAsync(transportChatId, sourceMessageId, ct);
-        var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(localContext, facts);
+        var stage6Context = await BuildStage6ContextAsync(transportChatId, ct);
+        var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(localContext, facts, stage6Context);
         var model = ResolveReplyModel();
         diagnostics.ResolvedModel = model;
         var messages = new List<OpenRouterMessage>
@@ -910,6 +940,434 @@ public class BotChatService : IBotChatService
             .ToList()!;
     }
 
+    private async Task<BotChatStage6Context> BuildStage6ContextAsync(long? transportChatId, CancellationToken ct)
+    {
+        var scope = await ResolveStage6ScopeAsync(transportChatId, ct);
+        if (scope == null)
+        {
+            return BotChatStage6Context.Unavailable("scope_unresolved");
+        }
+
+        var stateBlockTask = BuildStage6StateBlockAsync(scope, ct);
+        var strategyBlockTask = BuildStage6StrategyBlockAsync(scope, ct);
+        var profilesBlockTask = BuildStage6ProfilesBlockAsync(scope, ct);
+        var timelineBlockTask = BuildStage6TimelineBlockAsync(scope, ct);
+        await Task.WhenAll(stateBlockTask, strategyBlockTask, profilesBlockTask, timelineBlockTask);
+
+        var scopeLine = $"case_id={scope.CaseId}; chat_id={scope.ChatId}; source={scope.Source}";
+        return new BotChatStage6Context(
+            scopeLine,
+            CapStage6Section(stateBlockTask.Result),
+            CapStage6Section(strategyBlockTask.Result),
+            CapStage6Section(profilesBlockTask.Result),
+            CapStage6Section(timelineBlockTask.Result));
+    }
+
+    private async Task<BotChatStage6Scope?> ResolveStage6ScopeAsync(long? transportChatId, CancellationToken ct)
+    {
+        var chatId = ResolveStage6ChatId(transportChatId);
+        if (chatId <= 0)
+        {
+            return null;
+        }
+
+        var caseId = _botChatSettings.DefaultCaseId;
+        var source = "bot_default";
+        if (caseId <= 0)
+        {
+            var candidate = (await _stage6CaseRepository.GetScopeCandidatesAsync(Stage6ScopeCandidatesLimit, ct))
+                .Where(x => x.ChatId == chatId)
+                .OrderByDescending(x => x.ActiveCaseCount)
+                .ThenByDescending(x => x.TotalCaseCount)
+                .ThenByDescending(x => x.LastCaseUpdatedAtUtc)
+                .FirstOrDefault();
+            if (candidate != null)
+            {
+                caseId = candidate.ScopeCaseId;
+                source = "scope_candidates";
+            }
+        }
+
+        return caseId > 0
+            ? new BotChatStage6Scope(caseId, chatId, source)
+            : null;
+    }
+
+    private long ResolveStage6ChatId(long? transportChatId)
+    {
+        if (transportChatId.HasValue && transportChatId.Value > 0)
+        {
+            return transportChatId.Value;
+        }
+
+        if (_botChatSettings.DefaultChatId > 0)
+        {
+            return _botChatSettings.DefaultChatId;
+        }
+
+        return _telegramSettings.MonitoredChatIds.FirstOrDefault(x => x > 0);
+    }
+
+    private async Task<string> BuildStage6StateBlockAsync(BotChatStage6Scope scope, CancellationToken ct)
+    {
+        try
+        {
+            var snapshot = await TryGetReusableCurrentStateSnapshotAsync(scope, ct)
+                ?? (await _stateProfileRepository.GetStateSnapshotsByCaseAsync(scope.CaseId, 30, ct))
+                .Where(x => x.ChatId == null || x.ChatId == scope.ChatId)
+                .OrderByDescending(x => x.AsOf)
+                .FirstOrDefault();
+            if (snapshot == null)
+            {
+                return "unavailable: no state snapshot";
+            }
+
+            var signals = ParseJsonList(snapshot.KeySignalRefsJson, 3);
+            var risks = ParseJsonList(snapshot.RiskRefsJson, 3);
+            var status = string.IsNullOrWhiteSpace(snapshot.AlternativeStatus)
+                ? snapshot.RelationshipStatus
+                : $"{snapshot.RelationshipStatus} (alt {snapshot.AlternativeStatus})";
+            return string.Join('\n',
+                $"dynamic={ShortText(snapshot.DynamicLabel, 120, "unknown")}",
+                $"status={ShortText(status, 120, "unknown")}",
+                $"confidence={snapshot.Confidence:0.00}; ambiguity={snapshot.AmbiguityScore:0.00}",
+                $"signals={(signals.Count == 0 ? "limited_evidence" : string.Join("; ", signals))}",
+                $"risks={(risks.Count == 0 ? "not_stable" : string.Join("; ", risks))}",
+                $"as_of={snapshot.AsOf:yyyy-MM-dd HH:mm} UTC");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to build Stage6 state context. case_id={CaseId}, chat_id={ChatId}", scope.CaseId, scope.ChatId);
+            return "unavailable: read_error";
+        }
+    }
+
+    private async Task<string> BuildStage6StrategyBlockAsync(BotChatStage6Scope scope, CancellationToken ct)
+    {
+        try
+        {
+            var reusable = await TryGetReusableStrategyAsync(scope, ct);
+            var strategy = reusable.Record;
+            var options = reusable.Options;
+            if (strategy == null)
+            {
+                strategy = (await _strategyDraftRepository.GetStrategyRecordsByCaseAsync(scope.CaseId, ct))
+                    .Where(x => x.ChatId == null || x.ChatId == scope.ChatId)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefault();
+                options = strategy == null
+                    ? []
+                    : await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(strategy.Id, ct);
+            }
+
+            if (strategy == null)
+            {
+                return "unavailable: no strategy record";
+            }
+
+            var primary = options.FirstOrDefault(x => x.IsPrimary) ?? options.FirstOrDefault();
+            var alternatives = options
+                .Where(x => primary == null || x.Id != primary.Id)
+                .Take(2)
+                .Select(x => $"{x.ActionType}: {ShortText(x.Summary, 90, x.ActionType)}")
+                .ToList();
+
+            var nextStep = ShortText(strategy.MicroStep, 140, primary?.Summary ?? "clarify missing context");
+            return string.Join('\n',
+                $"goal={ShortText(strategy.RecommendedGoal, 110, "stabilize and clarify")}",
+                $"primary={(primary == null ? "none" : $"{primary.ActionType}: {ShortText(primary.Summary, 120, primary.ActionType)}")}",
+                $"micro_step={nextStep}",
+                $"alternatives={(alternatives.Count == 0 ? "none" : string.Join(" | ", alternatives))}",
+                $"confidence={strategy.StrategyConfidence:0.00}",
+                $"as_of={strategy.CreatedAt:yyyy-MM-dd HH:mm} UTC");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to build Stage6 strategy context. case_id={CaseId}, chat_id={ChatId}", scope.CaseId, scope.ChatId);
+            return "unavailable: read_error";
+        }
+    }
+
+    private async Task<string> BuildStage6ProfilesBlockAsync(BotChatStage6Scope scope, CancellationToken ct)
+    {
+        try
+        {
+            var subjects = await ResolveProfileSubjectsAsync(scope.ChatId, ct);
+            if (subjects == null)
+            {
+                return "unavailable: need at least two active participants";
+            }
+
+            var profileEvidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(
+                scope.CaseId,
+                scope.ChatId,
+                "profile",
+                ct);
+            var profileTtl = _stage6ArtifactFreshnessService.ResolveTtl("profile");
+            var now = DateTime.UtcNow;
+
+            var self = await GetLatestProfileBundleAsync(scope, "self", subjects.SelfSenderId.ToString(), profileEvidence.LatestEvidenceAtUtc, profileTtl, now, ct);
+            var other = await GetLatestProfileBundleAsync(scope, "other", subjects.OtherSenderId.ToString(), profileEvidence.LatestEvidenceAtUtc, profileTtl, now, ct);
+            var pair = await GetLatestProfileBundleAsync(scope, "pair", subjects.PairId, profileEvidence.LatestEvidenceAtUtc, profileTtl, now, ct);
+            if (pair == null)
+            {
+                return "unavailable: no fresh pair profile";
+            }
+
+            var works = ResolveProfileSignal(pair, "what_works");
+            var fails = ResolveProfileSignal(pair, "what_fails");
+            return string.Join('\n',
+                $"pair_summary={ShortText(pair.Snapshot.Summary, 150, "pattern not stabilized")}",
+                $"pair_traits={FormatProfileTraits(pair, Stage6ContextTraitsLimit)}",
+                $"self_traits={(self == null ? "limited_evidence" : FormatProfileTraits(self, 2))}",
+                $"other_traits={(other == null ? "limited_evidence" : FormatProfileTraits(other, 2))}",
+                $"works={works}",
+                $"watch={fails}",
+                $"confidence={pair.Snapshot.Confidence:0.00}; stability={pair.Snapshot.Stability:0.00}; as_of={pair.Snapshot.CreatedAt:yyyy-MM-dd HH:mm} UTC");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to build Stage6 profile context. case_id={CaseId}, chat_id={ChatId}", scope.CaseId, scope.ChatId);
+            return "unavailable: read_error";
+        }
+    }
+
+    private async Task<string> BuildStage6TimelineBlockAsync(BotChatStage6Scope scope, CancellationToken ct)
+    {
+        try
+        {
+            var periods = (await _periodRepository.GetPeriodsByCaseAsync(scope.CaseId, ct))
+                .Where(x => x.ChatId == null || x.ChatId == scope.ChatId)
+                .OrderByDescending(x => x.StartAt)
+                .ToList();
+            if (periods.Count == 0)
+            {
+                return "unavailable: no periods";
+            }
+
+            var current = periods.FirstOrDefault(x => x.IsOpen) ?? periods[0];
+            var prior = periods.Where(x => x.Id != current.Id).Take(Stage6ContextPeriodsLimit).ToList();
+            var lines = new List<string> { $"current={FormatPeriodLine(current)}" };
+            lines.AddRange(prior.Select(x => $"prior={FormatPeriodLine(x)}"));
+            var transitions = await _periodRepository.GetTransitionsByPeriodAsync(current.Id, ct);
+            lines.Add($"unresolved_transitions={transitions.Count(x => !x.IsResolved)}");
+            return string.Join('\n', lines);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to build Stage6 timeline context. case_id={CaseId}, chat_id={ChatId}", scope.CaseId, scope.ChatId);
+            return "unavailable: read_error";
+        }
+    }
+
+    private async Task<StateSnapshot?> TryGetReusableCurrentStateSnapshotAsync(BotChatStage6Scope scope, CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            scope.CaseId,
+            scope.ChatId,
+            Stage6ArtifactTypes.CurrentState,
+            Stage6ArtifactTypes.ChatScope(scope.ChatId),
+            ct);
+        if (artifact == null)
+        {
+            return null;
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(scope.CaseId, scope.ChatId, Stage6ArtifactTypes.CurrentState, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale || !Guid.TryParse(artifact.PayloadObjectId, out var snapshotId))
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        var snapshot = await _stateProfileRepository.GetStateSnapshotByIdAsync(snapshotId, ct);
+        if (snapshot == null)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "missing_payload_object", DateTime.UtcNow, ct);
+            return null;
+        }
+
+        _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+        return snapshot;
+    }
+
+    private async Task<(StrategyRecord? Record, List<StrategyOption> Options)> TryGetReusableStrategyAsync(
+        BotChatStage6Scope scope,
+        CancellationToken ct)
+    {
+        var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
+            scope.CaseId,
+            scope.ChatId,
+            Stage6ArtifactTypes.Strategy,
+            Stage6ArtifactTypes.ChatScope(scope.ChatId),
+            ct);
+        if (artifact == null)
+        {
+            return (null, []);
+        }
+
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(scope.CaseId, scope.ChatId, Stage6ArtifactTypes.Strategy, ct);
+        var freshness = Stage6ArtifactFreshness.Evaluate(artifact, DateTime.UtcNow, evidence.LatestEvidenceAtUtc);
+        if (freshness.IsStale || !Guid.TryParse(artifact.PayloadObjectId, out var strategyId))
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, freshness.Reason ?? "stale", DateTime.UtcNow, ct);
+            return (null, []);
+        }
+
+        var record = await _strategyDraftRepository.GetStrategyRecordByIdAsync(strategyId, ct);
+        if (record == null)
+        {
+            _ = await _stage6ArtifactRepository.MarkStaleAsync(artifact.Id, "missing_payload_object", DateTime.UtcNow, ct);
+            return (null, []);
+        }
+
+        var options = await _strategyDraftRepository.GetStrategyOptionsByRecordIdAsync(record.Id, ct);
+        _ = await _stage6ArtifactRepository.TouchReusedAsync(artifact.Id, DateTime.UtcNow, ct);
+        return (record, options);
+    }
+
+    private async Task<BotChatProfileBundle?> GetLatestProfileBundleAsync(
+        BotChatStage6Scope scope,
+        string subjectType,
+        string subjectId,
+        DateTime? latestEvidenceAtUtc,
+        TimeSpan ttl,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var snapshot = (await _stateProfileRepository.GetProfileSnapshotsByCaseAsync(scope.CaseId, subjectType, subjectId, ct))
+            .Where(x => x.ChatId == null || x.ChatId == scope.ChatId)
+            .OrderBy(x => x.PeriodId.HasValue ? 1 : 0)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        if (snapshot == null || IsProfileSnapshotStale(snapshot, latestEvidenceAtUtc, ttl, nowUtc))
+        {
+            return null;
+        }
+
+        var traits = await _stateProfileRepository.GetProfileTraitsBySnapshotIdAsync(snapshot.Id, ct);
+        return new BotChatProfileBundle(snapshot, traits);
+    }
+
+    private async Task<BotChatProfileSubjects?> ResolveProfileSubjectsAsync(long chatId, CancellationToken ct)
+    {
+        var senderCounts = (await _messageRepository.GetProcessedByChatAsync(chatId, Stage6ProfileSenderSampleLimit, ct))
+            .Where(x => x.SenderId > 0)
+            .GroupBy(x => x.SenderId)
+            .Select(g => new { SenderId = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+        if (senderCounts.Count < 2)
+        {
+            return null;
+        }
+
+        var selfSenderId = senderCounts[0].SenderId;
+        var otherSenderId = senderCounts.First(x => x.SenderId != selfSenderId).SenderId;
+        return new BotChatProfileSubjects(selfSenderId, otherSenderId);
+    }
+
+    private static bool IsProfileSnapshotStale(ProfileSnapshot snapshot, DateTime? latestEvidenceAtUtc, TimeSpan ttl, DateTime nowUtc)
+    {
+        if (latestEvidenceAtUtc.HasValue && latestEvidenceAtUtc.Value > snapshot.CreatedAt)
+        {
+            return true;
+        }
+
+        return snapshot.CreatedAt.Add(ttl) <= nowUtc;
+    }
+
+    private static string ResolveProfileSignal(BotChatProfileBundle bundle, string traitKey)
+    {
+        var value = bundle.Traits
+            .Where(x => x.TraitKey.Equals(traitKey, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Confidence)
+            .Select(x => x.ValueLabel)
+            .FirstOrDefault();
+
+        return ShortText(value, 120, traitKey == "what_works" ? "no stable positive pattern yet" : "no stable anti-pattern yet");
+    }
+
+    private static string FormatProfileTraits(BotChatProfileBundle bundle, int limit)
+    {
+        var traits = bundle.Traits
+            .Where(x => !x.IsSensitive)
+            .Where(x => !ProfileSummaryTraitKeys.Contains(x.TraitKey))
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.Stability)
+            .Take(Math.Max(1, limit))
+            .Select(x => $"{x.TraitKey}={ShortText(x.ValueLabel, 52, x.ValueLabel)}")
+            .ToList();
+
+        return traits.Count == 0
+            ? ShortText(bundle.Snapshot.Summary, 96, "limited evidence")
+            : string.Join("; ", traits);
+    }
+
+    private static string FormatPeriodLine(Period period)
+    {
+        var end = period.EndAt?.ToString("yyyy-MM-dd") ?? "now";
+        var summary = ShortText(period.Summary, 100, "summary not available");
+        return $"[{period.StartAt:yyyy-MM-dd}..{end}] {period.Label}; open_q={period.OpenQuestionsCount}; conf={period.InterpretationConfidence:0.00}; {summary}";
+    }
+
+    private static string ShortText(string? value, int maxLength, string fallback)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+        {
+            return fallback;
+        }
+
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(1, maxLength - 3)].TrimEnd() + "...";
+    }
+
+    private static List<string> ParseJsonList(string? json, int limit)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return doc.RootElement.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Take(limit)
+                .Cast<string>()
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string CapStage6Section(string value)
+    {
+        var normalized = (value ?? string.Empty).Replace("\r", string.Empty).Trim();
+        if (normalized.Length <= Stage6SectionCharsLimit)
+        {
+            return normalized;
+        }
+
+        return $"{normalized[..Math.Max(1, Stage6SectionCharsLimit - 3)].TrimEnd()}...";
+    }
+
     private sealed record BotChatLocalContext(
         long ChatId,
         IReadOnlyList<string> SessionSummaries,
@@ -921,17 +1379,56 @@ public class BotChatService : IBotChatService
         public bool HasChatContext => ChatId > 0;
     }
 
+    private sealed record BotChatStage6Scope(long CaseId, long ChatId, string Source);
+
+    private sealed record BotChatProfileSubjects(long SelfSenderId, long OtherSenderId)
+    {
+        public string PairId => $"{SelfSenderId}:{OtherSenderId}";
+    }
+
+    private sealed record BotChatProfileBundle(ProfileSnapshot Snapshot, List<ProfileTrait> Traits);
+
+    private sealed record BotChatStage6Context(
+        string Scope,
+        string CurrentState,
+        string Strategy,
+        string Profiles,
+        string Timeline)
+    {
+        public static BotChatStage6Context Unavailable(string reason)
+        {
+            var missing = $"unavailable: {reason}";
+            return new BotChatStage6Context("unavailable", missing, missing, missing, missing);
+        }
+    }
+
+    private static readonly HashSet<string> ProfileSummaryTraitKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "what_works",
+        "what_fails",
+        "participant_patterns",
+        "pair_dynamics",
+        "repeated_interaction_modes",
+        "changes_over_time"
+    };
+
     private static class BotChatPromptBuilder
     {
-        public static string BuildSystemPrompt(BotChatLocalContext localContext, IReadOnlyCollection<Fact> facts)
+        public static string BuildSystemPrompt(
+            BotChatLocalContext localContext,
+            IReadOnlyCollection<Fact> facts,
+            BotChatStage6Context stage6Context)
         {
             var localContextBlock = BuildLocalContextBlock(localContext);
             var factsBlock = BuildFactsBlock(facts);
+            var stage6ContextBlock = BuildStage6ContextBlock(stage6Context);
             return $$"""
                 You are an AI personal assistant for Rinat.
                 Use the provided chat context and memory context to answer accurately and chat-aware.
                 Chat context is already included below. Do not claim you cannot see the chat or ask the user to send chat history again.
                 Do not answer with phrases like "не вижу чат", "пришлите чат", "нет данных", "I can't see the chat", or "this is the first message in chat" when chat context block is present.
+                Stage6 context is structured support (state/strategy/profiles/timeline). Use it to improve reasoning, but do not dump raw blocks to the user.
+                Keep local chat recency and user question intent as primary. Use Stage6 to resolve ambiguity and avoid contradictory advice.
                 If context is partial, answer in this format:
                 - in available context, we can see: X
                 - not visible in current context: Y
@@ -946,6 +1443,10 @@ public class BotChatService : IBotChatService
                 [supplementary_memory_similar_facts]
                 {{factsBlock}}
                 [/supplementary_memory_similar_facts]
+
+                [stage6_reasoning_context]
+                {{stage6ContextBlock}}
+                [/stage6_reasoning_context]
                 """;
         }
 
@@ -1008,6 +1509,24 @@ public class BotChatService : IBotChatService
             }
 
             return sb.ToString().TrimEnd();
+        }
+
+        private static string BuildStage6ContextBlock(BotChatStage6Context stage6Context)
+        {
+            return $$"""
+                scope: {{stage6Context.Scope}}
+                current_state:
+                {{stage6Context.CurrentState}}
+
+                strategy:
+                {{stage6Context.Strategy}}
+
+                profiles:
+                {{stage6Context.Profiles}}
+
+                timeline:
+                {{stage6Context.Timeline}}
+                """;
         }
 
         private static string BuildLocalContextBlock(BotChatLocalContext localContext)
