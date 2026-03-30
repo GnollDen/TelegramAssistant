@@ -5,6 +5,36 @@ namespace TgAssistant.Intelligence.Stage6.Profiles;
 
 public class PatternSynthesisService : IPatternSynthesisService
 {
+    private static readonly string[] SupportiveTokens =
+    [
+        "thanks", "appreciate", "glad", "can we", "understand",
+        "спасибо", "благодар", "рад", "рада", "давай обсудим", "давай поговорим", "понимаю"
+    ];
+
+    private static readonly string[] DistancingTokens =
+    [
+        "later", "busy", "not sure", "cannot", "cant", "maybe",
+        "позже", "потом", "занят", "занята", "не уверен", "не уверена", "не сейчас", "не могу"
+    ];
+
+    private static readonly string[] StressEventTokens =
+    [
+        "stress", "pressure", "conflict",
+        "стресс", "давление", "конфликт"
+    ];
+
+    private static readonly string[] SupportiveToneTokens =
+    [
+        "thanks", "appreciate", "glad", "care",
+        "спасибо", "благодар", "рад", "рада", "забоч", "ценю"
+    ];
+
+    private static readonly string[] DistancingToneTokens =
+    [
+        "later", "busy", "not sure", "can't", "maybe",
+        "позже", "потом", "занят", "занята", "не уверен", "не уверена", "не могу", "не сейчас"
+    ];
+
     public Task<IReadOnlyList<ProfilePatternRecord>> BuildPatternsAsync(
         string subjectType,
         string subjectId,
@@ -20,9 +50,10 @@ public class PatternSynthesisService : IPatternSynthesisService
         var failsConfidence = 0.45f;
         var worksEvidence = new List<EvidenceRef>();
         var failsEvidence = new List<EvidenceRef>();
+        var preferRu = PreferRussianOutput(messages);
 
         var supportiveMessages = messages
-            .Where(x => ContainsAny(x.Text, "thanks", "appreciate", "glad", "can we", "understand"))
+            .Where(x => ContainsAny(x.Text, SupportiveTokens))
             .Take(3)
             .ToList();
         if (supportiveMessages.Count > 0)
@@ -53,9 +84,7 @@ public class PatternSynthesisService : IPatternSynthesisService
         }
 
         var stressEvents = events
-            .Where(x => x.EventType.Contains("stress", StringComparison.OrdinalIgnoreCase)
-                        || x.EventType.Contains("pressure", StringComparison.OrdinalIgnoreCase)
-                        || x.EventType.Contains("conflict", StringComparison.OrdinalIgnoreCase))
+            .Where(x => ContainsAny(x.EventType, StressEventTokens))
             .Take(2)
             .ToList();
         if (stressEvents.Count > 0)
@@ -70,7 +99,7 @@ public class PatternSynthesisService : IPatternSynthesisService
         }
 
         var distancingMessages = messages
-            .Where(x => ContainsAny(x.Text, "later", "busy", "not sure", "cannot", "cant", "maybe"))
+            .Where(x => ContainsAny(x.Text, DistancingTokens))
             .Take(3)
             .ToList();
         if (distancingMessages.Count > 0)
@@ -88,17 +117,25 @@ public class PatternSynthesisService : IPatternSynthesisService
         failsConfidence = Math.Clamp(failsConfidence, 0.3f, 0.85f);
 
         var worksSummary = supportiveMessages.Count > 0
-            ? "Explicit appreciation, concise clarification, and low-pressure check-ins tend to improve response quality."
-            : "Clear low-pressure messages tend to work when context is explicit.";
+            ? preferRu
+                ? "Явная благодарность, короткие уточнения и бережные сообщения обычно улучшают качество ответа."
+                : "Explicit appreciation, concise clarification, and low-pressure check-ins tend to improve response quality."
+            : preferRu
+                ? "Лучше работают ясные сообщения без давления, когда контекст проговорен явно."
+                : "Clear low-pressure messages tend to work when context is explicit.";
 
         var failsSummary = (stressEvents.Count > 0 || distancingMessages.Count > 0)
-            ? "High pressure windows, ambiguous timing, and repeated follow-ups during delay windows tend to fail."
-            : "Assumption-heavy interpretation without clarification tends to fail.";
+            ? preferRu
+                ? "Окна высокого давления, расплывчатые сроки и частые пинги в период паузы обычно ухудшают контакт."
+                : "High pressure windows, ambiguous timing, and repeated follow-ups during delay windows tend to fail."
+            : preferRu
+                ? "Интерпретации на предположениях без уточнений чаще приводят к сбою."
+                : "Assumption-heavy interpretation without clarification tends to fail.";
 
-        var participantPatternSummary = BuildParticipantPatternSummary(subjectType, supportiveMessages.Count, distancingMessages.Count, clearAnswers.Count);
-        var pairDynamicsSummary = BuildPairDynamicsSummary(subjectType, supportiveMessages.Count, stressEvents.Count, distancingMessages.Count);
-        var repeatedInteractionSummary = BuildRepeatedModeSummary(supportiveMessages.Count, distancingMessages.Count, clearAnswers.Count);
-        var changesOverTimeSummary = BuildChangeOverTimeSummary(messages, period);
+        var participantPatternSummary = BuildParticipantPatternSummary(subjectType, supportiveMessages.Count, distancingMessages.Count, clearAnswers.Count, preferRu);
+        var pairDynamicsSummary = BuildPairDynamicsSummary(subjectType, supportiveMessages.Count, stressEvents.Count, distancingMessages.Count, preferRu);
+        var repeatedInteractionSummary = BuildRepeatedModeSummary(supportiveMessages.Count, distancingMessages.Count, clearAnswers.Count, preferRu);
+        var changesOverTimeSummary = BuildChangeOverTimeSummary(messages, period, preferRu);
 
         var records = new List<ProfilePatternRecord>
         {
@@ -219,79 +256,140 @@ public class PatternSynthesisService : IPatternSynthesisService
         return tokens.Any(token => text.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string BuildParticipantPatternSummary(string subjectType, int supportiveCount, int distancingCount, int clearAnswerCount)
+    private static bool PreferRussianOutput(IReadOnlyList<Message> messages)
     {
-        var role = subjectType.Equals("self", StringComparison.OrdinalIgnoreCase)
-            ? "Self"
-            : subjectType.Equals("other", StringComparison.OrdinalIgnoreCase)
-                ? "Other participant"
-                : "Pair";
+        var nonEmpty = messages
+            .Select(x => x.Text)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Take(20)
+            .ToList();
+
+        if (nonEmpty.Count == 0)
+        {
+            return false;
+        }
+
+        var ruSignals = nonEmpty.Count(ContainsCyrillic);
+        return ruSignals >= Math.Max(2, nonEmpty.Count / 3);
+    }
+
+    private static bool ContainsCyrillic(string text)
+    {
+        foreach (var c in text)
+        {
+            if (c is >= '\u0400' and <= '\u04FF')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string BuildParticipantPatternSummary(string subjectType, int supportiveCount, int distancingCount, int clearAnswerCount, bool preferRu)
+    {
+        var role = preferRu
+            ? subjectType.Equals("self", StringComparison.OrdinalIgnoreCase)
+                ? "Собственный стиль"
+                : subjectType.Equals("other", StringComparison.OrdinalIgnoreCase)
+                    ? "Другой участник"
+                    : "Пара"
+            : subjectType.Equals("self", StringComparison.OrdinalIgnoreCase)
+                ? "Self"
+                : subjectType.Equals("other", StringComparison.OrdinalIgnoreCase)
+                    ? "Other participant"
+                    : "Pair";
 
         if (supportiveCount > distancingCount + 1)
         {
-            return $"{role}: tends to stabilize contact through low-pressure supportive signals.";
+            return preferRu
+                ? $"{role}: чаще стабилизирует контакт через бережные поддерживающие сигналы."
+                : $"{role}: tends to stabilize contact through low-pressure supportive signals.";
         }
 
         if (distancingCount > supportiveCount + 1)
         {
-            return $"{role}: tends to use distance/latency as a regulation pattern under pressure.";
+            return preferRu
+                ? $"{role}: чаще использует дистанцию и задержку как способ саморегуляции под давлением."
+                : $"{role}: tends to use distance/latency as a regulation pattern under pressure.";
         }
 
         return clearAnswerCount > 0
-            ? $"{role}: mixed pattern; clarity improves when explicit questions are answered."
-            : $"{role}: mixed pattern with limited clarity signals.";
+            ? preferRu
+                ? $"{role}: смешанный паттерн; ясность растет, когда есть прямые ответы на вопросы."
+                : $"{role}: mixed pattern; clarity improves when explicit questions are answered."
+            : preferRu
+                ? $"{role}: смешанный паттерн при ограниченных сигналах ясности."
+                : $"{role}: mixed pattern with limited clarity signals.";
     }
 
-    private static string BuildPairDynamicsSummary(string subjectType, int supportiveCount, int stressCount, int distancingCount)
+    private static string BuildPairDynamicsSummary(string subjectType, int supportiveCount, int stressCount, int distancingCount, bool preferRu)
     {
         if (!subjectType.Equals("pair", StringComparison.OrdinalIgnoreCase))
         {
-            return "Pair dynamics summarized from shared interaction context.";
+            return preferRu
+                ? "Динамика пары сформирована из общего контекста взаимодействия."
+                : "Pair dynamics summarized from shared interaction context.";
         }
 
         if (stressCount > 0 && distancingCount > 0)
         {
-            return "Pair dynamic oscillates between proximity and withdrawal during stress windows.";
+            return preferRu
+                ? "Динамика пары колеблется между сближением и отдалением в стрессовых окнах."
+                : "Pair dynamic oscillates between proximity and withdrawal during stress windows.";
         }
 
         if (supportiveCount > distancingCount)
         {
-            return "Pair dynamic is mostly cooperative with periodic low-intensity distance regulation.";
+            return preferRu
+                ? "Динамика пары в основном кооперативная, с периодическими мягкими паузами дистанции."
+                : "Pair dynamic is mostly cooperative with periodic low-intensity distance regulation.";
         }
 
-        return "Pair dynamic remains ambiguous and needs additional clarification input.";
+        return preferRu
+            ? "Динамика пары остается неоднозначной и требует дополнительных уточнений."
+            : "Pair dynamic remains ambiguous and needs additional clarification input.";
     }
 
-    private static string BuildRepeatedModeSummary(int supportiveCount, int distancingCount, int clearAnswerCount)
+    private static string BuildRepeatedModeSummary(int supportiveCount, int distancingCount, int clearAnswerCount, bool preferRu)
     {
         var modes = new List<string>();
         if (supportiveCount > 0)
         {
-            modes.Add("supportive check-ins");
+            modes.Add(preferRu ? "поддерживающие касания" : "supportive check-ins");
         }
 
         if (distancingCount > 0)
         {
-            modes.Add("delay/distance responses");
+            modes.Add(preferRu ? "ответы с паузой/дистанцией" : "delay/distance responses");
         }
 
         if (clearAnswerCount > 0)
         {
-            modes.Add("clarification-driven resets");
+            modes.Add(preferRu ? "перезапуски через уточнение" : "clarification-driven resets");
         }
 
         return modes.Count == 0
-            ? "No repeated interaction mode is confidently established yet."
-            : $"Repeated interaction modes: {string.Join(", ", modes)}.";
+            ? preferRu
+                ? "Пока нет уверенно подтвержденного повторяющегося режима взаимодействия."
+                : "No repeated interaction mode is confidently established yet."
+            : preferRu
+                ? $"Повторяющиеся режимы взаимодействия: {string.Join(", ", modes)}."
+                : $"Repeated interaction modes: {string.Join(", ", modes)}.";
     }
 
-    private static string BuildChangeOverTimeSummary(IReadOnlyList<Message> messages, Period? period)
+    private static string BuildChangeOverTimeSummary(IReadOnlyList<Message> messages, Period? period, bool preferRu)
     {
         if (messages.Count < 4)
         {
             return period == null
-                ? "Change-over-time evidence is sparse."
-                : "Period slice has limited message evidence for trend detection.";
+                ? preferRu
+                    ? "Данных по изменению во времени пока недостаточно."
+                    : "Change-over-time evidence is sparse."
+                : preferRu
+                    ? "В срезе периода мало сообщений для уверенного тренда."
+                    : "Period slice has limited message evidence for trend detection.";
         }
 
         var ordered = messages.OrderBy(x => x.Timestamp).ToList();
@@ -299,20 +397,26 @@ public class PatternSynthesisService : IPatternSynthesisService
         var firstHalf = ordered.Take(half).ToList();
         var secondHalf = ordered.Skip(half).ToList();
 
-        var earlySupport = firstHalf.Count(x => ContainsAny(x.Text, "thanks", "appreciate", "glad", "care"));
-        var lateSupport = secondHalf.Count(x => ContainsAny(x.Text, "thanks", "appreciate", "glad", "care"));
+        var earlySupport = firstHalf.Count(x => ContainsAny(x.Text, SupportiveToneTokens));
+        var lateSupport = secondHalf.Count(x => ContainsAny(x.Text, SupportiveToneTokens));
         if (lateSupport > earlySupport)
         {
-            return "Change over time: later window shows higher supportive tone than earlier window.";
+            return preferRu
+                ? "Изменение во времени: в более позднем окне больше поддерживающего тона, чем раньше."
+                : "Change over time: later window shows higher supportive tone than earlier window.";
         }
 
-        var earlyDistance = firstHalf.Count(x => ContainsAny(x.Text, "later", "busy", "not sure", "can't", "maybe"));
-        var lateDistance = secondHalf.Count(x => ContainsAny(x.Text, "later", "busy", "not sure", "can't", "maybe"));
+        var earlyDistance = firstHalf.Count(x => ContainsAny(x.Text, DistancingToneTokens));
+        var lateDistance = secondHalf.Count(x => ContainsAny(x.Text, DistancingToneTokens));
         if (lateDistance > earlyDistance)
         {
-            return "Change over time: later window shows higher distancing signals.";
+            return preferRu
+                ? "Изменение во времени: в более позднем окне больше сигналов дистанцирования."
+                : "Change over time: later window shows higher distancing signals.";
         }
 
-        return "Change over time: no strong directional shift detected across current evidence window.";
+        return preferRu
+            ? "Изменение во времени: в текущем окне нет сильного направленного сдвига."
+            : "Change over time: no strong directional shift detected across current evidence window.";
     }
 }
