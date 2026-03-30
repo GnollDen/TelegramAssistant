@@ -27,6 +27,7 @@ public class ProfileEvidenceContext
     public IReadOnlyList<ClarificationAnswer> ClarificationAnswers { get; set; } = [];
     public IReadOnlyList<OfflineEvent> OfflineEvents { get; set; } = [];
     public IReadOnlyList<StateSnapshot> StateSnapshots { get; set; } = [];
+    public IReadOnlyList<IntelligenceClaim> ProfileSignalClaims { get; set; } = [];
 }
 
 public class ProfileTraitDraft

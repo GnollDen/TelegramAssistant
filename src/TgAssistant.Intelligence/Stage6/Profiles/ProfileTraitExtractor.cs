@@ -118,6 +118,7 @@ public class ProfileTraitExtractor : IProfileTraitExtractor
 
         ApplySensitiveGuardrails(drafts, evidenceCount);
         AddCustomTraitIfNeeded(drafts, subjectType, inScopeEvents, baseConfidence, baseStability, hasPeriod);
+        AddProfileSignalDrafts(drafts, context, subjectType, period);
 
         return Task.FromResult<IReadOnlyList<ProfileTraitDraft>>(drafts);
     }
@@ -404,5 +405,146 @@ public class ProfileTraitExtractor : IProfileTraitExtractor
             }));
 
         return refs.Take(limit).ToList();
+    }
+
+    private static void AddProfileSignalDrafts(
+        ICollection<ProfileTraitDraft> drafts,
+        ProfileEvidenceContext context,
+        string subjectType,
+        Period? period)
+    {
+        if (!subjectType.Equals("self", StringComparison.OrdinalIgnoreCase)
+            && !subjectType.Equals("other", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (context.ProfileSignalClaims.Count == 0)
+        {
+            return;
+        }
+
+        var targetSenderId = subjectType.Equals("self", StringComparison.OrdinalIgnoreCase)
+            ? context.SelfSenderId
+            : context.OtherSenderId;
+
+        var messageById = context.Messages.ToDictionary(x => x.Id);
+        var matchingSignals = context.ProfileSignalClaims
+            .Where(x => messageById.ContainsKey(x.MessageId))
+            .Where(x =>
+            {
+                var sourceMessage = messageById[x.MessageId];
+                if (sourceMessage.SenderId != targetSenderId)
+                {
+                    return false;
+                }
+
+                return IsLikelySenderClaim(x.EntityName, sourceMessage.SenderName);
+            })
+            .Where(x => period == null || IsMessageInPeriod(messageById[x.MessageId], period))
+            .ToList();
+
+        if (matchingSignals.Count == 0)
+        {
+            return;
+        }
+
+        var groupedByTrait = matchingSignals
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+            .GroupBy(x => x.Key.Trim(), StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Sum(item => item.Confidence))
+            .Take(3)
+            .ToList();
+
+        foreach (var traitGroup in groupedByTrait)
+        {
+            var traitKey = traitGroup.Key.ToLowerInvariant();
+            var entries = traitGroup.ToList();
+            var directionalScore = entries.Sum(x => ToDirectionalScore(x.Value) * Math.Clamp(x.Confidence, 0.2f, 1f));
+            var averageConfidence = entries.Average(x => x.Confidence);
+            var hasPeriod = period != null;
+            var count = entries.Count;
+
+            var valueLabel = Math.Abs(directionalScore) switch
+            {
+                < 0.35f => "mixed_signal",
+                _ => directionalScore > 0f ? "positive_signal" : "negative_signal"
+            };
+
+            var confidenceCap = hasPeriod ? 0.62f : 0.68f;
+            var draftConfidence = Math.Clamp(
+                (averageConfidence * 0.62f) + ((Math.Min(count, 3) - 1) * 0.04f),
+                0.35f,
+                confidenceCap);
+
+            var draftStability = Math.Clamp(
+                count switch
+                {
+                    >= 4 => hasPeriod ? 0.58f : 0.62f,
+                    3 => hasPeriod ? 0.52f : 0.58f,
+                    2 => hasPeriod ? 0.44f : 0.5f,
+                    _ => hasPeriod ? 0.38f : 0.44f
+                },
+                0.3f,
+                0.62f);
+
+            drafts.Add(new ProfileTraitDraft
+            {
+                TraitKey = traitKey,
+                ValueLabel = valueLabel,
+                Confidence = draftConfidence,
+                Stability = draftStability,
+                IsSensitive = true,
+                IsTemporary = draftStability < 0.45f,
+                IsPeriodSpecific = hasPeriod,
+                EvidenceRefs = entries
+                    .OrderByDescending(x => x.Confidence)
+                    .Take(3)
+                    .Select(x => new EvidenceRef
+                    {
+                        Type = "profile_signal_claim",
+                        Id = x.Id.ToString(),
+                        Note = $"{traitKey}:{x.Value}"
+                    })
+                    .ToList()
+            });
+        }
+    }
+
+    private static bool IsMessageInPeriod(Message message, Period period)
+    {
+        return message.Timestamp >= period.StartAt && message.Timestamp <= (period.EndAt ?? DateTime.MaxValue);
+    }
+
+    private static bool IsLikelySenderClaim(string claimEntityName, string senderName)
+    {
+        if (string.IsNullOrWhiteSpace(claimEntityName) || string.IsNullOrWhiteSpace(senderName))
+        {
+            return false;
+        }
+
+        return string.Equals(NormalizeName(claimEntityName), NormalizeName(senderName), StringComparison.Ordinal);
+    }
+
+    private static string NormalizeName(string value)
+    {
+        var chars = value
+            .Trim()
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray();
+        return new string(chars);
+    }
+
+    private static float ToDirectionalScore(string? direction)
+    {
+        var normalized = direction?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "positive" => 1f,
+            "negative" => -1f,
+            "mixed" => 0.25f,
+            _ => 0f
+        };
     }
 }
