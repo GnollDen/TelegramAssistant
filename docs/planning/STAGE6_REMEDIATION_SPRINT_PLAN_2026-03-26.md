@@ -104,6 +104,11 @@ Recent work showed that:
 3. Explicit command/runbook for Stage 6 rebuild and verification.
 4. Clear statement of what must be rebuilt vs preserved.
 
+Execution artifacts for this pre-sprint baseline:
+
+- `docs/planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md`
+- `docs/runbooks/stage6-rebuild-verification.md`
+
 ### Exit criteria
 
 - dev/runtime assumptions for Stage 6 remediation are explicit

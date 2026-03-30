@@ -18,6 +18,10 @@ Run these according to the touched scope:
 - any TypeScript change in `src/TgAssistant.Mcp/`: `npm run build`
 - any migration file change: expect `migration_guard` in `.github/workflows/deploy.yml` to pass; new files must append after the current max prefix and keep `NNNN_slug.sql` naming
 
+For Stage 6 rebuild/readiness verification sequencing, also use:
+
+- `docs/runbooks/stage6-rebuild-verification.md`
+
 ## Add Runtime Checks When Needed
 
 Also run targeted checks when changes touch:

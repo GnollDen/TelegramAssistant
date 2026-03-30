@@ -1,5 +1,8 @@
 # Runtime Topology Note
 
+> Status note (2026-03-30): supporting topology snapshot from pre-sprint baseline.
+> For Stage 6 remediation runtime/rebuild prep, use `S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md`.
+
 ## Date
 
 2026-03-25

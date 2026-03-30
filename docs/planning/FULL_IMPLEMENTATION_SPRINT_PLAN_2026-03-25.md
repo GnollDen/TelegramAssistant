@@ -917,7 +917,7 @@ The backend/operator program above is now largely covered.
 The remaining planning gap is a dedicated web-delivery track for turning the current web logic into a real internal operator application.
 
 That work is tracked separately in:
-- [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
+- [WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md](./WEB_DELIVERY_SPRINT_PLAN_2026-03-25.md)
 
 Key rule:
 - do not reopen the backend sprint program just to deliver the web layer
@@ -932,7 +932,7 @@ Another remaining gap is the chronology-first initialization path:
 - cost/runtime control for big historical runs
 
 This work is tracked separately in:
-- [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
+- [INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md](./INITIAL_CHRONOLOGY_RECONSTRUCTION_PLAN_2026-03-26.md)
 
 Key rule:
 - do not treat incremental Stage 6 maintenance as a substitute for an initial chronology pass
@@ -948,8 +948,9 @@ Another remaining gap is the post-audit Stage 6 repair program:
 - controlled Stage 6 rebuild after the global Stage 5 rerun
 
 This work is tracked separately in:
-- [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
-- [STAGE6_VERIFIED_BACKLOG_2026-03-30.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+- [STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md](./STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md)
 
 Key rule:
 - do not treat old Stage 6 artifacts/cases as trustworthy after the Stage 5 corpus rebuild

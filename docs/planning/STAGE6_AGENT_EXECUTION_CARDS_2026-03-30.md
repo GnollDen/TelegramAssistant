@@ -18,6 +18,15 @@ It exists to reduce agent overreach by making the following explicit:
 Use this document together with:
 - `STAGE6_VERIFIED_BACKLOG_2026-03-30.md`
 - `STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md`
+- `S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md`
+- `../runbooks/stage6-rebuild-verification.md`
+
+## Agent-Ready Status
+
+As of 2026-03-30:
+
+- agent-ready now: `S6-R0`, `S6-R1`
+- not agent-ready yet (depends on earlier sprint outputs): `S6-R2`, `S6-R3`, `S6-R4`, `S6-R5`, `S6-R6`
 
 ## Global Rule
 
