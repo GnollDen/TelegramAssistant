@@ -5,6 +5,30 @@ namespace TgAssistant.Intelligence.Stage6.Profiles;
 
 public class ProfileTraitExtractor : IProfileTraitExtractor
 {
+    private static readonly string[] WarmthSupportTokens =
+    [
+        "thanks", "appreciate", "glad", "care", "love",
+        "спасибо", "благодар", "рад", "рада", "ценю", "забоч", "люблю", "поддерж"
+    ];
+
+    private static readonly string[] DistancingAvoidanceTokens =
+    [
+        "later", "busy", "not sure", "can't", "maybe", "avoid",
+        "позже", "потом", "занят", "занята", "не уверен", "не уверена", "не могу", "не сейчас", "избег"
+    ];
+
+    private static readonly string[] RepairTokens =
+    [
+        "sorry", "understand", "let's fix", "thanks for saying", "can we talk",
+        "извини", "прости", "понимаю", "давай обсудим", "давай поговорим", "давай решим", "спасибо что сказал", "спасибо что сказала"
+    ];
+
+    private static readonly string[] ConflictTokens =
+    [
+        "no", "stop", "leave", "angry", "upset", "tired of",
+        "нет", "хватит", "оставь", "уйди", "злюсь", "злой", "зла", "расстро", "устал от", "устала от"
+    ];
+
     private static readonly string[] SelfOtherTraitKeys =
     [
         "communication_style",
@@ -31,10 +55,10 @@ public class ProfileTraitExtractor : IProfileTraitExtractor
             ? 0
             : (float)inScopeMessages.Average(m => (m.Text ?? string.Empty).Length);
 
-        var warmthSignals = CountSignals(inScopeMessages, "thanks", "appreciate", "glad", "care", "love");
-        var distancingSignals = CountSignals(inScopeMessages, "later", "busy", "not sure", "can't", "maybe", "avoid");
-        var repairSignals = CountSignals(inScopeMessages, "sorry", "understand", "let's fix", "thanks for saying", "can we talk");
-        var conflictSignals = CountSignals(inScopeMessages, "no", "stop", "leave", "angry", "upset", "tired of");
+        var warmthSignals = CountSignals(inScopeMessages, WarmthSupportTokens);
+        var distancingSignals = CountSignals(inScopeMessages, DistancingAvoidanceTokens);
+        var repairSignals = CountSignals(inScopeMessages, RepairTokens);
+        var conflictSignals = CountSignals(inScopeMessages, ConflictTokens);
 
         var communicationStyle = avgLength switch
         {

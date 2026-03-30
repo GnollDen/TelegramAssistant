@@ -5,6 +5,36 @@ namespace TgAssistant.Intelligence.Stage6.CurrentState;
 
 public class StateScoreCalculator : IStateScoreCalculator
 {
+    private static readonly string[] OpennessTokens =
+    [
+        "feel", "felt", "think", "want", "need", "miss", "honest", "share",
+        "чувств", "дума", "хочу", "хотел", "хотела", "нужно", "нужен", "нужна", "скуча", "честно", "подел"
+    ];
+
+    private static readonly string[] WarmthPositiveTokens =
+    [
+        "thanks", "thank", "glad", "good", "great", "care", "appreciate", "happy",
+        "спасибо", "благодар", "рад", "рада", "хорошо", "ценю", "забоч", "счастлив", "счастлива"
+    ];
+
+    private static readonly string[] WarmthNegativeTokens =
+    [
+        "busy", "later", "stop", "no", "cannot", "can't", "angry", "upset",
+        "занят", "занята", "позже", "потом", "хватит", "нет", "не могу", "злюсь", "расстро"
+    ];
+
+    private static readonly string[] AvoidanceTokens =
+    [
+        "later", "busy", "not now", "can't talk", "avoid", "skip",
+        "позже", "потом", "занят", "занята", "не сейчас", "не могу говорить", "не могу сейчас", "избег", "пропущу"
+    ];
+
+    private static readonly string[] ExternalPressureTokens =
+    [
+        "work", "family", "travel", "health", "stress",
+        "работ", "семь", "поезд", "здоров", "стресс", "давлен"
+    ];
+
     public Task<StateScoreResult> CalculateAsync(CurrentStateContext context, CancellationToken ct = default)
     {
         var now = context.AsOfUtc;
@@ -187,7 +217,7 @@ public class StateScoreCalculator : IStateScoreCalculator
         }
 
         var avgLength = messages.Average(x => (x.Text ?? string.Empty).Length);
-        var opennessTerms = messages.Count(x => ContainsAny(x.Text, "feel", "felt", "think", "want", "need", "miss", "honest", "share"));
+        var opennessTerms = messages.Count(x => ContainsAny(x.Text, OpennessTokens));
         var baseScore = (float)Math.Clamp(avgLength / 180.0, 0.05, 0.7);
         var lexical = opennessTerms / (float)messages.Count;
         var clarificationLift = Math.Min(clarificationAnswerCount, 4) * 0.03f;
@@ -201,8 +231,8 @@ public class StateScoreCalculator : IStateScoreCalculator
             return 0.35f;
         }
 
-        var positive = messages.Count(x => ContainsAny(x.Text, "thanks", "thank", "glad", "good", "great", "care", "appreciate", "happy"));
-        var negative = messages.Count(x => ContainsAny(x.Text, "busy", "later", "stop", "no", "cannot", "can't", "angry", "upset"));
+        var positive = messages.Count(x => ContainsAny(x.Text, WarmthPositiveTokens));
+        var negative = messages.Count(x => ContainsAny(x.Text, WarmthNegativeTokens));
         var stance = (positive - negative) / (float)Math.Max(1, messages.Count);
         var answerWarm = answers.Count(x => x.AnswerValue.Equals("yes", StringComparison.OrdinalIgnoreCase) || x.AnswerValue.Contains("closer", StringComparison.OrdinalIgnoreCase));
         return Clamp01(0.45f + stance * 0.75f + answerWarm * 0.03f);
@@ -256,7 +286,7 @@ public class StateScoreCalculator : IStateScoreCalculator
 
         var latestAt = messages.Max(x => x.Timestamp);
         var gapDays = Math.Max(0, (now - latestAt).TotalDays);
-        var lexicalAvoidance = messages.Count(x => ContainsAny(x.Text, "later", "busy", "not now", "can't talk", "avoid", "skip"));
+        var lexicalAvoidance = messages.Count(x => ContainsAny(x.Text, AvoidanceTokens));
 
         var gapRisk = gapDays >= 10 ? 0.75f : gapDays >= 5 ? 0.5f : gapDays >= 2 ? 0.3f : 0.15f;
         var unresolvedRisk = Math.Min(0.24f, blockingQuestions * 0.08f + openQuestions * 0.03f);
@@ -292,12 +322,7 @@ public class StateScoreCalculator : IStateScoreCalculator
             return 0.2f;
         }
 
-        var pressureEvents = scopedEvents.Count(x =>
-            x.EventType.Contains("work", StringComparison.OrdinalIgnoreCase)
-            || x.EventType.Contains("family", StringComparison.OrdinalIgnoreCase)
-            || x.EventType.Contains("travel", StringComparison.OrdinalIgnoreCase)
-            || x.EventType.Contains("health", StringComparison.OrdinalIgnoreCase)
-            || x.EventType.Contains("stress", StringComparison.OrdinalIgnoreCase));
+        var pressureEvents = scopedEvents.Count(x => ContainsAny(x.EventType, ExternalPressureTokens));
 
         var pressure = 0.2f + pressureEvents * 0.12f + conflicts.Count * 0.08f;
         return Clamp01(pressure);
