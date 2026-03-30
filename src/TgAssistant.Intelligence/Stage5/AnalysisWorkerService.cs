@@ -3,9 +3,11 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
@@ -1059,7 +1061,7 @@ public partial class AnalysisWorkerService : BackgroundService
         var failedValidationMessageIds = new List<long>();
         var failedItemMessageIds = new List<long>();
 
-        foreach (var message in messages)
+        foreach (var message in analyzableMessages)
         {
             if (failedChunkMessageIds.ContainsKey(message.Id))
             {
@@ -1093,6 +1095,15 @@ public partial class AnalysisWorkerService : BackgroundService
                 failedItemMessageIds.Add(message.Id);
             }
         }
+
+        var analyzableMessageIds = analyzableMessages
+            .Select(x => x.Id)
+            .ToHashSet();
+        var skippedMessageIds = messages
+            .Where(x => !analyzableMessageIds.Contains(x.Id))
+            .Select(x => x.Id)
+            .ToArray();
+        await MarkProcessedMessagesAsync(skippedMessageIds, ct);
 
         if (failedValidationMessageIds.Count > 0)
         {
@@ -1316,15 +1327,81 @@ public partial class AnalysisWorkerService : BackgroundService
         }
         catch (Exception ex)
         {
+            var model = modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel);
+            var dbSaveErrorPayload = BuildDbSaveErrorPayload(ex, "stage5_cheap_apply_extraction");
+            var reason = dbSaveErrorPayload == null ? ex.Message : "db_save_error";
             _logger.LogWarning(ex, "Stage5 cheap item failed for message_id={MessageId}", message.Id);
             await _extractionErrorRepository.LogAsync(
                 stage: "stage5_cheap_item",
-                reason: ex.Message,
+                reason: reason,
                 messageId: message.Id,
-                payload: $"model={modelByMessageId.GetValueOrDefault(message.Id, _settings.CheapModel)};exception={ex.GetType().Name}",
+                payload: dbSaveErrorPayload == null
+                    ? $"model={model};exception={ex.GetType().Name}"
+                    : $"{dbSaveErrorPayload};model={model}",
                 ct: ct);
             return new CheapItemResult(Succeeded: false, ValidationRejected: false, NeedsExpensiveMarked: false);
         }
+    }
+
+    private static string? BuildDbSaveErrorPayload(Exception ex, string defaultOperationClass)
+    {
+        var dbUpdateException = ex as DbUpdateException;
+        var postgres = ex as PostgresException
+                       ?? dbUpdateException?.InnerException as PostgresException
+                       ?? ex.InnerException as PostgresException;
+        if (dbUpdateException == null && postgres == null)
+        {
+            return null;
+        }
+
+        var operationClass = ResolveDbOperationClass(ex, defaultOperationClass);
+        var innerType = dbUpdateException?.InnerException?.GetType().Name
+                        ?? ex.InnerException?.GetType().Name
+                        ?? "none";
+        var innerMessage = SanitizeErrorValue(dbUpdateException?.InnerException?.Message ?? ex.InnerException?.Message);
+        var sqlState = postgres?.SqlState ?? "n/a";
+        var dbErrorCode = postgres?.SqlState ?? "n/a";
+        var constraint = SanitizeErrorValue(postgres?.ConstraintName) ?? "n/a";
+        var table = SanitizeErrorValue(postgres?.TableName) ?? "n/a";
+        var schema = SanitizeErrorValue(postgres?.SchemaName) ?? "n/a";
+        var dbMessage = SanitizeErrorValue(postgres?.MessageText) ?? "n/a";
+
+        return $"operation_class={operationClass};exception={ex.GetType().Name};inner_exception={innerType};inner_message={innerMessage ?? "n/a"};sql_state={sqlState};db_error_code={dbErrorCode};constraint={constraint};table={table};schema={schema};db_message={dbMessage}";
+    }
+
+    private static string ResolveDbOperationClass(Exception ex, string defaultOperationClass)
+    {
+        var stack = ex.ToString();
+        if (stack.Contains("FactRepository.SupersedeFactAsync", StringComparison.Ordinal))
+        {
+            return "fact_supersede";
+        }
+
+        if (stack.Contains("FactRepository.UpsertAsync", StringComparison.Ordinal))
+        {
+            return "fact_upsert";
+        }
+
+        if (stack.Contains("IntelligenceRepository", StringComparison.Ordinal))
+        {
+            return "intelligence_persist";
+        }
+
+        return defaultOperationClass;
+    }
+
+    private static string? SanitizeErrorValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Replace(';', ',')
+            .Trim();
     }
 
     private async Task EnsureSessionSummaryAfterSliceAsync(ChatSession session, List<Message> sessionMessages, CancellationToken ct)
