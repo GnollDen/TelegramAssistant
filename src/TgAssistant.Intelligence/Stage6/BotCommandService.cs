@@ -22,7 +22,9 @@ public class BotCommandService : IBotCommandService
 {
     private readonly BotChatSettings _botSettings;
     private readonly TelegramSettings _telegramSettings;
+    private readonly IMessageRepository _messageRepository;
     private readonly ICurrentStateEngine _currentStateEngine;
+    private readonly IProfileEngine _profileEngine;
     private readonly IStrategyEngine _strategyEngine;
     private readonly IDraftEngine _draftEngine;
     private readonly IDraftReviewEngine _draftReviewEngine;
@@ -45,7 +47,9 @@ public class BotCommandService : IBotCommandService
     public BotCommandService(
         IOptions<BotChatSettings> botSettings,
         IOptions<TelegramSettings> telegramSettings,
+        IMessageRepository messageRepository,
         ICurrentStateEngine currentStateEngine,
+        IProfileEngine profileEngine,
         IStrategyEngine strategyEngine,
         IDraftEngine draftEngine,
         IDraftReviewEngine draftReviewEngine,
@@ -67,7 +71,9 @@ public class BotCommandService : IBotCommandService
     {
         _botSettings = botSettings.Value;
         _telegramSettings = telegramSettings.Value;
+        _messageRepository = messageRepository;
         _currentStateEngine = currentStateEngine;
+        _profileEngine = profileEngine;
         _strategyEngine = strategyEngine;
         _draftEngine = draftEngine;
         _draftReviewEngine = draftReviewEngine;
@@ -119,6 +125,7 @@ public class BotCommandService : IBotCommandService
                 "/refresh" => (true, await HandleCaseStatusActionAsync(args, transportChatId, sourceMessageId, senderId, Stage6CaseStatuses.Ready, "refresh", ct)),
                 "/annotate" => (true, await HandleAnnotateAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/feedback" => (true, await HandleFeedbackAsync(args, transportChatId, sourceMessageId, senderId, ct)),
+                "/profile" => (true, await HandleProfileAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/timeline" => (true, await HandleTimelineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/offline" => (true, await HandleOfflineAsync(args, transportChatId, sourceMessageId, senderId, ct)),
                 "/help" => (true, BuildHelp()),
@@ -873,6 +880,47 @@ public class BotCommandService : IBotCommandService
         return sb.ToString().Trim();
     }
 
+    private async Task<string> HandleProfileAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
+    {
+        var (scope, _, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        if (scope == null)
+        {
+            return scopeError;
+        }
+
+        var subjects = await ResolveProfileSubjectsAsync(scope.Value.ChatId, ct);
+        if (subjects == null)
+        {
+            return "Профиль пока недоступен: нужно как минимум два активных участника с обработанными сообщениями.";
+        }
+
+        var bundles = await TryGetReusableProfileBundlesAsync(scope.Value.CaseId, scope.Value.ChatId, subjects, ct);
+        var sourceLabel = "reused";
+        if (bundles == null)
+        {
+            var result = await _profileEngine.RunAsync(new ProfileEngineRequest
+            {
+                CaseId = scope.Value.CaseId,
+                ChatId = scope.Value.ChatId,
+                SelfSenderId = subjects.SelfSenderId,
+                Actor = BuildActor(senderId),
+                SourceType = "telegram_command",
+                SourceId = "/profile",
+                Persist = true
+            }, ct);
+
+            bundles = BuildProfileBundles(result, scope.Value.ChatId, subjects);
+            sourceLabel = "refreshed";
+        }
+
+        if (bundles == null)
+        {
+            return "Профиль пока не удалось собрать. Проверьте, что в чате есть достаточно обработанных данных.";
+        }
+
+        return BuildProfileReply(bundles, sourceLabel);
+    }
+
     private async Task<string> HandleTimelineAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
     {
         var (scope, _, scopeError) = ResolveScopeFromArgs(args, transportChatId);
@@ -1190,6 +1238,49 @@ public class BotCommandService : IBotCommandService
         return draft;
     }
 
+    private async Task<ProfileCommandBundles?> TryGetReusableProfileBundlesAsync(long caseId, long chatId, ProfileSubjects subjects, CancellationToken ct)
+    {
+        var freshnessArtifactType = "profile";
+        var evidence = await _stage6ArtifactFreshnessService.BuildEvidenceStampAsync(caseId, chatId, freshnessArtifactType, ct);
+        var ttl = _stage6ArtifactFreshnessService.ResolveTtl(freshnessArtifactType);
+        var now = DateTime.UtcNow;
+
+        var self = await TryGetReusableProfileBundleAsync(caseId, chatId, "self", subjects.SelfSenderId.ToString(), evidence.LatestEvidenceAtUtc, ttl, now, ct);
+        var other = await TryGetReusableProfileBundleAsync(caseId, chatId, "other", subjects.OtherSenderId.ToString(), evidence.LatestEvidenceAtUtc, ttl, now, ct);
+        var pair = await TryGetReusableProfileBundleAsync(caseId, chatId, "pair", subjects.PairId, evidence.LatestEvidenceAtUtc, ttl, now, ct);
+
+        if (self == null || other == null || pair == null)
+        {
+            return null;
+        }
+
+        return new ProfileCommandBundles(self, other, pair);
+    }
+
+    private async Task<ProfileBundle?> TryGetReusableProfileBundleAsync(
+        long caseId,
+        long chatId,
+        string subjectType,
+        string subjectId,
+        DateTime? latestEvidenceAtUtc,
+        TimeSpan ttl,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var snapshot = (await _stateProfileRepository.GetProfileSnapshotsByCaseAsync(caseId, subjectType, subjectId, ct))
+            .Where(x => x.ChatId == null || x.ChatId == chatId)
+            .OrderBy(x => x.PeriodId.HasValue ? 1 : 0)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        if (snapshot == null || IsProfileSnapshotStale(snapshot, latestEvidenceAtUtc, ttl, nowUtc))
+        {
+            return null;
+        }
+
+        var traits = await _stateProfileRepository.GetProfileTraitsBySnapshotIdAsync(snapshot.Id, ct);
+        return new ProfileBundle(subjectType, subjectId, snapshot, traits);
+    }
+
     private async Task<DraftReviewResult?> TryGetReusableReviewAsync(long caseId, long chatId, CancellationToken ct)
     {
         var artifact = await _stage6ArtifactRepository.GetCurrentAsync(
@@ -1249,6 +1340,130 @@ public class BotCommandService : IBotCommandService
         }
 
         return sb.ToString().Trim();
+    }
+
+    private async Task<ProfileSubjects?> ResolveProfileSubjectsAsync(long chatId, CancellationToken ct)
+    {
+        var senderCounts = (await _messageRepository.GetProcessedByChatAsync(chatId, 5000, ct))
+            .Where(x => x.SenderId > 0)
+            .GroupBy(x => x.SenderId)
+            .Select(g => new { SenderId = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToList();
+        if (senderCounts.Count < 2)
+        {
+            return null;
+        }
+
+        var selfSenderId = senderCounts[0].SenderId;
+        var otherSenderId = senderCounts.First(x => x.SenderId != selfSenderId).SenderId;
+        return new ProfileSubjects(selfSenderId, otherSenderId);
+    }
+
+    private static ProfileCommandBundles? BuildProfileBundles(ProfileEngineResult result, long chatId, ProfileSubjects subjects)
+    {
+        var self = BuildProfileBundle(result, chatId, "self", subjects.SelfSenderId.ToString());
+        var other = BuildProfileBundle(result, chatId, "other", subjects.OtherSenderId.ToString());
+        var pair = BuildProfileBundle(result, chatId, "pair", subjects.PairId);
+        if (self == null || other == null || pair == null)
+        {
+            return null;
+        }
+
+        return new ProfileCommandBundles(self, other, pair);
+    }
+
+    private static ProfileBundle? BuildProfileBundle(ProfileEngineResult result, long chatId, string subjectType, string subjectId)
+    {
+        var snapshot = result.Snapshots
+            .Where(x => x.SubjectType.Equals(subjectType, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.SubjectId.Equals(subjectId, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.ChatId == null || x.ChatId == chatId)
+            .OrderBy(x => x.PeriodId.HasValue ? 1 : 0)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefault();
+        if (snapshot == null)
+        {
+            return null;
+        }
+
+        var traits = result.Traits
+            .Where(x => x.ProfileSnapshotId == snapshot.Id)
+            .ToList();
+        return new ProfileBundle(subjectType, subjectId, snapshot, traits);
+    }
+
+    private static bool IsProfileSnapshotStale(ProfileSnapshot snapshot, DateTime? latestEvidenceAtUtc, TimeSpan ttl, DateTime nowUtc)
+    {
+        if (latestEvidenceAtUtc.HasValue && latestEvidenceAtUtc.Value > snapshot.CreatedAt)
+        {
+            return true;
+        }
+
+        return snapshot.CreatedAt.Add(ttl) <= nowUtc;
+    }
+
+    private static string BuildProfileReply(ProfileCommandBundles bundles, string sourceLabel)
+    {
+        var pairSummary = ShortText(bundles.Pair.Snapshot.Summary, 180, "Паттерн пары пока не стабилизирован.");
+        var works = ResolveProfileSignal(bundles.Pair, "what_works");
+        var fails = ResolveProfileSignal(bundles.Pair, "what_fails");
+        var pairTraits = FormatProfileTraits(bundles.Pair, 3);
+        var selfTraits = FormatProfileTraits(bundles.Self, 2);
+        var otherTraits = FormatProfileTraits(bundles.Other, 2);
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"profile: {pairSummary}");
+        sb.AppendLine($"pair: {pairTraits}");
+        sb.AppendLine($"self: {selfTraits}");
+        sb.AppendLine($"other: {otherTraits}");
+        sb.AppendLine($"works: {works}");
+        sb.AppendLine($"watch: {fails}");
+        sb.AppendLine($"confidence: {bundles.Pair.Snapshot.Confidence:0.00} | stability: {bundles.Pair.Snapshot.Stability:0.00} | {sourceLabel} {bundles.Pair.Snapshot.CreatedAt:yyyy-MM-dd HH:mm} UTC");
+        return sb.ToString().Trim();
+    }
+
+    private static string FormatProfileTraits(ProfileBundle bundle, int limit)
+    {
+        var traits = bundle.Traits
+            .Where(x => !x.IsSensitive)
+            .Where(x => !ProfileCommandSummaryTraitKeys.Contains(x.TraitKey))
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.Stability)
+            .Take(Math.Max(1, limit))
+            .Select(x => $"{x.TraitKey}={ShortText(x.ValueLabel, 52, x.ValueLabel)}")
+            .ToList();
+
+        return traits.Count == 0
+            ? ShortText(bundle.Snapshot.Summary, 96, "limited evidence")
+            : string.Join("; ", traits);
+    }
+
+    private static string ResolveProfileSignal(ProfileBundle bundle, string traitKey)
+    {
+        var value = bundle.Traits
+            .Where(x => x.TraitKey.Equals(traitKey, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Confidence)
+            .Select(x => x.ValueLabel)
+            .FirstOrDefault();
+
+        return ShortText(value, 120, traitKey == "what_works" ? "no stable positive pattern yet" : "no stable anti-pattern yet");
+    }
+
+    private static string ShortText(string? value, int maxLength, string fallback)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+        {
+            return fallback;
+        }
+
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(1, maxLength - 3)].TrimEnd() + "...";
     }
 
     private static (string Command, string Args) SplitCommand(string normalized)
@@ -1768,6 +1983,7 @@ public class BotCommandService : IBotCommandService
             "/gaps — главный вопрос на уточнение",
             "/answer <текст> или /answer <question-id> | <текст> — сохранить ответ",
             "/state — краткая сводка текущего состояния",
+            "/profile — краткий профиль пары и участников",
             "/next — рекомендуемый следующий шаг",
             "",
             "Работа с кейсами:",
@@ -1785,6 +2001,16 @@ public class BotCommandService : IBotCommandService
             "/timeline — текущий и прошлые периоды",
             "/offline <summary> — офлайн-событие");
     }
+
+    private static readonly HashSet<string> ProfileCommandSummaryTraitKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "what_works",
+        "what_fails",
+        "participant_patterns",
+        "pair_dynamics",
+        "repeated_interaction_modes",
+        "changes_over_time"
+    };
 
     private sealed class BotClarificationStateArtifact
     {
@@ -1810,6 +2036,15 @@ public class BotCommandService : IBotCommandService
         public Guid? Stage6CaseId { get; init; }
         public string Text { get; init; } = string.Empty;
     }
+
+    private sealed record ProfileSubjects(long SelfSenderId, long OtherSenderId)
+    {
+        public string PairId => $"{SelfSenderId}:{OtherSenderId}";
+    }
+
+    private sealed record ProfileBundle(string SubjectType, string SubjectId, ProfileSnapshot Snapshot, List<ProfileTrait> Traits);
+
+    private sealed record ProfileCommandBundles(ProfileBundle Self, ProfileBundle Other, ProfileBundle Pair);
 
     private static string BuildActor(long? senderId)
     {
