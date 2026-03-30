@@ -1,87 +1,51 @@
 # Docs Index
 
-## Source of Truth
+## Current Dev Baseline
 
-These files should be treated as the current primary reference set:
+For current dev planning and Stage 6 remediation prep, start from:
 
-- [PRODUCT_DECISIONS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\PRODUCT_DECISIONS.md)
-- [CODEX_TASK_PACKS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\CODEX_TASK_PACKS.md)
-- [IMPLEMENTATION_BACKLOG.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\IMPLEMENTATION_BACKLOG.md)
-- [SPRINT_AB_TESTS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\SPRINT_AB_TESTS.md)
-- [CASE_ID_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\CASE_ID_POLICY.md)
-- [BACKLOG_STATUS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\BACKLOG_STATUS.md)
+- [planning/README.md](./planning/README.md)
 
-## Active Planning Pack
+The planning authority set is defined there and must be treated as primary.
 
-For the current consolidated planning set, use:
+## Stage 6 Remediation Authority
 
-- [planning/README.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\README.md)
-- [planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md)
-- [planning/STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md)
+Current Stage 6 planning authority:
 
-These are the recommended entry points for:
-- implementation order
-- Stage 6 product framing
-- current planning context
+- [planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md](./planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md)
+- [planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
+- [planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [planning/STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md](./planning/STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md)
 
-## Active Sprint Docs
+S6-R0 prep docs:
 
-Active only while the sprint is in progress:
+- [planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md](./planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md)
+- [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
 
-- current `SPRINT_*_TASK_PACK.md`
-- current `SPRINT_*_ACCEPTANCE.md`
+## Runbooks
 
-After acceptance, these remain useful as historical execution records, not as primary product doctrine.
+Operational runbooks:
 
-## Stable Policies
+- [runbooks/dev-commit-push.md](./runbooks/dev-commit-push.md)
+- [runbooks/post-change-verification.md](./runbooks/post-change-verification.md)
+- [runbooks/production-stability-check.md](./runbooks/production-stability-check.md)
+- [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
 
-These remain active until explicitly replaced:
+## Policies and Stable References
 
-- [CLARIFICATION_LINK_CONVENTIONS.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\CLARIFICATION_LINK_CONVENTIONS.md)
-- [CLARIFICATION_CONTRADICTION_RULES.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\CLARIFICATION_CONTRADICTION_RULES.md)
-- [TIMELINE_REVISION_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\TIMELINE_REVISION_POLICY.md)
-- [TESTING_EXPANSION_NOTE.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\TESTING_EXPANSION_NOTE.md)
-- [EXTERNAL_ARCHIVE_INGESTION_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\EXTERNAL_ARCHIVE_INGESTION_POLICY.md)
-- [COMPETING_RELATIONSHIP_CONTEXT_POLICY.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\COMPETING_RELATIONSHIP_CONTEXT_POLICY.md)
+- [CLARIFICATION_LINK_CONVENTIONS.md](./CLARIFICATION_LINK_CONVENTIONS.md)
+- [CLARIFICATION_CONTRADICTION_RULES.md](./CLARIFICATION_CONTRADICTION_RULES.md)
+- [TIMELINE_REVISION_POLICY.md](./TIMELINE_REVISION_POLICY.md)
+- [EXTERNAL_ARCHIVE_INGESTION_POLICY.md](./EXTERNAL_ARCHIVE_INGESTION_POLICY.md)
+- [COMPETING_RELATIONSHIP_CONTEXT_POLICY.md](./COMPETING_RELATIONSHIP_CONTEXT_POLICY.md)
 
-## Operational Runbooks
+## Historical / Supporting Only
 
-Use these for repeatable execution, verification, and delivery hygiene:
+Use these as historical/supporting context, not execution authority:
 
-- [dev-commit-push.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\dev-commit-push.md)
-- [post-change-verification.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\post-change-verification.md)
-- [production-stability-check.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\runbooks\production-stability-check.md)
-
-## Historical Execution Docs
-
-These are useful records, but not the best entry point for understanding the current system:
-
-- completed `SPRINT_01` through `SPRINT_18` task packs and acceptance files
-- `SPRINT_01_1_*`
 - `docs/planning/archive/*`
-- `OPS_HYGIENE_*`
-- `VPS_BASELINE_2026-03-21.md`
-- dated `OPS_*_2026-03-21.md`
-
-## Legacy / Narrow-Scope References
-
-These are still useful, but only for a narrow slice of the system:
-
-- [README.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\README.md)
-  - still useful for local run/deploy basics
-  - outdated as a full architecture map
-- [CODEX_BACKLOG.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\CODEX_BACKLOG.md)
-  - still useful for old Stage5/media backlog context
-  - not the main full-product backlog anymore
-- [stage5_product_backlog.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\stage5_product_backlog.md)
-  - Stage5-specific reference only
-
-## Documentation Hygiene
-
-Use this rule set going forward:
-
-1. Product truth goes into `PRODUCT_DECISIONS.md`.
-2. Current status and remaining work goes into `BACKLOG_STATUS.md`.
-3. Current execution details go into the active sprint docs only.
-4. Finished sprint docs remain historical, not normative.
-5. Narrow subsystem docs should say clearly when they are Stage5-only or legacy-only.
+- completed `SPRINT_*_TASK_PACK.md` and `SPRINT_*_ACCEPTANCE.md`
+- [BACKLOG_STATUS.md](./BACKLOG_STATUS.md)
+- [CODEX_BACKLOG.md](../CODEX_BACKLOG.md)
+- [stage5_product_backlog.md](./stage5_product_backlog.md)
+- Stage 5 rerun task packs in `docs/STAGE5_*` and `docs/FULL_BASELINE_REIMPORT_TASK.md`

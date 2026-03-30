@@ -202,6 +202,10 @@ Need to define explicitly:
 - what can be preserved
 - how rebuild completion is verified
 
+Baseline artifacts:
+- `docs/planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md`
+- `docs/runbooks/stage6-rebuild-verification.md`
+
 ### O2. Archive Mode and Runtime Baseline Checks
 
 Priority: P1
