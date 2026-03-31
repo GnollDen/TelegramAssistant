@@ -1164,7 +1164,7 @@ public class BotChatService : IBotChatService
             var lines = new List<string> { $"current={FormatPeriodLine(current)}" };
             lines.AddRange(prior.Select(x => $"prior={FormatPeriodLine(x)}"));
             var transitions = await _periodRepository.GetTransitionsByPeriodAsync(current.Id, ct);
-            lines.Add($"unresolved_transitions={transitions.Count(x => !x.IsResolved)}");
+            lines.Add($"unresolved_transitions={transitions.Count(IsActionableUnresolvedTransition)}");
             return string.Join('\n', lines);
         }
         catch (Exception ex)
@@ -1317,6 +1317,24 @@ public class BotChatService : IBotChatService
         return traits.Count == 0
             ? ShortText(bundle.Snapshot.Summary, 96, "limited evidence")
             : string.Join("; ", traits);
+    }
+
+    private static bool IsActionableUnresolvedTransition(PeriodTransition transition)
+    {
+        if (transition.IsResolved)
+        {
+            return false;
+        }
+
+        var summary = transition.Summary ?? string.Empty;
+        var isGenericUnresolved =
+            summary.Contains("No clear transition cause found", StringComparison.OrdinalIgnoreCase) ||
+            summary.Contains("transition cause remains unclear", StringComparison.OrdinalIgnoreCase) ||
+            summary.Contains("unresolved gap created", StringComparison.OrdinalIgnoreCase);
+
+        return !(transition.TransitionType.Equals("unresolved_gap", StringComparison.OrdinalIgnoreCase)
+                 && isGenericUnresolved
+                 && transition.Confidence <= 0.55f);
     }
 
     private static string FormatPeriodLine(Period period)

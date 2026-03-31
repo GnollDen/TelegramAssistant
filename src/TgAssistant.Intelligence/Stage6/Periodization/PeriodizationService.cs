@@ -106,7 +106,8 @@ public class PeriodizationService : IPeriodizationService
         var boundaries = await _boundaryDetector.DetectAsync(request, messages, sessions, offlineEvents, clarificationQuestions, ct);
         var assembledPeriods = await _timelineAssembler.AssembleAsync(request, messages, sessions, boundaries, ct);
 
-        var persistedPeriods = new List<Period>(assembledPeriods.Count);
+        var materializedPeriods = new List<Period>(assembledPeriods.Count);
+        var suppressedNoSignalPeriods = 0;
         foreach (var basePeriod in assembledPeriods)
         {
             var periodMessages = messages
@@ -150,13 +151,34 @@ public class PeriodizationService : IPeriodizationService
             basePeriod.Lessons = BuildLessons(evidence);
             basePeriod.StrategicPatterns = BuildStrategicPatterns(periodMessages, periodClarificationAnswers);
 
-            if (!request.Persist)
+            if (ShouldSuppressNoSignalPeriod(periodMessages, periodOfflineEvents, periodAudioSnippets, periodClarificationAnswers))
             {
-                persistedPeriods.Add(basePeriod);
+                suppressedNoSignalPeriods++;
+                _logger.LogInformation(
+                    "Period suppressed by quality gate: case_id={CaseId}, chat_id={ChatId}, period_label={PeriodLabel}, start_at={StartAt}, end_at={EndAt}",
+                    request.CaseId,
+                    request.ChatId,
+                    basePeriod.Label,
+                    basePeriod.StartAt,
+                    basePeriod.EndAt);
                 continue;
             }
 
-            var persisted = await _periodRepository.CreatePeriodAsync(basePeriod, ct);
+            materializedPeriods.Add(basePeriod);
+        }
+
+        NormalizePeriodSequence(materializedPeriods, request.ToUtc);
+
+        var persistedPeriods = new List<Period>(materializedPeriods.Count);
+        foreach (var period in materializedPeriods)
+        {
+            if (!request.Persist)
+            {
+                persistedPeriods.Add(period);
+                continue;
+            }
+
+            var persisted = await _periodRepository.CreatePeriodAsync(period, ct);
             await _domainReviewEventRepository.AddAsync(new DomainReviewEvent
             {
                 ObjectType = "period",
@@ -221,11 +243,12 @@ public class PeriodizationService : IPeriodizationService
         var proposals = await _proposalService.BuildAndPersistProposalsAsync(request, persistedPeriods, persistedTransitions, conflicts, ct);
 
         _logger.LogInformation(
-            "Periodization run completed: case_id={CaseId}, periods={PeriodCount}, transitions={TransitionCount}, proposals={ProposalCount}",
+            "Periodization run completed: case_id={CaseId}, periods={PeriodCount}, transitions={TransitionCount}, proposals={ProposalCount}, suppressed_no_signal_periods={SuppressedNoSignalPeriods}",
             request.CaseId,
             persistedPeriods.Count,
             persistedTransitions.Count,
-            proposals.Count);
+            proposals.Count,
+            suppressedNoSignalPeriods);
 
         return new PeriodizationRunResult
         {
@@ -245,6 +268,47 @@ public class PeriodizationService : IPeriodizationService
         }
 
         return await _messageRepository.GetProcessedByChatAsync(request.ChatId, 50000, ct);
+    }
+
+    private static bool ShouldSuppressNoSignalPeriod(
+        IReadOnlyList<Message> periodMessages,
+        IReadOnlyList<OfflineEvent> periodOfflineEvents,
+        IReadOnlyList<AudioSnippet> periodAudioSnippets,
+        IReadOnlyList<ClarificationAnswer> periodClarificationAnswers)
+    {
+        return periodMessages.Count == 0
+               && periodOfflineEvents.Count == 0
+               && periodAudioSnippets.Count == 0
+               && periodClarificationAnswers.Count == 0;
+    }
+
+    private static void NormalizePeriodSequence(List<Period> periods, DateTime? toUtc)
+    {
+        if (periods.Count == 0)
+        {
+            return;
+        }
+
+        periods.Sort((left, right) => left.StartAt.CompareTo(right.StartAt));
+        var now = DateTime.UtcNow;
+        for (var i = 0; i < periods.Count; i++)
+        {
+            var period = periods[i];
+            var isLast = i == periods.Count - 1;
+            period.Label = $"period_{i + 1:00}";
+            period.IsOpen = !toUtc.HasValue && isLast;
+
+            if (period.IsOpen)
+            {
+                period.EndAt = null;
+            }
+            else if (!isLast && period.EndAt == null)
+            {
+                period.EndAt = periods[i + 1].StartAt;
+            }
+
+            period.UpdatedAt = now;
+        }
     }
 
     private static short CalculateReviewPriority(Period period, IReadOnlyCollection<ConflictRecord> conflicts)
