@@ -1,26 +1,13 @@
 # Docs Index
 
-## Current Dev Baseline
+## Current Dev Baseline (Authority)
 
-For current dev planning and Stage 6 remediation prep, start from:
+Start here for current readiness/handover baseline:
 
 - [planning/README.md](./planning/README.md)
-
-The planning authority set is defined there and must be treated as primary.
-
-## Stage 6 Remediation Authority
-
-Current Stage 6 planning authority:
-
-- [planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md](./planning/FULL_IMPLEMENTATION_SPRINT_PLAN_2026-03-25.md)
-- [planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
-- [planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
-- [planning/STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md](./planning/STAGE6_AGENT_EXECUTION_CARDS_2026-03-30.md)
-
-S6-R0 prep docs:
-
-- [planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md](./planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md)
-- [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
+- [planning/N1_READINESS_BASELINE_2026-03-31.md](./planning/N1_READINESS_BASELINE_2026-03-31.md)
+- [runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md](./runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md)
+- [runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md](./runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md)
 
 ## Runbooks
 
@@ -29,7 +16,16 @@ Operational runbooks:
 - [runbooks/dev-commit-push.md](./runbooks/dev-commit-push.md)
 - [runbooks/post-change-verification.md](./runbooks/post-change-verification.md)
 - [runbooks/production-stability-check.md](./runbooks/production-stability-check.md)
+
+Rebuild-specific (use only for explicit rebuild/reset):
+
 - [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
+
+## Planning and Readiness Supporting Context
+
+- [planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md](./planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md)
+- [planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
 
 ## Policies and Stable References
 
@@ -41,11 +37,10 @@ Operational runbooks:
 
 ## Historical / Supporting Only
 
-Use these as historical/supporting context, not execution authority:
+Use these as historical context, not baseline authority:
 
 - `docs/planning/archive/*`
-- completed `SPRINT_*_TASK_PACK.md` and `SPRINT_*_ACCEPTANCE.md`
+- completed `SPRINT_*_TASK_PACK.md` and `SPRINT_*_ACCEPTANCE*.md`
 - [BACKLOG_STATUS.md](./BACKLOG_STATUS.md)
 - [CODEX_BACKLOG.md](../CODEX_BACKLOG.md)
 - [stage5_product_backlog.md](./stage5_product_backlog.md)
-- Stage 5 rerun task packs in `docs/STAGE5_*` and `docs/FULL_BASELINE_REIMPORT_TASK.md`
