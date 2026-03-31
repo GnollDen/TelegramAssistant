@@ -347,7 +347,7 @@ public class WebOpsVerificationService
         }
 
         var answerPage = await _webRouteRenderer.RenderAsync(
-            $"/clarification-answer?caseId={stage6Case.Id}&answer={Uri.EscapeDataString("web smoke answer")}",
+            $"/clarification-answer?caseId={stage6Case.Id}&answer={Uri.EscapeDataString("web smoke answer")}&confirm=1",
             request,
             ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /clarification-answer route did not resolve.");
