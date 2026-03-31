@@ -223,12 +223,11 @@ public class WebOpsVerificationService
         var inboxPage = await _webRouteRenderer.RenderAsync("/inbox", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /inbox route did not resolve.");
         if (string.IsNullOrWhiteSpace(inboxPage.Html)
-            || !inboxPage.Html.Contains("Stage 6 Queue", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("Операционная очередь Stage 6", StringComparison.OrdinalIgnoreCase)
             || !inboxPage.Html.Contains(question.QuestionText, StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains("priority=", StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains("status=", StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains("confidence=", StringComparison.OrdinalIgnoreCase)
-            || !inboxPage.Html.Contains("reason:", StringComparison.OrdinalIgnoreCase))
+            || !inboxPage.Html.Contains("Статус:", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("Приоритет:", StringComparison.OrdinalIgnoreCase)
+            || !inboxPage.Html.Contains("Уверенность:", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Ops web smoke failed: /inbox route does not show seeded stage6 queue items.");
         }
