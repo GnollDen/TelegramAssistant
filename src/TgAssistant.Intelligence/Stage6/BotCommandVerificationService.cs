@@ -72,6 +72,10 @@ public class BotCommandVerificationService
         AssertContains(stateReply, "status:", "/state");
         AssertContains(stateReply, "next:", "/state");
 
+        var stateDefaultReply = await _botChatService.GenerateReplyAsync("/state", chatId, null, 1, ct);
+        AssertContains(stateDefaultReply, "state:", "/state default");
+        AssertContains(stateDefaultReply, "status:", "/state default");
+
         var nextReply = await _botChatService.GenerateReplyAsync($"/next case={caseId} chat={chatId}", chatId, null, 1, ct);
         AssertContains(nextReply, "next:", "/next");
         AssertContains(nextReply, "micro-step:", "/next");
