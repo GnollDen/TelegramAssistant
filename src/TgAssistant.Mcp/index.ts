@@ -1552,41 +1552,107 @@ server.registerTool(
       evidence_refs_json: unknown;
     };
 
+    type CandidateSubjectRow = {
+      subject_id: string;
+      created_at: Date;
+      scope_rank: number;
+    };
+
     try {
       const normalizedSubjectType = subject_type.trim();
+      const normalizedSubjectTypeLower = normalizedSubjectType.toLowerCase();
       const normalizedSubjectId = subject_id.trim();
-      const snapshotResult = await pool.query<SnapshotRow>(
-        `
-          select
-            s.id::text as id,
-            s.summary,
-            s.confidence,
-            s.stability,
-            s.period_id::text as period_id,
-            s.created_at,
-            p.label as period_label,
-            p.custom_label as period_custom_label,
-            p.start_at as period_start_at,
-            p.end_at as period_end_at
-          from domain_profile_snapshots s
-          left join domain_periods p on p.id = s.period_id
-          where s.case_id = $1
-            and (s.chat_id = $2 or s.chat_id is null)
-            and s.subject_type = $3
-            and s.subject_id = $4
-          order by
-            case when s.chat_id = $2 then 0 else 1 end asc,
-            s.created_at desc
-          limit 1
-        `,
-        [case_id, chat_id, normalizedSubjectType, normalizedSubjectId]
-      );
+      const normalizedSubjectIdLower = normalizedSubjectId.toLowerCase();
+      const aliasEnabledTypes = new Set(["self", "other", "pair"]);
+      const aliasRequested =
+        aliasEnabledTypes.has(normalizedSubjectTypeLower) &&
+        normalizedSubjectIdLower === normalizedSubjectTypeLower;
 
-      const snapshot = snapshotResult.rows[0];
-      if (!snapshot) {
-        return toTextResult(
-          `Profile signals: not found for ${normalizedSubjectType}/${normalizedSubjectId} in case ${case_id} / chat ${chat_id}.`
+      const loadLatestSnapshot = async (lookupSubjectId: string): Promise<SnapshotRow | null> => {
+        const snapshotResult = await pool.query<SnapshotRow>(
+          `
+            select
+              s.id::text as id,
+              s.summary,
+              s.confidence,
+              s.stability,
+              s.period_id::text as period_id,
+              s.created_at,
+              p.label as period_label,
+              p.custom_label as period_custom_label,
+              p.start_at as period_start_at,
+              p.end_at as period_end_at
+            from domain_profile_snapshots s
+            left join domain_periods p on p.id = s.period_id
+            where s.case_id = $1
+              and (s.chat_id = $2 or s.chat_id is null)
+              and s.subject_type = $3
+              and s.subject_id = $4
+            order by
+              case when s.chat_id = $2 then 0 else 1 end asc,
+              s.created_at desc
+            limit 1
+          `,
+          [case_id, chat_id, normalizedSubjectType, lookupSubjectId]
         );
+
+        return snapshotResult.rows[0] ?? null;
+      };
+
+      let resolvedSubjectId = normalizedSubjectId;
+      let snapshot = await loadLatestSnapshot(resolvedSubjectId);
+      let resolvedFromAlias = false;
+
+      const candidateResult = await pool.query<CandidateSubjectRow>(
+        `
+          select *
+          from (
+            select distinct on (s.subject_id)
+              s.subject_id,
+              s.created_at,
+              case when s.chat_id = $2 then 0 else 1 end as scope_rank
+            from domain_profile_snapshots s
+            where s.case_id = $1
+              and (s.chat_id = $2 or s.chat_id is null)
+              and s.subject_type = $3
+            order by
+              s.subject_id asc,
+              case when s.chat_id = $2 then 0 else 1 end asc,
+              s.created_at desc
+          ) latest
+          order by latest.scope_rank asc, latest.created_at desc, latest.subject_id asc
+          limit 8
+        `,
+        [case_id, chat_id, normalizedSubjectType]
+      );
+      const candidateIds = candidateResult.rows.map((row) => row.subject_id);
+
+      if (snapshot === null && aliasRequested && candidateIds.length === 1) {
+        resolvedSubjectId = candidateIds[0];
+        snapshot = await loadLatestSnapshot(resolvedSubjectId);
+        resolvedFromAlias = snapshot !== null;
+      }
+
+      if (!snapshot) {
+        const lines = [
+          `Profile signals: not found for ${normalizedSubjectType}/${normalizedSubjectId} in case ${case_id} / chat ${chat_id}.`
+        ];
+
+        if (aliasRequested && candidateIds.length > 1) {
+          lines.push(
+            `Alias ${normalizedSubjectType}/${normalizedSubjectId} is ambiguous: ${candidateIds.length} subject IDs exist for subject_type=${normalizedSubjectType}.`
+          );
+        }
+
+        if (candidateIds.length > 0) {
+          lines.push(`Available subject_ids for ${normalizedSubjectType}: ${candidateIds.join(", ")}`);
+        }
+
+        lines.push(
+          `Hint | Use get_profiles(case_id=${case_id}, chat_id=${chat_id}, subject_type=\"${normalizedSubjectType}\") to inspect latest profile IDs.`
+        );
+
+        return toTextResult(lines.join("\n"));
       }
 
       const effectiveLimit = limit ?? 10;
@@ -1609,14 +1675,20 @@ server.registerTool(
 
       if (signalsResult.rows.length === 0) {
         return toTextResult(
-          `Profile signals: insufficient data for ${normalizedSubjectType}/${normalizedSubjectId}; snapshot exists but traits are missing.`
+          `Profile signals: insufficient data for ${normalizedSubjectType}/${resolvedSubjectId}; snapshot exists but traits are missing.`
         );
       }
 
       const lines = [
-        `Profile signals | ${normalizedSubjectType}/${normalizedSubjectId} | snapshot=${formatUtc(snapshot.created_at)} | conf=${formatNumber(snapshot.confidence)} stab=${formatNumber(snapshot.stability)}`,
+        `Profile signals | ${normalizedSubjectType}/${resolvedSubjectId} | snapshot=${formatUtc(snapshot.created_at)} | conf=${formatNumber(snapshot.confidence)} stab=${formatNumber(snapshot.stability)}`,
         `Summary | ${clipText(snapshot.summary, 160)}`
       ];
+
+      if (resolvedFromAlias) {
+        lines.push(
+          `Resolved alias | requested ${normalizedSubjectType}/${normalizedSubjectId} -> ${normalizedSubjectType}/${resolvedSubjectId}`
+        );
+      }
 
       if (snapshot.period_id) {
         lines.push(
