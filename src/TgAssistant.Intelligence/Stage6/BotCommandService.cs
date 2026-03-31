@@ -923,11 +923,17 @@ public class BotCommandService : IBotCommandService
 
     private async Task<string> HandleTimelineAsync(string args, long? transportChatId, long? sourceMessageId, long? senderId, CancellationToken ct)
     {
-        var (scope, _, scopeError) = ResolveScopeFromArgs(args, transportChatId);
+        var (scope, commandArgs, scopeError) = ResolveScopeFromArgs(args, transportChatId);
         if (scope == null)
         {
             return scopeError;
         }
+
+        var includeLowInformationPeriods = commandArgs
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(token => token.Equals("full", StringComparison.OrdinalIgnoreCase)
+                          || token.Equals("all", StringComparison.OrdinalIgnoreCase)
+                          || token.Equals("include_noise=1", StringComparison.OrdinalIgnoreCase));
 
         var periods = (await _periodRepository.GetPeriodsByCaseAsync(scope.Value.CaseId, ct))
             .Where(x => x.ChatId == null || x.ChatId == scope.Value.ChatId)
@@ -955,13 +961,29 @@ public class BotCommandService : IBotCommandService
         }
 
         var current = periods.FirstOrDefault(x => x.IsOpen) ?? periods[0];
-        var prior = periods.Where(x => x.Id != current.Id).Take(3).ToList();
+        var priorCandidates = periods.Where(x => x.Id != current.Id).Take(5).ToList();
+        var prior = includeLowInformationPeriods
+            ? priorCandidates.Take(3).ToList()
+            : priorCandidates
+                .Where(x => !IsLowInformationHistoricalPeriod(x))
+                .Take(3)
+                .ToList();
+        if (prior.Count == 0 && priorCandidates.Count > 0)
+        {
+            prior = [priorCandidates[0]];
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine($"current: {FormatPeriodLine(current)}");
         foreach (var period in prior)
         {
             sb.AppendLine($"prior: {FormatPeriodLine(period)}");
+        }
+
+        var suppressedPrior = includeLowInformationPeriods ? 0 : Math.Max(0, priorCandidates.Count - prior.Count);
+        if (suppressedPrior > 0)
+        {
+            sb.AppendLine($"prior: скрыто низкоинформативных периодов={suppressedPrior}; добавьте `full` для полного вывода");
         }
 
         var transitions = await _periodRepository.GetTransitionsByPeriodAsync(current.Id, ct);
@@ -1038,18 +1060,6 @@ public class BotCommandService : IBotCommandService
             remaining.Add(token);
         }
 
-        var caseId = caseIdArg ?? _botSettings.DefaultCaseId;
-        if (caseId <= 0)
-        {
-            var message = string.Join('\n',
-                "Не настроена рабочая область кейса для бота.",
-                "Что сделать:",
-                "1) Передайте `case=<id>` в команде (например: /gaps case=123456789 chat=123456789).",
-                "2) Или задайте постоянные значения `BotChat:DefaultCaseId` и `BotChat:DefaultChatId` в конфигурации.",
-                "Подсказка: /help");
-            return (null, string.Join(' ', remaining), message);
-        }
-
         var chatId = chatIdArg ?? _botSettings.DefaultChatId;
         if (chatId <= 0 && _telegramSettings.MonitoredChatIds.Count > 0)
         {
@@ -1059,6 +1069,24 @@ public class BotCommandService : IBotCommandService
         if (chatId <= 0 && transportChatId.HasValue && transportChatId.Value > 0)
         {
             chatId = transportChatId.Value;
+        }
+
+        var caseId = caseIdArg ?? _botSettings.DefaultCaseId;
+        if (caseId <= 0 && !caseIdArg.HasValue && chatId > 0)
+        {
+            caseId = chatId;
+        }
+
+        if (caseId <= 0)
+        {
+            var message = string.Join('\n',
+                "Не настроена рабочая область кейса для бота.",
+                "Что сделать:",
+                "1) Передайте `case=<id>` в команде (например: /gaps case=123456789 chat=123456789).",
+                "2) Или задайте постоянные значения `BotChat:DefaultCaseId` и `BotChat:DefaultChatId` в конфигурации.",
+                "Примечание: при команде из мониторируемого чата без явного scope используется fallback `case=chat`.",
+                "Подсказка: /help");
+            return (null, string.Join(' ', remaining), message);
         }
 
         if (chatId <= 0)
@@ -1988,6 +2016,7 @@ public class BotCommandService : IBotCommandService
         return string.Join('\n',
             "Команды оператора (RU):",
             "Сначала область работы: задайте `BotChat:DefaultCaseId`/`BotChat:DefaultChatId` или передавайте `case=<id> chat=<id>` в команде.",
+            "Если scope не передан, для команд из мониторируемого чата действует fallback `case=chat`.",
             "",
             "Базовый поток:",
             "/gaps — главный вопрос на уточнение",
@@ -2008,7 +2037,7 @@ public class BotCommandService : IBotCommandService
             "Дополнительно:",
             "/draft [tone=...] [notes] — черновик ответа",
             "/review <text> — проверка рисков и переписывание",
-            "/timeline — текущий и прошлые периоды",
+            "/timeline [full] — текущий и прошлые периоды (`full` показывает низкоинформативные промежутки)",
             "/offline <summary> — офлайн-событие");
     }
 
@@ -2169,6 +2198,30 @@ public class BotCommandService : IBotCommandService
         return !(transition.TransitionType.Equals("unresolved_gap", StringComparison.OrdinalIgnoreCase)
                  && isGenericUnresolved
                  && transition.Confidence <= 0.55f);
+    }
+
+    private static bool IsLowInformationHistoricalPeriod(Period period)
+    {
+        if (period.IsOpen)
+        {
+            return false;
+        }
+
+        var summary = period.Summary ?? string.Empty;
+        var summaryHasZeroMessages = summary.Contains("messages=0", StringComparison.OrdinalIgnoreCase)
+                                     || summary.Contains("message_count:0", StringComparison.OrdinalIgnoreCase);
+        var summaryHasZeroEvents = summary.Contains("events=0", StringComparison.OrdinalIgnoreCase);
+
+        var hooks = ParseJsonList(period.EvidenceRefsJson, 8);
+        hooks.AddRange(ParseJsonList(period.KeySignalsJson, 8));
+        var hookHasZeroMessages = hooks.Any(x => x.StartsWith("message_count:0", StringComparison.OrdinalIgnoreCase));
+
+        var noOpenQuestions = period.OpenQuestionsCount == 0;
+        var lowConfidence = period.InterpretationConfidence <= 0.4f;
+        return (summaryHasZeroMessages || hookHasZeroMessages)
+               && summaryHasZeroEvents
+               && noOpenQuestions
+               && lowConfidence;
     }
 
     private static string FormatPeriodLine(Period period)
