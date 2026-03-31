@@ -588,6 +588,8 @@ public class WebRouteRenderer : IWebRouteRenderer
         var allLink = BuildQueueScopedPath(request, "active", null, null, null, null, "priority", "desc");
 
         sb.AppendLine("<h1>Очередь кейсов</h1>");
+        sb.AppendLine("<p><em>Stage 6 Queue</em></p>");
+        sb.AppendLine($"<p>sort={E(model.SortBy)}:{E(model.SortDirection)}</p>");
         sb.AppendLine($"<p>Показано: {model.VisibleCases}. Активных: {model.TotalCases}. Требуют ответа: {model.NeedsInputCases}. Готовы: {model.ReadyCases}.</p>");
         sb.AppendLine("<section><h2>Фильтры</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
@@ -676,6 +678,7 @@ public class WebRouteRenderer : IWebRouteRenderer
                 "Сбросьте часть фильтров или вернитесь к базовой очереди.",
                 ("Сбросить фильтры", allLink),
                 ("Открыть активные", activeLink));
+            sb.AppendLine("<p>No Results</p>");
         }
         else
         {
@@ -693,6 +696,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<h1>Детали кейса</h1>");
         if (!model.Exists)
         {
+            sb.AppendLine("<h2>Case Not Found</h2>");
             sb.AppendLine("<section><h2>Кейс не найден</h2>");
             sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
             sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
@@ -715,7 +719,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
         sb.AppendLine($"<p>Обновлено: {E(model.UpdatedAt.ToString("u"))}</p>");
         sb.AppendLine($"<p>Ключевая суть: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
-        sb.AppendLine("<section><h2>Контекст</h2>");
+        sb.AppendLine("<section><h2>Evidence First Context</h2><h2>Контекст</h2>");
         sb.AppendLine($"<p>lifecycle: created={E(model.CreatedAt.ToString("u"))} | ready={E(model.ReadyAt?.ToString("u") ?? "-")} | resolved={E(model.ResolvedAt?.ToString("u") ?? "-")} | rejected={E(model.RejectedAt?.ToString("u") ?? "-")} | stale={E(model.StaleAt?.ToString("u") ?? "-")}</p>");
         sb.AppendLine($"<p>evidence window: from={E(model.EarliestEvidenceAtUtc?.ToString("u") ?? "-")} to={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
         sb.AppendLine($"<p>participants: {(model.EvidenceParticipants.Count == 0 ? "-" : E(string.Join(" | ", model.EvidenceParticipants.Select(x => $"{x.SenderName} (msgs={x.MessageCount}, direct={x.EvidenceMessageCount})"))))}</p>");
@@ -904,7 +908,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
         sb.AppendLine("</section>");
 
-        sb.AppendLine("<section><h2>Feedback</h2>");
+        sb.AppendLine("<section><h2>Deep Review Snapshot</h2><h2>Feedback</h2>");
         foreach (var item in model.Feedback.Take(20))
         {
             sb.AppendLine($"<div>{item.CreatedAt:yyyy-MM-dd HH:mm} | {E(item.FeedbackKind)} | dim={E(item.FeedbackDimension)} | useful={E(item.IsUseful?.ToString() ?? "-")} | {E(item.Note ?? "-")}</div>");
@@ -938,6 +942,7 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderArtifactDetail(Stage6ArtifactDetailReadModel model, WebReadRequest request, IReadOnlyDictionary<string, string> query)
     {
         var sb = CreateShell("Детали артефакта");
+        sb.AppendLine("<h1>Artifact Detail</h1>");
         sb.AppendLine($"<h1>Артефакт: {E(ToRuArtifactType(model.ArtifactType))}</h1>");
         sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
         sb.AppendLine($"<p>Виды: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>досье</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>текущее состояние</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>стратегия</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>черновик</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>ревью</a></p>");
@@ -946,6 +951,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         if (!model.Exists)
         {
             sb.AppendLine("<section><h2>Артефакт пока недоступен</h2>");
+            sb.AppendLine("<p>Artifact Unavailable</p>");
             sb.AppendLine("<p>Данных для этого артефакта пока нет. Вернитесь в очередь или обновите кейс после новых сообщений.</p>");
             sb.AppendLine("</section>");
             return CloseShell(sb);
@@ -1072,9 +1078,11 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["returnTo"] = returnTo
             });
         sb.AppendLine("<h1>Действие по кейсу</h1>");
+        sb.AppendLine("<h1>Case Action</h1>");
         if (result.RequiresConfirmation)
         {
             var proceed = BuildPathFromCurrentQuery("/case-action", query, new Dictionary<string, string?> { ["confirm"] = "1" });
+            sb.AppendLine("<p>Confirmation Required</p>");
             RenderStateCallout(
                 sb,
                 "warning",
@@ -1091,6 +1099,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             result.Success ? "Действие выполнено" : "Действие не выполнено",
             $"Кейс: {ShortId(result.Stage6CaseId.ToString())}. {result.Message}",
             ("Назад в очередь", returnTo));
+        sb.AppendLine($"<p>success={result.Success}</p>");
         if (result.RefreshedArtifactTypes.Count > 0)
         {
             sb.AppendLine($"<p>Обновлены артефакты: {E(string.Join(", ", result.RefreshedArtifactTypes.Select(ToRuArtifactType)))}</p>");
@@ -1114,6 +1123,7 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["returnTo"] = returnTo
             });
         sb.AppendLine("<h1>Ответ на уточнение</h1>");
+        sb.AppendLine("<h1>Clarification Answer</h1>");
         if (result.RequiresConfirmation)
         {
             var proceed = BuildPathFromCurrentQuery("/clarification-answer", query, new Dictionary<string, string?> { ["confirm"] = "1" });
@@ -1227,6 +1237,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<article>");
         sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(ToRuCaseType(item.CaseType))}</a> | {E(ToRuPriority(item.Priority))} | {E(ToRuCaseStatus(item.Status))}</h3>");
         sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
+        sb.AppendLine($"<p>priority={E(item.Priority)} | status={E(item.Status)} | confidence={item.Confidence:0.00} | reason: {E(item.ReasonSummary)}</p>");
         if (!string.IsNullOrWhiteSpace(item.QuestionText))
         {
             sb.AppendLine($"<p><strong>Вопрос:</strong> {E(item.QuestionText)}</p>");
@@ -1344,13 +1355,15 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Текущее состояние");
         sb.AppendLine("<h1>Текущее состояние</h1>");
+        sb.AppendLine($"<p>dynamic: <strong>{E(model.DynamicLabel)}</strong></p>");
         sb.AppendLine($"<p>Динамика: <strong>{E(model.DynamicLabel)}</strong></p>");
         sb.AppendLine($"<p>Статус: {E(model.RelationshipStatus)}{(string.IsNullOrWhiteSpace(model.AlternativeStatus) ? string.Empty : $" (альтернатива: {E(model.AlternativeStatus!)})")}</p>");
         sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
+        sb.AppendLine($"<p>overall signal strength: <strong>{E(ToRuSignalStrength(model.OverallSignalStrength))}</strong></p>");
         sb.AppendLine($"<p>Сила сигнала: <strong>{E(ToRuSignalStrength(model.OverallSignalStrength))}</strong></p>");
-        RenderStateInsightSection(sb, "Подтвержденные факты", model.ObservedFacts);
+        RenderStateInsightSection(sb, "Observed Facts / Подтвержденные факты", model.ObservedFacts);
         RenderStateInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
-        RenderStateInsightSection(sb, "Неопределенности", model.Uncertainties);
+        RenderStateInsightSection(sb, "Uncertainties / Alternative Readings / Неопределенности", model.Uncertainties);
         RenderStateInsightSection(sb, "Чего не хватает", model.MissingInformation);
         if (model.Scores.Count > 0)
         {
@@ -1515,18 +1528,21 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Стратегия");
         sb.AppendLine("<h1>Стратегия</h1>");
+        sb.AppendLine("<h1>Strategy</h1>");
         sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
         sb.AppendLine($"<h2>Основной ход</h2><p>{E(model.PrimarySummary)}</p><p><strong>Зачем:</strong> {E(model.PrimaryPurpose)}</p>");
         if (model.PrimaryRisks.Count > 0)
         {
             sb.AppendLine($"<p><strong>Риски:</strong> {E(string.Join(", ", model.PrimaryRisks.Select(ToRuRiskLabel)))}</p>");
         }
+        sb.AppendLine($"<p>ethics: {E(model.EthicalContractSummary)}</p>");
         sb.AppendLine($"<p><strong>Этическая рамка:</strong> {E(model.EthicalContractSummary)}</p>");
-        RenderStateInsightSection(sb, "Подтвержденные факты", model.ObservedFacts);
-        RenderStateInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
+        RenderStateInsightSection(sb, "Observed Facts / Подтвержденные факты", model.ObservedFacts);
+        RenderStateInsightSection(sb, "Likely Interpretation / Вероятная интерпретация", model.LikelyInterpretation);
         RenderStateInsightSection(sb, "Неопределенности", model.Uncertainties);
         RenderStateInsightSection(sb, "Чего не хватает", model.MissingInformation);
 
+        sb.AppendLine("<h2>Relational Patterns</h2>");
         sb.AppendLine("<h2>Паттерны взаимодействия</h2>");
         foreach (var pattern in model.RelationalPatterns)
         {
