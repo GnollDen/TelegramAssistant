@@ -41,7 +41,7 @@ public class LearningSignalBuilder : ILearningSignalBuilder
         };
 
         var actionType = primaryOption?.ActionType?.Trim().ToLowerInvariant() ?? "unknown";
-        var aggressive = actionType is "invite" or "deepen" or "light_test";
+        var aggressive = actionType is "invite" or "deepen" or "light_test" or "re_establish_contact";
         signals.Add(new LearningSignal
         {
             SignalKey = "action_escalation_timing",

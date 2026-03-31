@@ -18,6 +18,8 @@ public class SaferRewriteGenerator : ISaferRewriteGenerator
                 "wait" or "hold_rapport" => $"Привет. {intent} Без давления, ответь когда будет удобно.",
                 "check_in" or "clarify" => $"Привет. Хочу аккуратно уточнить: {intent.ToLowerInvariant()} Если удобно, дай короткий ответ в своем ритме.",
                 "deescalate" or "repair" => $"Привет. Не хочу усиливать напряжение. {intent} Если комфортно, вернемся к этому позже.",
+                "acknowledge_separation" => $"Привет. Я признаю нашу дистанцию после расставания. {intent} Без ожиданий и без давления.",
+                "test_receptivity" or "re_establish_contact" => $"Привет. Пишу очень бережно: {intent.ToLowerInvariant()} Если сейчас не время, это нормально.",
                 _ => $"Привет. {intent} Если тебе ок, можно обсудить это спокойно без спешки."
             };
 
@@ -34,6 +36,8 @@ public class SaferRewriteGenerator : ISaferRewriteGenerator
             "wait" or "hold_rapport" => $"Hey. {intent} No pressure, reply when timing feels good.",
             "check_in" or "clarify" => $"Hey. I want to ask this gently: {intent.ToLowerInvariant()} If convenient, a short reply is enough.",
             "deescalate" or "repair" => $"Hey. I do not want to increase pressure here. {intent} We can return to it when timing is better.",
+            "acknowledge_separation" => $"Hey. I acknowledge we're at a distance after the breakup. {intent} No pressure from my side.",
+            "test_receptivity" or "re_establish_contact" => $"Hey. Reaching out gently: {intent.ToLowerInvariant()} If timing is off, that's okay.",
             _ => $"Hey. {intent} If you're open, we can discuss it calmly and without rush."
         };
 

@@ -417,7 +417,7 @@ public class StrategyEngine : IStrategyEngine
                     reasons.Add("higher risk under current uncertainty");
                 }
 
-                if (x.ActionType is "invite" or "deepen" or "light_test")
+                if (x.ActionType is "invite" or "deepen" or "light_test" or "re_establish_contact")
                 {
                     reasons.Add("more escalation pressure than needed now");
                 }
@@ -517,7 +517,7 @@ public class StrategyEngine : IStrategyEngine
 
     private static bool IsEscalationAction(string actionType)
     {
-        return actionType is "invite" or "deepen" or "light_test";
+        return actionType is "invite" or "deepen" or "light_test" or "re_establish_contact";
     }
 
     private static bool IsHighImpactSeverity(string? severity)

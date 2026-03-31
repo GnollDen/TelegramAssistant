@@ -20,6 +20,8 @@ public class StateEngineVerificationService
 
     private static readonly HashSet<string> AllowedRelationshipStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
+        "post_breakup",
+        "no_contact",
         "platonic",
         "warm_platonic",
         "ambiguous",

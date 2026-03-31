@@ -11,6 +11,7 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
         var risk = 0.15f;
 
         var state = context.CurrentState;
+        var status = state?.RelationshipStatus ?? "ambiguous";
         var ambiguity = state?.AmbiguityScore ?? 0.6f;
         var avoidance = state?.AvoidanceRiskScore ?? 0.5f;
         var conflictLevel = Math.Clamp(context.Conflicts.Count(x => x.Status.Equals("open", StringComparison.OrdinalIgnoreCase)) / 3f, 0f, 1f);
@@ -34,11 +35,26 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
         }
 
         var aggressive = option.ActionType is "invite" or "deepen" or "light_test";
+        var breakupAwareContact = option.ActionType is "re_establish_contact" or "test_receptivity";
         if (aggressive && ambiguity >= 0.5f)
         {
             labels.Add("premature_escalation");
             risk += 0.24f;
             labels.Add("anxious_overreach_risk");
+        }
+
+        if (breakupAwareContact && ambiguity >= 0.6f)
+        {
+            labels.Add("premature_recontact");
+            risk += 0.14f;
+        }
+
+        if ((status.Equals("post_breakup", StringComparison.OrdinalIgnoreCase)
+                || status.Equals("no_contact", StringComparison.OrdinalIgnoreCase))
+            && option.ActionType is "invite" or "deepen")
+        {
+            labels.Add("state_mismatch_pressure");
+            risk += 0.2f;
         }
 
         if (option.ActionType is "wait" && context.ClarificationQuestions.Any(x => x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) && x.Status.Equals("open", StringComparison.OrdinalIgnoreCase)))
@@ -85,6 +101,12 @@ public class StrategyRiskEvaluator : IStrategyRiskEvaluator
         {
             labels.Add("clarity_dignity_aligned");
             risk = Math.Max(0.05f, risk - 0.04f);
+        }
+
+        if (option.ActionType is "acknowledge_separation")
+        {
+            labels.Add("clarity_dignity_aligned");
+            risk = Math.Max(0.05f, risk - 0.06f);
         }
 
         if (labels.Count == 0)

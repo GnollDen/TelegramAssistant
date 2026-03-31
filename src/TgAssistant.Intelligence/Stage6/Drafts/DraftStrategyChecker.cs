@@ -32,7 +32,7 @@ public class DraftStrategyChecker : IDraftStrategyChecker
         var primaryAction = context.PrimaryOption.ActionType;
         var strategyConfidence = context.StrategyRecord.StrategyConfidence;
         var ambiguity = context.CurrentState?.AmbiguityScore ?? 0.6f;
-        var isSoftPrimary = primaryAction is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair";
+        var isSoftPrimary = primaryAction is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair" or "acknowledge_separation" or "test_receptivity";
 
         var shouldConflict = hasRiskIntent && (isSoftPrimary || strategyConfidence < 0.66f || ambiguity >= 0.58f);
         if (!shouldConflict)
@@ -51,7 +51,7 @@ public class DraftStrategyChecker : IDraftStrategyChecker
 
     private static string BuildRiskyAlternative(string actionType, string userNotes)
     {
-        if (actionType is "wait" or "clarify" or "deescalate")
+        if (actionType is "wait" or "clarify" or "deescalate" or "acknowledge_separation")
         {
             return $"Я хочу ясности сейчас. {Trim(userNotes)}";
         }

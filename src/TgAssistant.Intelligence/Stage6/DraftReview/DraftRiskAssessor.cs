@@ -103,7 +103,7 @@ public class DraftRiskAssessor : IDraftRiskAssessor
         var asksImmediateAction = HasAny(lower, "today", "tonight", "now", "сегодня", "сейчас", "прямо сейчас");
         var state = context.CurrentState;
         var riskyState = state != null && (state.AvoidanceRiskScore >= 0.55f || state.ExternalPressureScore >= 0.55f || state.ResponsivenessScore <= 0.45f);
-        var softStrategy = context.PrimaryOption.ActionType is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair";
+        var softStrategy = context.PrimaryOption.ActionType is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair" or "acknowledge_separation" or "test_receptivity";
         return asksImmediateAction && (riskyState || softStrategy);
     }
 

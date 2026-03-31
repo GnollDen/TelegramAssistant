@@ -20,6 +20,9 @@ public class MicroStepPlanner : IMicroStepPlanner
             "repair" => "Own one friction point clearly and offer a low-pressure reset.",
             "warm_reply" => "Reply with clear warmth while matching the observed response cadence.",
             "light_test" => "Use one lightweight initiative probe with easy opt-out.",
+            "acknowledge_separation" => "Acknowledge the separation calmly and remove hidden expectations for immediate reunion.",
+            "test_receptivity" => "Send one low-intensity receptivity probe with explicit permission not to reply quickly.",
+            "re_establish_contact" => "Re-establish contact via one respectful opener without pushing for immediate escalation.",
             "invite" => "Offer one concrete low-pressure invite with flexible timing options.",
             "deepen" => "Introduce one deeper topic, but stop after a single opening prompt.",
             "boundaries" => "Set one explicit boundary on pace and emotional intensity, respectfully.",
@@ -56,6 +59,24 @@ public class MicroStepPlanner : IMicroStepPlanner
                 "Immediate: send concise repair acknowledgment.",
                 "Follow-up: give space and look for tone softening.",
                 "Follow-up: move to gentle check_in once stability returns."
+            ],
+            "acknowledge_separation" =>
+            [
+                "Immediate: acknowledge separation and reduce pressure explicitly.",
+                "Follow-up: wait for signal of emotional safety before new asks.",
+                "Follow-up: switch to test_receptivity only if tone remains stable."
+            ],
+            "test_receptivity" =>
+            [
+                "Immediate: send one micro-touchpoint with an easy opt-out.",
+                "Follow-up: evaluate response quality, not just response speed.",
+                "Follow-up: move to re_establish_contact only after cooperative signal."
+            ],
+            "re_establish_contact" =>
+            [
+                "Immediate: send one respectful reconnect opener.",
+                "Follow-up: if no reply, do not chase; allow cooling window.",
+                "Follow-up: if reply arrives, keep momentum low-pressure for at least one cycle."
             ],
             _ =>
             [
