@@ -888,7 +888,11 @@ public class ChatCoordinationService : IChatCoordinationService
     private bool IsDowntimeCatchupRequired(DbChatCoordinationState row, DateTime now)
     {
         var downtimeThreshold = TimeSpan.FromMinutes(Math.Max(1, _settings.DowntimeCatchupThresholdMinutes));
-        var heartbeat = row.LastListenerSeenAt ?? row.RealtimeActivatedAt;
+        var heartbeat = row.LastListenerSeenAt.HasValue && row.RealtimeActivatedAt.HasValue
+            ? (row.LastListenerSeenAt.Value >= row.RealtimeActivatedAt.Value
+                ? row.LastListenerSeenAt
+                : row.RealtimeActivatedAt)
+            : row.LastListenerSeenAt ?? row.RealtimeActivatedAt;
         if (!heartbeat.HasValue)
         {
             return false;
