@@ -18,6 +18,9 @@ const ssePort = Number.isNaN(ssePortRaw) ? 3800 : ssePortRaw;
 const sseAuthToken = (process.env.MCP_SSE_AUTH_TOKEN ?? "").trim();
 const allowContainerBind =
   (process.env.MCP_SSE_ALLOW_CONTAINER_BIND ?? "false").trim().toLowerCase() === "true";
+const syntheticSmokeChatIdMin = 9_000_000_000_000;
+const allowSyntheticScopes =
+  (process.env.MCP_ALLOW_SYNTHETIC_SCOPES ?? "false").trim().toLowerCase() === "true";
 
 const pool = new Pool({
   host: postgresHost,
@@ -134,6 +137,18 @@ function toTextResult(text: string) {
       }
     ]
   };
+}
+
+function ensureOperatorVisibleScope(chatId: number, caseId?: number): string | null {
+  if (allowSyntheticScopes || chatId < syntheticSmokeChatIdMin) {
+    return null;
+  }
+
+  const scopeText =
+    caseId === undefined
+      ? `chat ${chatId}`
+      : `case ${caseId} / chat ${chatId}`;
+  return `Scope ${scopeText} is synthetic/smoke and hidden from default operator MCP reads. Set MCP_ALLOW_SYNTHETIC_SCOPES=true for explicit engineering/debug access.`;
 }
 
 function formatUtc(value: Date | string | null | undefined): string {
@@ -797,6 +812,11 @@ server.registerTool(
     }
   },
   async ({ case_id, chat_id }: { case_id: number; chat_id: number }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id, case_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type CurrentStateRow = {
       artifact_generated_at: Date | null;
       artifact_refreshed_at: Date | null;
@@ -983,6 +1003,11 @@ server.registerTool(
     }
   },
   async ({ case_id, chat_id }: { case_id: number; chat_id: number }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id, case_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type StrategyRecordRow = {
       artifact_generated_at: Date | null;
       artifact_refreshed_at: Date | null;
@@ -1212,6 +1237,11 @@ server.registerTool(
     subject_id?: string;
     limit?: number;
   }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id, case_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type ProfileRow = {
       id: string;
       subject_type: string;
@@ -1378,6 +1408,11 @@ server.registerTool(
     chat_id: number;
     limit?: number;
   }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id, case_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type PeriodRow = {
       id: string;
       label: string | null;
@@ -1490,6 +1525,11 @@ server.registerTool(
     subject_id: string;
     limit?: number;
   }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id, case_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type SnapshotRow = {
       id: string;
       summary: string | null;
@@ -1618,6 +1658,11 @@ server.registerTool(
     }
   },
   async ({ chat_id, limit }: { chat_id: number; limit?: number }) => {
+    const scopeError = ensureOperatorVisibleScope(chat_id);
+    if (scopeError) {
+      return toTextResult(scopeError);
+    }
+
     type SessionRow = {
       id: string;
       session_index: number;

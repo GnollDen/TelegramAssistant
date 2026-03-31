@@ -1070,6 +1070,16 @@ public class BotCommandService : IBotCommandService
             return (null, string.Join(' ', remaining), message);
         }
 
+        var hasExplicitScopeInput = caseIdArg.HasValue || chatIdArg.HasValue;
+        if (ScopeVisibilityPolicy.IsSyntheticChatId(chatId) && !hasExplicitScopeInput)
+        {
+            var message = string.Join('\n',
+                "Рабочий scope указывает на synthetic/smoke чат и заблокирован в operator-safe режиме.",
+                "Передайте явный `case=<id> chat=<id>` для инженерного/debug доступа.",
+                "Подсказка: /help");
+            return (null, string.Join(' ', remaining), message);
+        }
+
         return (new CaseScope(caseId, chatId), string.Join(' ', remaining), string.Empty);
     }
 

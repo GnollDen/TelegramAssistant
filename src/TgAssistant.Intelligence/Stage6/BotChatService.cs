@@ -966,7 +966,7 @@ public class BotChatService : IBotChatService
     private async Task<BotChatStage6Scope?> ResolveStage6ScopeAsync(long? transportChatId, CancellationToken ct)
     {
         var chatId = ResolveStage6ChatId(transportChatId);
-        if (chatId <= 0)
+        if (chatId <= 0 || ScopeVisibilityPolicy.IsSyntheticChatId(chatId))
         {
             return null;
         }
