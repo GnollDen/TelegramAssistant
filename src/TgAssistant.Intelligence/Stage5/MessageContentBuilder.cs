@@ -187,7 +187,7 @@ public class MessageContentBuilder
             }
         }
 
-        var text = TruncateForContext(CollapseWhitespace(message.Text ?? string.Empty), 900);
+        var text = TruncateForContext(CollapseWhitespace(message.Text ?? string.Empty), 1400);
         if (!string.IsNullOrWhiteSpace(text))
         {
             parts.Add(text);
@@ -199,13 +199,13 @@ public class MessageContentBuilder
             parts.Add(voiceMessageMarker);
         }
 
-        var mediaTranscription = TruncateForContext(CollapseWhitespace(message.MediaTranscription ?? string.Empty), 500);
+        var mediaTranscription = TruncateForContext(CollapseWhitespace(message.MediaTranscription ?? string.Empty), 900);
         if (!string.IsNullOrWhiteSpace(mediaTranscription))
         {
             parts.Add($"[media_transcription] {mediaTranscription}");
         }
 
-        var mediaDescription = TruncateForContext(CollapseWhitespace(message.MediaDescription ?? string.Empty), 320);
+        var mediaDescription = TruncateForContext(CollapseWhitespace(message.MediaDescription ?? string.Empty), 480);
         if (!string.IsNullOrWhiteSpace(mediaDescription))
         {
             parts.Add($"[media_description] {mediaDescription}");
@@ -219,7 +219,7 @@ public class MessageContentBuilder
 
         if (HasUsableVoiceParalinguistics(message.MediaParalinguisticsJson))
         {
-            parts.Add($"[voice_paralinguistics] {TruncateForContext(CollapseWhitespace(message.MediaParalinguisticsJson ?? string.Empty), 240)}");
+            parts.Add($"[voice_paralinguistics] {TruncateForContext(CollapseWhitespace(message.MediaParalinguisticsJson ?? string.Empty), 320)}");
         }
 
         var editTrackingSnippet = BuildEditTrackingSnippet(message.ForwardJson);

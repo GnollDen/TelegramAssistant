@@ -1,5 +1,8 @@
 # Stage 5 Full Baseline Command Pack
 
+> Status note (2026-03-30): historical/supporting command pack for prior Stage 5 baseline runs.
+> Not an authority doc for Stage 6 remediation sequencing or Stage 6 rebuild planning.
+
 Цель:
 
 - full baseline rebuild
@@ -328,4 +331,3 @@ docker compose up -d app
 - expensive pass
 - edit-diff
 - embedding worker
-
