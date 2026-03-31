@@ -140,23 +140,37 @@ public class BotChatService : IBotChatService
             return diagnostics;
         }
 
-        var embedding = await _embeddingGenerator.GenerateAsync(
-            _embeddingSettings.Model,
-            normalizedMessage,
-            ct);
-        diagnostics.EmbeddingCalls = 1;
-        if (embedding.Length == 0)
+        List<Fact> facts = [];
+        try
         {
-            _logger.LogWarning("Stage6 chat embedding is empty.");
-            diagnostics.Reply = "Сейчас не могу ответить: не удалось получить контекст.";
-            return diagnostics;
+            var embedding = await _embeddingGenerator.GenerateAsync(
+                _embeddingSettings.Model,
+                normalizedMessage,
+                ct);
+            diagnostics.EmbeddingCalls = 1;
+            if (embedding.Length == 0)
+            {
+                _logger.LogWarning("Stage6 chat embedding is empty. Continuing without similar-facts memory context.");
+            }
+            else
+            {
+                facts = await _factRepository.SearchSimilarFactsAsync(
+                    _embeddingSettings.Model,
+                    embedding,
+                    DefaultFactLimit,
+                    ct);
+            }
         }
-
-        var facts = await _factRepository.SearchSimilarFactsAsync(
-            _embeddingSettings.Model,
-            embedding,
-            DefaultFactLimit,
-            ct);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to resolve similar-facts memory context for Stage6 bot chat. Continuing in degraded mode.");
+        }
 
         var localContext = await BuildLocalChatContextAsync(transportChatId, sourceMessageId, ct);
         var stage6Context = await BuildStage6ContextAsync(transportChatId, ct);
