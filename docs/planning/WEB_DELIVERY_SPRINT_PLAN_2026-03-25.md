@@ -1,5 +1,8 @@
 # Web Delivery Sprint Plan
 
+> Status note (2026-03-30): supporting-only planning track.
+> This document is not part of the Stage 6 remediation authority set for `S6-R0/S6-R1`.
+
 ## Date
 
 2026-03-25
@@ -95,6 +98,15 @@ Starting implementation without refreshing the dev baseline would create avoidab
 - the web baseline is explicit
 - the team knows what is already implemented and what is missing
 - W1 can begin without guessing about environment or scope
+
+### Execution Artifacts (Locked on 2026-03-25)
+
+This W0 gate is fixed by the following notes:
+- `docs/planning/PRE_SPRINT_W0_WEB_BASELINE_CONTEXT_NOTE_2026-03-25.md`
+- `docs/planning/PRE_SPRINT_W0_WEB_DEV_ENV_NOTE_2026-03-25.md`
+- `docs/planning/PRE_SPRINT_W0_WEB_W1_W2_SCOPE_NOTE_2026-03-25.md`
+- `docs/planning/PRE_SPRINT_W0_WEB_W3_W4_SCOPE_NOTE_2026-03-25.md`
+- `docs/planning/PRE_SPRINT_W0_WEB_VERIFICATION_BASELINE_NOTE_2026-03-25.md`
 
 ## Sprint W1: Web Host and Operator Shell
 
@@ -266,8 +278,6 @@ Do not turn it into:
 - a public-product redesign
 - a frontend design exercise
 - a second implementation of backend logic that already exists
-<<<<<<< HEAD
-=======
 
 ## Post-W4 Follow-Up Backlog
 
@@ -289,4 +299,3 @@ Minimum expected behavior:
 - inferred scope should prefer real active operator cases
 - smoke/dev/generated contexts should not become the default operator landing context
 - onboarding list should explain real available contexts in operator language, not as raw technical scope candidates
->>>>>>> 58c7268 (Add Stage 6 remediation planning track)

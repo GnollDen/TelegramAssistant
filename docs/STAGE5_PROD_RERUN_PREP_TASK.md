@@ -1,5 +1,8 @@
 # Stage 5 Prod Rerun Prep
 
+> Status note (2026-03-30): historical/supporting operational doc for Stage 5 rerun preparation.
+> Not an authority doc for Stage 6 remediation sequencing or Stage 6 rebuild planning.
+
 Цель: подготовить безопасный полный повторный Stage 5 прогон в prod-среде.
 
 Это не product sprint.
@@ -125,4 +128,3 @@
 5. Предварительная оценка расхода
 6. Что заблокировано или требует ручного подтверждения
 7. Verdict: ready for destructive rerun / needs fixes first
-

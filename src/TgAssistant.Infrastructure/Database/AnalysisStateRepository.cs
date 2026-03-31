@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.Database.Ef;
 
@@ -48,10 +49,10 @@ public class AnalysisStateRepository : IAnalysisStateRepository
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var normalizedKey = key.Trim();
-        var persistedValue = await db.Database.SqlQueryRaw<long>(
+        const string upsertWatermarkSql =
             """
             INSERT INTO analysis_state (key, value, updated_at)
-            VALUES ({0}, {1}, NOW())
+            VALUES (@key, @value, NOW())
             ON CONFLICT (key) DO UPDATE
             SET value = GREATEST(analysis_state.value, EXCLUDED.value),
                 updated_at = CASE
@@ -59,10 +60,13 @@ public class AnalysisStateRepository : IAnalysisStateRepository
                     ELSE analysis_state.updated_at
                 END
             RETURNING value;
-            """,
-            normalizedKey,
-            value)
-            .SingleAsync(ct);
+            """;
+        var persistedValue = await ExecuteScalarLongAsync(
+            db,
+            upsertWatermarkSql,
+            new NpgsqlParameter("key", normalizedKey),
+            new NpgsqlParameter("value", value),
+            ct);
 
         if (persistedValue > value)
         {
@@ -145,16 +149,67 @@ public class AnalysisStateRepository : IAnalysisStateRepository
 
     private static Task<long> IncrementSignalAsync(TgAssistantDbContext db, string key, CancellationToken ct)
     {
-        return db.Database.SqlQueryRaw<long>(
+        const string incrementSignalSql =
             """
             INSERT INTO analysis_state (key, value, updated_at)
-            VALUES ({0}, 1, NOW())
+            VALUES (@key, 1, NOW())
             ON CONFLICT (key) DO UPDATE
             SET value = analysis_state.value + 1,
                 updated_at = NOW()
             RETURNING value;
-            """,
-            key)
-            .SingleAsync(ct);
+            """;
+        return ExecuteScalarLongAsync(
+            db,
+            incrementSignalSql,
+            new NpgsqlParameter("key", key),
+            ct);
+    }
+
+    private static async Task<long> ExecuteScalarLongAsync(
+        TgAssistantDbContext db,
+        string sql,
+        NpgsqlParameter parameter,
+        CancellationToken ct)
+    {
+        return await ExecuteScalarLongAsync(db, sql, [parameter], ct);
+    }
+
+    private static async Task<long> ExecuteScalarLongAsync(
+        TgAssistantDbContext db,
+        string sql,
+        NpgsqlParameter parameter1,
+        NpgsqlParameter parameter2,
+        CancellationToken ct)
+    {
+        return await ExecuteScalarLongAsync(db, sql, [parameter1, parameter2], ct);
+    }
+
+    private static async Task<long> ExecuteScalarLongAsync(
+        TgAssistantDbContext db,
+        string sql,
+        IEnumerable<NpgsqlParameter> parameters,
+        CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync(ct);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var parameter in parameters)
+        {
+            command.Parameters.Add(parameter);
+        }
+
+        var scalar = await command.ExecuteScalarAsync(ct);
+        return scalar switch
+        {
+            long l => l,
+            int i => i,
+            decimal d => (long)d,
+            _ => Convert.ToInt64(scalar ?? 0L)
+        };
     }
 }

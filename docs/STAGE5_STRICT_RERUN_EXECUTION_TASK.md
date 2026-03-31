@@ -1,5 +1,8 @@
 # Stage 5 Strict Rerun Execution
 
+> Status note (2026-03-30): historical/supporting operational doc for Stage 5 rerun work.
+> Not an authority doc for Stage 6 remediation sequencing or Stage 6 rebuild planning.
+
 Режим: strict clean.
 
 Причина: прошлые обработки были сделаны старым обработчиком, поэтому нужен максимально чистый повторный Stage 5 baseline-run.
@@ -135,4 +138,3 @@
 6. Стартовал ли Stage 5 rerun
 7. Какие риски остались
 8. Verdict: rerun started / blocked
-
