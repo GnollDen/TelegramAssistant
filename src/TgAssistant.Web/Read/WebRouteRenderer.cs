@@ -523,13 +523,24 @@ public class WebRouteRenderer : IWebRouteRenderer
             sb.AppendLine($"<p><strong>Сводка:</strong> {E(model.Summary)}</p>");
         }
 
-        RenderDossierInsightSection(sb, "Подтвержденные наблюдения", model.ObservedFacts);
+        var brief = BuildDossierBrief(model);
+        if (brief.Count > 0)
+        {
+            sb.AppendLine("<section><h2>Коротко для оператора</h2>");
+            foreach (var item in brief)
+            {
+                sb.AppendLine($"<div><strong>{E(item.Label)}:</strong> {E(item.Value)}</div>");
+            }
+            sb.AppendLine("</section>");
+        }
+
+        RenderDossierInsightSection(sb, "Что важно сейчас", model.PracticalInterpretation, promoteStrongSignals: true);
+        RenderDossierInsightSection(sb, "Подтвержденные наблюдения", model.ObservedFacts, promoteStrongSignals: true);
         RenderDossierInsightSection(sb, "Картина взаимодействия", model.RelationshipRead);
         RenderDossierInsightSection(sb, "Заметные события", model.NotableEvents);
-        RenderDossierInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
-        RenderDossierInsightSection(sb, "Неопределенности и альтернативы", model.Uncertainties);
+        RenderDossierInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation, promoteStrongSignals: true);
+        RenderDossierInsightSection(sb, "Неопределенности и альтернативы", model.Uncertainties, promoteStrongSignals: true);
         RenderDossierInsightSection(sb, "Чего не хватает", model.MissingInformation);
-        RenderDossierInsightSection(sb, "Практическое чтение", model.PracticalInterpretation);
 
         if (model.ObservedFacts.Count == 0
             && model.LikelyInterpretation.Count == 0
@@ -544,31 +555,71 @@ public class WebRouteRenderer : IWebRouteRenderer
         return CloseShell(sb);
     }
 
-    private static void RenderDossierInsightSection(StringBuilder sb, string title, IReadOnlyCollection<DossierInsightReadModel> rows)
+    private static void RenderDossierInsightSection(
+        StringBuilder sb,
+        string title,
+        IReadOnlyCollection<DossierInsightReadModel> rows,
+        bool promoteStrongSignals = false)
     {
         if (rows.Count == 0)
         {
             return;
         }
 
-        sb.AppendLine($"<section><h2>{E(title)}</h2>");
-        foreach (var row in rows)
+        var ranked = rows
+            .OrderByDescending(x => SignalRank(x.SignalStrength))
+            .ThenByDescending(x => x.UpdatedAt)
+            .ToList();
+        var primaryRows = ranked
+            .Where(x => !IsLowValueDossierInsight(x))
+            .Take(4)
+            .ToList();
+        var hiddenRows = ranked
+            .Where(x => !primaryRows.Any(y => y == x))
+            .ToList();
+
+        if (promoteStrongSignals && primaryRows.Count == 0)
         {
-            sb.AppendLine("<article>");
-            sb.AppendLine($"<h3>{E(row.Title)}</h3>");
-            sb.AppendLine($"<p>{E(row.Detail)}</p>");
-            sb.AppendLine($"<p>Сила сигнала: <strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong>.</p>");
-            sb.AppendLine($"<p><a href='{E(row.Link)}'>Открыть источник</a></p>");
-            if (!string.IsNullOrWhiteSpace(row.SourceObjectType) || !string.IsNullOrWhiteSpace(row.SourceObjectId))
+            primaryRows = ranked.Take(2).ToList();
+            hiddenRows = ranked.Skip(primaryRows.Count).ToList();
+        }
+
+        sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        foreach (var row in primaryRows)
+        {
+            RenderDossierInsightRow(sb, row);
+        }
+
+        if (hiddenRows.Count > 0)
+        {
+            sb.AppendLine($"<details><summary>Дополнительно: {hiddenRows.Count} менее значимых пунктов</summary>");
+            foreach (var row in hiddenRows)
             {
-                sb.AppendLine("<details><summary>Технические детали</summary>");
-                sb.AppendLine($"<p>Источник: {E(row.SourceObjectType ?? "-")}:{E(row.SourceObjectId ?? "-")}</p>");
-                sb.AppendLine("</details>");
+                RenderDossierInsightRow(sb, row);
             }
-            sb.AppendLine("</article>");
+            sb.AppendLine("</details>");
         }
 
         sb.AppendLine("</section>");
+    }
+
+    private static void RenderDossierInsightRow(StringBuilder sb, DossierInsightReadModel row)
+    {
+        sb.AppendLine("<article>");
+        sb.AppendLine($"<h3>{E(row.Title)}</h3>");
+        sb.AppendLine($"<p>{E(CleanOperatorText(row.Detail))}</p>");
+        sb.AppendLine($"<p>Сила сигнала: <strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong>.</p>");
+        if (!string.IsNullOrWhiteSpace(row.Link))
+        {
+            sb.AppendLine($"<p><a href='{E(row.Link)}'>Открыть источник</a></p>");
+        }
+        if (!string.IsNullOrWhiteSpace(row.SourceObjectType) || !string.IsNullOrWhiteSpace(row.SourceObjectId))
+        {
+            sb.AppendLine("<details><summary>Технические детали</summary>");
+            sb.AppendLine($"<p>Источник: {E(row.SourceObjectType ?? "-")}:{E(row.SourceObjectId ?? "-")}</p>");
+            sb.AppendLine("</details>");
+        }
+        sb.AppendLine("</article>");
     }
 
     private static void RenderDossierSection(StringBuilder sb, string title, IReadOnlyCollection<DossierItemReadModel> rows)
@@ -1422,17 +1473,34 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<h1>Таймлайн</h1>");
         if (model.CurrentPeriod != null)
         {
-            sb.AppendLine(RenderPeriod(model.CurrentPeriod));
+            sb.AppendLine("<section><h2>Текущий период</h2>");
+            sb.AppendLine(RenderPeriod(model.CurrentPeriod, emphasizeCurrent: true));
+            sb.AppendLine("</section>");
         }
 
-        foreach (var p in model.PriorPeriods)
+        if (model.PriorPeriods.Count > 0)
         {
-            sb.AppendLine(RenderPeriod(p));
+            sb.AppendLine("<section><h2>Значимые прошлые периоды</h2>");
+            foreach (var p in model.PriorPeriods)
+            {
+                sb.AppendLine(RenderPeriod(p));
+            }
+            if (model.HiddenLowValuePeriods > 0)
+            {
+                sb.AppendLine($"<p><em>Скрыто низкоприоритетных периодов: {model.HiddenLowValuePeriods}. Полная история остается доступной через /history и object trail.</em></p>");
+            }
+            sb.AppendLine("</section>");
         }
 
-        foreach (var t in model.Transitions)
+        if (model.Transitions.Count > 0)
         {
-            sb.AppendLine($"<div>{E(ToRuTransitionType(t.TransitionType))} | {E(t.IsResolved ? "подтвержден" : "требует проверки")} | уверенность: {t.Confidence:0.00} | {E(t.Summary)}</div>");
+            sb.AppendLine("<section><h2>Переходы между периодами</h2>");
+            foreach (var t in model.Transitions)
+            {
+                var status = t.IsResolved ? "подтвержден" : "требует проверки";
+                sb.AppendLine($"<div>{E(ToRuTransitionType(t.TransitionType))} | {E(status)} | уверенность: {t.Confidence:0.00} | {E(CleanOperatorText(t.Summary))}</div>");
+            }
+            sb.AppendLine("</section>");
         }
 
         sb.AppendLine($"<p>Неподтвержденных переходов: {model.UnresolvedTransitions}</p>");
@@ -1987,9 +2055,110 @@ public class WebRouteRenderer : IWebRouteRenderer
         return sb.ToString();
     }
 
-    private static string RenderPeriod(TimelinePeriodReadModel period)
+    private static string RenderPeriod(TimelinePeriodReadModel period, bool emphasizeCurrent = false)
     {
-        return $"<article><h3>{E(ToRuPeriodLabel(period.Label))}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "н.в.")} | уверенность: {period.InterpretationConfidence:0.00} | открытых вопросов: {period.OpenQuestionsCount}</p><p>{E(period.Summary)}</p><p>Основания: {E(string.Join("; ", period.EvidenceHooks))}</p><details><summary>Техническая метка периода</summary><p>{E(period.Label)}</p></details></article>";
+        var heading = emphasizeCurrent
+            ? $"{ToRuPeriodLabel(period.Label)} (актуально)"
+            : ToRuPeriodLabel(period.Label);
+        var summary = CleanOperatorText(period.Summary);
+        var hooks = period.EvidenceHooks
+            .Select(CleanEvidenceHook)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Take(3)
+            .ToList();
+        var evidenceSummary = hooks.Count == 0 ? "нет явных ссылок, ориентир по периоду остается рабочим" : string.Join("; ", hooks);
+        return $"<article><h3>{E(heading)}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "н.в.")} | уверенность: {period.InterpretationConfidence:0.00} | открытых вопросов: {period.OpenQuestionsCount}</p><p>{E(summary)}</p><p><strong>Основания:</strong> {E(evidenceSummary)}</p><details><summary>Техническая метка периода</summary><p>{E(period.Label)}</p></details></article>";
+    }
+
+    private static List<(string Label, string Value)> BuildDossierBrief(DossierReadModel model)
+    {
+        var brief = new List<(string Label, string Value)>();
+        var known = PickTopInsight(model.ObservedFacts.Concat(model.NotableEvents));
+        if (!string.IsNullOrWhiteSpace(known.Detail))
+        {
+            brief.Add(("Что известно", CleanOperatorText(known.Detail)));
+        }
+
+        var matters = PickTopInsight(model.PracticalInterpretation.Concat(model.LikelyInterpretation));
+        if (!string.IsNullOrWhiteSpace(matters.Detail))
+        {
+            brief.Add(("Что важно", CleanOperatorText(matters.Detail)));
+        }
+
+        var uncertain = PickTopInsight(model.Uncertainties.Concat(model.MissingInformation));
+        if (!string.IsNullOrWhiteSpace(uncertain.Detail))
+        {
+            brief.Add(("Что неясно", CleanOperatorText(uncertain.Detail)));
+        }
+
+        return brief;
+    }
+
+    private static DossierInsightReadModel PickTopInsight(IEnumerable<DossierInsightReadModel> rows)
+    {
+        return rows
+                   .Where(x => !string.IsNullOrWhiteSpace(x.Detail))
+                   .OrderByDescending(x => SignalRank(x.SignalStrength))
+                   .ThenByDescending(x => x.UpdatedAt)
+                   .FirstOrDefault()
+               ?? new DossierInsightReadModel();
+    }
+
+    private static int SignalRank(string? signal)
+    {
+        return (signal ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "contradictory" => 4,
+            "strong" => 3,
+            "medium" => 2,
+            _ => 1
+        };
+    }
+
+    private static bool IsLowValueDossierInsight(DossierInsightReadModel row)
+    {
+        var detail = row.Detail ?? string.Empty;
+        if (SignalRank(row.SignalStrength) >= 2)
+        {
+            return false;
+        }
+
+        return detail.Length < 45
+               || detail.Contains("routine monitoring", StringComparison.OrdinalIgnoreCase)
+               || detail.Contains("limited", StringComparison.OrdinalIgnoreCase)
+               || detail.Contains("sparse", StringComparison.OrdinalIgnoreCase)
+               || detail.Contains("without explicit", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string CleanOperatorText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Детали пока не зафиксированы.";
+        }
+
+        return value
+            .Replace("Current data has few explicit hypotheses, so interpretation remains provisional.", "Явных гипотез пока немного, интерпретация остается рабочей.")
+            .Replace("Open clarification without explicit rationale.", "Вопрос открыт и требует уточнения перед финальными выводами.")
+            .Replace("No high-impact contradiction is visible in this dossier slice; continue with routine monitoring.", "Критичных противоречий сейчас не видно, достаточно штатного мониторинга.")
+            .Trim();
+    }
+
+    private static string CleanEvidenceHook(string hook)
+    {
+        if (string.IsNullOrWhiteSpace(hook))
+        {
+            return string.Empty;
+        }
+
+        return hook
+            .Replace("period:", "период ")
+            .Replace("message:", "сообщение ")
+            .Replace("conflict:", "конфликт ")
+            .Replace("clarification_question:", "уточнение ")
+            .Replace("state_snapshot:", "снимок состояния ")
+            .Replace("hypothesis:", "гипотеза ")
+            .Trim();
     }
 
     private static void RenderCompactPairs(IEnumerable<KeyValuePair<string, string>> pairs, StringBuilder sb)

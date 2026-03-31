@@ -292,7 +292,7 @@ public class WebSearchService : IWebSearchService
         }));
         notableEvents.AddRange(resolvedAnswers.Take(2).Select(x => new DossierInsightReadModel
         {
-            Title = "Clarification resolved",
+            Title = "Уточнение закрыто",
             Detail = $"{x.Question.QuestionText}: {x.Answer.AnswerValue}",
             SignalStrength = SignalFromConfidence(x.Answer.AnswerConfidence),
             Evidence = $"clarification_answer:{x.Answer.Id}",
@@ -321,8 +321,8 @@ public class WebSearchService : IWebSearchService
         {
             likelyInterpretation.Add(new DossierInsightReadModel
             {
-                Title = "Interpretation coverage is limited",
-                Detail = "Current data has few explicit hypotheses, so interpretation remains provisional.",
+                Title = "Интерпретация пока неполная",
+                Detail = "Явных гипотез мало, поэтому рабочая картина остается предварительной.",
                 SignalStrength = "weak",
                 Evidence = "hypothesis:none",
                 Link = "/search?objectType=hypothesis",
@@ -335,7 +335,7 @@ public class WebSearchService : IWebSearchService
         {
             Title = x.QuestionText,
             Detail = string.IsNullOrWhiteSpace(x.WhyItMatters)
-                ? "Open clarification without explicit rationale."
+                ? "Вопрос открыт и влияет на качество следующего решения."
                 : x.WhyItMatters,
             SignalStrength = x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase) ? "contradictory" : "weak",
             Evidence = $"clarification_question:{x.Id}",
@@ -381,7 +381,7 @@ public class WebSearchService : IWebSearchService
             practicalInterpretation.Add(new DossierInsightReadModel
             {
                 Title = "Stabilize before escalation",
-                Detail = "Contradictory signals are active. Treat any strong conclusion as provisional until top conflicts are reviewed.",
+                Detail = "Есть противоречия: сильные выводы пока считаем предварительными до сверки ключевых конфликтов.",
                 SignalStrength = "medium",
                 Evidence = "conflict_and_uncertainty_present",
                 Link = "/view/conflicts",
@@ -394,7 +394,7 @@ public class WebSearchService : IWebSearchService
             practicalInterpretation.Add(new DossierInsightReadModel
             {
                 Title = "Priority next step",
-                Detail = "Resolve the highest-priority clarification before refreshing strategy or draft decisions.",
+                Detail = "Сначала закройте уточнение с максимальным приоритетом, затем обновляйте стратегию и черновик.",
                 SignalStrength = openQuestions.Any(x => x.Priority.Equals("blocking", StringComparison.OrdinalIgnoreCase))
                     ? "strong"
                     : "medium",
@@ -409,7 +409,7 @@ public class WebSearchService : IWebSearchService
             practicalInterpretation.Add(new DossierInsightReadModel
             {
                 Title = "Low immediate risk",
-                Detail = "No high-impact contradiction is visible in this dossier slice; continue with routine monitoring.",
+                Detail = "Критичных противоречий не видно; можно продолжать обычный мониторинг.",
                 SignalStrength = "weak",
                 Evidence = "no_blocking_signal",
                 Link = "/dashboard",
@@ -543,8 +543,41 @@ public class WebSearchService : IWebSearchService
         IReadOnlyCollection<DossierInsightReadModel> uncertainties,
         IReadOnlyCollection<DossierInsightReadModel> missingInformation)
     {
+        var known = SelectTopSummaryLine(observedFacts, "Подтвержденных наблюдений пока мало.");
+        var matters = SelectTopSummaryLine(likelyInterpretation, "Стабильная интерпретация пока не сформирована.");
         var contradictionCount = uncertainties.Count(x => x.SignalStrength == "contradictory");
-        return $"Facts={observedFacts.Count}, interpretations={likelyInterpretation.Count}, uncertainties={uncertainties.Count} (contradictory={contradictionCount}), missing={missingInformation.Count}.";
+        var uncertain = contradictionCount > 0
+            ? $"Есть {contradictionCount} противоречивых сигналов, их нужно закрыть перед сильными выводами."
+            : SelectTopSummaryLine(uncertainties, "Критичных неопределенностей сейчас не видно.");
+        var missing = missingInformation.Count > 0
+            ? $"Не хватает данных по {missingInformation.Count} открытым вопросам."
+            : "Ключевых пробелов в данных не зафиксировано.";
+        return $"Что известно: {known} Что важно: {matters} Что неясно: {uncertain} {missing}";
+    }
+
+    private static string SelectTopSummaryLine(
+        IEnumerable<DossierInsightReadModel> rows,
+        string fallback)
+    {
+        var candidate = rows
+            .Where(x => !string.IsNullOrWhiteSpace(x.Detail))
+            .OrderByDescending(x => SignalWeight(x.SignalStrength))
+            .ThenByDescending(x => x.UpdatedAt)
+            .Select(x => x.Detail.Trim())
+            .FirstOrDefault();
+
+        return candidate ?? fallback;
+    }
+
+    private static int SignalWeight(string? signalStrength)
+    {
+        return (signalStrength ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "contradictory" => 4,
+            "strong" => 3,
+            "medium" => 2,
+            _ => 1
+        };
     }
 
     private static T? Deserialize<T>(string json)

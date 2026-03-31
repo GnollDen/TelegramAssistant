@@ -277,7 +277,38 @@ public class WebReadService : IWebReadService
             .ToList();
 
         var current = periods.FirstOrDefault(x => x.IsOpen) ?? periods.FirstOrDefault();
-        var prior = periods.Where(x => current == null || x.Id != current.Id).Take(4).ToList();
+        var priorCandidates = periods
+            .Where(x => current == null || x.Id != current.Id)
+            .ToList();
+        var rankedPrior = priorCandidates
+            .OrderByDescending(ScoreTimelinePeriodPriority)
+            .ThenByDescending(x => x.StartAt)
+            .ToList();
+        var selectedPrior = rankedPrior
+            .Where(x => !IsLowValueTimelinePeriod(x))
+            .Take(4)
+            .ToList();
+        if (selectedPrior.Count < 2)
+        {
+            foreach (var candidate in rankedPrior)
+            {
+                if (selectedPrior.Any(x => x.Id == candidate.Id))
+                {
+                    continue;
+                }
+
+                selectedPrior.Add(candidate);
+                if (selectedPrior.Count >= 4)
+                {
+                    break;
+                }
+            }
+        }
+
+        var hiddenLowValuePeriods = Math.Max(0, priorCandidates.Count - selectedPrior.Count);
+        var prior = selectedPrior
+            .OrderByDescending(x => x.StartAt)
+            .ToList();
 
         return new TimelineReadModel
         {
@@ -296,7 +327,8 @@ public class WebReadService : IWebReadService
                     Confidence = x.Confidence
                 })
                 .ToList(),
-            UnresolvedTransitions = distinctTransitions.Count(x => !x.IsResolved)
+            UnresolvedTransitions = distinctTransitions.Count(x => !x.IsResolved),
+            HiddenLowValuePeriods = hiddenLowValuePeriods
         };
     }
 
@@ -1099,6 +1131,80 @@ public class WebReadService : IWebReadService
             OpenQuestionsCount = x.OpenQuestionsCount,
             EvidenceHooks = hooks
         };
+    }
+
+    private static int ScoreTimelinePeriodPriority(Period period)
+    {
+        var score = 0;
+        if (period.IsOpen)
+        {
+            score += 6;
+        }
+
+        if (period.InterpretationConfidence >= 0.72f)
+        {
+            score += 4;
+        }
+        else if (period.InterpretationConfidence >= 0.55f)
+        {
+            score += 2;
+        }
+
+        if (period.OpenQuestionsCount > 0)
+        {
+            score += Math.Min(3, period.OpenQuestionsCount);
+        }
+
+        if (!string.IsNullOrWhiteSpace(period.EvidenceRefsJson)
+            || !string.IsNullOrWhiteSpace(period.KeySignalsJson))
+        {
+            score += 1;
+        }
+
+        if (!string.IsNullOrWhiteSpace(period.Summary))
+        {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    private static bool IsLowValueTimelinePeriod(Period period)
+    {
+        if (period.IsOpen)
+        {
+            return false;
+        }
+
+        if (period.OpenQuestionsCount > 0 || period.InterpretationConfidence >= 0.5f)
+        {
+            return false;
+        }
+
+        if (HasMeaningfulSummary(period.Summary))
+        {
+            return false;
+        }
+
+        var hasEvidence = ParseJsonStringList(period.EvidenceRefsJson, 1).Count > 0
+                          || ParseJsonStringList(period.KeySignalsJson, 1).Count > 0;
+        return !hasEvidence;
+    }
+
+    private static bool HasMeaningfulSummary(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        var normalized = summary.Trim().ToLowerInvariant();
+        return !(normalized.Contains("limited evidence", StringComparison.Ordinal)
+                 || normalized.Contains("sparse", StringComparison.Ordinal)
+                 || normalized.Contains("insufficient", StringComparison.Ordinal)
+                 || normalized.Contains("summary not available", StringComparison.Ordinal)
+                 || normalized.Contains("not available", StringComparison.Ordinal)
+                 || normalized.Length < 30);
     }
 
     private static int PriorityWeight(string priority)
