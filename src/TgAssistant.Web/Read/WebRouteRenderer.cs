@@ -479,23 +479,63 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Поиск");
         sb.AppendLine("<h1>Поиск</h1>");
-        sb.AppendLine($"<p>Запрос: {E(model.Query)}. Найдено: {model.Results.Count}.</p>");
-        sb.AppendLine($"<p>Фильтры: тип объекта — {E(ToRuSearchObjectType(model.ObjectTypeFilter))}; статус — {E(ToRuWorkflowStatus(model.StatusFilter))}; приоритет — {E(ToRuWorkflowPriority(model.PriorityFilter))}.</p>");
-        foreach (var result in model.Results)
+        var queryLabel = string.IsNullOrWhiteSpace(model.Query) ? "без текстового запроса" : $"«{E(model.Query)}»";
+        sb.AppendLine("<section><h2>Срез поиска</h2>");
+        sb.AppendLine($"<p>Запрос: {queryLabel}. Найдено объектов: {model.Results.Count}.</p>");
+        sb.AppendLine($"<p>Фильтры: тип — {E(ToRuSearchObjectType(model.ObjectTypeFilter))}; статус — {E(ToRuWorkflowStatus(model.StatusFilter))}; приоритет — {E(ToRuWorkflowPriority(model.PriorityFilter))}.</p>");
+        sb.AppendLine("</section>");
+
+        if (model.Results.Count == 0)
         {
-            sb.AppendLine("<article>");
-            sb.AppendLine($"<h3>{E(ToRuSearchObjectType(result.ObjectType))}</h3>");
-            if (!string.IsNullOrWhiteSpace(result.Title))
+            RenderStateCallout(
+                sb,
+                "empty",
+                "Ничего не найдено",
+                "По текущему запросу и фильтрам подходящих объектов нет.",
+                ("Сбросить фильтр типа", "/search"));
+            return CloseShell(sb);
+        }
+
+        var grouped = model.Results
+            .GroupBy(x => x.ObjectType, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        sb.AppendLine("<section><h2>Группы результатов</h2><p>");
+        for (var i = 0; i < grouped.Count; i++)
+        {
+            var group = grouped[i];
+            var anchor = $"search-group-{i + 1}";
+            if (i > 0)
             {
-                sb.AppendLine($"<p><strong>{E(result.Title)}</strong></p>");
+                sb.Append(" | ");
             }
-            sb.AppendLine($"<p>{E(result.Summary)}</p>");
-            sb.AppendLine($"<p>Статус: {E(ToRuWorkflowStatus(result.Status))}. Приоритет: {E(ToRuWorkflowPriority(result.Priority))}. Обновлено: {result.UpdatedAt:yyyy-MM-dd HH:mm} UTC.</p>");
-            sb.AppendLine($"<p><a href='{E(result.Link)}'>Открыть объект</a></p>");
-            sb.AppendLine("<details><summary>Технические детали</summary>");
-            sb.AppendLine($"<p>Тип: {E(result.ObjectType)}; ID: {E(result.ObjectId)}</p>");
-            sb.AppendLine("</details>");
-            sb.AppendLine("</article>");
+
+            sb.Append($"<a href='#{E(anchor)}'>{E(ToRuSearchObjectType(group.Key))} ({group.Count()})</a>");
+        }
+
+        sb.AppendLine("</p></section>");
+
+        for (var i = 0; i < grouped.Count; i++)
+        {
+            var group = grouped[i];
+            var anchor = $"search-group-{i + 1}";
+            sb.AppendLine($"<section id='{E(anchor)}'><h2>{E(ToRuSearchObjectType(group.Key))} ({group.Count()})</h2>");
+            foreach (var result in group.OrderByDescending(x => x.UpdatedAt))
+            {
+                sb.AppendLine("<article>");
+                sb.AppendLine($"<h3>{E(BuildSearchHeadline(result))}</h3>");
+                sb.AppendLine($"<p>{E(BuildSearchSummary(result))}</p>");
+                sb.AppendLine($"<p>Статус: {E(ToRuWorkflowStatus(result.Status))}. Приоритет: {E(ToRuWorkflowPriority(result.Priority))}. Обновлено: {result.UpdatedAt:yyyy-MM-dd HH:mm} UTC.</p>");
+                sb.AppendLine($"<p><a href='{E(result.Link)}'>Открыть объект</a></p>");
+                sb.AppendLine("<details><summary>Технические детали</summary>");
+                sb.AppendLine($"<p>Тип: {E(result.ObjectType)}; ID: {E(result.ObjectId)}</p>");
+                sb.AppendLine("</details>");
+                sb.AppendLine("</article>");
+            }
+
+            sb.AppendLine("</section>");
         }
 
         return CloseShell(sb);
@@ -658,8 +698,11 @@ public class WebRouteRenderer : IWebRouteRenderer
 
         sb.AppendLine("<h1>Очередь кейсов</h1>");
         sb.AppendLine("<p><em>Операционная очередь Stage 6</em></p>");
+        sb.AppendLine("<section><h2>Операторский фокус</h2>");
+        sb.AppendLine($"<p>Показано: {model.VisibleCases}. Активных в срезе: {model.TotalCases}.</p>");
+        sb.AppendLine($"<p>Требуют ответа: {model.NeedsInputCases}. Готовы/новые: {model.ReadyCases}. Фоновые: {Math.Max(0, model.TotalCases - model.NeedsInputCases - model.ReadyCases)}.</p>");
         sb.AppendLine($"<p>Сортировка: {E(ToRuSortBy(model.SortBy))}, {E(ToRuSortDirection(model.SortDirection))}.</p>");
-        sb.AppendLine($"<p>Показано: {model.VisibleCases}. Активных: {model.TotalCases}. Требуют ответа: {model.NeedsInputCases}. Готовы: {model.ReadyCases}.</p>");
+        sb.AppendLine("</section>");
         sb.AppendLine("<section><h2>Фильтры</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
         sb.AppendLine($"<input type='hidden' name='caseScopeId' value='{E(request.CaseId.ToString())}'>");
@@ -751,9 +794,27 @@ public class WebRouteRenderer : IWebRouteRenderer
         }
         else
         {
-            RenderQueueSection(sb, $"Требуют ответа ({topNeedsInput.Count})", topNeedsInput, request, currentQueuePath);
-            RenderQueueSection(sb, $"Готовые / Новые ({topReady.Count})", topReady, request, currentQueuePath);
-            RenderQueueSection(sb, $"Остальные ({topOther.Count})", topOther, request, currentQueuePath);
+            RenderQueueSection(
+                sb,
+                $"Нужно ответить оператору ({topNeedsInput.Count})",
+                "Кейсы, где требуется прямой ответ/решение оператора.",
+                topNeedsInput,
+                request,
+                currentQueuePath);
+            RenderQueueSection(
+                sb,
+                $"Готово к следующему действию ({topReady.Count})",
+                "Новые и готовые кейсы для ежедневной обработки.",
+                topReady,
+                request,
+                currentQueuePath);
+            RenderQueueSection(
+                sb,
+                $"Фоновые и служебные ({topOther.Count})",
+                "Кейсы для мониторинга, повторной проверки или вторичного прохода.",
+                topOther,
+                request,
+                currentQueuePath);
         }
 
         return CloseShell(sb);
@@ -1254,11 +1315,13 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static void RenderQueueSection(
         StringBuilder sb,
         string title,
+        string summary,
         IReadOnlyCollection<Stage6CaseQueueItemReadModel> items,
         WebReadRequest request,
         string currentQueuePath)
     {
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
+        sb.AppendLine($"<p>{E(summary)}</p>");
         foreach (var item in items)
         {
             RenderQueueItemCard(sb, item, request, currentQueuePath);
@@ -1304,23 +1367,26 @@ public class WebRouteRenderer : IWebRouteRenderer
         });
 
         sb.AppendLine("<article>");
-        sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(ToRuCaseType(item.CaseType))}</a> | {E(ToRuPriority(item.Priority))} | {E(ToRuCaseStatus(item.Status))}</h3>");
-        sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
+        sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(ToRuCaseType(item.CaseType))}</a></h3>");
+        sb.AppendLine($"<p><strong>{E(ToRuCaseStatus(item.Status))}</strong> · {E(ToRuPriority(item.Priority))}</p>");
         sb.AppendLine($"<p>Статус: {E(ToRuCaseStatus(item.Status))}. Приоритет: {E(ToRuPriority(item.Priority))}. Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}.</p>");
+        sb.AppendLine($"<p><strong>Суть:</strong> {E(CleanOperatorText(item.ReasonSummary))}</p>");
         if (!string.IsNullOrWhiteSpace(item.QuestionText))
         {
-            sb.AppendLine($"<p><strong>Вопрос:</strong> {E(item.QuestionText)}</p>");
+            sb.AppendLine($"<p><strong>Вопрос оператору:</strong> {E(item.QuestionText)}</p>");
         }
 
-        sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}. Доказательств: {item.EvidenceCount}. Обновлено: {E(item.UpdatedAt.ToString("u"))}</p>");
-        sb.AppendLine($"<p>Источник: <a href='{E(objectTrail)}'>{E(ToRuObjectType(item.SourceObjectType))}</a></p>");
-        sb.AppendLine("<details><summary>Технические детали</summary>");
-        sb.AppendLine($"<p>ID кейса: {E(item.Id.ToString())}; тип: {E(item.CaseType)}; статус: {E(item.Status)}; приоритет: {E(item.Priority)}</p>");
-        sb.AppendLine("</details>");
+        sb.AppendLine($"<p><strong>Следующий шаг:</strong> {E(BuildQueueNextStep(item))}</p>");
+        sb.AppendLine($"<p>Источник: <a href='{E(objectTrail)}'>{E(ToRuObjectType(item.SourceObjectType))}</a>. Обновлено: {E(item.UpdatedAt.ToString("u"))}. Доказательств: {item.EvidenceCount}. Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}.</p>");
         if (item.TargetArtifactTypes.Count > 0)
         {
             sb.AppendLine($"<p>Связанные артефакты: {E(string.Join(", ", item.TargetArtifactTypes.Select(ToRuArtifactType)))}</p>");
         }
+
+        sb.AppendLine("<details><summary>Технические детали</summary>");
+        sb.AppendLine($"<p>ID кейса: {E(item.Id.ToString())}; тип: {E(item.CaseType)}; статус: {E(item.Status)}; приоритет: {E(item.Priority)}</p>");
+        sb.AppendLine($"<p>source: {E(item.SourceObjectType)}:{E(item.SourceObjectId)}; response_mode: {E(item.ResponseMode ?? "-")}; needs_answer: {item.NeedsAnswer}</p>");
+        sb.AppendLine("</details>");
 
         var detailActions = new List<string>
         {
@@ -1344,7 +1410,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             detailActions.Add("требуется ответ");
         }
 
-        sb.AppendLine($"<p>{string.Join(" | ", detailActions)}</p>");
+        sb.AppendLine($"<p><strong>Действия:</strong> {string.Join(" | ", detailActions)}</p>");
         sb.AppendLine("</article>");
     }
 
@@ -1593,6 +1659,17 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = CreateShell("Профили");
         sb.AppendLine("<h1>Профили</h1>");
+        sb.AppendLine("<section><h2>Быстрый обзор</h2>");
+        foreach (var subject in new[] { model.Self, model.Other, model.Pair })
+        {
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>{E(ToRuProfileSubjectType(subject.SubjectType))}</h3>");
+            sb.AppendLine($"<p>{E(CleanProfileSummary(subject.Summary))}</p>");
+            sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(subject.Confidence))}. Стабильность: {E(ToRuConfidenceLabel(subject.Stability))}.</p>");
+            sb.AppendLine($"<p>Ключевые сигналы: {E(BuildProfileTraitPreview(subject))}</p>");
+            sb.AppendLine("</article>");
+        }
+        sb.AppendLine("</section>");
         sb.AppendLine(RenderProfileSubject(model.Self));
         sb.AppendLine(RenderProfileSubject(model.Other));
         sb.AppendLine(RenderProfileSubject(model.Pair));
@@ -2034,25 +2111,131 @@ public class WebRouteRenderer : IWebRouteRenderer
     {
         var sb = new StringBuilder();
         sb.AppendLine($"<section><h2>{E(ToRuProfileSubjectType(subject.SubjectType))}</h2>");
-        sb.AppendLine($"<p>{E(subject.Summary)}</p>");
+        sb.AppendLine("<h3>Главный вывод</h3>");
+        sb.AppendLine($"<p>{E(CleanProfileSummary(subject.Summary))}</p>");
         sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(subject.Confidence))}. Стабильность: {E(ToRuConfidenceLabel(subject.Stability))}.</p>");
         sb.AppendLine("<h3>Ключевые характеристики</h3>");
-        foreach (var trait in subject.TopTraits)
+        if (subject.TopTraits.Count > 0)
         {
-            sb.AppendLine($"<div>{E(ToRuProfileTraitKey(trait.TraitKey))}: {E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
+            sb.AppendLine("<ul>");
+            foreach (var trait in subject.TopTraits)
+            {
+                sb.AppendLine($"<li>{E(ToRuProfileTraitKey(trait.TraitKey))}: {E(trait.ValueLabel)}.</li>");
+            }
+            sb.AppendLine("</ul>");
+        }
+        else
+        {
+            sb.AppendLine("<p>Ключевые признаки пока не выделены.</p>");
         }
 
-        sb.AppendLine($"<p><strong>Что работает:</strong> {E(subject.WhatWorks)}</p>");
-        sb.AppendLine($"<p><strong>Что не работает:</strong> {E(subject.WhatFails)}</p>");
-        sb.AppendLine($"<p><strong>Паттерны участников:</strong> {E(subject.ParticipantPatterns)}</p>");
-        sb.AppendLine($"<p><strong>Динамика пары:</strong> {E(subject.PairDynamics)}</p>");
-        sb.AppendLine($"<p><strong>Повторяющиеся режимы взаимодействия:</strong> {E(subject.RepeatedInteractionModes)}</p>");
-        sb.AppendLine($"<p><strong>Изменения во времени:</strong> {E(subject.ChangesOverTime)}</p>");
+        sb.AppendLine("<h3>Что помогает / что мешает</h3>");
+        sb.AppendLine($"<p><strong>Что помогает:</strong> {E(CleanOperatorText(subject.WhatWorks))}</p>");
+        sb.AppendLine($"<p><strong>Что мешает:</strong> {E(CleanOperatorText(subject.WhatFails))}</p>");
+
+        sb.AppendLine("<h3>Паттерны и динамика</h3>");
+        sb.AppendLine($"<p><strong>Паттерны участников:</strong> {E(CleanOperatorText(subject.ParticipantPatterns))}</p>");
+        sb.AppendLine($"<p><strong>Динамика пары:</strong> {E(CleanOperatorText(subject.PairDynamics))}</p>");
+        sb.AppendLine($"<p><strong>Повторяющиеся режимы взаимодействия:</strong> {E(CleanOperatorText(subject.RepeatedInteractionModes))}</p>");
+        sb.AppendLine($"<p><strong>Изменения во времени:</strong> {E(CleanOperatorText(subject.ChangesOverTime))}</p>");
         sb.AppendLine("<details><summary>Технические детали</summary>");
         sb.AppendLine($"<p>subject_type: {E(subject.SubjectType)}; subject_id: {E(subject.SubjectId)}</p>");
+        if (subject.TopTraits.Count > 0)
+        {
+            sb.AppendLine("<p>raw trait confidence/stability:</p>");
+            foreach (var trait in subject.TopTraits)
+            {
+                sb.AppendLine($"<div>{E(trait.TraitKey)}={E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
+            }
+        }
         sb.AppendLine("</details>");
         sb.AppendLine("</section>");
         return sb.ToString();
+    }
+
+    private static string BuildSearchHeadline(SearchResultReadModel result)
+    {
+        var title = CleanOperatorText(result.Title);
+        if (string.IsNullOrWhiteSpace(result.Title))
+        {
+            return $"{ToRuSearchObjectType(result.ObjectType)} · {ShortId(result.ObjectId)}";
+        }
+
+        return $"{title} · {ToRuSearchObjectType(result.ObjectType)}";
+    }
+
+    private static string BuildSearchSummary(SearchResultReadModel result)
+    {
+        var summary = CleanOperatorText(result.Summary);
+        if (string.IsNullOrWhiteSpace(result.Summary))
+        {
+            return $"Краткое описание отсутствует. Объект: {ToRuSearchObjectType(result.ObjectType)}.";
+        }
+
+        return BuildSnippet(summary, 280);
+    }
+
+    private static string BuildQueueNextStep(Stage6CaseQueueItemReadModel item)
+    {
+        if (item.NeedsAnswer || item.Status.Equals(Stage6CaseStatuses.NeedsUserInput, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Требуется ответ оператора: зафиксируйте решение или уточнение и закройте кейс.";
+        }
+
+        if (item.Status.Equals(Stage6CaseStatuses.Ready, StringComparison.OrdinalIgnoreCase)
+            || item.Status.Equals(Stage6CaseStatuses.New, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Откройте кейс, проверьте основания и завершите действием (закрыть/отклонить/обновить).";
+        }
+
+        if (item.Status.Equals(Stage6CaseStatuses.Stale, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Проверьте актуальность кейса и при необходимости обновите артефакты.";
+        }
+
+        if (item.Status.Equals(Stage6CaseStatuses.Resolved, StringComparison.OrdinalIgnoreCase)
+            || item.Status.Equals(Stage6CaseStatuses.Rejected, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Фоновый контроль: дополнительных действий обычно не требуется.";
+        }
+
+        return "Откройте кейс и уточните следующий рабочий шаг по контексту.";
+    }
+
+    private static string CleanProfileSummary(string? summary)
+    {
+        var normalized = CleanOperatorText(summary);
+        var markers = new[] { " Traits:", " Works:", " Fails:" };
+        var cutIndex = normalized.Length;
+        foreach (var marker in markers)
+        {
+            var markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex >= 0)
+            {
+                cutIndex = Math.Min(cutIndex, markerIndex);
+            }
+        }
+
+        if (cutIndex <= 0 || cutIndex == normalized.Length)
+        {
+            return normalized;
+        }
+
+        return normalized[..cutIndex].Trim().TrimEnd('.', ';');
+    }
+
+    private static string BuildProfileTraitPreview(ProfileSubjectReadModel subject)
+    {
+        if (subject.TopTraits.Count == 0)
+        {
+            return "нет явных признаков";
+        }
+
+        return string.Join(
+            "; ",
+            subject.TopTraits
+                .Take(3)
+                .Select(x => $"{ToRuProfileTraitKey(x.TraitKey)}: {x.ValueLabel}"));
     }
 
     private static string RenderPeriod(TimelinePeriodReadModel period, bool emphasizeCurrent = false)
