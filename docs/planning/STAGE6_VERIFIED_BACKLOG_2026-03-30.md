@@ -1,5 +1,8 @@
 # Stage 6 Verified Backlog Snapshot
 
+> Status note (2026-03-31): historical/supporting snapshot from pre-rebuild remediation cycle.
+> Current operational baseline authority moved to `N1_READINESS_BASELINE_2026-03-31.md`.
+
 ## Date
 
 2026-03-30

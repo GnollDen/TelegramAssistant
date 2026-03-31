@@ -1,15 +1,18 @@
 # Stage 6 Rebuild Verification Runbook
 
-Use this after Stage 5 completion gate and during `S6-R5`.
+Use this runbook only when an explicit Stage 6 reset/rebuild is planned.
 
-This runbook defines execution and verification order for Stage 6 reset/rebuild readiness.
-It does not authorize code changes by itself.
+For current accepted normal baseline operations, use:
+
+- `docs/planning/N1_READINESS_BASELINE_2026-03-31.md`
+- `docs/runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md`
+- `docs/runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md`
 
 ## Preconditions
 
-1. Stage 5 rerun completion is confirmed.
-2. `S6-R1` to `S6-R4` are completed or explicitly waived.
-3. Runtime/env prerequisites from `docs/planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md` are satisfied.
+1. Stage 5 completion gate is confirmed for target scope.
+2. Runtime/env prerequisites from `docs/planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md` are satisfied.
+3. Rebuild/reset boundary is explicitly approved for target scope.
 
 ## Rebuild Order
 
@@ -45,22 +48,18 @@ Pass condition:
 
 Deterministic behavior note for live-dev:
 
-- smoke verifier is baseline-aware for optional embedding checks.
-- when rolling 24h usage already saturates hard limit, optional path is expected as `hard_paused`.
-- when baseline is below hard limit, optional path is expected as `soft_limited`.
-- in both cases smoke still requires explicit budget-limited state visibility and quota cooldown persistence.
-
-Pass condition:
-
-- exits `0` and reports execution-discipline success
+- smoke verifier is baseline-aware for optional embedding checks;
+- when rolling usage already saturates hard limit, optional path may appear as `hard_paused`;
+- when baseline is below hard limit, optional path may appear as `soft_limited`;
+- both are acceptable if smoke exits `0` and reports discipline success.
 
 ### C. Bot Operator Surface
 
-Run minimal bot-facing checks (or equivalent command-level diagnostics):
+Run minimal bot-facing checks:
 
 - `/state`
 - `/timeline`
-- `/profile` (when command is available in current sprint state)
+- `/profile`
 
 Pass condition:
 
@@ -76,7 +75,7 @@ Verify web runtime and reads:
 
 ### E. MCP Stage 6 Read Surface
 
-Verify MCP tools for Stage 6 reads according to sprint state:
+Verify Stage 6 read tools:
 
 - `get_current_state`
 - `get_strategy`

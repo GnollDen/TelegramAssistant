@@ -1,5 +1,8 @@
 # S6-R0 Runtime and Rebuild Baseline Note
 
+> Status note (2026-03-31): this remains the rebuild/reset preparation baseline.
+> For normal accepted operation baseline, use `N1_READINESS_BASELINE_2026-03-31.md`.
+
 ## Date
 
 2026-03-30
