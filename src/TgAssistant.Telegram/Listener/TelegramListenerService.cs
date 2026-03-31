@@ -28,6 +28,7 @@ public class TelegramListenerService : BackgroundService
     private HashSet<long> _realtimeEligibleChats = new();
     private readonly Dictionary<long, string> _userNameCache = new();
     private readonly SemaphoreSlim _eligibilityLock = new(1, 1);
+    private long _selfUserId;
 
     public TelegramListenerService(
         IOptions<TelegramSettings> settings,
@@ -92,6 +93,7 @@ public class TelegramListenerService : BackgroundService
         _client.OnUpdates += OnUpdates;
 
         var user = await _client.LoginUserIfNeeded();
+        _selfUserId = user.id;
         _logger.LogInformation("Logged in as {Name} (ID: {Id})", user.first_name, user.id);
 
         var heartbeatTask = _coordinationSettings.Enabled
@@ -197,7 +199,14 @@ public class TelegramListenerService : BackgroundService
         if (!await IsChatRealtimeEligibleAsync(chatId))
             return;
 
-        var senderId = message.from_id is PeerUser fromPeer ? fromPeer.user_id : 0;
+        var explicitSenderId = message.from_id is PeerUser fromPeer ? fromPeer.user_id : 0;
+        var isOutgoing = message.flags.HasFlag(TL.Message.Flags.out_);
+        var senderId = DirectChatSenderResolver.Resolve(
+            explicitSenderId,
+            chatId,
+            isDirectUserChat: message.peer_id is PeerUser,
+            isOutgoing: isOutgoing,
+            selfUserId: _selfUserId);
         var senderName = ResolveSenderName(senderId);
         var mediaType = DetectMediaType(message);
 
