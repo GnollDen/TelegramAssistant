@@ -965,7 +965,7 @@ public class BotCommandService : IBotCommandService
         }
 
         var transitions = await _periodRepository.GetTransitionsByPeriodAsync(current.Id, ct);
-        var unresolvedCount = transitions.Count(x => !x.IsResolved);
+        var unresolvedCount = transitions.Count(IsActionableUnresolvedTransition);
         if (unresolvedCount > 0)
         {
             sb.AppendLine($"unresolved transitions: {unresolvedCount}");
@@ -2151,6 +2151,24 @@ public class BotCommandService : IBotCommandService
         }
 
         return "do not ignore ambiguity; clarify first when uncertain";
+    }
+
+    private static bool IsActionableUnresolvedTransition(PeriodTransition transition)
+    {
+        if (transition.IsResolved)
+        {
+            return false;
+        }
+
+        var summary = transition.Summary ?? string.Empty;
+        var isGenericUnresolved =
+            summary.Contains("No clear transition cause found", StringComparison.OrdinalIgnoreCase) ||
+            summary.Contains("transition cause remains unclear", StringComparison.OrdinalIgnoreCase) ||
+            summary.Contains("unresolved gap created", StringComparison.OrdinalIgnoreCase);
+
+        return !(transition.TransitionType.Equals("unresolved_gap", StringComparison.OrdinalIgnoreCase)
+                 && isGenericUnresolved
+                 && transition.Confidence <= 0.55f);
     }
 
     private static string FormatPeriodLine(Period period)

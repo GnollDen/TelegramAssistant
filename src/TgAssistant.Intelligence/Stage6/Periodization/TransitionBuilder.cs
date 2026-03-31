@@ -27,6 +27,11 @@ public class TransitionBuilder : ITransitionBuilder
             var boundary = FindClosestBoundary(boundaries, to.StartAt);
 
             var (transitionType, summary, isResolved, confidence, gapId) = BuildTransitionInterpretation(boundary);
+            if (ShouldSuppressUnresolvedTransition(boundary, from, to, transitionType, isResolved, confidence))
+            {
+                continue;
+            }
+
             var evidenceRefs = boundary == null
                 ? []
                 : new[] { new EvidenceRef { Type = "boundary_signal", Id = boundary.BoundaryAt.ToString("O"), Note = boundary.ReasonSummary } };
@@ -96,5 +101,82 @@ public class TransitionBuilder : ITransitionBuilder
         }
 
         return ("unresolved_gap", "Transition cause is unclear; unresolved gap created.", false, 0.35f, Guid.NewGuid());
+    }
+
+    private static bool ShouldSuppressUnresolvedTransition(
+        PeriodBoundaryCandidate? boundary,
+        Period from,
+        Period to,
+        string transitionType,
+        bool isResolved,
+        float confidence)
+    {
+        if (isResolved || !transitionType.Equals("unresolved_gap", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var fromHasSignal = HasOperatorSignal(from);
+        var toHasSignal = HasOperatorSignal(to);
+        if (boundary == null)
+        {
+            return !fromHasSignal || !toHasSignal;
+        }
+
+        var longPauseOnly = boundary.HasLongPause && !boundary.HasKeyEvent && !boundary.HasDynamicShift;
+        if (!longPauseOnly)
+        {
+            return false;
+        }
+
+        var lowConfidence = confidence <= 0.55f;
+        var weakContext = from.InterpretationConfidence < 0.55f || to.InterpretationConfidence < 0.55f;
+        return lowConfidence && weakContext && (!fromHasSignal || !toHasSignal);
+    }
+
+    private static bool HasOperatorSignal(Period period)
+    {
+        return ReadCountSignal(period.KeySignalsJson, "message_count") > 0
+               || ReadCountSignal(period.KeySignalsJson, "offline_event_count") > 0
+               || ReadCountSignal(period.KeySignalsJson, "audio_snippet_count") > 0
+               || ReadCountSignal(period.KeySignalsJson, "clarification_answer_count") > 0;
+    }
+
+    private static int ReadCountSignal(string keySignalsJson, string key)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(keySignalsJson) ? "[]" : keySignalsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return 0;
+            }
+
+            var prefix = $"{key}:";
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = item.GetString();
+                if (string.IsNullOrWhiteSpace(value) || !value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (int.TryParse(value[prefix.Length..], out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 }
