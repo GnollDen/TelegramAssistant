@@ -83,16 +83,16 @@ public class BotCommandVerificationService
         AssertContains(draftReply, "more direct alternative:", "/draft");
 
         var reviewReply = await _botChatService.GenerateReplyAsync($"/review case={caseId} chat={chatId} Thanks for yesterday, I liked being with you", chatId, null, 1, ct);
-        AssertContains(reviewReply, "assessment:", "/review");
-        AssertContains(reviewReply, "safer:", "/review");
-        AssertContains(reviewReply, "more natural:", "/review");
+        AssertContainsAny(reviewReply, [ "assessment:", "оценка:" ], "/review");
+        AssertContainsAny(reviewReply, [ "safer:", "безопаснее:" ], "/review");
+        AssertContainsAny(reviewReply, [ "more natural:", "естественнее:" ], "/review");
 
         var gapsReply = await _botChatService.GenerateReplyAsync($"/gaps case={caseId} chat={chatId}", chatId, null, 1, ct);
-        AssertContains(gapsReply, "question:", "/gaps");
-        AssertContains(gapsReply, "answer path:", "/gaps");
+        AssertContainsAny(gapsReply, [ "question:", "вопрос:" ], "/gaps");
+        AssertContainsAny(gapsReply, [ "answer path:", "ответ:" ], "/gaps");
 
         var answerReply = await _botChatService.GenerateReplyAsync($"/answer case={caseId} chat={chatId} {question.Id} | yes, clearly warmer and calmer", chatId, 777001, 1, ct);
-        AssertContains(answerReply, "saved answer for:", "/answer");
+        AssertContainsAny(answerReply, [ "saved answer for:", "ответ сохранен для вопроса:" ], "/answer");
         AssertContains(answerReply, "recompute:", "/answer");
 
         var answeredQuestion = await _clarificationRepository.GetQuestionByIdAsync(question.Id, ct)
@@ -107,7 +107,7 @@ public class BotCommandVerificationService
         AssertContains(timelineReply, "current:", "/timeline");
 
         var offlineReply = await _botChatService.GenerateReplyAsync($"/offline case={caseId} chat={chatId} We met offline and agreed to reduce pressure this week.", chatId, 777002, 1, ct);
-        AssertContains(offlineReply, "Offline event logged:", "/offline");
+        AssertContainsAny(offlineReply, [ "Offline event logged:", "Офлайн-событие сохранено:" ], "/offline");
 
         _logger.LogInformation(
             "Bot smoke passed. case_id={CaseId}, chat_id={ChatId}, state_len={StateLen}, next_len={NextLen}, draft_len={DraftLen}, review_len={ReviewLen}, gaps_len={GapsLen}, answer_len={AnswerLen}, timeline_len={TimelineLen}, offline_len={OfflineLen}",
@@ -202,5 +202,24 @@ public class BotCommandVerificationService
         {
             throw new InvalidOperationException($"Bot smoke failed for {command}: expected token '{token}' in output.");
         }
+    }
+
+    private static void AssertContainsAny(string output, IReadOnlyCollection<string> tokens, string command)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            throw new InvalidOperationException($"Bot smoke failed for {command}: output is empty.");
+        }
+
+        foreach (var token in tokens)
+        {
+            if (output.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Bot smoke failed for {command}: expected one of [{string.Join(", ", tokens)}] in output.");
     }
 }
