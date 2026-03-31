@@ -490,12 +490,20 @@ public class TelegramListenerService : BackgroundService
                 return;
             }
 
-            _realtimeEligibleChats = await _chatCoordinationService.ResolveRealtimeEligibleChatIdsAsync(
+            var states = await _chatCoordinationService.EnsureStatesAsync(
                 _settings.MonitoredChatIds,
                 _backfillSettings.ChatIds,
                 _backfillSettings.Enabled,
                 _coordinationSettings.HandoverPendingExtractionThreshold,
                 ct);
+            var hasNonRealtimeChats = states.Values.Any(x =>
+                !string.Equals(x.State, ChatCoordinationStates.RealtimeActive, StringComparison.Ordinal));
+            _realtimeEligibleChats = hasNonRealtimeChats
+                ? new HashSet<long>()
+                : states.Values
+                    .Where(x => string.Equals(x.State, ChatCoordinationStates.RealtimeActive, StringComparison.Ordinal))
+                    .Select(x => x.ChatId)
+                    .ToHashSet();
             await _chatCoordinationService.TouchRealtimeHeartbeatAsync(_realtimeEligibleChats, ct);
             _lastEligibilityRefreshUtc = now;
         }
