@@ -81,7 +81,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             "/history" => new WebRenderResult { Route = path, Title = "История", Html = RenderHistory(await ExecuteHistoryReadAsync(request, query, ct)) },
             "/history-object" => new WebRenderResult { Route = path, Title = "История объекта", Html = RenderObjectHistory(await ExecuteObjectHistoryReadAsync(request, query, ct), request) },
             "/state" => new WebRenderResult { Route = path, Title = "Текущее состояние", Html = RenderState(await _webReadService.GetCurrentStateAsync(request, ct)) },
-            "/timeline" => new WebRenderResult { Route = path, Title = "Timeline", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
+            "/timeline" => new WebRenderResult { Route = path, Title = "Таймлайн", Html = RenderTimeline(await _webReadService.GetTimelineAsync(request, ct)) },
             "/network" => new WebRenderResult { Route = path, Title = "Network", Html = RenderNetwork(await _webReadService.GetNetworkAsync(request, ct), query) },
             "/profiles" => new WebRenderResult { Route = path, Title = "Профили", Html = RenderProfiles(await _webReadService.GetProfilesAsync(request, ct)) },
             "/clarifications" => new WebRenderResult { Route = path, Title = "Уточнения", Html = RenderClarifications(await _webReadService.GetClarificationsAsync(request, ct)) },
@@ -477,17 +477,24 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderSearch(SearchReadModel model)
     {
-        var sb = CreateShell("Search");
-        sb.AppendLine("<h1>Search</h1>");
-        sb.AppendLine($"<p>query={E(model.Query)} objectType={E(model.ObjectTypeFilter ?? "-")} status={E(model.StatusFilter ?? "-")} priority={E(model.PriorityFilter ?? "-")} count={model.Results.Count}</p>");
+        var sb = CreateShell("Поиск");
+        sb.AppendLine("<h1>Поиск</h1>");
+        sb.AppendLine($"<p>Запрос: {E(model.Query)}. Найдено: {model.Results.Count}.</p>");
+        sb.AppendLine($"<p>Фильтры: тип объекта — {E(ToRuSearchObjectType(model.ObjectTypeFilter))}; статус — {E(ToRuWorkflowStatus(model.StatusFilter))}; приоритет — {E(ToRuWorkflowPriority(model.PriorityFilter))}.</p>");
         foreach (var result in model.Results)
         {
             sb.AppendLine("<article>");
-            sb.AppendLine($"<p><strong>{E(result.ObjectType)}</strong>:{E(result.ObjectId)}</p>");
-            sb.AppendLine($"<p>{E(result.Title)}</p>");
+            sb.AppendLine($"<h3>{E(ToRuSearchObjectType(result.ObjectType))}</h3>");
+            if (!string.IsNullOrWhiteSpace(result.Title))
+            {
+                sb.AppendLine($"<p><strong>{E(result.Title)}</strong></p>");
+            }
             sb.AppendLine($"<p>{E(result.Summary)}</p>");
-            sb.AppendLine($"<p>status={E(result.Status ?? "-")} priority={E(result.Priority ?? "-")}</p>");
-            sb.AppendLine($"<p><a href='{E(result.Link)}'>open</a></p>");
+            sb.AppendLine($"<p>Статус: {E(ToRuWorkflowStatus(result.Status))}. Приоритет: {E(ToRuWorkflowPriority(result.Priority))}. Обновлено: {result.UpdatedAt:yyyy-MM-dd HH:mm} UTC.</p>");
+            sb.AppendLine($"<p><a href='{E(result.Link)}'>Открыть объект</a></p>");
+            sb.AppendLine("<details><summary>Технические детали</summary>");
+            sb.AppendLine($"<p>Тип: {E(result.ObjectType)}; ID: {E(result.ObjectId)}</p>");
+            sb.AppendLine("</details>");
             sb.AppendLine("</article>");
         }
 
@@ -509,29 +516,29 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderDossier(DossierReadModel model)
     {
-        var sb = CreateShell("Dossier");
-        sb.AppendLine("<h1>Dossier</h1>");
+        var sb = CreateShell("Досье");
+        sb.AppendLine("<h1>Досье</h1>");
         if (!string.IsNullOrWhiteSpace(model.Summary))
         {
-            sb.AppendLine($"<p>summary: {E(model.Summary)}</p>");
+            sb.AppendLine($"<p><strong>Сводка:</strong> {E(model.Summary)}</p>");
         }
 
-        RenderDossierInsightSection(sb, "Observed Facts", model.ObservedFacts);
-        RenderDossierInsightSection(sb, "Relationship Read", model.RelationshipRead);
-        RenderDossierInsightSection(sb, "Notable Events", model.NotableEvents);
-        RenderDossierInsightSection(sb, "Likely Interpretation", model.LikelyInterpretation);
-        RenderDossierInsightSection(sb, "Uncertainties / Alternative Readings", model.Uncertainties);
-        RenderDossierInsightSection(sb, "Missing Information", model.MissingInformation);
-        RenderDossierInsightSection(sb, "Practical Interpretation", model.PracticalInterpretation);
+        RenderDossierInsightSection(sb, "Подтвержденные наблюдения", model.ObservedFacts);
+        RenderDossierInsightSection(sb, "Картина взаимодействия", model.RelationshipRead);
+        RenderDossierInsightSection(sb, "Заметные события", model.NotableEvents);
+        RenderDossierInsightSection(sb, "Вероятная интерпретация", model.LikelyInterpretation);
+        RenderDossierInsightSection(sb, "Неопределенности и альтернативы", model.Uncertainties);
+        RenderDossierInsightSection(sb, "Чего не хватает", model.MissingInformation);
+        RenderDossierInsightSection(sb, "Практическое чтение", model.PracticalInterpretation);
 
         if (model.ObservedFacts.Count == 0
             && model.LikelyInterpretation.Count == 0
             && model.Uncertainties.Count == 0
             && model.MissingInformation.Count == 0)
         {
-            RenderDossierSection(sb, "Confirmed", model.Confirmed);
-            RenderDossierSection(sb, "Hypotheses", model.Hypotheses);
-            RenderDossierSection(sb, "Conflicts", model.Conflicts);
+            RenderDossierSection(sb, "Подтверждено", model.Confirmed);
+            RenderDossierSection(sb, "Гипотезы", model.Hypotheses);
+            RenderDossierSection(sb, "Конфликты", model.Conflicts);
         }
 
         return CloseShell(sb);
@@ -547,7 +554,18 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
         foreach (var row in rows)
         {
-            sb.AppendLine($"<div><strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong> | {E(row.Title)} | {E(row.Detail)} | <a href='{E(row.Link)}'>открыть</a></div>");
+            sb.AppendLine("<article>");
+            sb.AppendLine($"<h3>{E(row.Title)}</h3>");
+            sb.AppendLine($"<p>{E(row.Detail)}</p>");
+            sb.AppendLine($"<p>Сила сигнала: <strong>{E(ToRuSignalStrength(row.SignalStrength))}</strong>.</p>");
+            sb.AppendLine($"<p><a href='{E(row.Link)}'>Открыть источник</a></p>");
+            if (!string.IsNullOrWhiteSpace(row.SourceObjectType) || !string.IsNullOrWhiteSpace(row.SourceObjectId))
+            {
+                sb.AppendLine("<details><summary>Технические детали</summary>");
+                sb.AppendLine($"<p>Источник: {E(row.SourceObjectType ?? "-")}:{E(row.SourceObjectId ?? "-")}</p>");
+                sb.AppendLine("</details>");
+            }
+            sb.AppendLine("</article>");
         }
 
         sb.AppendLine("</section>");
@@ -558,12 +576,12 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine($"<section><h2>{E(title)}</h2>");
         foreach (var row in rows)
         {
-            sb.AppendLine($"<div>{E(row.ObjectType)} | {E(row.Title)} | {E(row.Summary)} | <a href='{E(row.Link)}'>open</a></div>");
+            sb.AppendLine($"<div>{E(ToRuSearchObjectType(row.ObjectType))} | {E(row.Title)} | {E(row.Summary)} | <a href='{E(row.Link)}'>Открыть</a></div>");
         }
 
         if (rows.Count == 0)
         {
-            sb.AppendLine("<p>No items.</p>");
+            sb.AppendLine("<p>Записей пока нет.</p>");
         }
 
         sb.AppendLine("</section>");
@@ -588,8 +606,8 @@ public class WebRouteRenderer : IWebRouteRenderer
         var allLink = BuildQueueScopedPath(request, "active", null, null, null, null, "priority", "desc");
 
         sb.AppendLine("<h1>Очередь кейсов</h1>");
-        sb.AppendLine("<p><em>Stage 6 Queue</em></p>");
-        sb.AppendLine($"<p>sort={E(model.SortBy)}:{E(model.SortDirection)}</p>");
+        sb.AppendLine("<p><em>Операционная очередь Stage 6</em></p>");
+        sb.AppendLine($"<p>Сортировка: {E(ToRuSortBy(model.SortBy))}, {E(ToRuSortDirection(model.SortDirection))}.</p>");
         sb.AppendLine($"<p>Показано: {model.VisibleCases}. Активных: {model.TotalCases}. Требуют ответа: {model.NeedsInputCases}. Готовы: {model.ReadyCases}.</p>");
         sb.AppendLine("<section><h2>Фильтры</h2>");
         sb.AppendLine("<form method='get' action='/inbox'>");
@@ -611,7 +629,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         RenderOption(sb, "important", "важный", model.PriorityFilter);
         RenderOption(sb, "optional", "необязательный", model.PriorityFilter);
         sb.AppendLine("</select></label> ");
-        sb.AppendLine($"<label>Тип кейса <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}' placeholder='needs_review'></label> ");
+        sb.AppendLine($"<label>Тип кейса <input name='caseType' value='{E(model.CaseTypeFilter ?? string.Empty)}' placeholder='например: clarification_missing_data'></label> ");
         sb.AppendLine("<label>Артефакт <select name='artifactType'>");
         RenderOption(sb, string.Empty, "все", model.ArtifactTypeFilter);
         RenderOption(sb, Stage6ArtifactTypes.Dossier, "досье", model.ArtifactTypeFilter);
@@ -678,7 +696,7 @@ public class WebRouteRenderer : IWebRouteRenderer
                 "Сбросьте часть фильтров или вернитесь к базовой очереди.",
                 ("Сбросить фильтры", allLink),
                 ("Открыть активные", activeLink));
-            sb.AppendLine("<p>No Results</p>");
+            sb.AppendLine("<p>По этому набору фильтров кейсов нет.</p>");
         }
         else
         {
@@ -1237,7 +1255,7 @@ public class WebRouteRenderer : IWebRouteRenderer
         sb.AppendLine("<article>");
         sb.AppendLine($"<h3><a href='{E(detailLink)}'>{E(ToRuCaseType(item.CaseType))}</a> | {E(ToRuPriority(item.Priority))} | {E(ToRuCaseStatus(item.Status))}</h3>");
         sb.AppendLine($"<p>{E(item.ReasonSummary)}</p>");
-        sb.AppendLine($"<p>priority={E(item.Priority)} | status={E(item.Status)} | confidence={item.Confidence:0.00} | reason: {E(item.ReasonSummary)}</p>");
+        sb.AppendLine($"<p>Статус: {E(ToRuCaseStatus(item.Status))}. Приоритет: {E(ToRuPriority(item.Priority))}. Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}.</p>");
         if (!string.IsNullOrWhiteSpace(item.QuestionText))
         {
             sb.AppendLine($"<p><strong>Вопрос:</strong> {E(item.QuestionText)}</p>");
@@ -1245,6 +1263,9 @@ public class WebRouteRenderer : IWebRouteRenderer
 
         sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(item.Confidence))}. Доказательств: {item.EvidenceCount}. Обновлено: {E(item.UpdatedAt.ToString("u"))}</p>");
         sb.AppendLine($"<p>Источник: <a href='{E(objectTrail)}'>{E(ToRuObjectType(item.SourceObjectType))}</a></p>");
+        sb.AppendLine("<details><summary>Технические детали</summary>");
+        sb.AppendLine($"<p>ID кейса: {E(item.Id.ToString())}; тип: {E(item.CaseType)}; статус: {E(item.Status)}; приоритет: {E(item.Priority)}</p>");
+        sb.AppendLine("</details>");
         if (item.TargetArtifactTypes.Count > 0)
         {
             sb.AppendLine($"<p>Связанные артефакты: {E(string.Join(", ", item.TargetArtifactTypes.Select(ToRuArtifactType)))}</p>");
@@ -1397,8 +1418,8 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderTimeline(TimelineReadModel model)
     {
-        var sb = CreateShell("Timeline");
-        sb.AppendLine("<h1>Timeline</h1>");
+        var sb = CreateShell("Таймлайн");
+        sb.AppendLine("<h1>Таймлайн</h1>");
         if (model.CurrentPeriod != null)
         {
             sb.AppendLine(RenderPeriod(model.CurrentPeriod));
@@ -1411,10 +1432,10 @@ public class WebRouteRenderer : IWebRouteRenderer
 
         foreach (var t in model.Transitions)
         {
-            sb.AppendLine($"<div>{E(t.TransitionType)} | resolved={t.IsResolved} | conf={t.Confidence:0.00} | {E(t.Summary)}</div>");
+            sb.AppendLine($"<div>{E(ToRuTransitionType(t.TransitionType))} | {E(t.IsResolved ? "подтвержден" : "требует проверки")} | уверенность: {t.Confidence:0.00} | {E(t.Summary)}</div>");
         }
 
-        sb.AppendLine($"<p>unresolved transitions: {model.UnresolvedTransitions}</p>");
+        sb.AppendLine($"<p>Неподтвержденных переходов: {model.UnresolvedTransitions}</p>");
         return CloseShell(sb);
     }
 
@@ -1502,8 +1523,8 @@ public class WebRouteRenderer : IWebRouteRenderer
 
     private static string RenderProfiles(ProfilesReadModel model)
     {
-        var sb = CreateShell("Profiles");
-        sb.AppendLine("<h1>Profiles</h1>");
+        var sb = CreateShell("Профили");
+        sb.AppendLine("<h1>Профили</h1>");
         sb.AppendLine(RenderProfileSubject(model.Self));
         sb.AppendLine(RenderProfileSubject(model.Other));
         sb.AppendLine(RenderProfileSubject(model.Pair));
@@ -1944,27 +1965,31 @@ public class WebRouteRenderer : IWebRouteRenderer
     private static string RenderProfileSubject(ProfileSubjectReadModel subject)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"<section><h2>{E(subject.SubjectType)}</h2>");
+        sb.AppendLine($"<section><h2>{E(ToRuProfileSubjectType(subject.SubjectType))}</h2>");
         sb.AppendLine($"<p>{E(subject.Summary)}</p>");
         sb.AppendLine($"<p>Уверенность: {E(ToRuConfidenceLabel(subject.Confidence))}. Стабильность: {E(ToRuConfidenceLabel(subject.Stability))}.</p>");
+        sb.AppendLine("<h3>Ключевые характеристики</h3>");
         foreach (var trait in subject.TopTraits)
         {
-            sb.AppendLine($"<div>{E(trait.TraitKey)}: {E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
+            sb.AppendLine($"<div>{E(ToRuProfileTraitKey(trait.TraitKey))}: {E(trait.ValueLabel)} ({trait.Confidence:0.00}/{trait.Stability:0.00})</div>");
         }
 
-        sb.AppendLine($"<p>what works: {E(subject.WhatWorks)}</p>");
-        sb.AppendLine($"<p>what fails: {E(subject.WhatFails)}</p>");
-        sb.AppendLine($"<p>participant patterns: {E(subject.ParticipantPatterns)}</p>");
-        sb.AppendLine($"<p>pair dynamics: {E(subject.PairDynamics)}</p>");
-        sb.AppendLine($"<p>repeated interaction modes: {E(subject.RepeatedInteractionModes)}</p>");
-        sb.AppendLine($"<p>changes over time: {E(subject.ChangesOverTime)}</p>");
+        sb.AppendLine($"<p><strong>Что работает:</strong> {E(subject.WhatWorks)}</p>");
+        sb.AppendLine($"<p><strong>Что не работает:</strong> {E(subject.WhatFails)}</p>");
+        sb.AppendLine($"<p><strong>Паттерны участников:</strong> {E(subject.ParticipantPatterns)}</p>");
+        sb.AppendLine($"<p><strong>Динамика пары:</strong> {E(subject.PairDynamics)}</p>");
+        sb.AppendLine($"<p><strong>Повторяющиеся режимы взаимодействия:</strong> {E(subject.RepeatedInteractionModes)}</p>");
+        sb.AppendLine($"<p><strong>Изменения во времени:</strong> {E(subject.ChangesOverTime)}</p>");
+        sb.AppendLine("<details><summary>Технические детали</summary>");
+        sb.AppendLine($"<p>subject_type: {E(subject.SubjectType)}; subject_id: {E(subject.SubjectId)}</p>");
+        sb.AppendLine("</details>");
         sb.AppendLine("</section>");
         return sb.ToString();
     }
 
     private static string RenderPeriod(TimelinePeriodReadModel period)
     {
-        return $"<article><h3>{E(period.Label)}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "now")}, conf={period.InterpretationConfidence:0.00}, open_q={period.OpenQuestionsCount}</p><p>{E(period.Summary)}</p><p>evidence: {E(string.Join("; ", period.EvidenceHooks))}</p></article>";
+        return $"<article><h3>{E(ToRuPeriodLabel(period.Label))}</h3><p>{period.StartAt:yyyy-MM-dd}..{(period.EndAt?.ToString("yyyy-MM-dd") ?? "н.в.")} | уверенность: {period.InterpretationConfidence:0.00} | открытых вопросов: {period.OpenQuestionsCount}</p><p>{E(period.Summary)}</p><p>Основания: {E(string.Join("; ", period.EvidenceHooks))}</p><details><summary>Техническая метка периода</summary><p>{E(period.Label)}</p></details></article>";
     }
 
     private static void RenderCompactPairs(IEnumerable<KeyValuePair<string, string>> pairs, StringBuilder sb)
@@ -2308,6 +2333,165 @@ public class WebRouteRenderer : IWebRouteRenderer
         };
     }
 
+    private static string ToRuSortBy(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "priority" => "приоритет",
+            "updated" => "время обновления",
+            "status" => "статус",
+            "confidence" => "уверенность",
+            _ => string.IsNullOrWhiteSpace(value) ? "приоритет" : value
+        };
+    }
+
+    private static string ToRuSortDirection(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "asc" => "сначала старые",
+            "desc" => "сначала новые",
+            _ => string.IsNullOrWhiteSpace(value) ? "сначала новые" : value
+        };
+    }
+
+    private static string ToRuSearchObjectType(string? objectType)
+    {
+        var normalized = (objectType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" => "все",
+            "stage6_case" => "кейс Stage 6",
+            "inbox_item" => "элемент очереди",
+            "clarification_question" => "вопрос на уточнение",
+            "clarification_answer" => "ответ на уточнение",
+            "period" => "период",
+            "period_transition" => "переход периода",
+            "hypothesis" => "гипотеза",
+            "conflict_record" => "конфликт",
+            "strategy_record" => "стратегия",
+            "strategy_option" => "вариант стратегии",
+            "draft_record" => "черновик",
+            "draft_outcome" => "исход черновика",
+            "profile_snapshot" => "снимок профиля",
+            "profile_trait" => "характеристика профиля",
+            "message" => "сообщение",
+            _ => objectType ?? "объект"
+        };
+    }
+
+    private static string ToRuWorkflowStatus(string? status)
+    {
+        var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" => "все",
+            "open" => "открыт",
+            "in_progress" => "в работе",
+            "review" => "на проверке",
+            "resolved" => "закрыт",
+            "rejected" => "отклонен",
+            "active" => "активный",
+            "ready" => "готов",
+            "new" => "новый",
+            "needs_user_input" => "требует ответа",
+            "stale" => "устарел",
+            "closed" => "закрыт",
+            _ => status ?? "все"
+        };
+    }
+
+    private static string ToRuWorkflowPriority(string? priority)
+    {
+        var normalized = (priority ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "" => "все",
+            "blocking" => "блокирующий",
+            "important" => "важный",
+            "optional" => "необязательный",
+            "critical" => "критичный",
+            "high" => "высокий",
+            "medium" => "средний",
+            "low" => "низкий",
+            "primary" => "основной",
+            "alternative" => "альтернативный",
+            "sensitive" => "чувствительный",
+            "standard" => "стандартный",
+            _ => priority ?? "все"
+        };
+    }
+
+    private static string ToRuPeriodLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return "Период";
+        }
+
+        var normalized = label.Trim();
+        if (normalized.StartsWith("period_", StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = normalized["period_".Length..];
+            return int.TryParse(suffix, out var number)
+                ? $"Период #{number}"
+                : $"Период ({normalized})";
+        }
+
+        return normalized;
+    }
+
+    private static string ToRuTransitionType(string? transitionType)
+    {
+        var normalized = (transitionType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "continuation" => "продолжение",
+            "shift" => "сдвиг",
+            "rupture" => "разрыв",
+            "de_escalation" => "снижение напряжения",
+            "escalation" => "эскалация",
+            _ => string.IsNullOrWhiteSpace(transitionType) ? "переход" : transitionType
+        };
+    }
+
+    private static string ToRuProfileSubjectType(string? subjectType)
+    {
+        return (subjectType ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "self" => "Профиль оператора",
+            "other" => "Профиль собеседника",
+            "pair" => "Профиль пары",
+            "profile" => "Профиль",
+            _ => string.IsNullOrWhiteSpace(subjectType) ? "Профиль" : subjectType
+        };
+    }
+
+    private static string ToRuProfileTraitKey(string? traitKey)
+    {
+        return (traitKey ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "communication_style" => "Стиль коммуникации",
+            "initiative" => "Инициативность",
+            "responsiveness" => "Откликаемость",
+            "openness" => "Открытость",
+            "warmth" => "Теплота",
+            "reciprocity" => "Взаимность",
+            "ambiguity" => "Неопределенность",
+            "avoidance_risk" => "Риск избегания",
+            "external_pressure" => "Внешнее давление",
+            "escalation_readiness" => "Готовность к эскалации",
+            "tone_stability" => "Стабильность тона",
+            "what_works" => "Что работает",
+            "what_fails" => "Что не работает",
+            "participant_patterns" => "Паттерны участников",
+            "pair_dynamics" => "Динамика пары",
+            "repeated_interaction_modes" => "Повторяющиеся режимы",
+            "changes_over_time" => "Изменения во времени",
+            _ => string.IsNullOrWhiteSpace(traitKey) ? "характеристика" : traitKey
+        };
+    }
+
     private static string ToRuCaseStatus(string? status)
     {
         var normalized = (status ?? string.Empty).Trim().ToLowerInvariant();
@@ -2390,6 +2574,14 @@ public class WebRouteRenderer : IWebRouteRenderer
             "clarification_question" => "вопрос на уточнение",
             "stage6_case" => "кейс",
             "message" => "сообщение",
+            "strategy_record" => "стратегия",
+            "draft_record" => "черновик",
+            "draft_outcome" => "исход черновика",
+            "profile_trait" => "характеристика профиля",
+            "profile_snapshot" => "снимок профиля",
+            "conflict_record" => "конфликт",
+            "clarification_answer" => "ответ на уточнение",
+            "period_transition" => "переход периода",
             _ => objectType
         };
     }

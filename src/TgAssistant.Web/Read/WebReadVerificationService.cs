@@ -106,11 +106,11 @@ public class WebReadVerificationService
         AssertNonEmptyRoute(rendered, "/state", "overall signal strength");
         AssertNonEmptyRoute(rendered, "/state", "Observed Facts");
         AssertNonEmptyRoute(rendered, "/state", "Uncertainties / Alternative Readings");
-        AssertNonEmptyRoute(rendered, "/timeline", "Timeline");
+        AssertNonEmptyRoute(rendered, "/timeline", "Таймлайн");
         AssertNonEmptyRoute(rendered, "/network", "Network");
-        AssertNonEmptyRoute(rendered, "/profiles", "Profiles");
-        AssertNonEmptyRoute(rendered, "/profiles", "participant patterns:");
-        AssertNonEmptyRoute(rendered, "/profiles", "pair dynamics:");
+        AssertNonEmptyRoute(rendered, "/profiles", "Профили");
+        AssertNonEmptyRoute(rendered, "/profiles", "Паттерны участников:");
+        AssertNonEmptyRoute(rendered, "/profiles", "Динамика пары:");
         AssertNonEmptyRoute(rendered, "/strategy", "Strategy");
         AssertNonEmptyRoute(rendered, "/strategy", "Observed Facts");
         AssertNonEmptyRoute(rendered, "/strategy", "Likely Interpretation");
@@ -134,14 +134,14 @@ public class WebReadVerificationService
 
         var sortedInbox = await _webRouteRenderer.RenderAsync("/inbox?sortBy=updated&sortDirection=asc", request, ct)
             ?? throw new InvalidOperationException("Web smoke failed: sorted /inbox route did not resolve.");
-        if (!sortedInbox.Html.Contains("sort=updated:asc", StringComparison.OrdinalIgnoreCase))
+        if (!sortedInbox.Html.Contains("Сортировка: время обновления, сначала старые.", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Web smoke failed: queue sort marker did not render for updated/asc.");
         }
 
         var emptyInbox = await _webRouteRenderer.RenderAsync("/inbox?q=definitely-no-matches-for-web-smoke", request, ct)
             ?? throw new InvalidOperationException("Web smoke failed: filtered /inbox route did not resolve.");
-        if (!emptyInbox.Html.Contains("No Results", StringComparison.OrdinalIgnoreCase))
+        if (!emptyInbox.Html.Contains("По этому набору фильтров кейсов нет.", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Web smoke failed: queue empty/no-results state did not render.");
         }

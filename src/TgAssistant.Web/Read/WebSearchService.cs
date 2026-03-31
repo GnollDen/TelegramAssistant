@@ -104,8 +104,8 @@ public class WebSearchService : IWebSearchService
             _ => new SavedViewReadModel
             {
                 ViewKey = normalized,
-                Title = "Unknown view",
-                Description = "Available views: blocking, current-period, conflicts",
+                Title = "Сохраненный вид: неизвестный",
+                Description = "Доступные виды: blocking, current-period, conflicts",
                 Items = []
             }
         };
@@ -771,8 +771,8 @@ public class WebSearchService : IWebSearchService
         return new SavedViewReadModel
         {
             ViewKey = "blocking",
-            Title = "Saved View: Blocking",
-            Description = "Open blocking items that require immediate attention.",
+            Title = "Сохраненный вид: блокирующие",
+            Description = "Открытые блокирующие элементы, требующие внимания в первую очередь.",
             Items = rows
         };
     }
@@ -807,8 +807,8 @@ public class WebSearchService : IWebSearchService
         return new SavedViewReadModel
         {
             ViewKey = "current-period",
-            Title = "Saved View: Current Period",
-            Description = "Current period inspection shortcut.",
+            Title = "Сохраненный вид: текущий период",
+            Description = "Быстрый переход к текущему периоду.",
             Items = items
         };
     }
@@ -837,8 +837,8 @@ public class WebSearchService : IWebSearchService
         return new SavedViewReadModel
         {
             ViewKey = "conflicts",
-            Title = "Saved View: Conflicts",
-            Description = "Open/deferred conflicts requiring interpretation review.",
+            Title = "Сохраненный вид: конфликты",
+            Description = "Открытые и отложенные конфликты для повторной интерпретации.",
             Items = rows
         };
     }

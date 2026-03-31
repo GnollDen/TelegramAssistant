@@ -1004,17 +1004,17 @@ public class WebReadService : IWebReadService
             .ToList();
 
         var whatWorks = traits.FirstOrDefault(x => x.TraitKey == "what_works")?.ValueLabel
-            ?? "No clear pattern yet.";
+            ?? "Устойчивый рабочий паттерн пока не подтвержден.";
         var whatFails = traits.FirstOrDefault(x => x.TraitKey == "what_fails")?.ValueLabel
-            ?? "No clear anti-pattern yet.";
+            ?? "Устойчивый нерабочий паттерн пока не подтвержден.";
         var participantPatterns = traits.FirstOrDefault(x => x.TraitKey == "participant_patterns")?.ValueLabel
-            ?? "Participant pattern not stabilized yet.";
+            ?? "Паттерн участников пока не стабилизирован.";
         var pairDynamics = traits.FirstOrDefault(x => x.TraitKey == "pair_dynamics")?.ValueLabel
-            ?? "Pair dynamics need more evidence.";
+            ?? "Для устойчивой оценки динамики пары нужно больше оснований.";
         var repeatedInteractionModes = traits.FirstOrDefault(x => x.TraitKey == "repeated_interaction_modes")?.ValueLabel
-            ?? "Repeated interaction modes are not yet explicit.";
+            ?? "Повторяющиеся режимы взаимодействия пока не выражены.";
         var changesOverTime = traits.FirstOrDefault(x => x.TraitKey == "changes_over_time")?.ValueLabel
-            ?? "Change-over-time signal is limited.";
+            ?? "Сигнал изменений во времени пока ограничен.";
 
         return new ProfileSubjectReadModel
         {
