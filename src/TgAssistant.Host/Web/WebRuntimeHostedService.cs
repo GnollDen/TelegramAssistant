@@ -222,7 +222,15 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
 
         if (settings.DefaultCaseId > 0 && settings.DefaultChatId > 0)
         {
-            return ScopeResolution.Resolved(settings.DefaultCaseId, settings.DefaultChatId, "configured_default");
+            if (ScopeVisibilityPolicy.IsOperatorVisibleScope(settings.DefaultCaseId, settings.DefaultChatId))
+            {
+                return ScopeResolution.Resolved(settings.DefaultCaseId, settings.DefaultChatId, "configured_default");
+            }
+
+            _logger.LogWarning(
+                "Configured web default scope is synthetic/smoke and blocked in operator-safe mode. case_id={CaseId}, chat_id={ChatId}",
+                settings.DefaultCaseId,
+                settings.DefaultChatId);
         }
 
         var candidates = await GetScopeCandidatesAsync(ct);

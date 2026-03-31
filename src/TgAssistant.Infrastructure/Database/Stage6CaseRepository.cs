@@ -215,7 +215,10 @@ public class Stage6CaseRepository : IStage6CaseRepository
         {
             var rows = await db.Stage6Cases
                 .AsNoTracking()
-                .Where(x => x.ScopeCaseId > 0 && x.ChatId.HasValue && x.ChatId > 0)
+                .Where(x => x.ScopeCaseId > 0
+                            && x.ChatId.HasValue
+                            && x.ChatId > 0
+                            && x.ChatId < ScopeVisibilityPolicy.SyntheticSmokeChatIdMin)
                 .GroupBy(x => new { x.ScopeCaseId, ChatId = x.ChatId!.Value })
                 .Select(group => new
                 {
