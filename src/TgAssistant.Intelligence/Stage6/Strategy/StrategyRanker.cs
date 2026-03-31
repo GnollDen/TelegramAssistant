@@ -19,7 +19,10 @@ public class StrategyRanker : IStrategyRanker
         "check_in",
         "clarify",
         "deescalate",
-        "repair"
+        "repair",
+        "acknowledge_separation",
+        "test_receptivity",
+        "re_establish_contact"
     };
 
     public IReadOnlyList<StrategyCandidateOption> Rank(StrategyEvaluationContext context, IReadOnlyList<StrategyCandidateOption> candidates)
@@ -107,9 +110,18 @@ public class StrategyRanker : IStrategyRanker
             "hold_rapport" => status is "ambiguous" or "warm_platonic" ? 0.8f : 0.58f,
             "check_in" => dynamicLabel is "cooling" or "uncertain_shift" ? 0.79f : 0.62f,
             "warm_reply" => status is "warm_platonic" or "reopening" ? 0.85f : 0.55f,
-            "invite" => ambiguity <= 0.5f ? 0.76f : 0.4f,
-            "light_test" => ambiguity <= 0.55f ? 0.71f : 0.45f,
-            "deepen" => ambiguity <= 0.45f ? 0.75f : 0.35f,
+            "acknowledge_separation" => status is "post_breakup" ? 0.9f : 0.58f,
+            "re_establish_contact" => status switch
+            {
+                "no_contact" => 0.88f,
+                "post_breakup" => 0.74f,
+                "detached" => 0.64f,
+                _ => 0.44f
+            },
+            "test_receptivity" => status is "no_contact" or "post_breakup" ? 0.82f : (ambiguity <= 0.6f ? 0.66f : 0.52f),
+            "invite" => status is "post_breakup" or "no_contact" ? 0.28f : (ambiguity <= 0.5f ? 0.76f : 0.4f),
+            "light_test" => status is "post_breakup" or "no_contact" ? 0.34f : (ambiguity <= 0.55f ? 0.71f : 0.45f),
+            "deepen" => status is "post_breakup" or "no_contact" ? 0.22f : (ambiguity <= 0.45f ? 0.75f : 0.35f),
             "boundaries" => status is "detached" or "fragile_contact" ? 0.74f : 0.45f,
             _ => 0.5f
         };
@@ -132,9 +144,19 @@ public class StrategyRanker : IStrategyRanker
             fit += 0.16f;
         }
 
+        if (style.Equals("brief_guarded", StringComparison.OrdinalIgnoreCase) && actionType is "acknowledge_separation" or "test_receptivity")
+        {
+            fit += 0.12f;
+        }
+
         if (style.Equals("detailed_expressive", StringComparison.OrdinalIgnoreCase) && actionType is "repair" or "warm_reply")
         {
             fit += 0.15f;
+        }
+
+        if (style.Equals("detailed_expressive", StringComparison.OrdinalIgnoreCase) && actionType is "acknowledge_separation")
+        {
+            fit += 0.13f;
         }
 
         if (repairBehavior.Contains("repair", StringComparison.OrdinalIgnoreCase) && actionType == "repair")
@@ -165,8 +187,13 @@ public class StrategyRanker : IStrategyRanker
             fit += 0.17f;
         }
 
+        if (distanceRecovery.Equals("recovers_after_distance", StringComparison.OrdinalIgnoreCase) && actionType is "re_establish_contact" or "test_receptivity")
+        {
+            fit += 0.14f;
+        }
+
         if (pairTraits.Any(x => x.TraitKey == "what_fails" && x.ValueLabel.Contains("pressure", StringComparison.OrdinalIgnoreCase))
-            && actionType is "invite" or "deepen")
+            && actionType is "invite" or "deepen" or "re_establish_contact")
         {
             fit -= 0.18f;
         }

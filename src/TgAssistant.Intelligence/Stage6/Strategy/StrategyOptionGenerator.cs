@@ -13,6 +13,9 @@ public class StrategyOptionGenerator : IStrategyOptionGenerator
         "check_in",
         "light_test",
         "clarify",
+        "re_establish_contact",
+        "acknowledge_separation",
+        "test_receptivity",
         "invite",
         "deepen",
         "repair",
@@ -31,6 +34,9 @@ public class StrategyOptionGenerator : IStrategyOptionGenerator
         var avoidance = state?.AvoidanceRiskScore ?? 0.5f;
         var warmth = state?.WarmthScore ?? 0.5f;
         var readiness = state?.EscalationReadinessScore ?? 0.4f;
+        var status = state?.RelationshipStatus ?? "ambiguous";
+        var alternativeStatus = state?.AlternativeStatus;
+        var breakupAwareState = IsBreakupAwareStatus(status) || IsBreakupAwareStatus(alternativeStatus);
 
         var hasOpenBlockingClarification = context.ClarificationQuestions.Any(x =>
             x.Status.Equals("open", StringComparison.OrdinalIgnoreCase)
@@ -92,7 +98,40 @@ public class StrategyOptionGenerator : IStrategyOptionGenerator
                 failureSigns: "Repair attempt interpreted as pressure or blame.");
         }
 
-        if (readiness >= 0.56f && ambiguity <= 0.5f && !hasOpenBlockingClarification)
+        if (breakupAwareState)
+        {
+            if (status.Equals("post_breakup", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(alternativeStatus, "post_breakup", StringComparison.OrdinalIgnoreCase))
+            {
+                AddOption(options, "acknowledge_separation", context.SelfStyleHint,
+                    summary: "Acknowledge separation directly and remove hidden pressure for fast reconciliation.",
+                    purpose: "Restore trust baseline and reduce defensive interpretation of contact.",
+                    whenToUse: "Use when breakup context is explicit and tone needs dignity-first reset.",
+                    successSigns: "Acknowledgment is received without escalation or blame loops.",
+                    failureSigns: "Message is read as guilt pressure or emotional bargaining.");
+            }
+
+            AddOption(options, "test_receptivity", context.SelfStyleHint,
+                summary: "Test receptivity with one ultra-light touchpoint and a clear opt-out.",
+                purpose: "Measure openness before any stronger reconnect attempt.",
+                whenToUse: "Use when contact quality is uncertain after breakup/no-contact period.",
+                successSigns: "Short but cooperative response arrives without defensiveness.",
+                failureSigns: "No reply or immediate withdrawal signals.");
+
+            if (status.Equals("no_contact", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(alternativeStatus, "no_contact", StringComparison.OrdinalIgnoreCase)
+                || readiness >= 0.42f)
+            {
+                AddOption(options, "re_establish_contact", context.SelfStyleHint,
+                    summary: "Re-establish contact with one respectful low-intensity opener and no escalation ask.",
+                    purpose: "Re-open the communication channel safely after a distance gap.",
+                    whenToUse: "Use when no-contact or prolonged silence is the main blocker.",
+                    successSigns: "Channel reopens and response cadence starts recovering.",
+                    failureSigns: "Silence persists or recontact is rejected as pressure.");
+            }
+        }
+
+        if (!breakupAwareState && readiness >= 0.56f && ambiguity <= 0.5f && !hasOpenBlockingClarification)
         {
             AddOption(options, "invite", context.SelfStyleHint,
                 summary: "Propose a concrete low-pressure invite with clear timing.",
@@ -109,7 +148,7 @@ public class StrategyOptionGenerator : IStrategyOptionGenerator
                 failureSigns: "Non-response or visible retreat.");
         }
 
-        if (readiness >= 0.64f && warmth >= 0.58f && ambiguity <= 0.45f)
+        if (!breakupAwareState && readiness >= 0.64f && warmth >= 0.58f && ambiguity <= 0.45f)
         {
             AddOption(options, "deepen", context.SelfStyleHint,
                 summary: "Take one step toward deeper relational conversation.",
@@ -134,6 +173,13 @@ public class StrategyOptionGenerator : IStrategyOptionGenerator
             .ToList();
 
         return Task.FromResult<IReadOnlyList<StrategyCandidateOption>>(options);
+    }
+
+    private static bool IsBreakupAwareStatus(string? status)
+    {
+        return status != null
+            && (status.Equals("post_breakup", StringComparison.OrdinalIgnoreCase)
+                || status.Equals("no_contact", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AddOption(

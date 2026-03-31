@@ -15,8 +15,8 @@ public class DraftStrategyFitChecker : IDraftStrategyFitChecker
 
         var hasPushSignals = HasAny(text, "must", "right now", "ультиматум", "надави", "дожми", "ответь сегодня", "force", "demand");
         var hasEscalationSignals = HasAny(text, "love", "exclusive", "отношения", "люблю", "встречаемся");
-        var softStrategy = primaryAction is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair";
-        var escalationStrategy = primaryAction is "invite" or "deepen" or "light_test";
+        var softStrategy = primaryAction is "wait" or "hold_rapport" or "check_in" or "clarify" or "deescalate" or "repair" or "acknowledge_separation" or "test_receptivity";
+        var escalationStrategy = primaryAction is "invite" or "deepen" or "light_test" or "re_establish_contact";
 
         if (softStrategy && (hasPushSignals || hasEscalationSignals))
         {
