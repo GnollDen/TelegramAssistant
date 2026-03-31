@@ -29,6 +29,7 @@ public partial class AnalysisWorkerService : BackgroundService
     private const int SessionSkipQuarantineRecoveryAgeHours = 6;
     private const int UncappedSessionSliceFetchWindowSessions = 200;
     private const int MaxCheapLlmBatchSize = 100;
+    private const long SyntheticSmokeChatIdMin = 9_000_000_000_000L;
     private static readonly Regex ServicePlaceholderRegex = new(@"^\[[A-Z_]{2,32}\]$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex CyrillicRegex = new(@"[\p{IsCyrillic}]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly TimeSpan BatchThrottleDelay = TimeSpan.FromMilliseconds(25);
@@ -508,7 +509,9 @@ public partial class AnalysisWorkerService : BackgroundService
             return 0;
         }
 
-        var messages = ApplyArchiveScope(fetchedMessages, "session_seed");
+        var messages = ApplyArchiveScope(fetchedMessages, "session_seed")
+            .Where(x => x.ChatId < SyntheticSmokeChatIdMin)
+            .ToList();
         if (messages.Count == 0)
         {
             await _stateRepository.SetWatermarkAsync(SessionSeedWatermarkKey, fetchedMessages.Max(x => x.Id), ct);
@@ -2164,7 +2167,15 @@ public partial class AnalysisWorkerService : BackgroundService
                 fetchWindowSessions);
         }
 
-        var chatIds = messages.Select(x => x.ChatId).Distinct().ToArray();
+        var chatIds = messages
+            .Select(x => x.ChatId)
+            .Where(x => x < SyntheticSmokeChatIdMin)
+            .Distinct()
+            .ToArray();
+        if (chatIds.Length == 0)
+        {
+            return;
+        }
         var existingByChat = await _chatSessionRepository.GetByChatsAsync(chatIds, ct);
         var fetchLimit = Math.Max(
             500,
