@@ -235,12 +235,14 @@ public class WebOpsVerificationService
         var caseDetailPage = await _webRouteRenderer.RenderAsync($"/case-detail?caseId={stage6Case.Id}", request, ct)
             ?? throw new InvalidOperationException("Ops web smoke failed: /case-detail route did not resolve.");
         if (string.IsNullOrWhiteSpace(caseDetailPage.Html)
-            || !caseDetailPage.Html.Contains("Evidence First Context", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Сводка для оператора", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Окно сообщений по кейсу", StringComparison.OrdinalIgnoreCase)
+            || !caseDetailPage.Html.Contains("Технические детали кейса", StringComparison.OrdinalIgnoreCase)
             || !caseDetailPage.Html.Contains("Clarification", StringComparison.OrdinalIgnoreCase)
             || !caseDetailPage.Html.Contains("Deep Review Snapshot", StringComparison.OrdinalIgnoreCase)
             || !caseDetailPage.Html.Contains("Long-form Context / Correction", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Ops web smoke failed: case detail route does not show evidence-first clarification workflow.");
+            throw new InvalidOperationException("Ops web smoke failed: case detail route does not show expected operator-facing sections.");
         }
 
         var evidencePage = await _webRouteRenderer.RenderAsync($"/case-evidence?caseId={stage6Case.Id}", request, ct)

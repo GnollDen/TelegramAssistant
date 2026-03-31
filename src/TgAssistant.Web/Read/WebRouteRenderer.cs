@@ -834,49 +834,72 @@ public class WebRouteRenderer : IWebRouteRenderer
             return CloseShell(sb);
         }
 
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" }))}'>Назад в очередь</a></p>");
+        var queueLink = BuildScopedPath("/inbox", request, new Dictionary<string, string?> { ["status"] = "active" });
+        var sourceTrailLink = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
+        {
+            ["objectType"] = model.SourceObjectType,
+            ["objectId"] = model.SourceObjectId
+        });
+        var caseTrailLink = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
+        {
+            ["objectType"] = "stage6_case",
+            ["objectId"] = model.Id.ToString()
+        });
+        var caseEvidenceLink = BuildScopedPath("/case-evidence", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() });
+        var caseHistoryLink = BuildScopedPath("/history", request, new Dictionary<string, string?> { ["objectType"] = "stage6_case" });
+        var keyEssence = BuildCaseEssence(model);
+        var nextStep = BuildCaseDetailNextStep(model);
+
+        sb.AppendLine($"<p><a href='{E(queueLink)}'>Назад в очередь</a></p>");
+        sb.AppendLine("<section><h2>Сводка для оператора</h2>");
         sb.AppendLine($"<p><strong>{E(ToRuCaseType(model.CaseType))}</strong> | {E(ToRuCaseStatus(model.Status))} | {E(ToRuPriority(model.Priority))} | уверенность: {E(ToRuConfidenceLabel(model.Confidence))}</p>");
-        sb.AppendLine($"<p>{E(model.ReasonSummary)}</p>");
+        sb.AppendLine($"<p><strong>Почему это важно:</strong> {E(model.ReasonSummary)}</p>");
+        if (!string.IsNullOrWhiteSpace(keyEssence) && !string.Equals(keyEssence, model.ReasonSummary, StringComparison.OrdinalIgnoreCase))
+        {
+            sb.AppendLine($"<p><strong>Ключевая суть:</strong> {E(keyEssence)}</p>");
+        }
         if (!string.IsNullOrWhiteSpace(model.QuestionText))
         {
-            sb.AppendLine($"<p><strong>Вопрос:</strong> {E(model.QuestionText)}</p>");
+            sb.AppendLine($"<p><strong>Что нужно от оператора:</strong> {E(model.QuestionText)}</p>");
         }
-        sb.AppendLine($"<p>Канал ответа: {E(model.ResponseMode ?? "-")}</p>");
-        sb.AppendLine($"<p>Источник: {E(ToRuObjectType(model.SourceObjectType))} {(!string.IsNullOrWhiteSpace(model.SourceLink) ? $"<a href='{E(model.SourceLink)}'>история</a>" : string.Empty)}</p>");
-        if (!string.IsNullOrWhiteSpace(model.SourceSummary))
+        sb.AppendLine($"<p><strong>Следующий шаг:</strong> {E(nextStep)}</p>");
+        sb.AppendLine($"<p><strong>Режим ответа:</strong> {E(ToRuResponseMode(model.ResponseMode))}</p>");
+        sb.AppendLine($"<p><strong>Источник кейса:</strong> {E(ToRuObjectType(model.SourceObjectType))} | <a href='{E(sourceTrailLink)}'>источник</a>{(!string.IsNullOrWhiteSpace(model.SourceLink) ? $" | <a href='{E(model.SourceLink)}'>история источника</a>" : string.Empty)}</p>");
+        if (!string.IsNullOrWhiteSpace(model.SourceSummary) && !string.Equals(model.SourceSummary, model.ReasonSummary, StringComparison.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"<p>{E(model.SourceSummary)}</p>");
+            sb.AppendLine($"<p><strong>Контекст источника:</strong> {E(model.SourceSummary)}</p>");
         }
-        sb.AppendLine($"<p>Обновлено: {E(model.UpdatedAt.ToString("u"))}</p>");
-        sb.AppendLine($"<p>Ключевая суть: {(model.Evidence.Count == 0 ? E(model.ReasonSummary) : E(string.Join(" | ", model.Evidence.Take(4).Select(x => x.Summary))))}</p>");
-        sb.AppendLine("<section><h2>Evidence First Context</h2><h2>Контекст</h2>");
-        sb.AppendLine($"<p>lifecycle: created={E(model.CreatedAt.ToString("u"))} | ready={E(model.ReadyAt?.ToString("u") ?? "-")} | resolved={E(model.ResolvedAt?.ToString("u") ?? "-")} | rejected={E(model.RejectedAt?.ToString("u") ?? "-")} | stale={E(model.StaleAt?.ToString("u") ?? "-")}</p>");
-        sb.AppendLine($"<p>evidence window: from={E(model.EarliestEvidenceAtUtc?.ToString("u") ?? "-")} to={E(model.LatestEvidenceAtUtc?.ToString("u") ?? "-")}</p>");
-        sb.AppendLine($"<p>participants: {(model.EvidenceParticipants.Count == 0 ? "-" : E(string.Join(" | ", model.EvidenceParticipants.Select(x => $"{x.SenderName} (msgs={x.MessageCount}, direct={x.EvidenceMessageCount})"))))}</p>");
-        sb.AppendLine($"<p>subject refs: {(model.SubjectRefs.Count == 0 ? "-" : E(string.Join(", ", model.SubjectRefs)))} </p>");
-        sb.AppendLine($"<p>reopen triggers: {(model.ReopenTriggers.Count == 0 ? "-" : E(string.Join("; ", model.ReopenTriggers)))} </p>");
-        sb.AppendLine($"<p><a href='{E(BuildScopedPath("/case-evidence", request, new Dictionary<string, string?> { ["caseId"] = model.Id.ToString() }))}'>Открыть доказательства</a> | <a href='{E(BuildScopedPath("/timeline", request))}'>Таймлайн</a> | <a href='{E(BuildScopedPath("/network", request))}'>Сеть участников</a> | <a href='{E(BuildScopedPath("/history", request, new Dictionary<string, string?> { ["objectType"] = "stage6_case" }))}'>История кейса</a></p>");
+        sb.AppendLine($"<p>Быстрые переходы: <a href='{E(caseEvidenceLink)}'>доказательства</a> | <a href='{E(BuildScopedPath("/timeline", request))}'>таймлайн</a> | <a href='{E(BuildScopedPath("/network", request))}'>сеть участников</a> | <a href='{E(caseHistoryLink)}'>история кейса</a></p>");
+        sb.AppendLine("</section>");
+
+        sb.AppendLine("<section><h2>Контекст кейса</h2>");
+        sb.AppendLine($"<p><strong>Окно релевантных сообщений:</strong> {E(model.EarliestEvidenceAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")} - {E(model.LatestEvidenceAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")}</p>");
+        if (model.EvidenceParticipants.Count > 0)
+        {
+            sb.AppendLine($"<p><strong>Участники в окне:</strong> {E(string.Join(" | ", model.EvidenceParticipants.Select(FormatEvidenceParticipant)))}</p>");
+        }
+        else
+        {
+            sb.AppendLine("<p>Участники для окна сообщений пока не выделены, но кейс остается рабочим по текущим основаниям.</p>");
+        }
+        sb.AppendLine($"<p><strong>Количество опорных оснований:</strong> {model.Evidence.Count}</p>");
         sb.AppendLine("</section>");
 
         sb.AppendLine("<section><h2>Основания</h2>");
         foreach (var evidence in model.Evidence.Take(12))
         {
             var link = string.IsNullOrWhiteSpace(evidence.Link) ? string.Empty : $" | <a href='{E(evidence.Link)}'>открыть</a>";
-            var time = evidence.TimestampUtc.HasValue ? evidence.TimestampUtc.Value.ToString("yyyy-MM-dd HH:mm") : "-";
-            var refTrail = BuildScopedPath("/history-object", request, new Dictionary<string, string?>
-            {
-                ["objectType"] = "stage6_case",
-                ["objectId"] = model.Id.ToString()
-            });
-            sb.AppendLine($"<div>{E(ToRuEvidenceClass(evidence.SourceClass))} | {E(evidence.Title)} | {E(evidence.Summary)} | {E(time)}{link} | <a href='{E(refTrail)}'>история кейса</a></div>");
+            var time = evidence.TimestampUtc.HasValue ? evidence.TimestampUtc.Value.ToString("yyyy-MM-dd HH:mm") : "время не указано";
+            sb.AppendLine($"<div>{E(ToRuEvidenceClass(evidence.SourceClass))} | {E(ToRuEvidenceTitle(evidence.Title))} | {E(evidence.Summary)} | {E(time)}{link} | <a href='{E(caseTrailLink)}'>история кейса</a></div>");
         }
         if (model.Evidence.Count == 0)
         {
-            sb.AppendLine("<p>Явные основания не найдены. Показана причина кейса.</p>");
+            sb.AppendLine("<p>Явные основания не выделены. Для работы используйте сводку кейса и связанный контекст.</p>");
         }
         sb.AppendLine("</section>");
 
-        sb.AppendLine("<section><h2>Evidence Drill-Down: Message Window</h2>");
+        sb.AppendLine("<section><h2>Окно сообщений по кейсу</h2>");
+        sb.AppendLine($"<p><a href='{E(caseEvidenceLink)}'>Открыть расширенный разбор сообщений</a></p>");
         foreach (var row in model.EvidenceMessages)
         {
             var messageLink = BuildScopedPath("/search", request, new Dictionary<string, string?>
@@ -884,13 +907,21 @@ public class WebRouteRenderer : IWebRouteRenderer
                 ["objectType"] = "message",
                 ["q"] = row.MessageId.ToString()
             });
-            sb.AppendLine($"<div>{(row.IsDirectEvidence ? "<strong>evidence</strong>" : "context")} | {E(row.TimestampUtc.ToString("yyyy-MM-dd HH:mm"))} | {E(row.SenderName)} | msg#{row.MessageId} | {E(row.TextSnippet)} | <a href='{E(messageLink)}'>open message</a></div>");
+            sb.AppendLine($"<div>{(row.IsDirectEvidence ? "<strong>прямое основание</strong>" : "контекст")} | {E(row.TimestampUtc.ToString("yyyy-MM-dd HH:mm"))} | {E(row.SenderName)} | msg#{row.MessageId} | {E(row.TextSnippet)} | <a href='{E(messageLink)}'>открыть сообщение</a></div>");
         }
         if (model.EvidenceMessages.Count == 0)
         {
-            sb.AppendLine("<p>No message-level evidence window available for this case.</p>");
+            sb.AppendLine("<p>Подробное окно сообщений для этого кейса пока недоступно. Кейс остается валидным по текущим основаниям.</p>");
         }
         sb.AppendLine("</section>");
+
+        sb.AppendLine("<details><summary>Технические детали кейса</summary>");
+        sb.AppendLine($"<p>case_id: {E(model.Id.ToString())}</p>");
+        sb.AppendLine($"<p>source: {E(model.SourceObjectType)}:{E(model.SourceObjectId)}</p>");
+        sb.AppendLine($"<p>lifecycle: created={E(model.CreatedAt.ToString("u"))} | ready={E(model.ReadyAt?.ToString("u") ?? "-")} | resolved={E(model.ResolvedAt?.ToString("u") ?? "-")} | rejected={E(model.RejectedAt?.ToString("u") ?? "-")} | stale={E(model.StaleAt?.ToString("u") ?? "-")} | updated={E(model.UpdatedAt.ToString("u"))}</p>");
+        sb.AppendLine($"<p>subject refs: {(model.SubjectRefs.Count == 0 ? "-" : E(string.Join(", ", model.SubjectRefs)))}</p>");
+        sb.AppendLine($"<p>reopen triggers: {(model.ReopenTriggers.Count == 0 ? "-" : E(string.Join("; ", model.ReopenTriggers)))}</p>");
+        sb.AppendLine("</details>");
 
         sb.AppendLine("<section><h2>Artifacts</h2>");
         sb.AppendLine($"<p>quick views: <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Dossier }))}'>dossier</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.CurrentState }))}'>current_state</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Strategy }))}'>strategy</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Draft }))}'>draft</a> | <a href='{E(BuildScopedPath("/artifact-detail", request, new Dictionary<string, string?> { ["artifactType"] = Stage6ArtifactTypes.Review }))}'>review</a></p>");
@@ -2202,6 +2233,45 @@ public class WebRouteRenderer : IWebRouteRenderer
         return "Откройте кейс и уточните следующий рабочий шаг по контексту.";
     }
 
+    private static string BuildCaseDetailNextStep(Stage6CaseDetailReadModel model)
+    {
+        if (!string.IsNullOrWhiteSpace(model.QuestionText))
+        {
+            return "Подготовьте и зафиксируйте ответ на вопрос кейса, затем завершите действие по кейсу.";
+        }
+
+        var status = (model.Status ?? string.Empty).Trim().ToLowerInvariant();
+        return status switch
+        {
+            Stage6CaseStatuses.NeedsUserInput => "Требуется ответ оператора: зафиксируйте решение или уточнение и закройте кейс.",
+            Stage6CaseStatuses.Ready or Stage6CaseStatuses.New => "Проверьте основания и завершите кейс действием (закрыть, отклонить или обновить).",
+            Stage6CaseStatuses.Stale => "Проверьте актуальность кейса и при необходимости обновите артефакты.",
+            Stage6CaseStatuses.Resolved or Stage6CaseStatuses.Rejected => "Кейс в архивном режиме: достаточно контрольной проверки истории и оснований.",
+            _ => "Откройте основания и выберите следующий рабочий шаг по контексту кейса."
+        };
+    }
+
+    private static string BuildCaseEssence(Stage6CaseDetailReadModel model)
+    {
+        var primaryEvidence = model.Evidence
+            .Select(x => x.Summary)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Take(2)
+            .ToList();
+        if (primaryEvidence.Count > 0)
+        {
+            return string.Join(" | ", primaryEvidence);
+        }
+
+        return model.ReasonSummary;
+    }
+
+    private static string FormatEvidenceParticipant(Stage6EvidenceParticipantReadModel participant)
+    {
+        var name = string.IsNullOrWhiteSpace(participant.SenderName) ? "неизвестный участник" : participant.SenderName;
+        return $"{name} (сообщений: {participant.MessageCount}, оснований: {participant.EvidenceMessageCount})";
+    }
+
     private static string CleanProfileSummary(string? summary)
     {
         var normalized = CleanOperatorText(summary);
@@ -2909,9 +2979,25 @@ public class WebRouteRenderer : IWebRouteRenderer
             return "кейс";
         }
 
-        return caseType
-            .Replace("clarification_", "уточнение: ", StringComparison.OrdinalIgnoreCase)
-            .Replace('_', ' ');
+        var normalized = caseType.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            Stage6CaseTypes.NeedsInput => "требуется ответ",
+            Stage6CaseTypes.NeedsReview => "требует проверки",
+            Stage6CaseTypes.Risk => "риск",
+            Stage6CaseTypes.StateRefreshNeeded => "обновление состояния",
+            Stage6CaseTypes.DossierCandidate => "кандидат в досье",
+            Stage6CaseTypes.DraftCandidate => "кандидат в черновик",
+            Stage6CaseTypes.ClarificationMissingData => "уточнение: не хватает данных",
+            Stage6CaseTypes.ClarificationAmbiguity => "уточнение: неоднозначность",
+            Stage6CaseTypes.ClarificationEvidenceInterpretationConflict => "уточнение: конфликт интерпретаций",
+            Stage6CaseTypes.ClarificationNextStepBlocked => "уточнение: следующий шаг заблокирован",
+            Stage6CaseTypes.UserContextCorrection => "коррекция контекста",
+            Stage6CaseTypes.UserContextConflictReview => "проверка конфликта контекста",
+            _ => caseType
+                .Replace("clarification_", "уточнение: ", StringComparison.OrdinalIgnoreCase)
+                .Replace('_', ' ')
+        };
     }
 
     private static string ToRuObjectType(string? objectType)
@@ -2926,6 +3012,7 @@ public class WebRouteRenderer : IWebRouteRenderer
             "clarification_question" => "вопрос на уточнение",
             "stage6_case" => "кейс",
             "message" => "сообщение",
+            "auto_case_rule" => "автоматическое правило кейса",
             "strategy_record" => "стратегия",
             "draft_record" => "черновик",
             "draft_outcome" => "исход черновика",
@@ -2938,6 +3025,20 @@ public class WebRouteRenderer : IWebRouteRenderer
         };
     }
 
+    private static string ToRuResponseMode(string? responseMode)
+    {
+        var normalized = (responseMode ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "free_text" => "свободный ответ",
+            "single_or_free_text" => "вариант или свободный ответ",
+            "single_choice" => "один вариант ответа",
+            "none" => "ответ не требуется",
+            "" => "-",
+            _ => responseMode ?? "-"
+        };
+    }
+
     private static string ToRuEvidenceClass(string? sourceClass)
     {
         return sourceClass switch
@@ -2945,6 +3046,19 @@ public class WebRouteRenderer : IWebRouteRenderer
             "system_inference" => "системный вывод",
             "user_reported_context" => "контекст от пользователя",
             _ => string.IsNullOrWhiteSpace(sourceClass) ? "источник" : sourceClass
+        };
+    }
+
+    private static string ToRuEvidenceTitle(string? title)
+    {
+        return (title ?? string.Empty).Trim() switch
+        {
+            "Strategy record" => "Стратегическая запись",
+            "Draft record" => "Черновик",
+            "Timeline period" => "Период таймлайна",
+            "Current-state snapshot" => "Снимок текущего состояния",
+            "Clarification answer" => "Ответ на уточнение",
+            _ => string.IsNullOrWhiteSpace(title) ? "Основание" : title
         };
     }
 
