@@ -30,6 +30,7 @@ public class HistoryBackfillService : BackgroundService
     private readonly IChatCoordinationService _chatCoordinationService;
     private readonly ILogger<HistoryBackfillService> _logger;
     private readonly string _phaseOwnerId = $"history_backfill:{Environment.ProcessId}:{Guid.NewGuid():N}";
+    private long _selfUserId;
 
     public HistoryBackfillService(
         IOptions<BackfillSettings> settings,
@@ -114,6 +115,7 @@ public class HistoryBackfillService : BackgroundService
 
         using var client = new Client(ConfigProvider);
         var user = await client.LoginUserIfNeeded();
+        _selfUserId = user.id;
         _logger.LogInformation("Backfill client logged in as {Name} (ID: {Id})", user.first_name, user.id);
 
         var peerMap = await ResolvePeerMapAsync(client, targetChatIds, stoppingToken);
@@ -713,7 +715,7 @@ public class HistoryBackfillService : BackgroundService
         TlMessage message,
         CancellationToken ct)
     {
-        var senderId = ResolveSenderId(message);
+        var senderId = ResolveSenderId(chatId, message);
         var senderName = ResolveSenderName(history, message.from_id);
         var mediaType = DetectMediaType(message);
         var mediaPath = mediaType == MediaType.None
@@ -835,15 +837,23 @@ public class HistoryBackfillService : BackgroundService
         };
     }
 
-    private static long ResolveSenderId(TlMessage message)
+    private long ResolveSenderId(long chatId, TlMessage message)
     {
-        return message.from_id switch
+        var explicitSenderId = message.from_id switch
         {
             PeerUser peerUser => peerUser.user_id,
             PeerChat peerChat => peerChat.chat_id,
             PeerChannel peerChannel => peerChannel.channel_id,
             _ => 0
         };
+        var isOutgoing = message.flags.HasFlag(TlMessage.Flags.out_);
+
+        return DirectChatSenderResolver.Resolve(
+            explicitSenderId,
+            chatId,
+            isDirectUserChat: message.peer_id is PeerUser,
+            isOutgoing: isOutgoing,
+            selfUserId: _selfUserId);
     }
 
     private static string ResolveSenderName(Messages_MessagesBase history, Peer? fromPeer)
