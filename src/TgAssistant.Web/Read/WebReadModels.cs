@@ -50,6 +50,7 @@ public class TimelineReadModel
     public List<TimelinePeriodReadModel> PriorPeriods { get; set; } = [];
     public List<TimelineTransitionReadModel> Transitions { get; set; } = [];
     public int UnresolvedTransitions { get; set; }
+    public int HiddenLowValuePeriods { get; set; }
 }
 
 public class TimelinePeriodReadModel
