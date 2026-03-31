@@ -43,6 +43,29 @@ Pass condition:
 
 - `dotnet run --project src/TgAssistant.Host -- --stage6-execution-smoke`
 
+Deterministic live-dev smoke profile (standard override):
+
+```bash
+BudgetGuardrails__DailyBudgetUsd=100 \
+BudgetGuardrails__ImportBudgetUsd=100 \
+BudgetGuardrails__StageTextAnalysisBudgetUsd=0.01 \
+BudgetGuardrails__StageEmbeddingsBudgetUsd=0.02 \
+BudgetGuardrails__StageVisionBudgetUsd=1 \
+BudgetGuardrails__StageAudioBudgetUsd=1 \
+dotnet run --project src/TgAssistant.Host -- --stage6-execution-smoke
+```
+
+Why this override is required in live dev:
+
+- `--stage6-execution-smoke` evaluates budget state using rolling 24h usage from `analysis_usage_events`.
+- without overrides, ambient/dev traffic can push daily or stage limits into `hard_paused` before smoke-specific checks run, making result order-dependent and nondeterministic.
+- this profile keeps daily/import caps high (to avoid ambient interference) and fixes stage smoke thresholds to deterministic values used by the verifier.
+
+Policy note:
+
+- this is an operational smoke profile only.
+- do not keep these values as default runtime budget policy for normal Stage5/Stage6 operation.
+
 Pass condition:
 
 - exits `0` and reports execution-discipline success
