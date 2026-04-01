@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -142,6 +143,8 @@ public class PeriodizationVerificationService
             throw new InvalidOperationException("Periodization smoke failed: merge/split proposal path not demonstrated.");
         }
 
+        EnsureMergeProposalsHaveOperatorSignal(result.Periods, result.Transitions, result.Proposals);
+
         _logger.LogInformation(
             "Periodization smoke passed. case_id={CaseId}, periods={PeriodCount}, transitions={TransitionCount}, unresolved={UnresolvedCount}, proposals={ProposalCount}",
             caseId,
@@ -149,6 +152,76 @@ public class PeriodizationVerificationService
             result.Transitions.Count,
             result.Transitions.Count(x => !x.IsResolved),
             result.Proposals.Count);
+    }
+
+    private static void EnsureMergeProposalsHaveOperatorSignal(
+        IReadOnlyList<Period> periods,
+        IReadOnlyList<PeriodTransition> transitions,
+        IReadOnlyList<PeriodProposalRecord> proposals)
+    {
+        var periodById = periods.ToDictionary(x => x.Id);
+        var transitionByPair = transitions.ToDictionary(x => (x.FromPeriodId, x.ToPeriodId));
+        foreach (var proposal in proposals.Where(x => x.ProposalType.Equals("merge", StringComparison.OrdinalIgnoreCase) && x.PeriodIds.Count == 2))
+        {
+            if (!periodById.TryGetValue(proposal.PeriodIds[0], out var left) || !periodById.TryGetValue(proposal.PeriodIds[1], out var right))
+            {
+                continue;
+            }
+
+            _ = transitionByPair.TryGetValue((left.Id, right.Id), out var transition);
+            var weakTransition = transition == null || !transition.IsResolved || transition.Confidence < 0.55f;
+            var leftEmpty = IsOperatorSignalEmpty(left);
+            var rightEmpty = IsOperatorSignalEmpty(right);
+            if (weakTransition && leftEmpty && rightEmpty)
+            {
+                throw new InvalidOperationException("Periodization smoke failed: merge proposal was created for adjacent empty low-signal periods.");
+            }
+        }
+    }
+
+    private static bool IsOperatorSignalEmpty(Period period)
+    {
+        return ReadCountSignal(period.KeySignalsJson, "message_count") <= 0
+               && ReadCountSignal(period.KeySignalsJson, "offline_event_count") <= 0
+               && period.OpenQuestionsCount <= 0;
+    }
+
+    private static int ReadCountSignal(string keySignalsJson, string key)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(keySignalsJson) ? "[]" : keySignalsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return 0;
+            }
+
+            var prefix = $"{key}:";
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = item.GetString();
+                if (string.IsNullOrWhiteSpace(value) || !value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (int.TryParse(value[prefix.Length..], out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 
     private static List<Message> BuildSeedMessages(long chatId, DateTime now)
