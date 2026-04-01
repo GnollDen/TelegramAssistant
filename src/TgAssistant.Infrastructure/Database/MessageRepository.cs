@@ -633,8 +633,30 @@ public class MessageRepository : IMessageRepository
                         && x.Timestamp >= fromUtc
                         && x.Timestamp <= toUtc
                         && x.ProcessingStatus == (short)ProcessingStatus.Processed)
-            .OrderBy(x => x.Id)
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
             .Take(Math.Max(1, limit))
+            .ToListAsync(ct);
+
+        return rows.Select(ToDomain).ToList();
+    }
+
+    public async Task<List<Message>> GetProcessedByChatAndTimeRangeAsync(long chatId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        if (toUtc < fromUtc)
+        {
+            return [];
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.Messages
+            .AsNoTracking()
+            .Where(x => x.ChatId == chatId
+                        && x.ProcessingStatus == (short)ProcessingStatus.Processed
+                        && x.Timestamp >= fromUtc
+                        && x.Timestamp <= toUtc)
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.Id)
             .ToListAsync(ct);
 
         return rows.Select(ToDomain).ToList();

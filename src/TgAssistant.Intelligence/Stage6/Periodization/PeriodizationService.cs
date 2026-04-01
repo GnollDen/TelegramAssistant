@@ -55,9 +55,10 @@ public class PeriodizationService : IPeriodizationService
 
     public async Task<PeriodizationRunResult> RunAsync(PeriodizationRunRequest request, CancellationToken ct = default)
     {
-        var messages = await LoadMessagesAsync(request, ct);
         var sessionsByChat = await _chatSessionRepository.GetByChatsAsync([request.ChatId], ct);
         var sessions = sessionsByChat.GetValueOrDefault(request.ChatId, []).OrderBy(x => x.StartDate).ToList();
+        var messages = await LoadMessagesAsync(request, sessions, ct);
+        WarnOnTimestampCoverageMismatch(request, sessions, messages);
         var offlineEvents = (await _offlineEventRepository.GetOfflineEventsByCaseAsync(request.CaseId, ct))
             .Where(x => x.ChatId == null || x.ChatId == request.ChatId)
             .OrderBy(x => x.TimestampStart)
@@ -260,14 +261,23 @@ public class PeriodizationService : IPeriodizationService
         };
     }
 
-    private async Task<List<Message>> LoadMessagesAsync(PeriodizationRunRequest request, CancellationToken ct)
+    private async Task<List<Message>> LoadMessagesAsync(PeriodizationRunRequest request, IReadOnlyList<ChatSession> sessions, CancellationToken ct)
     {
         if (request.FromUtc.HasValue && request.ToUtc.HasValue)
         {
-            return await _messageRepository.GetByChatAndPeriodAsync(request.ChatId, request.FromUtc.Value, request.ToUtc.Value, 50000, ct);
+            var fromUtc = request.FromUtc.Value <= request.ToUtc.Value ? request.FromUtc.Value : request.ToUtc.Value;
+            var toUtc = request.FromUtc.Value <= request.ToUtc.Value ? request.ToUtc.Value : request.FromUtc.Value;
+            return await _messageRepository.GetProcessedByChatAndTimeRangeAsync(request.ChatId, fromUtc, toUtc, ct);
         }
 
-        return await _messageRepository.GetProcessedByChatAsync(request.ChatId, 50000, ct);
+        if (sessions.Count > 0)
+        {
+            var fromUtc = sessions.Min(x => x.StartDate);
+            var toUtc = sessions.Max(x => x.LastMessageAt > x.EndDate ? x.LastMessageAt : x.EndDate);
+            return await _messageRepository.GetProcessedByChatAndTimeRangeAsync(request.ChatId, fromUtc, toUtc, ct);
+        }
+
+        return await _messageRepository.GetProcessedByChatAndTimeRangeAsync(request.ChatId, DateTime.UnixEpoch, DateTime.UtcNow.AddDays(1), ct);
     }
 
     private static bool ShouldSuppressNoSignalPeriod(
@@ -331,6 +341,35 @@ public class PeriodizationService : IPeriodizationService
         }
 
         return (short)Math.Clamp(priority, 0, 5);
+    }
+
+    private void WarnOnTimestampCoverageMismatch(
+        PeriodizationRunRequest request,
+        IReadOnlyList<ChatSession> sessions,
+        IReadOnlyList<Message> messages)
+    {
+        if (sessions.Count == 0 || messages.Count == 0)
+        {
+            return;
+        }
+
+        var sessionStart = sessions.Min(x => x.StartDate);
+        var sessionEnd = sessions.Max(x => x.LastMessageAt > x.EndDate ? x.LastMessageAt : x.EndDate);
+        var loadedStart = messages.Min(x => x.Timestamp);
+        var loadedEnd = messages.Max(x => x.Timestamp);
+        if (loadedStart > sessionStart || loadedEnd < sessionEnd)
+        {
+            _logger.LogWarning(
+                "Periodization message coverage is narrower than session range: case_id={CaseId}, chat_id={ChatId}, loaded_start={LoadedStart}, loaded_end={LoadedEnd}, session_start={SessionStart}, session_end={SessionEnd}, loaded_messages={LoadedMessageCount}, sessions={SessionCount}",
+                request.CaseId,
+                request.ChatId,
+                loadedStart,
+                loadedEnd,
+                sessionStart,
+                sessionEnd,
+                messages.Count,
+                sessions.Count);
+        }
     }
 
     private static string BuildPeriodSummary(Period period, int messageCount, IReadOnlyList<OfflineEvent> offlineEvents, PeriodEvidencePack evidence)

@@ -16,6 +16,7 @@ public interface IMessageRepository
         CancellationToken ct = default);
     Task<List<Message>> GetChatWindowAroundAsync(long chatId, long centerMessageId, int beforeCount, int afterCount, CancellationToken ct = default);
     Task<List<Message>> GetByChatAndPeriodAsync(long chatId, DateTime fromUtc, DateTime toUtc, int limit, CancellationToken ct = default);
+    Task<List<Message>> GetProcessedByChatAndTimeRangeAsync(long chatId, DateTime fromUtc, DateTime toUtc, CancellationToken ct = default);
     Task<List<Message>> GetProcessedByChatAsync(long chatId, int limit, CancellationToken ct = default);
     Task<List<Message>> GetNeedsReanalysisAsync(int limit, CancellationToken ct = default);
     Task<long> CountNeedsReanalysisProcessedAsync(CancellationToken ct = default);
