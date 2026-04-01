@@ -48,6 +48,14 @@ public class PeriodProposalService : IPeriodProposalService
                 continue;
             }
 
+            var leftSignal = ReadPeriodSignal(left);
+            var rightSignal = ReadPeriodSignal(right);
+            var weakTransition = !transition.IsResolved || transition.Confidence < 0.55f;
+            if (weakTransition && leftSignal.IsEmpty && rightSignal.IsEmpty)
+            {
+                continue;
+            }
+
             var proposal = new PeriodProposalRecord
             {
                 ProposalType = "merge",
@@ -139,6 +147,18 @@ public class PeriodProposalService : IPeriodProposalService
 
     private static int ReadMessageCount(string keySignalsJson)
     {
+        return ReadCountSignal(keySignalsJson, "message_count");
+    }
+
+    private static PeriodSignal ReadPeriodSignal(Period period)
+    {
+        var messageCount = ReadCountSignal(period.KeySignalsJson, "message_count");
+        var eventCount = ReadCountSignal(period.KeySignalsJson, "offline_event_count");
+        return new PeriodSignal(messageCount, eventCount, period.OpenQuestionsCount);
+    }
+
+    private static int ReadCountSignal(string keySignalsJson, string key)
+    {
         try
         {
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(keySignalsJson) ? "[]" : keySignalsJson);
@@ -155,13 +175,18 @@ public class PeriodProposalService : IPeriodProposalService
                 }
 
                 var token = item.GetString();
-                if (string.IsNullOrWhiteSpace(token) || !token.StartsWith("message_count:", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(token))
                 {
                     continue;
                 }
 
-                var parts = token.Split(':', 2);
-                if (parts.Length == 2 && int.TryParse(parts[1], out var parsed))
+                var prefix = $"{key}:";
+                if (!token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (int.TryParse(token[prefix.Length..], out var parsed))
                 {
                     return parsed;
                 }
@@ -173,5 +198,10 @@ public class PeriodProposalService : IPeriodProposalService
         {
             return 0;
         }
+    }
+
+    private readonly record struct PeriodSignal(int MessageCount, int EventCount, int OpenQuestionsCount)
+    {
+        public bool IsEmpty => MessageCount <= 0 && EventCount <= 0 && OpenQuestionsCount <= 0;
     }
 }
