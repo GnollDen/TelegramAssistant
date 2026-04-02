@@ -113,6 +113,7 @@ try
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runPassEnvelopeSmoke = args.Any(arg => string.Equals(arg, "--pass-envelope-smoke", StringComparison.OrdinalIgnoreCase));
     var runNormalizationSmoke = args.Any(arg => string.Equals(arg, "--normalization-smoke", StringComparison.OrdinalIgnoreCase));
+    var runModelPassAuditSmoke = args.Any(arg => string.Equals(arg, "--model-pass-audit-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -163,6 +164,7 @@ try
         "--stage5-smoke",
         "--pass-envelope-smoke",
         "--normalization-smoke",
+        "--model-pass-audit-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -206,6 +208,13 @@ try
     {
         NormalizationContractSmokeRunner.Run();
         Log.Information("Normalization contract smoke requested via --normalization-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runModelPassAuditSmoke)
+    {
+        await ModelPassAuditSmokeRunner.RunAsync();
+        Log.Information("Model pass audit smoke requested via --model-pass-audit-smoke. Exiting after successful verification.");
         return;
     }
 

@@ -760,6 +760,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CandidateCountsJson).HasColumnName("candidate_counts_json").HasColumnType("jsonb");
             e.Property(x => x.NormalizedPayloadJson).HasColumnName("normalized_payload_json").HasColumnType("jsonb");
             e.Property(x => x.ConflictsJson).HasColumnName("conflicts_json").HasColumnType("jsonb");
+            e.Property(x => x.IssuesJson).HasColumnName("issues_json").HasColumnType("jsonb");
             e.Property(x => x.BlockedReason).HasColumnName("blocked_reason");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.FinishedAt).HasColumnName("finished_at");

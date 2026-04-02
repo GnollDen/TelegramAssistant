@@ -529,6 +529,7 @@ public class DbNormalizationRun
     public string CandidateCountsJson { get; set; } = "{}";
     public string NormalizedPayloadJson { get; set; } = "{}";
     public string ConflictsJson { get; set; } = "[]";
+    public string IssuesJson { get; set; } = "[]";
     public string? BlockedReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? FinishedAt { get; set; }

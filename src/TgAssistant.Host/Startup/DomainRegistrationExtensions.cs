@@ -47,6 +47,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IExternalArchiveIngestionService, ExternalArchiveIngestionService>();
         services.AddSingleton<ExternalArchiveVerificationService>();
         services.AddSingleton<Stage5SubstrateDeterminismVerificationService>();
+        services.AddSingleton<IModelPassAuditService, ModelPassAuditService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
@@ -173,6 +174,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IArchiveMessageSubstrateRepository, ArchiveMessageSubstrateRepository>();
         services.AddSingleton<IModelPassEnvelopeRepository, ModelPassEnvelopeRepository>();
         services.AddSingleton<IModelOutputNormalizer, ModelOutputNormalizer>();
+        services.AddSingleton<IModelPassAuditStore, ModelPassAuditStore>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

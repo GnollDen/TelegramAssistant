@@ -83,6 +83,21 @@ public interface IModelOutputNormalizer
     ModelNormalizationResult Normalize(ModelNormalizationRequest request);
 }
 
+public interface IModelPassAuditStore
+{
+    Task<ModelPassAuditRecord> UpsertAsync(
+        ModelPassEnvelope envelope,
+        ModelNormalizationResult normalizationResult,
+        CancellationToken ct = default);
+
+    Task<ModelPassAuditRecord?> GetByModelPassRunIdAsync(Guid runId, CancellationToken ct = default);
+}
+
+public interface IModelPassAuditService
+{
+    Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }

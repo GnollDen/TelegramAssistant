@@ -612,12 +612,12 @@
       "dependencies": [
         "IMPLEMENT-004-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Every pass outcome leaves audit evidence.",
         "Storage behavior is consistent across allowed result states."
       ],
-      "notes": "Clean split because audit persistence and test coverage are a separate completion step."
+      "notes": "Clean split because audit persistence and test coverage are a separate completion step. Added ModelPassAuditService and ModelPassAuditStore to normalize and atomically upsert model_pass_runs plus normalization_runs in one DbContext save, extended normalization_runs with issues_json audit storage, and added --model-pass-audit-smoke to verify persisted result_ready, need_more_data, need_operator_clarification, and blocked_invalid_input outcomes; dotnet build TelegramAssistant.sln plus pass-envelope, normalization, and model-pass-audit smokes passed."
     },
     {
       "id": "IMPLEMENT-005-A",

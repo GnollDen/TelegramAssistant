@@ -411,8 +411,8 @@
         "IMPLEMENT-001",
         "IMPLEMENT-002"
       ],
-      "status": "pending",
-      "notes": "This is the main governance seam between reasoning and durable state."
+      "status": "done",
+      "notes": "This is the main governance seam between reasoning and durable state. IMPLEMENT-004-A/B/C now provide versioned pass envelopes, guarded typed normalization, and persisted audit records for model_pass_runs plus normalization_runs across result_ready, need_more_data, need_operator_clarification, and blocked_invalid_input outcomes, with CLI smokes covering the contract and audit paths."
     },
     {
       "id": "IMPLEMENT-005",
