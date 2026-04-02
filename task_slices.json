@@ -524,12 +524,12 @@
       "dependencies": [
         "IMPLEMENT-002-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Archive replay populates the new substrate consistently.",
         "Session slicing remains rebuildable and corpus-first."
       ],
-      "notes": "Clean split because archive flow has different write path and replay semantics."
+      "notes": "Clean split because archive flow has different write path and replay semantics. ArchiveImportWorkerService now resolves persisted archive messages after SaveBatchAsync and upserts source_objects/evidence_items through ArchiveMessageSubstrateRepository, while ChatSessionRepository atomically upserts session-boundary source/evidence records alongside chat_sessions writes; changes remain substrate-only and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-003-C",

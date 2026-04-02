@@ -16,6 +16,7 @@ public class ArchiveImportWorkerService : BackgroundService
     private readonly ArchiveImportSettings _settings;
     private readonly MediaSettings _mediaSettings;
     private readonly IMessageRepository _messageRepository;
+    private readonly IArchiveMessageSubstrateRepository _archiveMessageSubstrateRepository;
     private readonly IArchiveImportRepository _archiveImportRepository;
     private readonly ILogger<ArchiveImportWorkerService> _logger;
 
@@ -23,12 +24,14 @@ public class ArchiveImportWorkerService : BackgroundService
         IOptions<ArchiveImportSettings> settings,
         IOptions<MediaSettings> mediaSettings,
         IMessageRepository messageRepository,
+        IArchiveMessageSubstrateRepository archiveMessageSubstrateRepository,
         IArchiveImportRepository archiveImportRepository,
         ILogger<ArchiveImportWorkerService> logger)
     {
         _settings = settings.Value;
         _mediaSettings = mediaSettings.Value;
         _messageRepository = messageRepository;
+        _archiveMessageSubstrateRepository = archiveMessageSubstrateRepository;
         _archiveImportRepository = archiveImportRepository;
         _logger = logger;
     }
@@ -170,7 +173,7 @@ public class ArchiveImportWorkerService : BackgroundService
 
                     if (buffer.Count >= _settings.BatchSize)
                     {
-                        await FlushAsync(buffer, ct);
+                        await FlushAsync(buffer, run.Id, ct);
                         importedMessages += buffer.Count;
                         queuedMedia += buffer.Count(ShouldQueueForMediaProcessing);
                         await _archiveImportRepository.UpdateProgressAsync(run.Id, lastIndex, importedMessages, queuedMedia, ct);
@@ -182,7 +185,7 @@ public class ArchiveImportWorkerService : BackgroundService
 
             if (buffer.Count > 0)
             {
-                await FlushAsync(buffer, stoppingToken);
+                await FlushAsync(buffer, run.Id, stoppingToken);
                 importedMessages += buffer.Count;
                 queuedMedia += buffer.Count(ShouldQueueForMediaProcessing);
                 await _archiveImportRepository.UpdateProgressAsync(run.Id, lastIndex, importedMessages, queuedMedia, stoppingToken);
@@ -327,9 +330,33 @@ public class ArchiveImportWorkerService : BackgroundService
         return true;
     }
 
-    private async Task FlushAsync(List<Message> buffer, CancellationToken ct)
+    private async Task FlushAsync(List<Message> buffer, Guid archiveImportRunId, CancellationToken ct)
     {
         await _messageRepository.SaveBatchAsync(buffer, ct);
+        var telegramMessageIds = buffer
+            .Select(x => x.TelegramMessageId)
+            .Where(x => x > 0)
+            .Distinct()
+            .ToArray();
+        var persistedByTelegramMessageId = await _messageRepository.GetByTelegramMessageIdsAsync(
+            buffer[0].ChatId,
+            MessageSource.Archive,
+            telegramMessageIds,
+            ct);
+        if (persistedByTelegramMessageId.Count != telegramMessageIds.Length)
+        {
+            _logger.LogWarning(
+                "Archive batch persisted with missing canonical message lookups: chat_id={ChatId}, expected={ExpectedCount}, resolved={ResolvedCount}",
+                buffer[0].ChatId,
+                telegramMessageIds.Length,
+                persistedByTelegramMessageId.Count);
+        }
+
+        await _archiveMessageSubstrateRepository.UpsertArchiveBatchAsync(
+            persistedByTelegramMessageId.Values.ToList(),
+            archiveImportRunId,
+            _settings.SourcePath,
+            ct);
     }
 
     private string? ResolveMediaPath(string? relativePath)

@@ -169,6 +169,7 @@ public static partial class ServiceRegistrationExtensions
         // Active baseline repository surface: retained substrate plus retained-with-refactor data stores.
         services.AddSingleton<IMessageRepository, MessageRepository>();
         services.AddSingleton<IRealtimeMessageSubstrateRepository, RealtimeMessageSubstrateRepository>();
+        services.AddSingleton<IArchiveMessageSubstrateRepository, ArchiveMessageSubstrateRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

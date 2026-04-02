@@ -63,6 +63,15 @@ public interface IRealtimeMessageSubstrateRepository
     Task UpsertRealtimeBatchAsync(IReadOnlyCollection<Message> messages, CancellationToken ct = default);
 }
 
+public interface IArchiveMessageSubstrateRepository
+{
+    Task UpsertArchiveBatchAsync(
+        IReadOnlyCollection<Message> messages,
+        Guid archiveImportRunId,
+        string sourcePath,
+        CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }
