@@ -33,6 +33,11 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbAnalysisUsageEvent> AnalysisUsageEvents => Set<DbAnalysisUsageEvent>();
     public DbSet<DbTextEmbedding> TextEmbeddings => Set<DbTextEmbedding>();
     public DbSet<DbStickerCache> StickerCache => Set<DbStickerCache>();
+    public DbSet<DbPerson> Persons => Set<DbPerson>();
+    public DbSet<DbPersonOperatorLink> PersonOperatorLinks => Set<DbPersonOperatorLink>();
+    public DbSet<DbPersonIdentityBinding> PersonIdentityBindings => Set<DbPersonIdentityBinding>();
+    public DbSet<DbCandidateIdentityState> CandidateIdentityStates => Set<DbCandidateIdentityState>();
+    public DbSet<DbRelationshipEdgeAnchor> RelationshipEdgeAnchors => Set<DbRelationshipEdgeAnchor>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -504,6 +509,120 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.HitCount).HasColumnName("hit_count");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
+        });
+
+        modelBuilder.Entity<DbPerson>(e =>
+        {
+            e.ToTable("persons");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonType).HasColumnName("person_type");
+            e.Property(x => x.DisplayName).HasColumnName("display_name");
+            e.Property(x => x.CanonicalName).HasColumnName("canonical_name");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PrimaryActorKey).HasColumnName("primary_actor_key");
+            e.Property(x => x.PrimaryTelegramUserId).HasColumnName("primary_telegram_user_id");
+            e.Property(x => x.PrimaryTelegramUsername).HasColumnName("primary_telegram_username");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonType, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.PrimaryActorKey })
+                .IsUnique()
+                .HasFilter("primary_actor_key IS NOT NULL");
+            e.HasIndex(x => new { x.ScopeKey, x.PrimaryTelegramUserId })
+                .HasFilter("primary_telegram_user_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbPersonOperatorLink>(e =>
+        {
+            e.ToTable("person_operator_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.OperatorPersonId).HasColumnName("operator_person_id");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.LinkType).HasColumnName("link_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.SourceBindingType).HasColumnName("source_binding_type");
+            e.Property(x => x.SourceBindingValue).HasColumnName("source_binding_value");
+            e.Property(x => x.SourceBindingNormalized).HasColumnName("source_binding_normalized");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.OperatorPersonId, x.PersonId, x.LinkType }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.SourceBindingType, x.SourceBindingNormalized })
+                .HasFilter("source_binding_type IS NOT NULL AND source_binding_normalized IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbPersonIdentityBinding>(e =>
+        {
+            e.ToTable("person_identity_bindings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.BindingType).HasColumnName("binding_type");
+            e.Property(x => x.BindingValue).HasColumnName("binding_value");
+            e.Property(x => x.BindingNormalized).HasColumnName("binding_normalized");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.IsPrimary).HasColumnName("is_primary");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.PersonId, x.BindingType, x.BindingNormalized }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.BindingType, x.BindingNormalized });
+            e.HasIndex(x => x.SourceMessageId).HasFilter("source_message_id IS NOT NULL");
+            e.HasIndex(x => new { x.PersonId, x.BindingType, x.IsPrimary });
+        });
+
+        modelBuilder.Entity<DbCandidateIdentityState>(e =>
+        {
+            e.ToTable("candidate_identity_states");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.CandidateType).HasColumnName("candidate_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.DisplayLabel).HasColumnName("display_label");
+            e.Property(x => x.SourceBindingType).HasColumnName("source_binding_type");
+            e.Property(x => x.SourceBindingValue).HasColumnName("source_binding_value");
+            e.Property(x => x.SourceBindingNormalized).HasColumnName("source_binding_normalized");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.MatchedPersonId).HasColumnName("matched_person_id");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.SourceBindingType, x.SourceBindingNormalized });
+            e.HasIndex(x => x.MatchedPersonId).HasFilter("matched_person_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbRelationshipEdgeAnchor>(e =>
+        {
+            e.ToTable("relationship_edge_anchors");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.FromPersonId).HasColumnName("from_person_id");
+            e.Property(x => x.ToPersonId).HasColumnName("to_person_id");
+            e.Property(x => x.AnchorType).HasColumnName("anchor_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.SourceBindingType).HasColumnName("source_binding_type");
+            e.Property(x => x.SourceBindingValue).HasColumnName("source_binding_value");
+            e.Property(x => x.SourceBindingNormalized).HasColumnName("source_binding_normalized");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.CandidateIdentityStateId).HasColumnName("candidate_identity_state_id");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.FromPersonId, x.ToPersonId, x.AnchorType });
+            e.HasIndex(x => new { x.ScopeKey, x.AnchorType, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.SourceBindingType, x.SourceBindingNormalized })
+                .HasFilter("source_binding_type IS NOT NULL AND source_binding_normalized IS NOT NULL");
+            e.HasIndex(x => x.CandidateIdentityStateId).HasFilter("candidate_identity_state_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

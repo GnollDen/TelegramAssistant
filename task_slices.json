@@ -55,7 +55,7 @@
       "description": "Produce a code-backed valid-core inventory note covering src/, deploy/, runtime entrypoints, and planning authority surfaces.",
       "executor_agent": "architect-reviewer",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Inventory clearly separates keep, keep_with_refactor, quarantine_disable, and delete_rewrite.",
         "Every retained area is justified against the PRD and current code."
@@ -72,7 +72,7 @@
       "dependencies": [
         "CLEANUP-001-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Note explicitly rejects old Stage6/web/tgbot as target architecture.",
         "Retained baseline is limited to reusable substrate and runtime shell."
@@ -89,12 +89,12 @@
       "dependencies": [
         "CLEANUP-001-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Every active planning entrypoint is classified as keep, archive, or deprecate.",
         "Legacy authority surfaces are explicitly identified."
       ],
-      "notes": "Clean split because this is doc discovery only."
+      "notes": "Clean split because this is doc discovery only. Inventory note added at docs/planning/CLEANUP-002-A_PLANNING_AND_RUNBOOK_INVENTORY_2026-04-02.md."
     },
     {
       "id": "CLEANUP-002-B",
@@ -106,12 +106,12 @@
       "dependencies": [
         "CLEANUP-002-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Planning README points to clean-slate materials.",
         "No active doc claims the old Stage6/web/tgbot path is current."
       ],
-      "notes": "Clean split because index/routing updates are distinct from discovery."
+      "notes": "Clean split because index/routing updates are distinct from discovery. Planning README now points to PRD, reset boundary, and backlog authority."
     },
     {
       "id": "CLEANUP-003-A",
@@ -123,12 +123,12 @@
       "dependencies": [
         "CLEANUP-001-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Exact list of Stage6 contracts in active core namespaces is captured.",
         "Each contract has a chosen treatment path."
       ],
-      "notes": "Clean split because this is contract classification, not code mutation."
+      "notes": "Clean split because this is contract classification, not code mutation. Inventory note added at docs/planning/CLEANUP-003-A_CORE_CONTRACT_INVENTORY_2026-04-02.md."
     },
     {
       "id": "CLEANUP-003-B",
@@ -140,12 +140,12 @@
       "dependencies": [
         "CLEANUP-003-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Active core namespaces only expose substrate and minimal operational primitives.",
         "Legacy contracts are no longer presented as active foundation APIs."
       ],
-      "notes": "Clean split because this is the code mutation step after classification."
+      "notes": "Clean split because this is the code mutation step after classification. Legacy Stage6/current-state/profile/strategy/draft/review/case contracts moved behind TgAssistant.Core.Legacy namespaces, IRepositories.cs was split to keep legacy repositories out of the active core surface, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "CLEANUP-004-A",
@@ -157,12 +157,12 @@
       "dependencies": [
         "CLEANUP-003-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Every active table family has a lifecycle label.",
         "Legacy Stage6/domain truth tables are not treated as canonical target storage."
       ],
-      "notes": "Clean split because it defines storage policy before repository changes."
+      "notes": "Clean split because it defines storage policy before repository changes. Inventory note added at docs/planning/CLEANUP-004-A_SCHEMA_INVENTORY_2026-04-02.md."
     },
     {
       "id": "CLEANUP-004-B",
@@ -174,12 +174,12 @@
       "dependencies": [
         "CLEANUP-004-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Repository wiring distinguishes preserved substrate from frozen legacy.",
         "Migration policy for new PRD storage is explicit."
       ],
-      "notes": "Clean split because repository boundary work should follow schema classification."
+      "notes": "Clean split because repository boundary work should follow schema classification. Repository registrations now separate active baseline repositories from legacy domain/Stage6 repositories, and TgAssistantDbContext explicitly marks frozen legacy mappings."
     },
     {
       "id": "CLEANUP-005-A",
@@ -192,12 +192,12 @@
         "CLEANUP-003-B",
         "CLEANUP-004-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Every legacy runtime role and smoke entrypoint is mapped.",
         "Preserved substrate/runtime shell roles are separately identified."
       ],
-      "notes": "Clean split because inventory precedes composition changes."
+      "notes": "Clean split because inventory precedes composition changes. Runtime role, hosted-service, and smoke surfaces are classified in docs/planning/CLEANUP-005-A_RUNTIME_ROLE_AND_SMOKE_INVENTORY_2026-04-02.md."
     },
     {
       "id": "CLEANUP-005-B",
@@ -209,12 +209,12 @@
       "dependencies": [
         "CLEANUP-005-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Host composition no longer assumes Stage6/web/bot as default runtime baseline.",
         "Active role set is limited to preserved substrate and reusable shell."
       ],
-      "notes": "Clean split because this is the host mutation step."
+      "notes": "Clean split because this is the host mutation step. Active runtime combinations now exclude stage6/web roles, ops no longer registers TelegramBotHostedService in the baseline host composition, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "CLEANUP-005-C",
@@ -226,12 +226,12 @@
       "dependencies": [
         "CLEANUP-005-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Smoke names and docs no longer suggest old Stage6/web/tgbot is active baseline.",
         "Preserved verification paths are easy to identify."
       ],
-      "notes": "Clean split because naming and docs should trail the actual runtime wiring change."
+      "notes": "Clean split because naming and docs should trail the actual runtime wiring change. Smoke/help text now separates preserved verification entrypoints from legacy diagnostic-only entrypoints, launch step labels no longer use web-prefixed names, and runtime docs mark retired Stage6 paths as legacy-only."
     },
     {
       "id": "CLEANUP-006-A",
@@ -243,12 +243,12 @@
       "dependencies": [
         "CLEANUP-005-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "No active startup path registers the current Stage6 engine as baseline behavior.",
         "Legacy Stage6 helper commands are not part of the clean runtime contract."
       ],
-      "notes": "Clean split because this isolates the main legacy engine."
+      "notes": "Clean split because this isolates the main legacy engine. Program.cs now rejects legacy Stage6 execution/auto-case/light-ab CLI entrypoints at startup, those entrypoints were removed from the active --list-smokes contract, and DomainRegistrationExtensions no longer registers the matching Stage6 verification/command services in the active composition root."
     },
     {
       "id": "CLEANUP-006-B",
@@ -260,12 +260,12 @@
       "dependencies": [
         "CLEANUP-006-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Retained Stage6 code cannot be confused with PRD Stage 6/7/8.",
         "Legacy-only intent is visible in code and notes."
       ],
-      "notes": "Clean split because it is a labeling/containment step after runtime isolation."
+      "notes": "Clean split because it is a labeling/containment step after runtime isolation. Added legacy-only headers across src/TgAssistant.Intelligence/Stage6 and a folder boundary README to prevent confusion with PRD Stage 6/7/8."
     },
     {
       "id": "CLEANUP-007-A",
@@ -278,12 +278,12 @@
         "CLEANUP-005-B",
         "CLEANUP-006-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Current web routes are not presented as target operator workflow.",
         "Any retained shell is diagnostic-only."
       ],
-      "notes": "Clean split because web isolation is independent from bot isolation."
+      "notes": "Clean split because web isolation is independent from bot isolation. Legacy web services now register only for explicit diagnostic flags, launch verification no longer depends on the web surface, the retained WebRuntimeHostedService is labeled diagnostic-only, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "CLEANUP-007-B",
@@ -296,12 +296,12 @@
         "CLEANUP-005-B",
         "CLEANUP-006-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Current Telegram bot flow is not presented as target operator workflow.",
         "Any retained bot shell is clearly temporary or diagnostic-only."
       ],
-      "notes": "Clean split because bot isolation has a different code path and validation surface."
+      "notes": "Clean split because bot isolation has a different code path and validation surface. Legacy bot command/chat services now register only for explicit --bot-smoke diagnostics, ops runtime no longer requires Telegram bot credentials, and TelegramBotHostedService is marked as a retained legacy diagnostic shell."
     },
     {
       "id": "CLEANUP-007-C",
@@ -314,12 +314,12 @@
         "CLEANUP-007-A",
         "CLEANUP-007-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Temporary shells cannot be mistaken for product baseline.",
         "Legacy Stage6 queue/case/artifact flow is visibly isolated."
       ],
-      "notes": "Clean split because it is a post-isolation containment task."
+      "notes": "Clean split because it is a post-isolation containment task. Program.cs now labels legacy bot/web smoke paths as diagnostic-only in list output and exit logs."
     },
     {
       "id": "CLEANUP-008-A",
@@ -332,12 +332,12 @@
         "CLEANUP-005-B",
         "CLEANUP-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Reusable health, auth, and transport shell responsibilities are isolated.",
         "Stage6 case/artifact-centric tools are explicitly identified for removal or gating."
       ],
-      "notes": "Clean split because tool classification should precede code changes."
+      "notes": "Clean split because tool classification should precede code changes. Inventory note added at docs/planning/CLEANUP-008-A_MCP_TOOL_CATALOG_INVENTORY_2026-04-02.md."
     },
     {
       "id": "CLEANUP-008-B",
@@ -349,12 +349,12 @@
       "dependencies": [
         "CLEANUP-008-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Primary MCP contract is no longer Stage6-centric.",
         "Build remains healthy after tool catalog cleanup."
       ],
-      "notes": "Clean split because it applies the tool classification."
+      "notes": "Clean split because it applies the tool classification. Stage6 MCP tool registrations removed from src/TgAssistant.Mcp/index.ts; reusable shell tools retained."
     },
     {
       "id": "CLEANUP-008-C",
@@ -366,12 +366,12 @@
       "dependencies": [
         "CLEANUP-008-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Compose and deploy docs reflect preserved shell only.",
         "No deploy default implies old operator flow is still accepted baseline."
       ],
-      "notes": "Clean split because infra defaults should trail MCP/runtime cleanup."
+      "notes": "Clean split because infra defaults should trail MCP/runtime cleanup. Default docker-compose app baseline no longer injects web/bot/Stage6 env; .env.example and deploy docs mark those paths as legacy diagnostic-only or preview-only."
     },
     {
       "id": "CLEANUP-009-A",
@@ -388,12 +388,12 @@
         "CLEANUP-007-C",
         "CLEANUP-008-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Review note records blocking findings or explicit approval.",
         "Any remaining legacy dependency is called out."
       ],
-      "notes": "Clean split because this is the audit pass itself."
+      "notes": "Clean split because this is the audit pass itself. Review note added at docs/planning/CLEANUP-009-A_CLEANUP_REVIEW_2026-04-02.md with blocking findings: active composition root and launch readiness still depend on legacy Stage6 services."
     },
     {
       "id": "CLEANUP-009-B",
@@ -405,12 +405,12 @@
       "dependencies": [
         "CLEANUP-009-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Phase B start condition is explicit.",
         "Unresolved cleanup blockers cannot leak into implementation."
       ],
-      "notes": "Clean split because gate resolution is separate from the review run."
+      "notes": "Clean split because gate resolution is separate from the review run. Stage6 verification services moved behind includeLegacyStage6Diagnostics; preserved launch bundle narrowed to foundation, stage5, and budget-visibility; cleanup approval granted."
     },
     {
       "id": "IMPLEMENT-001-A",
@@ -422,12 +422,12 @@
       "dependencies": [
         "CLEANUP-009-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Stage 5/6/7/8 responsibilities map cleanly to modules.",
         "No hidden dependency on legacy Stage6/web/tgbot remains."
       ],
-      "notes": "Clean split because this is the implementation authority artifact."
+      "notes": "Clean split because this is the implementation authority artifact. Architecture note added at docs/planning/IMPLEMENT-001-A_TARGET_ARCHITECTURE_NOTE_2026-04-02.md."
     },
     {
       "id": "IMPLEMENT-001-B",
@@ -439,12 +439,12 @@
       "dependencies": [
         "IMPLEMENT-001-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Execution order is explicit enough for agent orchestration.",
         "No major module is left without an owning workstream."
       ],
-      "notes": "Clean split because dependency mapping is a separate planning deliverable."
+      "notes": "Clean split because dependency mapping is a separate planning deliverable. Workstream map added at docs/planning/IMPLEMENT-001-B_WORKSTREAM_AND_DEPENDENCY_MAP_2026-04-02.md."
     },
     {
       "id": "IMPLEMENT-002-A",
@@ -456,12 +456,12 @@
       "dependencies": [
         "IMPLEMENT-001-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Person and identity state objects exist independently of frozen Stage6 truth tables.",
         "Identity lookups are queryable by scope and source binding."
       ],
-      "notes": "Clean split because identity schema is foundational and independent."
+      "notes": "Clean split because identity schema is foundational and independent. Added migration 0030_person_identity_schema.sql with persons, person_operator_links, person_identity_bindings, candidate_identity_states, and relationship_edge_anchors; mapped the new active tables in TgAssistantDbContext/DbRows; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-002-B",

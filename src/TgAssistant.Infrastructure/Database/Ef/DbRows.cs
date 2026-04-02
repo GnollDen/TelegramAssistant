@@ -349,6 +349,88 @@ public class DbStickerCache
     public DateTime LastUsedAt { get; set; }
 }
 
+public class DbPerson
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string PersonType { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string CanonicalName { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? PrimaryActorKey { get; set; }
+    public long? PrimaryTelegramUserId { get; set; }
+    public string? PrimaryTelegramUsername { get; set; }
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbPersonOperatorLink
+{
+    public long Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid OperatorPersonId { get; set; }
+    public Guid PersonId { get; set; }
+    public string LinkType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? SourceBindingType { get; set; }
+    public string? SourceBindingValue { get; set; }
+    public string? SourceBindingNormalized { get; set; }
+    public long? SourceMessageId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbPersonIdentityBinding
+{
+    public long Id { get; set; }
+    public Guid PersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string BindingType { get; set; } = string.Empty;
+    public string BindingValue { get; set; } = string.Empty;
+    public string BindingNormalized { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public float Confidence { get; set; }
+    public bool IsPrimary { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbCandidateIdentityState
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string CandidateType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string DisplayLabel { get; set; } = string.Empty;
+    public string SourceBindingType { get; set; } = string.Empty;
+    public string SourceBindingValue { get; set; } = string.Empty;
+    public string SourceBindingNormalized { get; set; } = string.Empty;
+    public long? SourceMessageId { get; set; }
+    public Guid? MatchedPersonId { get; set; }
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbRelationshipEdgeAnchor
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid FromPersonId { get; set; }
+    public Guid ToPersonId { get; set; }
+    public string AnchorType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? SourceBindingType { get; set; }
+    public string? SourceBindingValue { get; set; }
+    public string? SourceBindingNormalized { get; set; }
+    public long? SourceMessageId { get; set; }
+    public Guid? CandidateIdentityStateId { get; set; }
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }
