@@ -41,6 +41,10 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbSourceObject> SourceObjects => Set<DbSourceObject>();
     public DbSet<DbEvidenceItem> EvidenceItems => Set<DbEvidenceItem>();
     public DbSet<DbEvidenceItemPersonLink> EvidenceItemPersonLinks => Set<DbEvidenceItemPersonLink>();
+    public DbSet<DbModelPassRun> ModelPassRuns => Set<DbModelPassRun>();
+    public DbSet<DbNormalizationRun> NormalizationRuns => Set<DbNormalizationRun>();
+    public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
+    public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -695,6 +699,121 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.EvidenceItemId, x.PersonId, x.LinkRole }).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.LinkRole });
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.IsPrimary });
+        });
+
+        modelBuilder.Entity<DbModelPassRun>(e =>
+        {
+            e.ToTable("model_pass_runs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.Stage).HasColumnName("stage");
+            e.Property(x => x.PassFamily).HasColumnName("pass_family");
+            e.Property(x => x.RunKind).HasColumnName("run_kind");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.TargetType).HasColumnName("target_type");
+            e.Property(x => x.TargetRef).HasColumnName("target_ref");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.SourceObjectId).HasColumnName("source_object_id");
+            e.Property(x => x.EvidenceItemId).HasColumnName("evidence_item_id");
+            e.Property(x => x.TriggerKind).HasColumnName("trigger_kind");
+            e.Property(x => x.TriggerRef).HasColumnName("trigger_ref");
+            e.Property(x => x.SchemaVersion).HasColumnName("schema_version");
+            e.Property(x => x.RequestedModel).HasColumnName("requested_model");
+            e.Property(x => x.InputSummaryJson).HasColumnName("input_summary_json").HasColumnType("jsonb");
+            e.Property(x => x.OutputSummaryJson).HasColumnName("output_summary_json").HasColumnType("jsonb");
+            e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
+            e.Property(x => x.FailureJson).HasColumnName("failure_json").HasColumnType("jsonb");
+            e.Property(x => x.StartedAt).HasColumnName("started_at");
+            e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.ScopeKey, x.Stage, x.PassFamily, x.Status, x.StartedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.TargetType, x.TargetRef, x.StartedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.StartedAt })
+                .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.SourceObjectId).HasFilter("source_object_id IS NOT NULL");
+            e.HasIndex(x => x.EvidenceItemId).HasFilter("evidence_item_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbNormalizationRun>(e =>
+        {
+            e.ToTable("normalization_runs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.TargetType).HasColumnName("target_type");
+            e.Property(x => x.TargetRef).HasColumnName("target_ref");
+            e.Property(x => x.TruthLayer).HasColumnName("truth_layer");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.SourceObjectId).HasColumnName("source_object_id");
+            e.Property(x => x.EvidenceItemId).HasColumnName("evidence_item_id");
+            e.Property(x => x.SchemaVersion).HasColumnName("schema_version");
+            e.Property(x => x.CandidateCountsJson).HasColumnName("candidate_counts_json").HasColumnType("jsonb");
+            e.Property(x => x.NormalizedPayloadJson).HasColumnName("normalized_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.ConflictsJson).HasColumnName("conflicts_json").HasColumnType("jsonb");
+            e.Property(x => x.BlockedReason).HasColumnName("blocked_reason");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.FinishedAt).HasColumnName("finished_at");
+            e.HasIndex(x => x.ModelPassRunId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.CreatedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.TargetType, x.TargetRef, x.CreatedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.CreatedAt })
+                .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.SourceObjectId).HasFilter("source_object_id IS NOT NULL");
+            e.HasIndex(x => x.EvidenceItemId).HasFilter("evidence_item_id IS NOT NULL");
+            e.HasIndex(x => new { x.ScopeKey, x.TruthLayer, x.Status });
+        });
+
+        modelBuilder.Entity<DbDurableObjectMetadata>(e =>
+        {
+            e.ToTable("durable_object_metadata");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.ObjectFamily).HasColumnName("object_family");
+            e.Property(x => x.ObjectKey).HasColumnName("object_key");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.TruthLayer).HasColumnName("truth_layer");
+            e.Property(x => x.PromotionState).HasColumnName("promotion_state");
+            e.Property(x => x.OwnerPersonId).HasColumnName("owner_person_id");
+            e.Property(x => x.RelatedPersonId).HasColumnName("related_person_id");
+            e.Property(x => x.CreatedByModelPassRunId).HasColumnName("created_by_model_pass_run_id");
+            e.Property(x => x.LastNormalizationRunId).HasColumnName("last_normalization_run_id");
+            e.Property(x => x.LastPromotionRunId).HasColumnName("last_promotion_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Coverage).HasColumnName("coverage");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ObjectFamily, x.ObjectKey }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.ObjectFamily, x.PromotionState, x.UpdatedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.OwnerPersonId, x.ObjectFamily })
+                .HasFilter("owner_person_id IS NOT NULL");
+            e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.ObjectFamily })
+                .HasFilter("related_person_id IS NOT NULL");
+            e.HasIndex(x => x.CreatedByModelPassRunId).HasFilter("created_by_model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => x.LastNormalizationRunId).HasFilter("last_normalization_run_id IS NOT NULL");
+            e.HasIndex(x => x.LastPromotionRunId).HasFilter("last_promotion_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableObjectEvidenceLink>(e =>
+        {
+            e.ToTable("durable_object_evidence_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.EvidenceItemId).HasColumnName("evidence_item_id");
+            e.Property(x => x.LinkRole).HasColumnName("link_role");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableObjectMetadataId, x.EvidenceItemId, x.LinkRole }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.EvidenceItemId, x.LinkRole });
+            e.HasIndex(x => new { x.ScopeKey, x.DurableObjectMetadataId });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

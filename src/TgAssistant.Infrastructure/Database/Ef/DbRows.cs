@@ -481,6 +481,87 @@ public class DbEvidenceItemPersonLink
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbModelPassRun
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Stage { get; set; } = string.Empty;
+    public string PassFamily { get; set; } = string.Empty;
+    public string RunKind { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public Guid? SourceObjectId { get; set; }
+    public Guid? EvidenceItemId { get; set; }
+    public string? TriggerKind { get; set; }
+    public string? TriggerRef { get; set; }
+    public int SchemaVersion { get; set; }
+    public string? RequestedModel { get; set; }
+    public string InputSummaryJson { get; set; } = "{}";
+    public string OutputSummaryJson { get; set; } = "{}";
+    public string MetricsJson { get; set; } = "{}";
+    public string FailureJson { get; set; } = "{}";
+    public DateTime StartedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbNormalizationRun
+{
+    public Guid Id { get; set; }
+    public Guid ModelPassRunId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public string TruthLayer { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public Guid? SourceObjectId { get; set; }
+    public Guid? EvidenceItemId { get; set; }
+    public int SchemaVersion { get; set; }
+    public string CandidateCountsJson { get; set; } = "{}";
+    public string NormalizedPayloadJson { get; set; } = "{}";
+    public string ConflictsJson { get; set; } = "[]";
+    public string? BlockedReason { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? FinishedAt { get; set; }
+}
+
+public class DbDurableObjectMetadata
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string ObjectFamily { get; set; } = string.Empty;
+    public string ObjectKey { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public Guid? OwnerPersonId { get; set; }
+    public Guid? RelatedPersonId { get; set; }
+    public Guid? CreatedByModelPassRunId { get; set; }
+    public Guid? LastNormalizationRunId { get; set; }
+    public Guid? LastPromotionRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableObjectEvidenceLink
+{
+    public long Id { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid EvidenceItemId { get; set; }
+    public string LinkRole { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

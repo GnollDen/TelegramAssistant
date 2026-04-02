@@ -490,12 +490,12 @@
       "dependencies": [
         "IMPLEMENT-002-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Run ledgers and durable metadata exist with stable indexes.",
         "Later passes can attach run and promotion references cleanly."
       ],
-      "notes": "Clean split because run audit schema is a separate bounded concern."
+      "notes": "Clean split because run audit schema is a separate bounded concern. Added migration 0032_model_pass_and_durable_metadata_schema.sql with model_pass_runs, normalization_runs, durable_object_metadata, and durable_object_evidence_links; mapped the new active tables in TgAssistantDbContext/DbRows with indexes for run-id, target, person-scope, and evidence-ref lookups; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-003-A",

@@ -137,7 +137,7 @@
         "Run dotnet build TelegramAssistant.sln after any code changes."
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "notes": "This is the cleanup gate that prevents legacy carry-forward by inertia."
     },
     {
@@ -159,7 +159,7 @@
       "dependencies": [
         "CLEANUP-001"
       ],
-      "status": "pending",
+      "status": "done",
       "notes": "Historical docs may remain, but they must stop driving execution."
     },
     {
@@ -181,8 +181,8 @@
       "dependencies": [
         "CLEANUP-001"
       ],
-      "status": "pending",
-      "notes": "Current Core over-encodes the rejected Stage6 product shape."
+      "status": "done",
+      "notes": "Current Core over-encodes the rejected Stage6 product shape. Completed by moving legacy Stage6/current-state/profile/strategy/draft/review/case contracts behind TgAssistant.Core.Legacy namespaces and splitting legacy repositories out of the active core interface surface."
     },
     {
       "id": "CLEANUP-004",
@@ -203,8 +203,8 @@
       "dependencies": [
         "CLEANUP-003"
       ],
-      "status": "pending",
-      "notes": "This task defines what survives from origin/master at the storage layer."
+      "status": "done",
+      "notes": "This task defines what survives from origin/master at the storage layer. Completed by inventorying retained/frozen table families, splitting active versus legacy repository registrations, and explicitly marking frozen domain/Stage6 mappings as non-canonical in TgAssistantDbContext and planning notes."
     },
     {
       "id": "CLEANUP-005",
@@ -226,8 +226,8 @@
         "CLEANUP-003",
         "CLEANUP-004"
       ],
-      "status": "pending",
-      "notes": "Host wiring is one of the main places where legacy assumptions remain normalized."
+      "status": "done",
+      "notes": "Host wiring is one of the main places where legacy assumptions remain normalized. Completed by separating preserved verification entrypoints from legacy diagnostics in Program.cs help text, renaming launch verification step labels away from web-prefixed names, and marking retired Stage6 runtime docs as legacy-only."
     },
     {
       "id": "CLEANUP-006",
@@ -249,8 +249,8 @@
         "CLEANUP-004",
         "CLEANUP-005"
       ],
-      "status": "pending",
-      "notes": "This is isolation, not refinement."
+      "status": "done",
+      "notes": "This is isolation, not refinement. Legacy Stage6 code is labeled as legacy-only and remains for reference/diagnostics only."
     },
     {
       "id": "CLEANUP-007",
@@ -272,8 +272,8 @@
         "CLEANUP-005",
         "CLEANUP-006"
       ],
-      "status": "pending",
-      "notes": "The current web layer is an internal renderer, not a reusable operator foundation."
+      "status": "done",
+      "notes": "The current web layer is an internal renderer, not a reusable operator foundation. Legacy web and bot shell touchpoints are labeled diagnostic-only wherever they remain reachable."
     },
     {
       "id": "CLEANUP-008",
@@ -295,8 +295,8 @@
         "CLEANUP-005",
         "CLEANUP-007"
       ],
-      "status": "pending",
-      "notes": "MCP transport/auth shell is reusable; its current tool catalog is not."
+      "status": "done",
+      "notes": "MCP transport/auth shell is reusable; its current tool catalog is not. Default docker-compose and deploy docs now reflect only the preserved shell baseline, while legacy web/bot/Stage6 paths are marked diagnostic-only or preview-only."
     },
     {
       "id": "CLEANUP-009",
@@ -322,8 +322,8 @@
         "CLEANUP-007",
         "CLEANUP-008"
       ],
-      "status": "pending",
-      "notes": "This is the explicit gate against legacy carry-forward."
+      "status": "done",
+      "notes": "This is the explicit gate against legacy carry-forward. Approval granted after CLEANUP-009-B removed active Stage6 verification dependencies from the preserved baseline and narrowed launch readiness to foundation, stage5, and budget-visibility."
     },
     {
       "id": "IMPLEMENT-001",
@@ -344,8 +344,8 @@
       "dependencies": [
         "CLEANUP-009"
       ],
-      "status": "pending",
-      "notes": "This becomes the implementation authority for Phase B."
+      "status": "done",
+      "notes": "This becomes the implementation authority for Phase B. Target architecture note and workstream/dependency map are complete."
     },
     {
       "id": "IMPLEMENT-002",
@@ -366,8 +366,8 @@
       "dependencies": [
         "IMPLEMENT-001"
       ],
-      "status": "pending",
-      "notes": "This replaces generic entity-first plus legacy Stage6 truth storage as the target model."
+      "status": "done",
+      "notes": "This replaces generic entity-first plus legacy Stage6 truth storage as the target model. IMPLEMENT-002-A/B/C completed with active-baseline schema for person identity, source/evidence storage, run ledgers, and durable-object metadata without reusing frozen Stage6 truth tables as canonical storage."
     },
     {
       "id": "IMPLEMENT-003",
