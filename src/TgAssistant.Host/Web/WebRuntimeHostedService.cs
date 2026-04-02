@@ -204,11 +204,22 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         var hasExplicitCaseParam = request.Query.ContainsKey("caseScopeId");
         var hasExplicitChatParam = request.Query.ContainsKey("chatId");
         var hasExplicitScopeInput = hasExplicitCaseParam || hasExplicitChatParam;
+        var allowSyntheticScopes = settings.AllowSyntheticScopes;
 
         var hasValidExplicitCase = TryReadPositiveLong(request.Query, "caseScopeId", out var explicitCaseId);
         var hasValidExplicitChat = TryReadPositiveLong(request.Query, "chatId", out var explicitChatId);
         if (hasValidExplicitCase && hasValidExplicitChat)
         {
+            if (!allowSyntheticScopes
+                && !ScopeVisibilityPolicy.IsOperatorVisibleScope(explicitCaseId, explicitChatId))
+            {
+                var blockedCandidates = await GetScopeCandidatesAsync(ct);
+                return ScopeResolution.Unresolved(
+                    "Synthetic/smoke scope hidden from default operator web flow. " +
+                    "Set Web:AllowSyntheticScopes=true only for explicit engineering/debug sessions.",
+                    blockedCandidates);
+            }
+
             return ScopeResolution.Resolved(explicitCaseId, explicitChatId, "explicit");
         }
 
@@ -222,7 +233,8 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
 
         if (settings.DefaultCaseId > 0 && settings.DefaultChatId > 0)
         {
-            if (ScopeVisibilityPolicy.IsOperatorVisibleScope(settings.DefaultCaseId, settings.DefaultChatId))
+            if (allowSyntheticScopes
+                || ScopeVisibilityPolicy.IsOperatorVisibleScope(settings.DefaultCaseId, settings.DefaultChatId))
             {
                 return ScopeResolution.Resolved(settings.DefaultCaseId, settings.DefaultChatId, "configured_default");
             }
@@ -405,21 +417,9 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
             query.Add($"artifactType={WebUtility.UrlEncode(artifactType)}");
         }
 
-        if (TryReadPositiveLong(request.Query, "caseScopeId", out var explicitCaseId))
-        {
-            query.Add($"caseScopeId={explicitCaseId}");
-        }
-        else if (scope.IsResolved)
+        if (scope.IsResolved)
         {
             query.Add($"caseScopeId={scope.CaseId}");
-        }
-
-        if (TryReadPositiveLong(request.Query, "chatId", out var explicitChatId))
-        {
-            query.Add($"chatId={explicitChatId}");
-        }
-        else if (scope.IsResolved)
-        {
             query.Add($"chatId={scope.ChatId}");
         }
 

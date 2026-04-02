@@ -312,6 +312,7 @@ public class WebSettings
     public const string Section = "Web";
     public string Url { get; set; } = "http://127.0.0.1:5078";
     public bool RequireOperatorAccessToken { get; set; } = true;
+    public bool AllowSyntheticScopes { get; set; } = false;
     public string OperatorAccessToken { get; set; } = string.Empty;
     public string AccessHeaderName { get; set; } = "X-Tga-Operator-Key";
     public string AccessCookieName { get; set; } = "tga_operator_key";
