@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Core.Normalization;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -117,7 +118,22 @@ public class IntelligenceRepository : IIntelligenceRepository
 
         if (claims.Count > 0)
         {
-            db.IntelligenceClaims.AddRange(claims.Select(c => new DbIntelligenceClaim
+            var deduplicatedClaims = claims
+                .GroupBy(
+                    c => new
+                    {
+                        c.EntityId,
+                        Category = (c.Category ?? string.Empty).Trim().ToLowerInvariant(),
+                        Key = (c.Key ?? string.Empty).Trim().ToLowerInvariant(),
+                        CanonValue = EntityAliasNormalizer.NormalizeForFactValue(c.Value)
+                    })
+                .Select(group => group
+                    .OrderByDescending(x => x.Confidence)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .First())
+                .ToList();
+
+            db.IntelligenceClaims.AddRange(deduplicatedClaims.Select(c => new DbIntelligenceClaim
             {
                 MessageId = messageId,
                 EntityId = c.EntityId,

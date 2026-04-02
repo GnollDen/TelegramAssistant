@@ -721,7 +721,13 @@ public class ExtractionApplier
             return true;
         }
 
-        return value.Trim().ToLowerInvariant() switch
+        var normalized = value.Trim().ToLowerInvariant();
+        if (normalized.StartsWith('[') && normalized.EndsWith(']'))
+        {
+            return true;
+        }
+
+        return normalized switch
         {
             "sender" => true,
             "author" => true,
@@ -731,6 +737,45 @@ public class ExtractionApplier
             "myself" => true,
             "self" => true,
             "i" => true,
+            "он" => true,
+            "она" => true,
+            "они" => true,
+            "ее" => true,
+            "её" => true,
+            "его" => true,
+            "кто-то" => true,
+            "кто то" => true,
+            "неизвестный" => true,
+            "неизвестная" => true,
+            "неизвестные" => true,
+            "unknown" => true,
+            "someone" => true,
+            "somebody" => true,
+            "друг" => true,
+            "подруга" => true,
+            "коллега" => true,
+            "сосед" => true,
+            "соседка" => true,
+            "парень" => true,
+            "девушка" => true,
+            "женщина" => true,
+            "мужчина" => true,
+            "чел" => true,
+            "чувак" => true,
+            "брат" => true,
+            "сестра" => true,
+            "папа" => true,
+            "мама" => true,
+            "отец" => true,
+            "тетя" => true,
+            "тётя" => true,
+            "дядя" => true,
+            "ребенок" => true,
+            "ребёнок" => true,
+            "дети" => true,
+            "команда" => true,
+            "группа" => true,
+            "pet" => true,
             _ => false
         };
     }
@@ -991,6 +1036,10 @@ public class ExtractionApplier
             "team" => true,
             "house" => true,
             "беклог" => true,
+            "unknown" => true,
+            "неизвестный" => true,
+            "неизвестная" => true,
+            "неизвестные" => true,
             _ => false
         };
     }
