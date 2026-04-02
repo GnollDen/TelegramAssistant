@@ -11,6 +11,7 @@ public class BatchWorkerService : BackgroundService
 {
     private readonly IMessageQueue _queue;
     private readonly IMessageRepository _messageRepo;
+    private readonly IRealtimeMessageSubstrateRepository _realtimeMessageSubstrateRepository;
     private readonly IMediaProcessor _mediaProcessor;
     private readonly BatchWorkerSettings _settings;
     private readonly MediaSettings _mediaSettings;
@@ -20,6 +21,7 @@ public class BatchWorkerService : BackgroundService
     public BatchWorkerService(
         IMessageQueue queue,
         IMessageRepository messageRepo,
+        IRealtimeMessageSubstrateRepository realtimeMessageSubstrateRepository,
         IMediaProcessor mediaProcessor,
         IOptions<BatchWorkerSettings> settings,
         IOptions<MediaSettings> mediaSettings,
@@ -27,6 +29,7 @@ public class BatchWorkerService : BackgroundService
     {
         _queue = queue;
         _messageRepo = messageRepo;
+        _realtimeMessageSubstrateRepository = realtimeMessageSubstrateRepository;
         _mediaProcessor = mediaProcessor;
         _settings = settings.Value;
         _mediaSettings = mediaSettings.Value;
@@ -215,6 +218,23 @@ public class BatchWorkerService : BackgroundService
         }
 
         await _messageRepo.SaveBatchAsync(dbMessages, ct);
+        var persistedByTelegramMessageId = await _messageRepo.GetByTelegramMessageIdsAsync(
+            chatId,
+            MessageSource.Realtime,
+            uniqueMessages.Select(x => x.MessageId).Distinct().ToArray(),
+            ct);
+        if (persistedByTelegramMessageId.Count != uniqueMessages.Count)
+        {
+            _logger.LogWarning(
+                "Realtime batch persisted with missing canonical message lookups: chat_id={ChatId}, expected={ExpectedCount}, resolved={ResolvedCount}",
+                chatId,
+                uniqueMessages.Count,
+                persistedByTelegramMessageId.Count);
+        }
+
+        await _realtimeMessageSubstrateRepository.UpsertRealtimeBatchAsync(
+            persistedByTelegramMessageId.Values.ToList(),
+            ct);
         await _queue.AcknowledgeAsync(streamIds, ct);
         _logger.LogInformation("Batch flushed: chat {ChatId}, {Count} saved", chatId, dbMessages.Count);
     }

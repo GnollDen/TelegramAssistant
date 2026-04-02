@@ -507,12 +507,12 @@
       "dependencies": [
         "IMPLEMENT-002-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Realtime pipeline populates the new substrate objects.",
         "No durable person conclusions are emitted from Stage 5."
       ],
-      "notes": "Clean split because realtime ingest is a separate pipeline boundary."
+      "notes": "Clean split because realtime ingest is a separate pipeline boundary. BatchWorkerService now resolves persisted realtime messages after SaveBatchAsync and upserts source_objects/evidence_items/evidence_item_person_links through RealtimeMessageSubstrateRepository; writes remain substrate-only and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-003-B",
