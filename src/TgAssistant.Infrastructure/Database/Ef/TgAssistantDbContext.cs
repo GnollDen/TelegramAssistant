@@ -711,6 +711,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.PassFamily).HasColumnName("pass_family");
             e.Property(x => x.RunKind).HasColumnName("run_kind");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.ResultStatus).HasColumnName("result_status");
             e.Property(x => x.TargetType).HasColumnName("target_type");
             e.Property(x => x.TargetRef).HasColumnName("target_ref");
             e.Property(x => x.PersonId).HasColumnName("person_id");
@@ -720,6 +721,11 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.TriggerRef).HasColumnName("trigger_ref");
             e.Property(x => x.SchemaVersion).HasColumnName("schema_version");
             e.Property(x => x.RequestedModel).HasColumnName("requested_model");
+            e.Property(x => x.ScopeJson).HasColumnName("scope_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceRefsJson).HasColumnName("source_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.TruthSummaryJson).HasColumnName("truth_summary_json").HasColumnType("jsonb");
+            e.Property(x => x.ConflictsJson).HasColumnName("conflicts_json").HasColumnType("jsonb");
+            e.Property(x => x.UnknownsJson).HasColumnName("unknowns_json").HasColumnType("jsonb");
             e.Property(x => x.InputSummaryJson).HasColumnName("input_summary_json").HasColumnType("jsonb");
             e.Property(x => x.OutputSummaryJson).HasColumnName("output_summary_json").HasColumnType("jsonb");
             e.Property(x => x.MetricsJson).HasColumnName("metrics_json").HasColumnType("jsonb");
@@ -728,6 +734,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.FinishedAt).HasColumnName("finished_at");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => new { x.ScopeKey, x.Stage, x.PassFamily, x.Status, x.StartedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.ResultStatus, x.StartedAt });
             e.HasIndex(x => new { x.ScopeKey, x.TargetType, x.TargetRef, x.StartedAt });
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.StartedAt })
                 .HasFilter("person_id IS NOT NULL");

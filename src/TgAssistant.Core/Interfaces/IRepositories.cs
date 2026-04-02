@@ -72,6 +72,12 @@ public interface IArchiveMessageSubstrateRepository
         CancellationToken ct = default);
 }
 
+public interface IModelPassEnvelopeRepository
+{
+    Task<ModelPassEnvelope> UpsertAsync(ModelPassEnvelope envelope, CancellationToken ct = default);
+    Task<ModelPassEnvelope?> GetByIdAsync(Guid runId, CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }

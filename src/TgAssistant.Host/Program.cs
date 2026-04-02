@@ -111,6 +111,7 @@ try
         || includeLegacyWebDiagnostics
         || includeLegacyBotDiagnostics;
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
+    var runPassEnvelopeSmoke = args.Any(arg => string.Equals(arg, "--pass-envelope-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -159,6 +160,7 @@ try
     {
         "--foundation-smoke",
         "--stage5-smoke",
+        "--pass-envelope-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -188,6 +190,13 @@ try
     {
         Log.Information("Available preserved verification entrypoints: {VerificationEntrypoints}", string.Join(", ", preservedVerificationEntrypoints));
         Log.Information("Legacy diagnostic-only entrypoints: {DiagnosticEntrypoints}", string.Join(", ", legacyDiagnosticEntrypoints));
+        return;
+    }
+
+    if (runPassEnvelopeSmoke)
+    {
+        PassEnvelopeContractSmokeRunner.Run();
+        Log.Information("Pass envelope contract smoke requested via --pass-envelope-smoke. Exiting after successful verification.");
         return;
     }
 

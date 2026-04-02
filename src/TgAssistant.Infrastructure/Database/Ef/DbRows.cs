@@ -489,6 +489,7 @@ public class DbModelPassRun
     public string PassFamily { get; set; } = string.Empty;
     public string RunKind { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string ResultStatus { get; set; } = string.Empty;
     public string TargetType { get; set; } = string.Empty;
     public string TargetRef { get; set; } = string.Empty;
     public Guid? PersonId { get; set; }
@@ -498,6 +499,11 @@ public class DbModelPassRun
     public string? TriggerRef { get; set; }
     public int SchemaVersion { get; set; }
     public string? RequestedModel { get; set; }
+    public string ScopeJson { get; set; } = "{}";
+    public string SourceRefsJson { get; set; } = "[]";
+    public string TruthSummaryJson { get; set; } = "{}";
+    public string ConflictsJson { get; set; } = "[]";
+    public string UnknownsJson { get; set; } = "[]";
     public string InputSummaryJson { get; set; } = "{}";
     public string OutputSummaryJson { get; set; } = "{}";
     public string MetricsJson { get; set; } = "{}";

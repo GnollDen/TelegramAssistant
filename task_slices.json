@@ -578,12 +578,12 @@
         "IMPLEMENT-001-B",
         "IMPLEMENT-002-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pass envelope is versioned and storage-safe.",
         "Statuses result_ready, need_more_data, need_operator_clarification, and blocked_invalid_input are supported."
       ],
-      "notes": "Clean split because envelope contract precedes normalization."
+      "notes": "Clean split because envelope contract precedes normalization. Added typed ModelPassEnvelope models plus ModelPassEnvelopeRepository/validator/storage codec over model_pass_runs, introduced additive 0033_model_pass_envelope_schema.sql columns for explicit scope/source_refs/truth_summary/conflicts/unknowns/result_status, and added --pass-envelope-smoke to validate a result_ready success path plus a blocked_invalid_input failure path without runtime secrets; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-004-B",
