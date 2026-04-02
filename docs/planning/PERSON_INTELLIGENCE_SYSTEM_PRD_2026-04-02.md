@@ -787,9 +787,133 @@ Important fields across knowledge objects:
 - evidence refs
 - contradiction markers where relevant
 
-## 7. Delivery Scope and Milestones
+## 7. Observability, Defects, and Cost Governance
 
-### 7.1 v1 Knowledge Scope
+### 7.1 Operational Observability
+
+The system must be observable as an AI-first runtime, not just as an ingestion app.
+
+Minimum observability domains:
+
+- ingestion and backfill
+- pass execution
+- normalization
+- clarification
+- merge and split review
+- recompute activity
+- knowledge promotion
+- model usage and spend
+- defect and escalation state
+
+Minimum Grafana-facing metrics should include:
+
+- ingestion throughput
+- backfill lag
+- active tracked people
+- active linked-person candidates
+- pass duration by run type
+- pass success / partial / failure rate
+- normalization downgrade count
+- clarification pool size
+- merge proposals / approved / rejected
+- scoped recompute queue depth
+- model requests, tokens, and cost by model and pass family
+- daily and rolling budget consumption
+- promotion-blocked object count
+- contradiction and conflict counts
+
+### 7.2 Defect Taxonomy
+
+The system should classify defects explicitly.
+
+Minimum defect classes:
+
+- ingestion defect
+- data defect
+- identity defect
+- model defect
+- normalization defect
+- control-plane defect
+- cost anomaly
+- semantic drift anomaly
+
+Each defect should carry at least:
+
+- severity
+- affected scope
+- related run or object
+- reproducibility status
+- escalation path
+
+### 7.3 Escalation Policy
+
+Escalation must be rule-based, not ad hoc.
+
+Example escalation triggers:
+
+- cost spike above threshold
+- contradiction rate spike
+- merge false-positive risk spike
+- normalization failure spike
+- missing-context block in a critical scope
+- model routing anomaly
+
+Typical automatic responses:
+
+- pause expensive passes
+- downgrade to cheaper routing
+- stop truth promotion
+- switch to review-only mode
+- require manual merge approval only
+- block wider recompute until missing context is resolved
+
+### 7.4 Budget and Spend Governance
+
+OpenRouter usage must be governed as a first-class runtime concern.
+
+The system should support:
+
+- daily budget
+- budget by pass family
+- budget by tracked person or scope
+- expensive-pass allowlist
+- routing fallback profiles
+- emergency pause mode
+
+Rule:
+
+- no expensive reasoning path should run without explicit budget ownership
+
+### 7.5 Runtime Control States
+
+The runtime should expose explicit operating states:
+
+- normal
+- degraded
+- review_only
+- budget_protected
+- promotion_blocked
+- safe_mode
+
+These states should be visible in operator tooling and metrics, and should influence scheduling and promotion behavior.
+
+### 7.6 Run Auditability
+
+Every important run should be traceable.
+
+Minimum audit fields:
+
+- input scope
+- model and routing profile
+- token usage and estimated cost
+- output status
+- normalization outcome
+- promotion outcome
+- linked defects or escalations
+
+## 8. Delivery Scope and Milestones
+
+### 8.1 v1 Knowledge Scope
 
 The first durable product scope should include:
 
@@ -806,7 +930,7 @@ The first durable product scope should include:
 
 Assistant behavior can be layered on top later, but the knowledge base is the primary foundation.
 
-### 7.1.1 Why This Architecture Is Better
+### 8.1.1 Why This Architecture Is Better
 
 This architecture is better than a chat-first or rule-heavy Stage 6 design because it:
 
@@ -816,7 +940,7 @@ This architecture is better than a chat-first or rule-heavy Stage 6 design becau
 - makes durable knowledge formation explicit before assistant behavior
 - supports selective refinement instead of global reruns
 
-### 7.2 Milestone Outline
+### 8.2 Milestone Outline
 
 1. Evidence substrate hardening
 2. Initial bootstrap run
@@ -825,7 +949,7 @@ This architecture is better than a chat-first or rule-heavy Stage 6 design becau
 5. Review and merge control
 6. Assistant layer on top of durable knowledge
 
-## 8. Appendices
+## 9. Appendices
 
 ### Appendix A: Starting Trait Families
 
@@ -894,7 +1018,7 @@ This architecture is better than a chat-first or rule-heavy Stage 6 design becau
   - sensitive motives
   - claims that materially change strategy under risk
 
-## 9. Editorial Principles
+## 10. Editorial Principles
 
 This PRD should continue evolving under these rules:
 
