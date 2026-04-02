@@ -541,12 +541,12 @@
       "dependencies": [
         "IMPLEMENT-002-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Media-derived evidence uses the same source and provenance model.",
         "No legacy Stage6 artifact writes remain in Stage 5 media flow."
       ],
-      "notes": "Clean split because media processing is an independent extension path."
+      "notes": "Clean split because media processing is an independent extension path. MessageRepository now writes canonical media_enrichment and voice_paralinguistics evidence_items inside the existing media-processing persistence boundary, reusing source_objects provenance and mirroring person links from the source message evidence; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-003-D",

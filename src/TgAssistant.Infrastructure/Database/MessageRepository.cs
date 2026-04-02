@@ -12,6 +12,10 @@ namespace TgAssistant.Infrastructure.Database;
 
 public class MessageRepository : IMessageRepository
 {
+    private const string CanonicalTruthLayer = "canonical_truth";
+    private const string MediaEnrichmentEvidenceKind = "media_enrichment";
+    private const string VoiceParalinguisticsEvidenceKind = "voice_paralinguistics";
+
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly ILogger<MessageRepository> _logger;
 
@@ -948,6 +952,7 @@ public class MessageRepository : IMessageRepository
         if (status == ProcessingStatus.Processed)
         {
             row.NeedsReanalysis = true;
+            await UpsertMediaEnrichmentEvidenceAsync(db, row, result, ct);
         }
         await db.SaveChangesAsync(ct);
         if (status == ProcessingStatus.Processed)
@@ -971,6 +976,7 @@ public class MessageRepository : IMessageRepository
         row.MediaParalinguisticsJson = jsonPayload;
         row.NeedsReanalysis = true;
         row.ProcessedAt = DateTime.UtcNow;
+        await UpsertVoiceParalinguisticsEvidenceAsync(db, row, row.MediaPath, ct);
         await db.SaveChangesAsync(ct);
         _logger.LogInformation(
             "Marked message for reanalysis: message_id={MessageId}, reason={ReasonCode}",
@@ -993,6 +999,8 @@ public class MessageRepository : IMessageRepository
             return;
         }
 
+        var originalMediaPath = row.MediaPath;
+
         if (!string.IsNullOrWhiteSpace(transcription))
         {
             row.MediaTranscription = transcription.Trim();
@@ -1010,6 +1018,7 @@ public class MessageRepository : IMessageRepository
 
         row.NeedsReanalysis = needsReanalysis;
         row.ProcessedAt = DateTime.UtcNow;
+        await UpsertVoiceParalinguisticsEvidenceAsync(db, row, originalMediaPath, ct);
         await db.SaveChangesAsync(ct);
         if (needsReanalysis)
         {
@@ -1045,6 +1054,250 @@ public class MessageRepository : IMessageRepository
             ProcessedAt = row.ProcessedAt,
             NeedsReanalysis = row.NeedsReanalysis,
             CreatedAt = row.CreatedAt
+        };
+    }
+
+    private async Task UpsertMediaEnrichmentEvidenceAsync(
+        TgAssistantDbContext db,
+        DbMessage message,
+        MediaProcessingResult result,
+        CancellationToken ct)
+    {
+        if (!result.Success)
+        {
+            return;
+        }
+
+        var source = await db.SourceObjects.FirstOrDefaultAsync(x => x.SourceMessageId == message.Id, ct);
+        if (source == null)
+        {
+            _logger.LogWarning(
+                "Skipped media enrichment substrate write because source_object is missing: message_id={MessageId}, source={Source}",
+                message.Id,
+                (MessageSource)message.Source);
+            return;
+        }
+
+        var evidence = await db.EvidenceItems.FirstOrDefaultAsync(
+            x => x.SourceObjectId == source.Id
+                 && x.EvidenceKind == MediaEnrichmentEvidenceKind
+                 && x.TruthLayer == CanonicalTruthLayer,
+            ct);
+        if (evidence == null)
+        {
+            evidence = new DbEvidenceItem
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow
+            };
+            db.EvidenceItems.Add(evidence);
+        }
+
+        var observedAt = message.ProcessedAt ?? DateTime.UtcNow;
+        evidence.ScopeKey = source.ScopeKey;
+        evidence.SourceObjectId = source.Id;
+        evidence.EvidenceKind = MediaEnrichmentEvidenceKind;
+        evidence.Status = "active";
+        evidence.TruthLayer = CanonicalTruthLayer;
+        evidence.SummaryText = BuildMediaEnrichmentSummary(message, result.Description, result.Transcription);
+        evidence.StructuredPayloadJson = JsonSerializer.Serialize(BuildMediaEnrichmentPayload(message));
+        evidence.ProvenanceJson = JsonSerializer.Serialize(BuildMediaEnrichmentProvenance(source, message, "media_processing"));
+        evidence.Confidence = NormalizeConfidence(result.Confidence);
+        evidence.ObservedAt = observedAt;
+        evidence.UpdatedAt = DateTime.UtcNow;
+
+        await SyncEvidencePersonLinksAsync(db, source, evidence, ct);
+    }
+
+    private async Task UpsertVoiceParalinguisticsEvidenceAsync(
+        TgAssistantDbContext db,
+        DbMessage message,
+        string? originalMediaPath,
+        CancellationToken ct)
+    {
+        if (!IsVoiceLike(message.MediaType)
+            || string.IsNullOrWhiteSpace(message.MediaTranscription) && string.IsNullOrWhiteSpace(message.MediaParalinguisticsJson))
+        {
+            return;
+        }
+
+        var source = await db.SourceObjects.FirstOrDefaultAsync(x => x.SourceMessageId == message.Id, ct);
+        if (source == null)
+        {
+            _logger.LogWarning(
+                "Skipped voice substrate write because source_object is missing: message_id={MessageId}, source={Source}",
+                message.Id,
+                (MessageSource)message.Source);
+            return;
+        }
+
+        var evidence = await db.EvidenceItems.FirstOrDefaultAsync(
+            x => x.SourceObjectId == source.Id
+                 && x.EvidenceKind == VoiceParalinguisticsEvidenceKind
+                 && x.TruthLayer == CanonicalTruthLayer,
+            ct);
+        if (evidence == null)
+        {
+            evidence = new DbEvidenceItem
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow
+            };
+            db.EvidenceItems.Add(evidence);
+        }
+
+        var observedAt = message.ProcessedAt ?? DateTime.UtcNow;
+        evidence.ScopeKey = source.ScopeKey;
+        evidence.SourceObjectId = source.Id;
+        evidence.EvidenceKind = VoiceParalinguisticsEvidenceKind;
+        evidence.Status = "active";
+        evidence.TruthLayer = CanonicalTruthLayer;
+        evidence.SummaryText = BuildVoiceParalinguisticsSummary(message);
+        evidence.StructuredPayloadJson = JsonSerializer.Serialize(BuildVoiceParalinguisticsPayload(message, originalMediaPath));
+        evidence.ProvenanceJson = JsonSerializer.Serialize(BuildMediaEnrichmentProvenance(source, message, "voice_paralinguistics"));
+        evidence.Confidence = 1.0f;
+        evidence.ObservedAt = observedAt;
+        evidence.UpdatedAt = DateTime.UtcNow;
+
+        await SyncEvidencePersonLinksAsync(db, source, evidence, ct);
+    }
+
+    private async Task SyncEvidencePersonLinksAsync(
+        TgAssistantDbContext db,
+        DbSourceObject source,
+        DbEvidenceItem targetEvidence,
+        CancellationToken ct)
+    {
+        var sourceLinks = await (
+            from link in db.EvidenceItemPersonLinks
+            join evidence in db.EvidenceItems on link.EvidenceItemId equals evidence.Id
+            where evidence.SourceObjectId == source.Id && link.EvidenceItemId != targetEvidence.Id
+            select new
+            {
+                link.PersonId,
+                link.ScopeKey,
+                link.LinkRole,
+                link.IsPrimary
+            })
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (sourceLinks.Count == 0)
+        {
+            return;
+        }
+
+        var existingTargetLinks = await db.EvidenceItemPersonLinks
+            .Where(x => x.EvidenceItemId == targetEvidence.Id)
+            .ToListAsync(ct);
+
+        foreach (var link in sourceLinks)
+        {
+            var alreadyLinked = existingTargetLinks.Any(
+                x => x.PersonId == link.PersonId
+                     && string.Equals(x.LinkRole, link.LinkRole, StringComparison.Ordinal));
+            if (alreadyLinked)
+            {
+                continue;
+            }
+
+            db.EvidenceItemPersonLinks.Add(new DbEvidenceItemPersonLink
+            {
+                EvidenceItemId = targetEvidence.Id,
+                PersonId = link.PersonId,
+                ScopeKey = string.IsNullOrWhiteSpace(link.ScopeKey) ? source.ScopeKey : link.ScopeKey,
+                LinkRole = link.LinkRole,
+                IsPrimary = link.IsPrimary,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+    }
+
+    private static bool IsVoiceLike(short mediaType)
+        => mediaType == (short)MediaType.Voice
+           || mediaType == (short)MediaType.Video
+           || mediaType == (short)MediaType.VideoNote;
+
+    private static float NormalizeConfidence(float confidence)
+    {
+        if (float.IsNaN(confidence) || float.IsInfinity(confidence) || confidence <= 0)
+        {
+            return 1.0f;
+        }
+
+        return Math.Clamp(confidence, 0.0f, 1.0f);
+    }
+
+    private static string BuildMediaEnrichmentSummary(DbMessage message, string? description, string? transcription)
+    {
+        var summary = !string.IsNullOrWhiteSpace(description)
+            ? description.Trim()
+            : transcription?.Trim();
+        if (!string.IsNullOrWhiteSpace(summary))
+        {
+            return summary.Length <= 300 ? summary : summary[..300].TrimEnd() + "...";
+        }
+
+        return $"Media enrichment for message {message.TelegramMessageId}";
+    }
+
+    private static string BuildVoiceParalinguisticsSummary(DbMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.MediaTranscription))
+        {
+            var text = message.MediaTranscription.Trim();
+            return text.Length <= 300 ? text : text[..300].TrimEnd() + "...";
+        }
+
+        return $"Voice paralinguistics for message {message.TelegramMessageId}";
+    }
+
+    private static object BuildMediaEnrichmentPayload(DbMessage message)
+    {
+        return new
+        {
+            message_id = message.Id,
+            telegram_message_id = message.TelegramMessageId,
+            chat_id = message.ChatId,
+            media_type = ((MediaType)message.MediaType).ToString(),
+            media_path = message.MediaPath,
+            media_description = message.MediaDescription,
+            media_transcription = message.MediaTranscription,
+            media_paralinguistics_json = message.MediaParalinguisticsJson,
+            processing_status = ((ProcessingStatus)message.ProcessingStatus).ToString(),
+            processed_at_utc = message.ProcessedAt?.ToUniversalTime().ToString("O")
+        };
+    }
+
+    private static object BuildVoiceParalinguisticsPayload(DbMessage message, string? originalMediaPath)
+    {
+        return new
+        {
+            message_id = message.Id,
+            telegram_message_id = message.TelegramMessageId,
+            chat_id = message.ChatId,
+            media_type = ((MediaType)message.MediaType).ToString(),
+            media_path = string.IsNullOrWhiteSpace(message.MediaPath) ? originalMediaPath : message.MediaPath,
+            media_transcription = message.MediaTranscription,
+            media_paralinguistics_json = message.MediaParalinguisticsJson,
+            processing_status = ((ProcessingStatus)message.ProcessingStatus).ToString(),
+            processed_at_utc = message.ProcessedAt?.ToUniversalTime().ToString("O")
+        };
+    }
+
+    private static object BuildMediaEnrichmentProvenance(DbSourceObject source, DbMessage message, string enrichmentStage)
+    {
+        return new
+        {
+            ingest_path = message.Source == (short)MessageSource.Archive ? "archive_import" : "realtime",
+            enrichment_stage = enrichmentStage,
+            provenance_kind = source.ProvenanceKind,
+            provenance_ref = source.ProvenanceRef,
+            source_kind = source.SourceKind,
+            source_ref = source.SourceRef,
+            source_message_id = message.Id,
+            processed_at_utc = message.ProcessedAt?.ToUniversalTime().ToString("O"),
+            observed_at_utc = message.Timestamp.ToUniversalTime().ToString("O")
         };
     }
 
