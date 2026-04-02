@@ -431,6 +431,56 @@ public class DbRelationshipEdgeAnchor
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbSourceObject
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string ProvenanceKind { get; set; } = string.Empty;
+    public string ProvenanceRef { get; set; } = string.Empty;
+    public string ProvenanceNormalized { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string DisplayLabel { get; set; } = string.Empty;
+    public long? ChatId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public Guid? SourceSessionId { get; set; }
+    public Guid? ArchiveImportRunId { get; set; }
+    public DateTime? OccurredAt { get; set; }
+    public string PayloadJson { get; set; } = "{}";
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbEvidenceItem
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid SourceObjectId { get; set; }
+    public string EvidenceKind { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string TruthLayer { get; set; } = string.Empty;
+    public string? SummaryText { get; set; }
+    public string StructuredPayloadJson { get; set; } = "{}";
+    public string ProvenanceJson { get; set; } = "{}";
+    public float Confidence { get; set; }
+    public DateTime? ObservedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbEvidenceItemPersonLink
+{
+    public long Id { get; set; }
+    public Guid EvidenceItemId { get; set; }
+    public Guid PersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string LinkRole { get; set; } = string.Empty;
+    public bool IsPrimary { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

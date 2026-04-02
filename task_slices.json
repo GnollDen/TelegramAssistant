@@ -473,12 +473,12 @@
       "dependencies": [
         "IMPLEMENT-002-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Source and evidence records support corpus-first rebuildability.",
         "Evidence can be queried by person, source, and provenance."
       ],
-      "notes": "Clean split because evidence storage can be validated separately from run ledgers."
+      "notes": "Clean split because evidence storage can be validated separately from run ledgers. Added migration 0031_source_object_and_evidence_schema.sql with source_objects, evidence_items, and evidence_item_person_links; mapped the new active tables in TgAssistantDbContext/DbRows with indexes for source, provenance, and person-scope evidence lookups; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-002-C",

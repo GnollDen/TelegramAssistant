@@ -38,6 +38,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbPersonIdentityBinding> PersonIdentityBindings => Set<DbPersonIdentityBinding>();
     public DbSet<DbCandidateIdentityState> CandidateIdentityStates => Set<DbCandidateIdentityState>();
     public DbSet<DbRelationshipEdgeAnchor> RelationshipEdgeAnchors => Set<DbRelationshipEdgeAnchor>();
+    public DbSet<DbSourceObject> SourceObjects => Set<DbSourceObject>();
+    public DbSet<DbEvidenceItem> EvidenceItems => Set<DbEvidenceItem>();
+    public DbSet<DbEvidenceItemPersonLink> EvidenceItemPersonLinks => Set<DbEvidenceItemPersonLink>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -623,6 +626,75 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.SourceBindingType, x.SourceBindingNormalized })
                 .HasFilter("source_binding_type IS NOT NULL AND source_binding_normalized IS NOT NULL");
             e.HasIndex(x => x.CandidateIdentityStateId).HasFilter("candidate_identity_state_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbSourceObject>(e =>
+        {
+            e.ToTable("source_objects");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.SourceKind).HasColumnName("source_kind");
+            e.Property(x => x.SourceRef).HasColumnName("source_ref");
+            e.Property(x => x.ProvenanceKind).HasColumnName("provenance_kind");
+            e.Property(x => x.ProvenanceRef).HasColumnName("provenance_ref");
+            e.Property(x => x.ProvenanceNormalized).HasColumnName("provenance_normalized");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.DisplayLabel).HasColumnName("display_label");
+            e.Property(x => x.ChatId).HasColumnName("chat_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.SourceSessionId).HasColumnName("source_session_id");
+            e.Property(x => x.ArchiveImportRunId).HasColumnName("archive_import_run_id");
+            e.Property(x => x.OccurredAt).HasColumnName("occurred_at");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.SourceKind, x.SourceRef }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.ProvenanceKind, x.ProvenanceNormalized });
+            e.HasIndex(x => x.SourceMessageId).HasFilter("source_message_id IS NOT NULL");
+            e.HasIndex(x => x.SourceSessionId).HasFilter("source_session_id IS NOT NULL");
+            e.HasIndex(x => x.ArchiveImportRunId).HasFilter("archive_import_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.ScopeKey, x.ChatId, x.OccurredAt })
+                .HasFilter("chat_id IS NOT NULL AND occurred_at IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbEvidenceItem>(e =>
+        {
+            e.ToTable("evidence_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.SourceObjectId).HasColumnName("source_object_id");
+            e.Property(x => x.EvidenceKind).HasColumnName("evidence_kind");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.TruthLayer).HasColumnName("truth_layer");
+            e.Property(x => x.SummaryText).HasColumnName("summary_text");
+            e.Property(x => x.StructuredPayloadJson).HasColumnName("structured_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.ProvenanceJson).HasColumnName("provenance_json").HasColumnType("jsonb");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.ObservedAt).HasColumnName("observed_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.SourceObjectId, x.EvidenceKind, x.TruthLayer });
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.ObservedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.EvidenceKind, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbEvidenceItemPersonLink>(e =>
+        {
+            e.ToTable("evidence_item_person_links");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.EvidenceItemId).HasColumnName("evidence_item_id");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.LinkRole).HasColumnName("link_role");
+            e.Property(x => x.IsPrimary).HasColumnName("is_primary");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.EvidenceItemId, x.PersonId, x.LinkRole }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.LinkRole });
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.IsPrimary });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.
