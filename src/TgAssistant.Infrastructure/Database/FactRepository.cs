@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Core.Normalization;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -76,6 +77,20 @@ public class FactRepository : IFactRepository
         {
             var now = DateTime.UtcNow;
             var normalizedDecayClass = NormalizeDecayClass(fact.DecayClass);
+            var evidenceDuplicate = await FindEvidenceDuplicateAsync(db, fact, ct);
+            if (evidenceDuplicate != null)
+            {
+                var row = await db.Facts.FirstAsync(x => x.Id == evidenceDuplicate.Id, ct);
+                row.Confidence = Math.Max(row.Confidence, fact.Confidence);
+                row.Status = Math.Min(row.Status, (short)fact.Status);
+                row.IsUserConfirmed = row.IsUserConfirmed || fact.IsUserConfirmed;
+                row.TrustFactor = Math.Max(row.TrustFactor, fact.TrustFactor);
+                row.DecayClass = normalizedDecayClass;
+                row.UpdatedAt = now;
+                await db.SaveChangesAsync(ct);
+                return ToDomain(row);
+            }
+
             if (!fact.IsCurrent)
             {
                 var row = new DbFact
@@ -492,6 +507,36 @@ public class FactRepository : IFactRepository
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt
         };
+    }
+
+    private static async Task<DbFact?> FindEvidenceDuplicateAsync(TgAssistantDbContext db, Fact fact, CancellationToken ct)
+    {
+        if (!fact.SourceMessageId.HasValue)
+        {
+            return null;
+        }
+
+        var category = (fact.Category ?? string.Empty).Trim();
+        var key = (fact.Key ?? string.Empty).Trim();
+        if (category.Length == 0 || key.Length == 0)
+        {
+            return null;
+        }
+
+        var normalizedValue = EntityAliasNormalizer.NormalizeForFactValue(fact.Value);
+        var candidates = await db.Facts
+            .Where(x =>
+                x.EntityId == fact.EntityId &&
+                x.SourceMessageId == fact.SourceMessageId &&
+                x.Category == category &&
+                x.Key == key)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .Take(10)
+            .ToListAsync(ct);
+        return candidates.FirstOrDefault(x =>
+            EntityAliasNormalizer.NormalizeForFactValue(x.Value) == normalizedValue);
     }
 
     private static Fact ReadFact(NpgsqlDataReader reader)

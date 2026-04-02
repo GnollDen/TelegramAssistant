@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Normalization;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -26,7 +27,7 @@ public class EntityAliasRepository : IEntityAliasRepository
             return;
         }
 
-        var norm = Normalize(raw);
+        var norm = EntityAliasNormalizer.Normalize(raw);
         if (norm.Length == 0)
         {
             return;
@@ -61,5 +62,4 @@ public class EntityAliasRepository : IEntityAliasRepository
             """, ct);
     }
 
-    private static string Normalize(string alias) => alias.Trim().ToLowerInvariant();
 }

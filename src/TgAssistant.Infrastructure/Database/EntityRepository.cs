@@ -3,6 +3,7 @@ using Npgsql;
 using System.Text.Json;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Core.Normalization;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -103,6 +104,7 @@ public class EntityRepository : IEntityRepository
             row.UpdatedAt = DateTime.UtcNow;
         }
 
+        await EnsureEntityAliasRowsAsync(db, row, ct);
         await db.SaveChangesAsync(ct);
         entity.Id = row.Id;
         entity.IsUserConfirmed = row.IsUserConfirmed;
@@ -127,8 +129,18 @@ public class EntityRepository : IEntityRepository
             row ??= await db.Entities.FirstOrDefaultAsync(x => x.TelegramUserId == entity.TelegramUserId, ct);
         }
 
-        var normalizedName = entity.Name.Trim().ToLowerInvariant();
-        row ??= await db.Entities.FirstOrDefaultAsync(x => x.Name.ToLower() == normalizedName, ct);
+        var lookupKeys = EntityAliasNormalizer.BuildLookupKeys(entity.Name);
+        if (lookupKeys.Count == 0)
+        {
+            return row;
+        }
+
+        var normalizedName = EntityAliasNormalizer.Normalize(entity.Name);
+        row ??= await db.Entities.FirstOrDefaultAsync(
+            x => x.Name.ToLower() == normalizedName
+                 || x.Aliases.Any(a => lookupKeys.Contains(a.ToLower()))
+                 || db.EntityAliases.Any(a => a.EntityId == x.Id && lookupKeys.Contains(a.AliasNorm)),
+            ct);
         return row;
     }
 
@@ -144,7 +156,7 @@ public class EntityRepository : IEntityRepository
             return "tg:" + entity.TelegramUserId.Value;
         }
 
-        return "name:" + entity.Name.Trim().ToLowerInvariant();
+        return "name:" + EntityAliasNormalizer.Normalize(entity.Name);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex)
@@ -181,12 +193,18 @@ public class EntityRepository : IEntityRepository
 
     public async Task<Entity?> FindByNameOrAliasAsync(string name, CancellationToken ct = default)
     {
-        var normalized = name.Trim().ToLowerInvariant();
+        var lookupKeys = EntityAliasNormalizer.BuildLookupKeys(name);
+        if (lookupKeys.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = EntityAliasNormalizer.Normalize(name);
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var row = await db.Entities.AsNoTracking().FirstOrDefaultAsync(
             x => x.Name.ToLower() == normalized
-                 || x.Aliases.Any(a => a.ToLower() == normalized)
-                 || db.EntityAliases.Any(a => a.EntityId == x.Id && a.AliasNorm == normalized),
+                 || x.Aliases.Any(a => lookupKeys.Contains(a.ToLower()))
+                 || db.EntityAliases.Any(a => a.EntityId == x.Id && lookupKeys.Contains(a.AliasNorm)),
             ct);
         return row == null ? null : ToDomain(row);
     }
@@ -200,7 +218,7 @@ public class EntityRepository : IEntityRepository
 
         var normalizedNames = names
             .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name.Trim().ToLowerInvariant())
+            .SelectMany(EntityAliasNormalizer.BuildLookupKeys)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
@@ -249,14 +267,18 @@ public class EntityRepository : IEntityRepository
                 continue;
             }
 
-            var normalized = rawName.Trim().ToLowerInvariant();
+            var lookupKeys = EntityAliasNormalizer.BuildLookupKeys(rawName);
+            var normalized = EntityAliasNormalizer.Normalize(rawName);
             var trimmedName = rawName.Trim();
             var entity = orderedEntities.FirstOrDefault(candidate =>
                              string.Equals(candidate.Name.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase))
                          ?? orderedEntities.FirstOrDefault(candidate =>
                              candidate.Aliases.Any(alias => string.Equals(alias.Trim(), trimmedName, StringComparison.OrdinalIgnoreCase)))
                          ?? orderedEntities.FirstOrDefault(candidate =>
-                             aliasLookup.GetValueOrDefault(candidate.Id, []).Contains(normalized, StringComparer.Ordinal));
+                             lookupKeys.Contains(EntityAliasNormalizer.Normalize(candidate.Name))
+                             || candidate.Aliases.Any(alias => lookupKeys.Contains(EntityAliasNormalizer.Normalize(alias)))
+                             || aliasLookup.GetValueOrDefault(candidate.Id, []).Contains(normalized, StringComparer.Ordinal)
+                             || aliasLookup.GetValueOrDefault(candidate.Id, []).Any(lookupKeys.Contains));
 
             if (entity != null)
             {
@@ -281,7 +303,8 @@ public class EntityRepository : IEntityRepository
         }
 
         var normalized = name.Trim();
-        var normalizedLower = normalized.ToLowerInvariant();
+        var normalizedLookup = EntityAliasNormalizer.BuildLookupKeys(normalized);
+        var normalizedLower = EntityAliasNormalizer.Normalize(normalized);
         var likePattern = $"%{normalized}%";
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -332,7 +355,8 @@ public class EntityRepository : IEntityRepository
                 Rank = CalculateEntityNameMatchRank(
                     row,
                     aliasLookup.GetValueOrDefault(row.Id) ?? Array.Empty<string>(),
-                    normalizedLower)
+                    normalizedLower,
+                    normalizedLookup)
             })
             .OrderBy(x => x.Rank)
             .ThenByDescending(x => x.Row.UpdatedAt)
@@ -448,6 +472,7 @@ public class EntityRepository : IEntityRepository
               AND COALESCE(a.source_message_id, -1) = COALESCE(d.source_message_id, -1)
             """, ct);
 
+        await EnsureEntityAliasRowsAsync(db, target, ct);
         db.Entities.Remove(source);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -456,15 +481,18 @@ public class EntityRepository : IEntityRepository
     private static int CalculateEntityNameMatchRank(
         DbEntity row,
         IReadOnlyCollection<string> aliasNorms,
-        string queryNorm)
+        string queryNorm,
+        IReadOnlyCollection<string> queryLookup)
     {
-        var nameNorm = row.Name.Trim().ToLowerInvariant();
+        var nameNorm = EntityAliasNormalizer.Normalize(row.Name);
         if (nameNorm == queryNorm)
         {
             return 0;
         }
 
-        if (row.Aliases.Any(a => string.Equals(a.Trim(), queryNorm, StringComparison.OrdinalIgnoreCase)) ||
+        if (queryLookup.Contains(nameNorm)
+            || row.Aliases.Any(a => queryLookup.Contains(EntityAliasNormalizer.Normalize(a)))
+            || row.Aliases.Any(a => string.Equals(a.Trim(), queryNorm, StringComparison.OrdinalIgnoreCase)) ||
             aliasNorms.Contains(queryNorm, StringComparer.OrdinalIgnoreCase))
         {
             return 1;
@@ -493,6 +521,25 @@ public class EntityRepository : IEntityRepository
         }
 
         return 6;
+    }
+
+    private static async Task EnsureEntityAliasRowsAsync(TgAssistantDbContext db, DbEntity entity, CancellationToken ct)
+    {
+        var aliasNormals = EntityAliasNormalizer.BuildEntityAliasNormals(
+            entity.Name,
+            entity.Aliases,
+            includeShortFirstNameAlias: !string.IsNullOrWhiteSpace(entity.ActorKey) || entity.TelegramUserId.HasValue);
+        foreach (var aliasNorm in aliasNormals)
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO entity_aliases (entity_id, alias, alias_norm, confidence, created_at, updated_at)
+                VALUES ({entity.Id}, {aliasNorm}, {aliasNorm}, 1.0, NOW(), NOW())
+                ON CONFLICT (entity_id, alias_norm)
+                DO UPDATE SET
+                    updated_at = NOW(),
+                    confidence = GREATEST(entity_aliases.confidence, 1.0)
+                """, ct);
+        }
     }
 
     private static Entity ToDomain(DbEntity row)
