@@ -5,6 +5,8 @@ obj/
 *.cache
 *.vs/
 .idea/
+.codex-tools/
+.dotnet/
 .env
 .env.*
 .env.backup*
@@ -23,3 +25,4 @@ Thumbs.db
 /exports/
 /artifacts/
 /docs/openrouter_activity*.csv
+*.log
