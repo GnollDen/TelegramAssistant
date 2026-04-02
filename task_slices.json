@@ -1,0 +1,940 @@
+{
+  "project": {
+    "name": "Person Intelligence System",
+    "version": "execution-slices-v1",
+    "created_at": "2026-04-02",
+    "source_prd": "docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md",
+    "source_backlog": "tasks.json",
+    "repository_root": "C:/Users/thrg0/Downloads/TelegramAssistant/repo_inspect"
+  },
+  "purpose": {
+    "summary": "Execution-level decomposition of parent backlog tasks into narrower bounded slices for agent orchestration.",
+    "rules": [
+      "Keep parent tasks in tasks.json as orchestration-level authority.",
+      "Use this file for narrow execution slices only.",
+      "Each slice should target one clean output boundary.",
+      "If a parent task is blocked or moved to another PRD track, its slices stay blocked here as well."
+    ]
+  },
+  "slice_schema": {
+    "required_fields": [
+      "id",
+      "parent_task_id",
+      "phase",
+      "priority",
+      "description",
+      "executor_agent",
+      "dependencies",
+      "status",
+      "acceptance_focus",
+      "notes"
+    ],
+    "status_values": [
+      "pending",
+      "in_progress",
+      "done",
+      "blocked"
+    ]
+  },
+  "phases": [
+    {
+      "id": "phase-a-cleanup-reset",
+      "title": "Phase A. Cleanup / Reset to Valid Core"
+    },
+    {
+      "id": "phase-b-implementation",
+      "title": "Phase B. PRD Implementation on Clean Baseline"
+    }
+  ],
+  "slices": [
+    {
+      "id": "CLEANUP-001-A",
+      "parent_task_id": "CLEANUP-001",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Produce a code-backed valid-core inventory note covering src/, deploy/, runtime entrypoints, and planning authority surfaces.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [],
+      "status": "pending",
+      "acceptance_focus": [
+        "Inventory clearly separates keep, keep_with_refactor, quarantine_disable, and delete_rewrite.",
+        "Every retained area is justified against the PRD and current code."
+      ],
+      "notes": "Clean split because it only establishes the inventory artifact."
+    },
+    {
+      "id": "CLEANUP-001-B",
+      "parent_task_id": "CLEANUP-001",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Write the reset-boundary note that freezes current Stage6/web/tgbot as legacy and defines the retained baseline.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "CLEANUP-001-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Note explicitly rejects old Stage6/web/tgbot as target architecture.",
+        "Retained baseline is limited to reusable substrate and runtime shell."
+      ],
+      "notes": "Clean split because the policy note depends on the inventory but is a separate output."
+    },
+    {
+      "id": "CLEANUP-002-A",
+      "parent_task_id": "CLEANUP-002",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Inventory planning and runbook documents that still present Stage6/web/tgbot as active direction.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "CLEANUP-001-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Every active planning entrypoint is classified as keep, archive, or deprecate.",
+        "Legacy authority surfaces are explicitly identified."
+      ],
+      "notes": "Clean split because this is doc discovery only."
+    },
+    {
+      "id": "CLEANUP-002-B",
+      "parent_task_id": "CLEANUP-002",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Update docs/planning authority chain so the PRD and reset boundary become the active planning entrypoints.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "CLEANUP-002-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Planning README points to clean-slate materials.",
+        "No active doc claims the old Stage6/web/tgbot path is current."
+      ],
+      "notes": "Clean split because index/routing updates are distinct from discovery."
+    },
+    {
+      "id": "CLEANUP-003-A",
+      "parent_task_id": "CLEANUP-003",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Inventory Stage6-specific models and interfaces in TgAssistant.Core and mark exact removal, relocation, or legacy-gate targets.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-001-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Exact list of Stage6 contracts in active core namespaces is captured.",
+        "Each contract has a chosen treatment path."
+      ],
+      "notes": "Clean split because this is contract classification, not code mutation."
+    },
+    {
+      "id": "CLEANUP-003-B",
+      "parent_task_id": "CLEANUP-003",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Apply the shared-model shrink: remove, relocate, or clearly legacy-gate Stage6/current-state/profile/strategy/draft/review/case contracts.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-003-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Active core namespaces only expose substrate and minimal operational primitives.",
+        "Legacy contracts are no longer presented as active foundation APIs."
+      ],
+      "notes": "Clean split because this is the code mutation step after classification."
+    },
+    {
+      "id": "CLEANUP-004-A",
+      "parent_task_id": "CLEANUP-004",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Create a schema inventory that labels preserved substrate tables, frozen legacy tables, and replace-on-rebuild tables.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "CLEANUP-003-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Every active table family has a lifecycle label.",
+        "Legacy Stage6/domain truth tables are not treated as canonical target storage."
+      ],
+      "notes": "Clean split because it defines storage policy before repository changes."
+    },
+    {
+      "id": "CLEANUP-004-B",
+      "parent_task_id": "CLEANUP-004",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Refit repository registrations and DbContext boundary markers so frozen Stage6 repositories are no longer presented as active architecture.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "CLEANUP-004-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Repository wiring distinguishes preserved substrate from frozen legacy.",
+        "Migration policy for new PRD storage is explicit."
+      ],
+      "notes": "Clean split because repository boundary work should follow schema classification."
+    },
+    {
+      "id": "CLEANUP-005-A",
+      "parent_task_id": "CLEANUP-005",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Inventory runtime roles, hosted-service registrations, and smoke commands that currently normalize Stage6/web/tgbot as baseline runtime.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-003-B",
+        "CLEANUP-004-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Every legacy runtime role and smoke entrypoint is mapped.",
+        "Preserved substrate/runtime shell roles are separately identified."
+      ],
+      "notes": "Clean split because inventory precedes composition changes."
+    },
+    {
+      "id": "CLEANUP-005-B",
+      "parent_task_id": "CLEANUP-005",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Refit Program.cs and startup wiring so preserved substrate roles are active baseline and Stage6/web/bot roles are not.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-005-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Host composition no longer assumes Stage6/web/bot as default runtime baseline.",
+        "Active role set is limited to preserved substrate and reusable shell."
+      ],
+      "notes": "Clean split because this is the host mutation step."
+    },
+    {
+      "id": "CLEANUP-005-C",
+      "parent_task_id": "CLEANUP-005",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Rename or narrow smoke and runtime documentation so preserved substrate verification is clearly separated from legacy diagnostics.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-005-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Smoke names and docs no longer suggest old Stage6/web/tgbot is active baseline.",
+        "Preserved verification paths are easy to identify."
+      ],
+      "notes": "Clean split because naming and docs should trail the actual runtime wiring change."
+    },
+    {
+      "id": "CLEANUP-006-A",
+      "parent_task_id": "CLEANUP-006",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Gate or remove active Stage6 registrations and helper command entrypoints from the cleaned runtime composition.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-005-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "No active startup path registers the current Stage6 engine as baseline behavior.",
+        "Legacy Stage6 helper commands are not part of the clean runtime contract."
+      ],
+      "notes": "Clean split because this isolates the main legacy engine."
+    },
+    {
+      "id": "CLEANUP-006-B",
+      "parent_task_id": "CLEANUP-006",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Apply explicit legacy markings to any retained Stage6 code left for reference or temporary diagnostics.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-006-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Retained Stage6 code cannot be confused with PRD Stage 6/7/8.",
+        "Legacy-only intent is visible in code and notes."
+      ],
+      "notes": "Clean split because it is a labeling/containment step after runtime isolation."
+    },
+    {
+      "id": "CLEANUP-007-A",
+      "parent_task_id": "CLEANUP-007",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Quarantine or disable the current web operator surface from active runtime composition.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "CLEANUP-005-B",
+        "CLEANUP-006-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Current web routes are not presented as target operator workflow.",
+        "Any retained shell is diagnostic-only."
+      ],
+      "notes": "Clean split because web isolation is independent from bot isolation."
+    },
+    {
+      "id": "CLEANUP-007-B",
+      "parent_task_id": "CLEANUP-007",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Quarantine or disable the current Telegram bot operator workflow from active runtime composition.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "CLEANUP-005-B",
+        "CLEANUP-006-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Current Telegram bot flow is not presented as target operator workflow.",
+        "Any retained bot shell is clearly temporary or diagnostic-only."
+      ],
+      "notes": "Clean split because bot isolation has a different code path and validation surface."
+    },
+    {
+      "id": "CLEANUP-007-C",
+      "parent_task_id": "CLEANUP-007",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Add explicit diagnostic-only labeling wherever a temporary web or bot shell remains reachable.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "CLEANUP-007-A",
+        "CLEANUP-007-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Temporary shells cannot be mistaken for product baseline.",
+        "Legacy Stage6 queue/case/artifact flow is visibly isolated."
+      ],
+      "notes": "Clean split because it is a post-isolation containment task."
+    },
+    {
+      "id": "CLEANUP-008-A",
+      "parent_task_id": "CLEANUP-008",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Classify current MCP tool catalog into reusable shell tools versus Stage6-specific legacy tools.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-005-B",
+        "CLEANUP-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Reusable health, auth, and transport shell responsibilities are isolated.",
+        "Stage6 case/artifact-centric tools are explicitly identified for removal or gating."
+      ],
+      "notes": "Clean split because tool classification should precede code changes."
+    },
+    {
+      "id": "CLEANUP-008-B",
+      "parent_task_id": "CLEANUP-008",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Strip or legacy-gate Stage6-specific MCP tools while preserving the reusable MCP transport/auth shell.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-008-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Primary MCP contract is no longer Stage6-centric.",
+        "Build remains healthy after tool catalog cleanup."
+      ],
+      "notes": "Clean split because it applies the tool classification."
+    },
+    {
+      "id": "CLEANUP-008-C",
+      "parent_task_id": "CLEANUP-008",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "high",
+      "description": "Update docker-compose and deploy assumptions so runtime shell survives without web/bot/Stage6 operator flow as baseline.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-008-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Compose and deploy docs reflect preserved shell only.",
+        "No deploy default implies old operator flow is still accepted baseline."
+      ],
+      "notes": "Clean split because infra defaults should trail MCP/runtime cleanup."
+    },
+    {
+      "id": "CLEANUP-009-A",
+      "parent_task_id": "CLEANUP-009",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Run cleanup review across docs, shared models, schema boundaries, runtime wiring, Stage6 isolation, web/bot isolation, and MCP/deploy shell.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "CLEANUP-002-B",
+        "CLEANUP-004-B",
+        "CLEANUP-005-C",
+        "CLEANUP-006-B",
+        "CLEANUP-007-C",
+        "CLEANUP-008-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Review note records blocking findings or explicit approval.",
+        "Any remaining legacy dependency is called out."
+      ],
+      "notes": "Clean split because this is the audit pass itself."
+    },
+    {
+      "id": "CLEANUP-009-B",
+      "parent_task_id": "CLEANUP-009",
+      "phase": "phase-a-cleanup-reset",
+      "priority": "critical",
+      "description": "Apply cleanup review fixes or record explicit approval to open Phase B implementation.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "CLEANUP-009-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Phase B start condition is explicit.",
+        "Unresolved cleanup blockers cannot leak into implementation."
+      ],
+      "notes": "Clean split because gate resolution is separate from the review run."
+    },
+    {
+      "id": "IMPLEMENT-001-A",
+      "parent_task_id": "IMPLEMENT-001",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Write the target architecture note mapping PRD terms to concrete modules, storage boundaries, runtime flows, and rollout cut lines.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "CLEANUP-009-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Stage 5/6/7/8 responsibilities map cleanly to modules.",
+        "No hidden dependency on legacy Stage6/web/tgbot remains."
+      ],
+      "notes": "Clean split because this is the implementation authority artifact."
+    },
+    {
+      "id": "IMPLEMENT-001-B",
+      "parent_task_id": "IMPLEMENT-001",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Publish a workstream and dependency map derived from the architecture note for data platform, substrate refit, control plane, bootstrap, durable formation, crystallization, and pilot.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "IMPLEMENT-001-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Execution order is explicit enough for agent orchestration.",
+        "No major module is left without an owning workstream."
+      ],
+      "notes": "Clean split because dependency mapping is a separate planning deliverable."
+    },
+    {
+      "id": "IMPLEMENT-002-A",
+      "parent_task_id": "IMPLEMENT-002",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Add the person-first identity schema: Person, operator linkage, candidate identity state, and relationship-edge anchors.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-001-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Person and identity state objects exist independently of frozen Stage6 truth tables.",
+        "Identity lookups are queryable by scope and source binding."
+      ],
+      "notes": "Clean split because identity schema is foundational and independent."
+    },
+    {
+      "id": "IMPLEMENT-002-B",
+      "parent_task_id": "IMPLEMENT-002",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Add SourceObject and EvidenceItem schema with provenance, source refs, and linkage to the person-first model.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-002-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Source and evidence records support corpus-first rebuildability.",
+        "Evidence can be queried by person, source, and provenance."
+      ],
+      "notes": "Clean split because evidence storage can be validated separately from run ledgers."
+    },
+    {
+      "id": "IMPLEMENT-002-C",
+      "parent_task_id": "IMPLEMENT-002",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Add ModelPassRun, NormalizationRun, and durable-object metadata schema for auditability and later promotion state.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-002-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Run ledgers and durable metadata exist with stable indexes.",
+        "Later passes can attach run and promotion references cleanly."
+      ],
+      "notes": "Clean split because run audit schema is a separate bounded concern."
+    },
+    {
+      "id": "IMPLEMENT-003-A",
+      "parent_task_id": "IMPLEMENT-003",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Refit realtime ingest to write new source, evidence, and provenance records against the person-first schema.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-002-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Realtime pipeline populates the new substrate objects.",
+        "No durable person conclusions are emitted from Stage 5."
+      ],
+      "notes": "Clean split because realtime ingest is a separate pipeline boundary."
+    },
+    {
+      "id": "IMPLEMENT-003-B",
+      "parent_task_id": "IMPLEMENT-003",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Refit archive import and session slicing to populate the new source/evidence/provenance model.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-002-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Archive replay populates the new substrate consistently.",
+        "Session slicing remains rebuildable and corpus-first."
+      ],
+      "notes": "Clean split because archive flow has different write path and replay semantics."
+    },
+    {
+      "id": "IMPLEMENT-003-C",
+      "parent_task_id": "IMPLEMENT-003",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Refit media enrichment to write media-derived evidence and provenance into the new substrate model.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-002-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Media-derived evidence uses the same source and provenance model.",
+        "No legacy Stage6 artifact writes remain in Stage 5 media flow."
+      ],
+      "notes": "Clean split because media processing is an independent extension path."
+    },
+    {
+      "id": "IMPLEMENT-003-D",
+      "parent_task_id": "IMPLEMENT-003",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Run deterministic rebuild verification across realtime, archive, and media paths against the new substrate objects.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-003-A",
+        "IMPLEMENT-003-B",
+        "IMPLEMENT-003-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Replay twice yields stable counts and identities.",
+        "Stage 5 remains a rebuildable substrate only."
+      ],
+      "notes": "Clean split because deterministic verification should gate pipeline refit completion."
+    },
+    {
+      "id": "IMPLEMENT-004-A",
+      "parent_task_id": "IMPLEMENT-004",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Define and implement the pass envelope schema with explicit scope, source refs, truth summary, conflicts, unknowns, and result statuses.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-001-B",
+        "IMPLEMENT-002-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pass envelope is versioned and storage-safe.",
+        "Statuses result_ready, need_more_data, need_operator_clarification, and blocked_invalid_input are supported."
+      ],
+      "notes": "Clean split because envelope contract precedes normalization."
+    },
+    {
+      "id": "IMPLEMENT-004-B",
+      "parent_task_id": "IMPLEMENT-004",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement the normalization layer that converts model output into typed fact, inference, hypothesis, and conflict candidates.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-004-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Raw model prose cannot write directly into durable state.",
+        "Unsafe or malformed output is downgraded or blocked."
+      ],
+      "notes": "Clean split because the normalizer is a distinct contract boundary."
+    },
+    {
+      "id": "IMPLEMENT-004-C",
+      "parent_task_id": "IMPLEMENT-004",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Persist normalization and pass audit records and add verification for normal, degraded, clarification, and blocked outcomes.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-004-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Every pass outcome leaves audit evidence.",
+        "Storage behavior is consistent across allowed result states."
+      ],
+      "notes": "Clean split because audit persistence and test coverage are a separate completion step."
+    },
+    {
+      "id": "IMPLEMENT-005-A",
+      "parent_task_id": "IMPLEMENT-005",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement Stage 6 bootstrap graph initialization and tracked-person attachment over the prepared corpus.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-003-D",
+        "IMPLEMENT-004-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Bootstrap can anchor one tracked person or scope to a graph seed.",
+        "Outputs remain non-durable."
+      ],
+      "notes": "Clean split because graph init is the first bounded bootstrap behavior."
+    },
+    {
+      "id": "IMPLEMENT-005-B",
+      "parent_task_id": "IMPLEMENT-005",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement linked-person discovery plus candidate identity and mention-state differentiation in bootstrap outputs.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-005-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Linked person, candidate identity, and mention are stored distinctly.",
+        "Discovery outputs are idempotent across reruns."
+      ],
+      "notes": "Clean split because identity discovery should be validated separately from graph init."
+    },
+    {
+      "id": "IMPLEMENT-005-C",
+      "parent_task_id": "IMPLEMENT-005",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement bootstrap ambiguity, contradiction, and slice outputs without durable promotion.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-005-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Bootstrap outputs expose ambiguity and contradiction pools explicitly.",
+        "No reviewed dossier/profile semantics leak into bootstrap."
+      ],
+      "notes": "Clean split because ambiguity/contradiction pools are a separate non-durable output family."
+    },
+    {
+      "id": "IMPLEMENT-006-A",
+      "parent_task_id": "IMPLEMENT-006",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement durable dossier and profile formation from normalized candidates and bootstrap outputs.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-002-C",
+        "IMPLEMENT-004-C",
+        "IMPLEMENT-005-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Profile versus dossier is explicit in durable storage.",
+        "Evidence refs, freshness, and confidence are persisted."
+      ],
+      "notes": "Clean split because dossier/profile formation is one durable object family."
+    },
+    {
+      "id": "IMPLEMENT-006-B",
+      "parent_task_id": "IMPLEMENT-006",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement durable pair-dynamics formation as a first-class object family with revisions and contradiction markers.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-004-C",
+        "IMPLEMENT-005-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pair dynamics are not embedded as summary strings.",
+        "Revision behavior preserves confidence and freshness history."
+      ],
+      "notes": "Clean split because pair dynamics has its own storage and rules."
+    },
+    {
+      "id": "IMPLEMENT-006-C",
+      "parent_task_id": "IMPLEMENT-006",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement durable events, timeline episodes, and story arcs as separate object families with boundary and closure metadata.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-004-C",
+        "IMPLEMENT-005-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Timeline uses episodes and story arcs as end-state objects.",
+        "Boundary confidence and closure state are explicit."
+      ],
+      "notes": "Clean split because timeline objects are independent from dossier and pair dynamics."
+    },
+    {
+      "id": "IMPLEMENT-006-D",
+      "parent_task_id": "IMPLEMENT-006",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement durable revision and idempotent rerun behavior across all Stage 7 object families.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-006-A",
+        "IMPLEMENT-006-B",
+        "IMPLEMENT-006-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Reruns create revisions instead of duplicate durable rows.",
+        "Object-family-specific revision rules are consistent."
+      ],
+      "notes": "Clean split because revision behavior should be validated after object families exist."
+    },
+    {
+      "id": "IMPLEMENT-007-A",
+      "parent_task_id": "IMPLEMENT-007",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement the persistent recompute queue with dedupe, retry, and smallest-sufficient-scope execution.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-006-D"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Scoped recompute can run independently of global rebuilds.",
+        "Queue behavior is idempotent and retry-safe."
+      ],
+      "notes": "Clean split because queue infrastructure is foundational to crystallization."
+    },
+    {
+      "id": "IMPLEMENT-007-B",
+      "parent_task_id": "IMPLEMENT-007",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement trigger ingestion for clarification answers, edits, deletes, and high-signal data changes.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-007-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Each trigger class maps to a targeted rerun request.",
+        "No trigger forces a global rebuild by default."
+      ],
+      "notes": "Clean split because triggers should be validated separately from queue internals."
+    },
+    {
+      "id": "IMPLEMENT-007-C",
+      "parent_task_id": "IMPLEMENT-007",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement promotion and clarification gates on the new truth-layer model for crystallization outcomes.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-007-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Promotion outcomes are explicit and auditable.",
+        "Clarification-gated scopes do not over-promote durable knowledge."
+      ],
+      "notes": "Clean split because governance is separate from trigger/queue mechanics."
+    },
+    {
+      "id": "IMPLEMENT-008-A",
+      "parent_task_id": "IMPLEMENT-008",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Prepare interface-track boundary note for future person-root web/tg surfaces on top of the clean model.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "IMPLEMENT-006-D",
+        "IMPLEMENT-007-C"
+      ],
+      "status": "blocked",
+      "acceptance_focus": [
+        "Future interface track references the clean model only.",
+        "No legacy Stage6 operator pages are reused by assumption."
+      ],
+      "notes": "Blocked because web/tg moved to a separate PRD track."
+    },
+    {
+      "id": "IMPLEMENT-008-B",
+      "parent_task_id": "IMPLEMENT-008",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Define future programmatic read contracts for dossier, profile, pair, timeline, clarification, and review objects.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "IMPLEMENT-008-A"
+      ],
+      "status": "blocked",
+      "acceptance_focus": [
+        "Future UI track has stable read contracts to build against.",
+        "Read contracts are rooted in the clean model, not legacy case/chat pages."
+      ],
+      "notes": "Blocked because interface work is outside the current backend-core track."
+    },
+    {
+      "id": "IMPLEMENT-009-A",
+      "parent_task_id": "IMPLEMENT-009",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement metrics and rollups for pass families, normalization outcomes, promotion blocks, contradiction load, clarification load, recompute depth, and model spend.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-004-C",
+        "IMPLEMENT-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Core pipeline metrics are queryable by scope and run family.",
+        "Spend and queue depth are visible for governance."
+      ],
+      "notes": "Clean split because metrics can ship independently of control-state enforcement."
+    },
+    {
+      "id": "IMPLEMENT-009-B",
+      "parent_task_id": "IMPLEMENT-009",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement defect taxonomy persistence and escalation rules for ingestion, data, identity, model, normalization, control-plane, cost, and semantic-drift failures.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-009-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Defects are stored with class, severity, and scope impact.",
+        "Escalation rules exist for the major failure classes."
+      ],
+      "notes": "Clean split because defect taxonomy is a separate control-plane output."
+    },
+    {
+      "id": "IMPLEMENT-009-C",
+      "parent_task_id": "IMPLEMENT-009",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement runtime control states and enforcement points such as normal, degraded, review_only, budget_protected, promotion_blocked, and safe_mode.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-009-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Runtime states are both visible and enforceable.",
+        "Control states integrate with pass execution and promotion paths."
+      ],
+      "notes": "Clean split because state enforcement should follow metrics and defect persistence."
+    },
+    {
+      "id": "IMPLEMENT-010-A",
+      "parent_task_id": "IMPLEMENT-010",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Implement a resumable pilot rebuild and backfill flow from preserved substrate-only data into the clean model.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-005-C",
+        "IMPLEMENT-006-D",
+        "IMPLEMENT-009-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pilot rebuild resumes cleanly after interruption.",
+        "Counts and object identities remain stable across restart."
+      ],
+      "notes": "Clean split because rebuild mechanics are independent from docs and review."
+    },
+    {
+      "id": "IMPLEMENT-010-B",
+      "parent_task_id": "IMPLEMENT-010",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Update core runbooks for pilot rollout, rebuild, rollback, and verification against the clean architecture.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-010-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Runbooks describe clean-architecture pilot behavior, not legacy Stage6/web/tgbot flows.",
+        "Commands and service names match the current codebase."
+      ],
+      "notes": "Clean split because operational docs should follow a working pilot flow."
+    },
+    {
+      "id": "IMPLEMENT-010-C",
+      "parent_task_id": "IMPLEMENT-010",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Run the pre-rollout audit and record go/no-go status for pilot widening.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "IMPLEMENT-010-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pre-rollout review note exists with findings or approval.",
+        "Pilot widening cannot proceed while blocking findings remain open."
+      ],
+      "notes": "Clean split because review gate should stay independent from implementation changes."
+    }
+  ]
+}

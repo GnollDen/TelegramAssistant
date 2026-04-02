@@ -1,0 +1,557 @@
+{
+  "project": {
+    "name": "Person Intelligence System",
+    "version": "clean-slate-v1",
+    "created_at": "2026-04-02",
+    "prd_source": "docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md",
+    "baseline_ref": "origin/master",
+    "baseline_commit": "31e4e26b34baf43e01560cd249a4cd11a393163f",
+    "repository_root": "C:/Users/thrg0/Downloads/TelegramAssistant/repo_inspect"
+  },
+  "baseline_analysis": {
+    "valid_core": [
+      "Telegram ingest listener",
+      "archive import and media processing",
+      "message/session/extraction persistence",
+      "database bootstrap and Redis queueing",
+      "Docker and monitoring shell",
+      "Stage5 substrate utilities after narrowing responsibilities"
+    ],
+    "prd_terms": [
+      "tracked person",
+      "linked person",
+      "candidate identity",
+      "mention",
+      "profile",
+      "dossier",
+      "pair dynamics",
+      "timeline episode",
+      "story arc",
+      "Stage 5 substrate",
+      "Stage 6 bootstrap",
+      "Stage 7 durable formation",
+      "Stage 8 crystallization",
+      "normalization",
+      "promotion",
+      "truth layers",
+      "clarification discipline",
+      "scoped recompute"
+    ],
+    "obsolete_docs": [
+      "docs/planning/README.md",
+      "docs/planning/N1_*",
+      "docs/planning/S6_R0_*",
+      "docs/planning/STAGE6_*",
+      "docs/planning/WEB_*",
+      "docs/planning/PRE_SPRINT0_STAGE6_*",
+      "docs/planning/PRE_SPRINT_W0_WEB_*",
+      "docs/planning/SPRINT_10_*",
+      "docs/planning/SPRINT_11_*",
+      "docs/planning/SPRINT_12_*",
+      "docs/planning/SPRINT_13_*",
+      "docs/planning/SPRINT_14_*"
+    ],
+    "classification": {
+      "keep": [
+        "src/TgAssistant.Telegram/Listener/*",
+        "src/TgAssistant.Processing/Archive/*",
+        "src/TgAssistant.Processing/Media/*",
+        "src/TgAssistant.Infrastructure/Redis/RedisMessageQueue.cs",
+        "src/TgAssistant.Infrastructure/Database/DatabaseInitializer.cs",
+        "deploy/Dockerfile",
+        "deploy/Dockerfile.mcp"
+      ],
+      "keep_with_refactor": [
+        "src/TgAssistant.Intelligence/Stage5/*",
+        "src/TgAssistant.Host/Program.cs",
+        "src/TgAssistant.Host/Startup/*",
+        "src/TgAssistant.Core/Configuration/Settings.cs",
+        "src/TgAssistant.Infrastructure/Database/Ef/TgAssistantDbContext.cs",
+        "src/TgAssistant.Mcp/index.ts",
+        "docker-compose.yml"
+      ],
+      "quarantine_disable": [
+        "src/TgAssistant.Intelligence/Stage6/*",
+        "src/TgAssistant.Web/*",
+        "src/TgAssistant.Telegram/Bot/TelegramBotHostedService.cs",
+        "src/TgAssistant.Host/Web/WebRuntimeHostedService.cs",
+        "Stage6 repositories and verifiers"
+      ],
+      "delete_rewrite": [
+        "Stage6 Core models and interfaces",
+        "legacy Stage6 artifact/case/profile/strategy/draft contracts",
+        "Stage6-focused planning packs",
+        "legacy web operator workflow",
+        "legacy bot operator workflow"
+      ]
+    }
+  },
+  "task_groups": [
+    {
+      "id": "phase-a-cleanup-reset",
+      "title": "Phase A. Cleanup / Reset to Valid Core",
+      "task_ids": [
+        "CLEANUP-001",
+        "CLEANUP-002",
+        "CLEANUP-003",
+        "CLEANUP-004",
+        "CLEANUP-005",
+        "CLEANUP-006",
+        "CLEANUP-007",
+        "CLEANUP-008",
+        "CLEANUP-009"
+      ]
+    },
+    {
+      "id": "phase-b-implementation",
+      "title": "Phase B. PRD Implementation on Clean Baseline",
+      "task_ids": [
+        "IMPLEMENT-001",
+        "IMPLEMENT-002",
+        "IMPLEMENT-003",
+        "IMPLEMENT-004",
+        "IMPLEMENT-005",
+        "IMPLEMENT-006",
+        "IMPLEMENT-007",
+        "IMPLEMENT-008",
+        "IMPLEMENT-009",
+        "IMPLEMENT-010"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "CLEANUP-001",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Define the reset boundary and valid-core inventory from origin/master. Explicitly mark current Stage6/web/tgbot as legacy and lock the retained baseline to reusable substrate and runtime foundations only.",
+      "executor_agent": "architect-reviewer",
+      "acceptance_criteria": [
+        "A reset-boundary note exists and maps keep, keep with refactor, quarantine/disable, and delete/rewrite areas across src/, deploy/, and docs/planning/.",
+        "The retained baseline contains only code that is code-backed, minimally necessary, PRD-compatible, and reusable without current Stage6/web/tgbot semantics.",
+        "The note explicitly states that current Stage6/web/tgbot are not the target architecture."
+      ],
+      "test_steps": [
+        "Review the note against the PRD, AGENTS.md, Program.cs, Stage6/, Web/, Telegram/Bot/, TgAssistant.Mcp/index.ts, and docker-compose.yml.",
+        "Verify that every retained item can survive without legacy Stage6/web/tgbot behavior.",
+        "Run dotnet build TelegramAssistant.sln after any code changes."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "notes": "This is the cleanup gate that prevents legacy carry-forward by inertia."
+    },
+    {
+      "id": "CLEANUP-002",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Deprecate planning and runbook documents that normalize the accepted Stage6/web/tgbot baseline, and publish a clean-slate planning index anchored to the PRD and reset boundary.",
+      "executor_agent": "technical-writer",
+      "acceptance_criteria": [
+        "docs/planning/README.md points to the clean-slate pack instead of N1 or Stage6/web readiness docs.",
+        "Legacy Stage6/web planning files are marked deprecated or archival with an explicit reason.",
+        "No active planning doc claims that current Stage6/web/tgbot is the implementation path."
+      ],
+      "test_steps": [
+        "Search docs/planning/ and docs/runbooks/ for 'Stage 6 accepted', 'readiness baseline', and 'web delivery' and confirm active docs redirect to the clean plan.",
+        "Open the new planning index and verify that the PRD and reset-boundary note are the active authority.",
+        "If doc paths change, run any available markdown or link validation used in the repo."
+      ],
+      "dependencies": [
+        "CLEANUP-001"
+      ],
+      "status": "pending",
+      "notes": "Historical docs may remain, but they must stop driving execution."
+    },
+    {
+      "id": "CLEANUP-003",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Shrink the shared model and interface surface to a valid baseline. Remove or isolate Stage6/current-state/profile/strategy/draft/review/case/user-context contracts from active core namespaces.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Stage6-specific models and interfaces are no longer presented as active foundation contracts in TgAssistant.Core.",
+        "Retained shared models are limited to substrate, ingest, archive/media, evidence capture, queue, and minimal operational primitives.",
+        "Any preserved legacy contracts are clearly marked deprecated or moved behind a legacy boundary."
+      ],
+      "test_steps": [
+        "Inspect src/TgAssistant.Core/Models/ and src/TgAssistant.Core/Interfaces/ and confirm legacy Stage6 contracts are removed, relocated, or marked legacy-only.",
+        "Run rg to verify that the active composition root no longer depends on Stage6 contracts as baseline APIs.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "CLEANUP-001"
+      ],
+      "status": "pending",
+      "notes": "Current Core over-encodes the rejected Stage6 product shape."
+    },
+    {
+      "id": "CLEANUP-004",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Reset the schema and repository baseline. Separate preserved substrate tables from frozen legacy Stage6/domain product tables so new PRD work does not inherit old truth storage.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "A schema inventory labels each table and repository as retained substrate, retained with refactor, frozen legacy, or replace-on-rebuild.",
+        "Stage6 case/artifact/profile/strategy/draft/review repositories stop presenting frozen tables as active architecture.",
+        "Migration policy for the new PRD schema is defined without treating legacy Stage6 tables as canonical truth."
+      ],
+      "test_steps": [
+        "Inspect TgAssistantDbContext, repository registrations, and migration files to confirm preserved versus frozen areas are explicit.",
+        "Verify the schema inventory names replacement boundaries for Stage6 tables and repos.",
+        "Run dotnet build TelegramAssistant.sln after code or migration manifest changes."
+      ],
+      "dependencies": [
+        "CLEANUP-003"
+      ],
+      "status": "pending",
+      "notes": "This task defines what survives from origin/master at the storage layer."
+    },
+    {
+      "id": "CLEANUP-005",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Unwind legacy runtime wiring so Program.cs, hosted-service registration, runtime roles, and smokes no longer assume current Stage6/web/tgbot as normal runtime baseline.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "The cleaned host composition separates preserved substrate/runtime roles from disabled or legacy-only roles.",
+        "Current Stage6/web/bot hosted services are not part of the active baseline runtime role contract.",
+        "Runtime docs and smokes distinguish preserved substrate verification from legacy-only diagnostics."
+      ],
+      "test_steps": [
+        "Inspect Program.cs and Host/Startup/*.cs and verify Stage6/web/bot are not default baseline roles.",
+        "Run dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --list-smokes and confirm cleaned role and smoke naming.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "CLEANUP-003",
+        "CLEANUP-004"
+      ],
+      "status": "pending",
+      "notes": "Host wiring is one of the main places where legacy assumptions remain normalized."
+    },
+    {
+      "id": "CLEANUP-006",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Quarantine the current Stage6 implementation and helper commands so it cannot be mistaken for the new PRD Stage 6/7/8 path.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Current Stage6 services, verifiers, and helper commands are removed from active runtime composition or placed behind an explicit legacy gate.",
+        "No active module or planning doc refers to current Stage6 as the baseline for bootstrap, durable formation, or crystallization.",
+        "Any retained Stage6 code is marked as legacy reference only."
+      ],
+      "test_steps": [
+        "Search the codebase for active TgAssistant.Intelligence.Stage6 registrations/usages from Host startup and confirm they are gated or removed.",
+        "Run dotnet build TelegramAssistant.sln.",
+        "Verify that no task in Phase B depends on preserving old Stage6 semantics."
+      ],
+      "dependencies": [
+        "CLEANUP-004",
+        "CLEANUP-005"
+      ],
+      "status": "pending",
+      "notes": "This is isolation, not refinement."
+    },
+    {
+      "id": "CLEANUP-007",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Disable or quarantine the current web HTML renderer and Telegram bot operator workflow. Leave at most a clearly marked temporary diagnostic shell until the new person-first surfaces exist.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Current web and tgbot surfaces are no longer described or exposed as the target operator workflow.",
+        "If a temporary shell remains, it is labelled diagnostic-only and not presented as product baseline.",
+        "Legacy Stage6 queue/case/artifact flows are isolated from the clean implementation track."
+      ],
+      "test_steps": [
+        "Inspect src/TgAssistant.Web/, WebRuntimeHostedService.cs, and TelegramBotHostedService.cs and confirm the legacy operator surface is disabled, gated, or clearly marked.",
+        "Run dotnet build TelegramAssistant.sln.",
+        "If a temporary surface remains, open it locally and confirm it advertises itself as legacy or diagnostic-only."
+      ],
+      "dependencies": [
+        "CLEANUP-005",
+        "CLEANUP-006"
+      ],
+      "status": "pending",
+      "notes": "The current web layer is an internal renderer, not a reusable operator foundation."
+    },
+    {
+      "id": "CLEANUP-008",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Strip Stage6-specific MCP tools, compose defaults, and deploy assumptions so MCP and deployment carry only reusable runtime responsibilities while the clean architecture is rebuilt.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "The MCP surface no longer presents Stage6 artifact/case-centric tools as the primary contract.",
+        "docker-compose.yml and deploy docs stop assuming web/bot/Stage6 operator flow as accepted baseline runtime.",
+        "Preserved MCP/deploy shell remains usable for health, transport, and future clean-model exposure."
+      ],
+      "test_steps": [
+        "Inspect src/TgAssistant.Mcp/index.ts, docker-compose.yml, and deploy/ docs to confirm Stage6-centric defaults are removed or legacy-gated.",
+        "Run npm --prefix src/TgAssistant.Mcp run build if MCP code changes.",
+        "Run dotnet build TelegramAssistant.sln if Host or shared contracts change."
+      ],
+      "dependencies": [
+        "CLEANUP-005",
+        "CLEANUP-007"
+      ],
+      "status": "pending",
+      "notes": "MCP transport/auth shell is reusable; its current tool catalog is not."
+    },
+    {
+      "id": "CLEANUP-009",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Audit the cleanup branch for hidden legacy bias. Cleanup and implementation must stay separate, the retained baseline must be minimal and code-backed, and no reset task may read as 'finish old Stage6/web/tgbot'.",
+      "executor_agent": "reviewer",
+      "acceptance_criteria": [
+        "A cleanup review note exists with findings or explicit approval across docs, models, DB, runtime, Stage6 isolation, web/tgbot, and MCP/deploy.",
+        "Any remaining dependency on legacy Stage6/web/tgbot is called out as blocking unless it is explicitly temporary and diagnostic-only.",
+        "Phase B does not start until cleanup approval is recorded or blocking findings are resolved."
+      ],
+      "test_steps": [
+        "Review cleanup changes against the PRD, reset-boundary note, and this backlog.",
+        "Rerun the required build commands for touched C# and TypeScript areas.",
+        "Confirm no implementation task depends on preserving old Stage6 case/artifact semantics."
+      ],
+      "dependencies": [
+        "CLEANUP-002",
+        "CLEANUP-004",
+        "CLEANUP-005",
+        "CLEANUP-006",
+        "CLEANUP-007",
+        "CLEANUP-008"
+      ],
+      "status": "pending",
+      "notes": "This is the explicit gate against legacy carry-forward."
+    },
+    {
+      "id": "IMPLEMENT-001",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Publish the clean-slate target architecture on top of the cleaned baseline: preserved substrate, person-first knowledge core, Stage 6 bootstrap, Stage 7 durable formation, Stage 8 crystallizers, and rollout cut lines.",
+      "executor_agent": "architect-reviewer",
+      "acceptance_criteria": [
+        "A target-architecture note maps PRD terms to concrete modules, storage boundaries, and runtime flows.",
+        "The architecture does not depend on legacy Stage6 case/artifact/profile/strategy/draft/review storage or operator flows.",
+        "Workstreams and dependency order are explicit enough to drive implementation without assistant-first drift."
+      ],
+      "test_steps": [
+        "Review the architecture note against the PRD and approved cleanup outputs.",
+        "Verify that every planned module has a clean baseline dependency and no hidden reliance on current Stage6/web/tgbot.",
+        "Run dotnet build TelegramAssistant.sln if project boundaries or code change."
+      ],
+      "dependencies": [
+        "CLEANUP-009"
+      ],
+      "status": "pending",
+      "notes": "This becomes the implementation authority for Phase B."
+    },
+    {
+      "id": "IMPLEMENT-002",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Introduce the new PRD data platform: Person, OperatorModel, SourceObject, EvidenceItem, RelationshipEdge, candidate identity state, ModelPassRun, NormalizationRun, and durable-object metadata.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "New person-first schema objects exist and do not reuse frozen Stage6 truth tables as canonical storage.",
+        "Identity, evidence, run audit, and durable-object metadata are queryable by person scope, evidence ref, and run id.",
+        "The schema supports later bootstrap, durable formation, clarification, and crystallization without legacy case/artifact coupling."
+      ],
+      "test_steps": [
+        "Apply the new migrations to an empty database and a realistic substrate snapshot.",
+        "Run repository smoke checks for person lookup, source/evidence linkage, and run ledger writes.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-001"
+      ],
+      "status": "pending",
+      "notes": "This replaces generic entity-first plus legacy Stage6 truth storage as the target model."
+    },
+    {
+      "id": "IMPLEMENT-003",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Refit the preserved ingestion, archive, media, and session pipeline so Stage 5 outputs normalized source, evidence, and provenance records aligned to the new person-first schema while preserving rebuildability.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Realtime ingest, archive import, media enrichment, and session slicing write source/evidence/provenance records keyed to the new data model.",
+        "Stage 5 remains corpus-first and does not materialize legacy Stage6 artifacts or durable person conclusions.",
+        "A full rerun from raw inputs can deterministically rebuild the cleaned substrate."
+      ],
+      "test_steps": [
+        "Run realtime, archive, and media smokes on seeded data and verify new source/evidence/provenance rows.",
+        "Replay the same input twice and confirm deterministic rebuild behavior.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-002"
+      ],
+      "status": "pending",
+      "notes": "This keeps the reusable ingest core but narrows Stage 5 to the PRD substrate boundary."
+    },
+    {
+      "id": "IMPLEMENT-004",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Implement the new control-plane pass protocol and normalization layer: explicit input envelope, stable result statuses, typed candidate outputs, truth-layer separation, and storage-safe normalization.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Pass envelopes carry run type, target object, scope, source refs, truth summary, conflicts, unknowns, and schema version.",
+        "Normalization separates fact, inference, hypothesis, and conflict and prevents raw model prose from writing directly into durable state.",
+        "Passes can end in result_ready, need_more_data, need_operator_clarification, or blocked_invalid_input with persisted audit records."
+      ],
+      "test_steps": [
+        "Exercise normal, need-more-data, clarification, and invalid-input runs and verify stored run and normalization records.",
+        "Feed unsafe or malformed outputs and confirm they are downgraded or blocked.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-001",
+        "IMPLEMENT-002"
+      ],
+      "status": "pending",
+      "notes": "This is the main governance seam between reasoning and durable state."
+    },
+    {
+      "id": "IMPLEMENT-005",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Build PRD Stage 6 bootstrap on the prepared corpus: operator-centered graph initialization, tracked-person attachment, linked-person discovery, candidate identity handling, bootstrap slices, contradiction pools, and ambiguity pools without durable promotion.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "A bootstrap run can execute for one tracked person or corpus scope and persist non-durable graph-init and ambiguity outputs.",
+        "Linked person, candidate identity, and mention states are explicitly differentiated in stored bootstrap results.",
+        "Repeated runs are idempotent and do not duplicate graph edges or bootstrap artifacts."
+      ],
+      "test_steps": [
+        "Seed a realistic corpus for one tracked person and run bootstrap twice, comparing counts and object identities.",
+        "Verify that bootstrap outputs remain non-durable and are not presented as reviewed dossiers or profiles.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-003",
+        "IMPLEMENT-004"
+      ],
+      "status": "pending",
+      "notes": "This is a new bootstrap stage, not a repair of the old Stage6 engine."
+    },
+    {
+      "id": "IMPLEMENT-006",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Build PRD Stage 7 durable formation for dossiers, profiles, pair dynamics, events, timeline episodes, story arcs, and reviewable durable knowledge objects from normalized candidates and bootstrap outputs.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Durable object families exist with evidence refs, freshness, stability, confidence, coverage, contradiction markers, and promotion state.",
+        "Profile versus dossier is explicit, pair dynamics is first-class, and timeline uses episodes and story arcs instead of legacy period summaries as the end state.",
+        "Formation logic remains separate from promotion governance and from later crystallizer reruns."
+      ],
+      "test_steps": [
+        "Run durable formation on a seeded bootstrap scope and verify stored person, dossier, pair-dynamics, event, and timeline outputs.",
+        "Rerun the same scope and confirm revision behavior instead of duplicate durable rows.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-002",
+        "IMPLEMENT-004",
+        "IMPLEMENT-005"
+      ],
+      "status": "pending",
+      "notes": "This is the first real product-grade knowledge layer required by the PRD."
+    },
+    {
+      "id": "IMPLEMENT-007",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Build PRD Stage 8 crystallization and scoped recompute: trigger queue, dependency model, targeted reruns after new data, edits, deletes, and operator answers, plus promotion and clarification governance.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "A persistent recompute queue exists with dedupe, retry, and smallest-sufficient-scope execution.",
+        "Promotion and clarification gates operate on the new truth-layer model instead of legacy Stage6 case/artifact state.",
+        "Clarification answers, edits, deletes, and high-signal data create targeted reruns instead of global rebuilds."
+      ],
+      "test_steps": [
+        "Apply clarification, edit, delete, and high-signal triggers and verify only affected scopes are rerun.",
+        "Exercise promotion-approved, promotion-blocked, and conflict-heavy candidates and verify stored outcomes.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-006"
+      ],
+      "status": "pending",
+      "notes": "Scoped recompute and promotion governance are core PRD behavior, not late polish."
+    },
+    {
+      "id": "IMPLEMENT-008",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Implement new operator surfaces on the clean model: person-root workspace, dossier/profile/pair/timeline views, clarification and review queues, and clean programmatic reads for those same objects.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Navigation starts from tracked person, linked person, or relevant graph context instead of legacy Stage6 case/chat shell.",
+        "Operator views expose truth layers, freshness, contradiction pressure, and review state clearly for each durable object family.",
+        "Primary operator workflow no longer depends on legacy Stage6 queue/case/artifact pages."
+      ],
+      "test_steps": [
+        "Start the web runtime locally and walk through person-root dossier, profile, pair-dynamics, timeline, clarification, and review flows.",
+        "Verify that canonical, proposal, operator-supplied, and obsolete states are visually distinct and consistent across pages.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-006",
+        "IMPLEMENT-007"
+      ],
+      "status": "blocked",
+      "notes": "Moved to a separate web/tg interface PRD track after core knowledge/control implementation. Not part of the current backend-core execution path."
+    },
+    {
+      "id": "IMPLEMENT-009",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Implement observability, defect taxonomy, runtime control states, and budget governance for the new pass pipeline, normalization, promotion, clarification, and crystallization flows.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Metrics or logs exist for pass families, normalization outcomes, promotion blocks, contradiction load, clarification load, recompute depth, model spend, and runtime control states.",
+        "Defect classes and escalation rules cover ingestion, data, identity, model, normalization, control-plane, cost, and semantic-drift failures.",
+        "Runtime states such as normal, degraded, review_only, budget_protected, promotion_blocked, and safe_mode are visible and enforceable."
+      ],
+      "test_steps": [
+        "Inject cost, normalization, contradiction, and missing-context failure scenarios and verify recorded defects and control-state transitions.",
+        "Confirm queryable metrics expose run family duration, promotion-blocked counts, recompute queue depth, and budget by scope.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-004",
+        "IMPLEMENT-007"
+      ],
+      "status": "pending",
+      "notes": "The PRD treats observability and governance as core runtime behavior."
+    },
+    {
+      "id": "IMPLEMENT-010",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Backfill and validate the clean model from preserved substrate data, update runbooks for core knowledge/control pilot rollout and rollback, and run the pre-rollout audit before any cutover beyond pilot scopes.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "Pilot rebuild can run from substrate-only data with resumable checkpoints and clear restart behavior.",
+        "Runbooks describe core knowledge/control pilot rollout, rebuild, and rollback for the clean architecture instead of legacy Stage6/web/tgbot flows.",
+        "A pre-rollout review note or approval exists and rollout is not approved until blocking findings are resolved."
+      ],
+      "test_steps": [
+        "Restore a representative substrate snapshot, run partial rebuild, interrupt it, resume it, and verify stable counts and object identities.",
+        "Walk through the updated runbooks and confirm commands, service names, and rollback steps match the current codebase.",
+        "Run dotnet build TelegramAssistant.sln and the core pilot verification flow."
+      ],
+      "dependencies": [
+        "IMPLEMENT-005",
+        "IMPLEMENT-006",
+        "IMPLEMENT-009"
+      ],
+      "status": "pending",
+      "notes": "This final task bundles pilot migration, release-readiness docs, and the go/no-go gate because all three depend on the same implementation evidence."
+    }
+  ]
+}
