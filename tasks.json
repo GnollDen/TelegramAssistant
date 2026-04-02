@@ -388,8 +388,8 @@
       "dependencies": [
         "IMPLEMENT-002"
       ],
-      "status": "pending",
-      "notes": "This keeps the reusable ingest core but narrows Stage 5 to the PRD substrate boundary."
+      "status": "done",
+      "notes": "This keeps the reusable ingest core but narrows Stage 5 to the PRD substrate boundary. IMPLEMENT-003-A/B/C now write realtime, archive, session, and media-derived source/evidence/provenance rows into the new substrate model, and IMPLEMENT-003-D added deterministic replay verification via --stage5-smoke to catch count/identity drift and non-substrate writes."
     },
     {
       "id": "IMPLEMENT-004",

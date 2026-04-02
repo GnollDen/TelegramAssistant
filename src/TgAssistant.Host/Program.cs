@@ -364,6 +364,8 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<Stage5VerificationService>();
             await verificationService.RunAsync();
+            var substrateVerificationService = scope.ServiceProvider.GetRequiredService<Stage5SubstrateDeterminismVerificationService>();
+            await substrateVerificationService.RunAsync();
             Log.Information("Stage5 verification run requested via --stage5-smoke. Exiting after successful verification.");
             return;
         }

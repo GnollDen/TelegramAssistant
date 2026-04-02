@@ -560,12 +560,12 @@
         "IMPLEMENT-003-B",
         "IMPLEMENT-003-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Replay twice yields stable counts and identities.",
         "Stage 5 remains a rebuildable substrate only."
       ],
-      "notes": "Clean split because deterministic verification should gate pipeline refit completion."
+      "notes": "Clean split because deterministic verification should gate pipeline refit completion. --stage5-smoke now runs Stage5SubstrateDeterminismVerificationService, which replays synthetic realtime, archive, session, and media writes twice against the active substrate tables and fails on count or identity drift or any non-substrate writes under the synthetic scope; dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-004-A",

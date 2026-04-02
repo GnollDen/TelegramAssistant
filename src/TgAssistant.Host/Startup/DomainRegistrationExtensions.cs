@@ -46,6 +46,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IExternalArchivePreparationService, ExternalArchivePreparationService>();
         services.AddSingleton<IExternalArchiveIngestionService, ExternalArchiveIngestionService>();
         services.AddSingleton<ExternalArchiveVerificationService>();
+        services.AddSingleton<Stage5SubstrateDeterminismVerificationService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
