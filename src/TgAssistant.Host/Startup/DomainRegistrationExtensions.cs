@@ -172,6 +172,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IRealtimeMessageSubstrateRepository, RealtimeMessageSubstrateRepository>();
         services.AddSingleton<IArchiveMessageSubstrateRepository, ArchiveMessageSubstrateRepository>();
         services.AddSingleton<IModelPassEnvelopeRepository, ModelPassEnvelopeRepository>();
+        services.AddSingleton<IModelOutputNormalizer, ModelOutputNormalizer>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

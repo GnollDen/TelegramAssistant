@@ -595,12 +595,12 @@
       "dependencies": [
         "IMPLEMENT-004-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Raw model prose cannot write directly into durable state.",
         "Unsafe or malformed output is downgraded or blocked."
       ],
-      "notes": "Clean split because the normalizer is a distinct contract boundary."
+      "notes": "Clean split because the normalizer is a distinct contract boundary. Added typed ModelNormalization models plus ModelOutputNormalizer to parse only whitelisted JSON candidate arrays into fact/inference/hypothesis/conflict candidates, downgrade partially malformed result_ready payloads to need_operator_clarification, and block raw prose or invalid shapes before any durable write path; added --normalization-smoke to validate result_ready, downgrade, and blocked_invalid_input paths in-memory, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-004-C",

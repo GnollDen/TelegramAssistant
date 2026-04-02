@@ -78,6 +78,11 @@ public interface IModelPassEnvelopeRepository
     Task<ModelPassEnvelope?> GetByIdAsync(Guid runId, CancellationToken ct = default);
 }
 
+public interface IModelOutputNormalizer
+{
+    ModelNormalizationResult Normalize(ModelNormalizationRequest request);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }
