@@ -49,16 +49,8 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # Clean-slate baseline: preserved substrate/runtime shell only.
       Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
-      Web__Url: ${WEB_URL:-http://127.0.0.1:5078}
-      Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
-      Web__AllowSyntheticScopes: ${WEB_ALLOW_SYNTHETIC_SCOPES:-false}
-      Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}
-      Web__AccessHeaderName: ${WEB_ACCESS_HEADER_NAME:-X-Tga-Operator-Key}
-      Web__AccessCookieName: ${WEB_ACCESS_COOKIE_NAME:-tga_operator_key}
-      Web__OperatorIdentity: ${WEB_OPERATOR_IDENTITY:-web-operator}
-      Web__DefaultCaseId: ${WEB_DEFAULT_CASE_ID:-0}
-      Web__DefaultChatId: ${WEB_DEFAULT_CHAT_ID:-0}
       Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       Redis__ConnectionString: "127.0.0.1:6379"
       Redis__ConsumerName: ${REDIS_CONSUMER_NAME:-worker}
@@ -72,29 +64,6 @@ services:
       Telegram__ApiId: ${TG_API_ID}
       Telegram__ApiHash: ${TG_API_HASH}
       Telegram__PhoneNumber: ${TG_PHONE}
-      Telegram__BotToken: ${TG_BOT_TOKEN}
-      Telegram__OwnerUserId: ${TG_OWNER_ID}
-      BotChat__OwnerId: ${BOTCHAT_OWNER_ID:-}
-      BotChat__DefaultCaseId: ${BOTCHAT_DEFAULT_CASE_ID:-0}
-      BotChat__DefaultChatId: ${BOTCHAT_DEFAULT_CHAT_ID:-0}
-      Stage6AutoCaseGeneration__Enabled: ${STAGE6_AUTO_CASE_GENERATION_ENABLED:-false}
-      Stage6AutoCaseGeneration__PollIntervalSeconds: ${STAGE6_AUTO_CASE_GENERATION_POLL_INTERVAL_SECONDS:-120}
-      Stage6AutoCaseGeneration__ScopeLookbackHours: ${STAGE6_AUTO_CASE_GENERATION_SCOPE_LOOKBACK_HOURS:-72}
-      Stage6AutoCaseGeneration__CaseUpdateCooldownMinutes: ${STAGE6_AUTO_CASE_GENERATION_CASE_UPDATE_COOLDOWN_MINUTES:-30}
-      Stage6AutoCaseGeneration__StaleAfterNoSignalHours: ${STAGE6_AUTO_CASE_GENERATION_STALE_AFTER_NO_SIGNAL_HOURS:-24}
-      Stage6AutoCaseGeneration__RiskBlockingThreshold: ${STAGE6_AUTO_CASE_GENERATION_RISK_BLOCKING_THRESHOLD:-0.75}
-      Stage6AutoCaseGeneration__RiskImportantThreshold: ${STAGE6_AUTO_CASE_GENERATION_RISK_IMPORTANT_THRESHOLD:-0.6}
-      Stage6AutoCaseGeneration__NeedsReviewMaxConfidenceThreshold: ${STAGE6_AUTO_CASE_GENERATION_NEEDS_REVIEW_MAX_CONFIDENCE_THRESHOLD:-0.55}
-      Stage6AutoCaseGeneration__AmbiguityClarificationThreshold: ${STAGE6_AUTO_CASE_GENERATION_AMBIGUITY_CLARIFICATION_THRESHOLD:-0.65}
-      Stage6AutoCaseGeneration__EvidenceConflictConfidenceThreshold: ${STAGE6_AUTO_CASE_GENERATION_EVIDENCE_CONFLICT_CONFIDENCE_THRESHOLD:-0.5}
-      Stage6AutoCaseGeneration__NextStepBlockedConfidenceThreshold: ${STAGE6_AUTO_CASE_GENERATION_NEXT_STEP_BLOCKED_CONFIDENCE_THRESHOLD:-0.55}
-      Stage6AutoCaseGeneration__NeedsInputFallbackConfidenceThreshold: ${STAGE6_AUTO_CASE_GENERATION_NEEDS_INPUT_FALLBACK_CONFIDENCE_THRESHOLD:-0.5}
-      Stage6AutoCaseGeneration__MinMessagesForStateRefresh: ${STAGE6_AUTO_CASE_GENERATION_MIN_MESSAGES_FOR_STATE_REFRESH:-4}
-      Stage6AutoCaseGeneration__MinMessagesForDossierCandidate: ${STAGE6_AUTO_CASE_GENERATION_MIN_MESSAGES_FOR_DOSSIER_CANDIDATE:-8}
-      Stage6AutoCaseGeneration__MinMessagesForDraftCandidate: ${STAGE6_AUTO_CASE_GENERATION_MIN_MESSAGES_FOR_DRAFT_CANDIDATE:-2}
-      Stage6AutoCaseGeneration__StateRefreshMinAgeHours: ${STAGE6_AUTO_CASE_GENERATION_STATE_REFRESH_MIN_AGE_HOURS:-6}
-      Stage6AutoCaseGeneration__DossierCandidateMinAgeHours: ${STAGE6_AUTO_CASE_GENERATION_DOSSIER_CANDIDATE_MIN_AGE_HOURS:-24}
-      Stage6AutoCaseGeneration__DraftCandidatePendingHours: ${STAGE6_AUTO_CASE_GENERATION_DRAFT_CANDIDATE_PENDING_HOURS:-12}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}
       Claude__ApiKey: ${CLAUDE_API_KEY}

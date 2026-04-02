@@ -1,7 +1,7 @@
 version: "3.9"
 
-# Preview-only M1 workload split template.
-# Not used by default deployment path.
+# Legacy preview-only workload split template.
+# Not used by the default deployment path and not part of the clean-slate baseline.
 services:
   tga-ingest:
     image: ghcr.io/example/telegramassistant:latest

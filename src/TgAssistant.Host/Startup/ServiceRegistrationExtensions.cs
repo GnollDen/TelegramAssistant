@@ -8,12 +8,18 @@ public static partial class ServiceRegistrationExtensions
     public static IServiceCollection AddTelegramAssistantCompositionRoot(
         this IServiceCollection services,
         IConfiguration config,
-        RuntimeRoleSelection runtimeRoleSelection)
+        RuntimeRoleSelection runtimeRoleSelection,
+        bool includeLegacyStage6Diagnostics = false,
+        bool includeLegacyWebDiagnostics = false,
+        bool includeLegacyBotDiagnostics = false)
     {
         services
             .AddTelegramAssistantSettings(config)
             .AddTelegramAssistantInfrastructure(config)
-            .AddTelegramAssistantDomainServices()
+            .AddTelegramAssistantDomainServices(
+                includeLegacyStage6Diagnostics,
+                includeLegacyWebDiagnostics,
+                includeLegacyBotDiagnostics)
             .AddTelegramAssistantHttpClients(config)
             .AddRuntimeRoleSelection(runtimeRoleSelection)
             .AddTelegramAssistantHostedServices(runtimeRoleSelection);

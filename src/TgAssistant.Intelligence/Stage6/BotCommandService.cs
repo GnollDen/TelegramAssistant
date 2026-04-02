@@ -1,3 +1,5 @@
+// Legacy Stage6 surface retained for reference and diagnostics only. Not part of the PRD target architecture.
+
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;

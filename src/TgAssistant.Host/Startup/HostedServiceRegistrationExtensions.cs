@@ -1,10 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Intelligence.Stage5;
-using TgAssistant.Intelligence.Stage6.AutoCases;
-using TgAssistant.Host.Web;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
-using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
 
 namespace TgAssistant.Host.Startup;
@@ -27,16 +24,6 @@ public static class HostedServiceRegistrationExtensions
         if (selection.Has(RuntimeWorkloadRole.Stage5))
         {
             services.AddStage5HostedServices();
-        }
-
-        if (selection.Has(RuntimeWorkloadRole.Stage6))
-        {
-            services.AddStage6HostedServices();
-        }
-
-        if (selection.Has(RuntimeWorkloadRole.Web))
-        {
-            services.AddWebHostedServices();
         }
 
         if (selection.Has(RuntimeWorkloadRole.Mcp))
@@ -84,18 +71,6 @@ public static class HostedServiceRegistrationExtensions
         return services;
     }
 
-    private static IServiceCollection AddStage6HostedServices(this IServiceCollection services)
-    {
-        services.AddHostedService<Stage6AutoCaseGenerationWorkerService>();
-        return services;
-    }
-
-    private static IServiceCollection AddWebHostedServices(this IServiceCollection services)
-    {
-        services.AddHostedService<WebRuntimeHostedService>();
-        return services;
-    }
-
     private static IServiceCollection AddMcpHostedServices(this IServiceCollection services)
     {
         // MCP server is deployed as a standalone TypeScript process.
@@ -104,7 +79,7 @@ public static class HostedServiceRegistrationExtensions
 
     private static IServiceCollection AddOpsHostedServices(this IServiceCollection services)
     {
-        services.AddHostedService<TelegramBotHostedService>();
+        // Keep reusable operational sync in the active baseline; bot workflow is legacy-only.
         services.AddHostedService<Neo4jSyncWorkerService>();
         return services;
     }

@@ -1,3 +1,5 @@
+// Legacy Stage6 surface retained for reference and diagnostics only. Not part of the PRD target architecture.
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TgAssistant.Core.Interfaces;

@@ -26,9 +26,6 @@ public sealed record RuntimeRoleSelection(RuntimeWorkloadRole Roles, string Sour
         "ingest,ops",
         "stage5",
         "stage5,maintenance",
-        "stage6",
-        "web",
-        "web,ops",
         "ingest,stage5,maintenance,ops"
     };
 }
@@ -47,9 +44,6 @@ public static class RuntimeRoleParser
         RuntimeWorkloadRole.Ingest | RuntimeWorkloadRole.Ops,
         RuntimeWorkloadRole.Stage5,
         RuntimeWorkloadRole.Stage5 | RuntimeWorkloadRole.Maintenance,
-        RuntimeWorkloadRole.Stage6,
-        RuntimeWorkloadRole.Web,
-        RuntimeWorkloadRole.Web | RuntimeWorkloadRole.Ops,
         RuntimeWorkloadRole.Ingest | RuntimeWorkloadRole.Stage5 | RuntimeWorkloadRole.Maintenance | RuntimeWorkloadRole.Ops
     };
 
@@ -68,6 +62,14 @@ public static class RuntimeRoleParser
         var rawRoles = string.IsNullOrWhiteSpace(rawArg) ? rawConfig! : rawArg!;
         var source = string.IsNullOrWhiteSpace(rawArg) ? "config" : $"arg:{argPrefix}";
         var roles = ParseRolesOrThrow(rawRoles, source);
+        if ((roles & (RuntimeWorkloadRole.Stage6 | RuntimeWorkloadRole.Web)) != RuntimeWorkloadRole.None)
+        {
+            throw new InvalidOperationException(
+                $"Runtime role combination '{rawRoles}' requests legacy-only roles. " +
+                $"Stage6/web runtime roles are not part of the active baseline. " +
+                $"Allowed active combinations: {string.Join("; ", RuntimeRoleSelection.AllowedCombinationDisplay)}.");
+        }
+
         if (!AllowedCombinations.Contains(roles))
         {
             throw new InvalidOperationException(

@@ -1,3 +1,5 @@
+// Retained only as a legacy diagnostic shell during cleanup. This is not the active operator workflow.
+
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -42,13 +44,13 @@ public class TelegramBotHostedService : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(_telegramSettings.BotToken))
         {
-            _logger.LogWarning("Telegram bot service is disabled because Telegram:BotToken is empty.");
+            _logger.LogWarning("Legacy Telegram bot diagnostic shell is disabled because Telegram:BotToken is empty.");
             return;
         }
 
         if (_settings.OwnerId <= 0)
         {
-            _logger.LogWarning("Telegram bot service has no configured owner id. Unauthorized gate will deny all messages.");
+            _logger.LogWarning("Legacy Telegram bot diagnostic shell has no configured owner id. Unauthorized gate will deny all messages.");
         }
 
         var botClient = new TelegramBotClient(_telegramSettings.BotToken);
@@ -63,7 +65,7 @@ public class TelegramBotHostedService : BackgroundService
             receiverOptions: receiverOptions,
             cancellationToken: stoppingToken);
 
-        _logger.LogInformation("Telegram bot receiver started.");
+        _logger.LogInformation("Legacy Telegram bot diagnostic shell started.");
 
         try
         {
@@ -71,7 +73,7 @@ public class TelegramBotHostedService : BackgroundService
         }
         catch (OperationCanceledException)
         {
-            _logger.LogInformation("Telegram bot receiver stopping.");
+            _logger.LogInformation("Legacy Telegram bot diagnostic shell stopping.");
         }
     }
 

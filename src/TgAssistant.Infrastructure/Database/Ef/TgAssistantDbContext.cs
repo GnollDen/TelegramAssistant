@@ -8,6 +8,7 @@ public class TgAssistantDbContext : DbContext
     {
     }
 
+    // Active baseline tables: reusable substrate plus retained-with-refactor data stores.
     public DbSet<DbMessage> Messages => Set<DbMessage>();
     public DbSet<DbArchiveImportRun> ArchiveImportRuns => Set<DbArchiveImportRun>();
     public DbSet<DbEntity> Entities => Set<DbEntity>();
@@ -32,6 +33,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbAnalysisUsageEvent> AnalysisUsageEvents => Set<DbAnalysisUsageEvent>();
     public DbSet<DbTextEmbedding> TextEmbeddings => Set<DbTextEmbedding>();
     public DbSet<DbStickerCache> StickerCache => Set<DbStickerCache>();
+
+    // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
     public DbSet<DbPeriodTransition> PeriodTransitions => Set<DbPeriodTransition>();
     public DbSet<DbHypothesis> Hypotheses => Set<DbHypothesis>();
@@ -503,6 +506,7 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
         });
 
+        // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.
         modelBuilder.Entity<DbPeriod>(e =>
         {
             e.ToTable("domain_periods");

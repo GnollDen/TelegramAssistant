@@ -1,2 +1,2 @@
 namespace TgAssistant.Web;
-// Stage 7: REST API + Blazor/React for dossier viewer
+// Legacy diagnostic web shell only. The clean-slate operator interface will be rebuilt on a separate track.

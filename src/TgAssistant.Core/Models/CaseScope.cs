@@ -1,4 +1,4 @@
-namespace TgAssistant.Core.Models;
+namespace TgAssistant.Core.Legacy.Models;
 
 public readonly record struct CaseScope(long CaseId, long ChatId);
 

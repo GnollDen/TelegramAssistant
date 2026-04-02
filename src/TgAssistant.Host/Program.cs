@@ -11,12 +11,10 @@ using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
 using TgAssistant.Host.Health;
-using TgAssistant.Host.Stage6Ab;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
-using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
@@ -51,6 +49,30 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Starting Telegram Assistant...");
+    var legacyStage6Entrypoints = new[]
+    {
+        "--stage6-execution-smoke",
+        "--auto-case-smoke",
+        "--stage6-light-ab-run"
+    };
+    var legacyStage6ArgPrefixes = new[]
+    {
+        "--stage6-light-ab-cases-file=",
+        "--stage6-light-ab-output-dir=",
+        "--stage6-light-ab-pass-label=",
+        "--stage6-light-ab-model-override="
+    };
+    var requestedLegacyStage6Entrypoints = args
+        .Where(arg => legacyStage6Entrypoints.Contains(arg, StringComparer.OrdinalIgnoreCase)
+            || legacyStage6ArgPrefixes.Any(prefix => arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    if (requestedLegacyStage6Entrypoints.Length > 0)
+    {
+        throw new InvalidOperationException(
+            $"Legacy Stage6 helper entrypoints are not part of the active runtime contract: {string.Join(", ", requestedLegacyStage6Entrypoints)}.");
+    }
+
     var runFoundationSmoke = args.Any(arg => string.Equals(arg, "--foundation-smoke", StringComparison.OrdinalIgnoreCase));
     var runClarificationSmoke = args.Any(arg => string.Equals(arg, "--clarification-smoke", StringComparison.OrdinalIgnoreCase));
     var runPeriodizationSmoke = args.Any(arg => string.Equals(arg, "--periodization-smoke", StringComparison.OrdinalIgnoreCase));
@@ -66,17 +88,33 @@ try
     var runSearchSmoke = args.Any(arg => string.Equals(arg, "--search-smoke", StringComparison.OrdinalIgnoreCase));
     var runNetworkSmoke = args.Any(arg => string.Equals(arg, "--network-smoke", StringComparison.OrdinalIgnoreCase));
     var runOutcomeSmoke = args.Any(arg => string.Equals(arg, "--outcome-smoke", StringComparison.OrdinalIgnoreCase));
-    var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
-    var runStage6ExecutionSmoke = args.Any(arg => string.Equals(arg, "--stage6-execution-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
+    var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
+    var includeLegacyWebDiagnostics = runWebSmoke
+        || runWebReviewSmoke
+        || runOpsWebSmoke
+        || runSearchSmoke
+        || runNetworkSmoke;
+    var includeLegacyBotDiagnostics = runBotSmoke;
+    var includeLegacyStage6Diagnostics = runClarificationSmoke
+        || runPeriodizationSmoke
+        || runStateSmoke
+        || runProfileSmoke
+        || runStrategySmoke
+        || runDraftSmoke
+        || runReviewSmoke
+        || runOutcomeSmoke
+        || runBudgetSmoke
+        || runEvalSmoke
+        || runCompetingContextSmoke
+        || includeLegacyWebDiagnostics
+        || includeLegacyBotDiagnostics;
+    var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
-    var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
-    var runAutoCaseSmoke = args.Any(arg => string.Equals(arg, "--auto-case-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepairApply = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair-apply", StringComparison.OrdinalIgnoreCase));
-    var runStage6LightAb = args.Any(arg => string.Equals(arg, "--stage6-light-ab-run", StringComparison.OrdinalIgnoreCase));
     if (runStage5ScopedRepairApply && !runStage5ScopedRepair)
     {
         throw new InvalidOperationException(
@@ -92,22 +130,6 @@ try
     var stage5ScopedRepairAuditDir = stage5ScopedRepairAuditDirArg is null
         ? null
         : stage5ScopedRepairAuditDirArg["--stage5-scoped-repair-audit-dir=".Length..];
-    var stage6LightAbCasesFileArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-cases-file=", StringComparison.OrdinalIgnoreCase));
-    var stage6LightAbOutputDirArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-output-dir=", StringComparison.OrdinalIgnoreCase));
-    var stage6LightAbPassLabelArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-pass-label=", StringComparison.OrdinalIgnoreCase));
-    var stage6LightAbModelOverrideArg = args.FirstOrDefault(arg => arg.StartsWith("--stage6-light-ab-model-override=", StringComparison.OrdinalIgnoreCase));
-    var stage6LightAbCasesFile = stage6LightAbCasesFileArg is null
-        ? string.Empty
-        : stage6LightAbCasesFileArg["--stage6-light-ab-cases-file=".Length..];
-    var stage6LightAbOutputDir = stage6LightAbOutputDirArg is null
-        ? string.Empty
-        : stage6LightAbOutputDirArg["--stage6-light-ab-output-dir=".Length..];
-    var stage6LightAbPassLabel = stage6LightAbPassLabelArg is null
-        ? "pass"
-        : stage6LightAbPassLabelArg["--stage6-light-ab-pass-label=".Length..];
-    var stage6LightAbModelOverride = stage6LightAbModelOverrideArg is null
-        ? string.Empty
-        : stage6LightAbModelOverrideArg["--stage6-light-ab-model-override=".Length..];
     var riskBackupIdArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-id=", StringComparison.OrdinalIgnoreCase));
     var riskBackupCreatedAtArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-created-at-utc=", StringComparison.OrdinalIgnoreCase));
     var riskBackupScopeArg = args.FirstOrDefault(arg => arg.StartsWith("--risk-backup-scope=", StringComparison.OrdinalIgnoreCase));
@@ -133,9 +155,16 @@ try
     var runLivenessCheck = args.Any(arg => string.Equals(arg, "--liveness-check", StringComparison.OrdinalIgnoreCase));
     var runReadinessCheck = args.Any(arg => string.Equals(arg, "--readiness-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
-    var smokeEntrypoints = new[]
+    var preservedVerificationEntrypoints = new[]
     {
         "--foundation-smoke",
+        "--stage5-smoke",
+        "--launch-smoke",
+        "--external-archive-smoke"
+    };
+
+    var legacyDiagnosticEntrypoints = new[]
+    {
         "--clarification-smoke",
         "--periodization-smoke",
         "--state-smoke",
@@ -143,26 +172,22 @@ try
         "--strategy-smoke",
         "--draft-smoke",
         "--review-smoke",
+        "--outcome-smoke",
+        "--budget-smoke",
+        "--eval-smoke",
+        "--competing-context-smoke",
         "--bot-smoke",
         "--web-smoke",
         "--web-review-smoke",
         "--ops-web-smoke",
         "--search-smoke",
-        "--network-smoke",
-        "--outcome-smoke",
-        "--stage5-smoke",
-        "--budget-smoke",
-        "--stage6-execution-smoke",
-        "--eval-smoke",
-        "--launch-smoke",
-        "--external-archive-smoke",
-        "--competing-context-smoke",
-        "--auto-case-smoke"
+        "--network-smoke"
     };
 
     if (runListSmokes)
     {
-        Log.Information("Available smoke entrypoints: {SmokeEntrypoints}", string.Join(", ", smokeEntrypoints));
+        Log.Information("Available preserved verification entrypoints: {VerificationEntrypoints}", string.Join(", ", preservedVerificationEntrypoints));
+        Log.Information("Legacy diagnostic-only entrypoints: {DiagnosticEntrypoints}", string.Join(", ", legacyDiagnosticEntrypoints));
         return;
     }
 
@@ -175,7 +200,12 @@ try
             var config = context.Configuration;
             runtimeRoleSelection = RuntimeRoleParser.Parse(args, config);
             RuntimeStartupGuard.Validate(config, runtimeRoleSelection);
-            services.AddTelegramAssistantCompositionRoot(config, runtimeRoleSelection);
+            services.AddTelegramAssistantCompositionRoot(
+                config,
+                runtimeRoleSelection,
+                includeLegacyStage6Diagnostics,
+                includeLegacyWebDiagnostics,
+                includeLegacyBotDiagnostics);
 
             Log.Information(
                 "Runtime role selection resolved: roles={Roles}, source={Source}, raw={RawValue}",
@@ -214,7 +244,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<FoundationDomainVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Foundation smoke run requested via --foundation-smoke. Exiting after successful verification.");
+            Log.Information("Foundation verification run requested via --foundation-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -222,7 +252,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<ClarificationOrchestrationVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Clarification smoke run requested via --clarification-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 clarification diagnostic-only run requested via --clarification-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -230,7 +260,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<PeriodizationVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Periodization smoke run requested via --periodization-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 periodization diagnostic-only run requested via --periodization-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -238,7 +268,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<StateEngineVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("State smoke run requested via --state-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 state diagnostic-only run requested via --state-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -246,7 +276,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<ProfileEngineVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Profile smoke run requested via --profile-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 profile diagnostic-only run requested via --profile-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -254,7 +284,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<StrategyEngineVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Strategy smoke run requested via --strategy-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 strategy diagnostic-only run requested via --strategy-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -262,7 +292,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<DraftEngineVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Draft smoke run requested via --draft-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 draft diagnostic-only run requested via --draft-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -270,7 +300,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<DraftReviewVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Review smoke run requested via --review-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 review diagnostic-only run requested via --review-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -278,7 +308,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<BotCommandVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Bot smoke run requested via --bot-smoke. Exiting after successful verification.");
+            Log.Information("Legacy bot diagnostic-only run requested via --bot-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -286,7 +316,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<WebReadVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Web smoke run requested via --web-smoke. Exiting after successful verification.");
+            Log.Information("Legacy web diagnostic-only run requested via --web-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -294,7 +324,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<WebReviewVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Web review smoke run requested via --web-review-smoke. Exiting after successful verification.");
+            Log.Information("Legacy web review diagnostic-only run requested via --web-review-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -302,7 +332,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<WebOpsVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Ops web smoke run requested via --ops-web-smoke. Exiting after successful verification.");
+            Log.Information("Legacy ops-web diagnostic-only run requested via --ops-web-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -310,7 +340,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<WebSearchVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Search smoke run requested via --search-smoke. Exiting after successful verification.");
+            Log.Information("Legacy web search diagnostic-only run requested via --search-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -318,7 +348,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<NetworkVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Network smoke run requested via --network-smoke. Exiting after successful verification.");
+            Log.Information("Legacy web network diagnostic-only run requested via --network-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -326,7 +356,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<OutcomeVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Outcome smoke run requested via --outcome-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 outcome diagnostic-only run requested via --outcome-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -334,7 +364,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<Stage5VerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Stage5 smoke run requested via --stage5-smoke. Exiting after successful verification.");
+            Log.Information("Stage5 verification run requested via --stage5-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -342,15 +372,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<BudgetVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Budget smoke run requested via --budget-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runStage6ExecutionSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<Stage6ExecutionDisciplineVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Stage6 execution smoke run requested via --stage6-execution-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 budget diagnostic-only run requested via --budget-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -358,7 +380,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<EvalVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Eval smoke run requested via --eval-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 eval diagnostic-only run requested via --eval-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -369,7 +391,7 @@ try
 
             var verificationService = scope.ServiceProvider.GetRequiredService<LaunchReadinessVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Launch smoke run requested via --launch-smoke. Exiting after successful verification.");
+            Log.Information("Launch verification run requested via --launch-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -377,7 +399,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<ExternalArchiveVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("External archive smoke run requested via --external-archive-smoke. Exiting after successful verification.");
+            Log.Information("External archive verification run requested via --external-archive-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -385,15 +407,7 @@ try
         {
             var verificationService = scope.ServiceProvider.GetRequiredService<CompetingContextVerificationService>();
             await verificationService.RunAsync();
-            Log.Information("Competing context smoke run requested via --competing-context-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runAutoCaseSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<Stage6AutoCaseGenerationVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Auto-case smoke run requested via --auto-case-smoke. Exiting after successful verification.");
+            Log.Information("Legacy Stage6 competing-context diagnostic-only run requested via --competing-context-smoke. Exiting after successful verification.");
             return;
         }
 
@@ -466,29 +480,6 @@ try
                 result.Summary.Plan.DualSourceMigrations.Count,
                 result.Summary.Plan.OrphanPlaceholderMessageIds.Count,
                 result.AuditPath);
-            return;
-        }
-
-        if (runStage6LightAb)
-        {
-            var command = scope.ServiceProvider.GetRequiredService<Stage6LightAbRunCommand>();
-            var result = await command.RunAsync(
-                stage6LightAbCasesFile,
-                stage6LightAbOutputDir,
-                stage6LightAbPassLabel,
-                stage6LightAbModelOverride,
-                CancellationToken.None);
-            Log.Information(
-                "Stage6 light A/B command completed: pass={PassLabel}, model={Model}, total_cases={TotalCases}, failed={FailedCases}, chat_calls={ChatCalls}, embedding_calls={EmbeddingCalls}, tool_calls={ToolCalls}, artifact={ArtifactPath}, usage_csv={UsageCsv}",
-                result.Summary.PassLabel,
-                result.Summary.ModelResolved,
-                result.Summary.TotalCases,
-                result.Summary.FailedCases,
-                result.Summary.TotalChatCalls,
-                result.Summary.TotalEmbeddingCalls,
-                result.Summary.TotalToolCalls,
-                result.ArtifactPath,
-                result.UsageCsvPath);
             return;
         }
 

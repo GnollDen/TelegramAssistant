@@ -1,3 +1,5 @@
+// Legacy Stage6 surface retained for reference and diagnostics only. Not part of the PRD target architecture.
+
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;

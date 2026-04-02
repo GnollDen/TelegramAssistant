@@ -16,6 +16,7 @@ using TgAssistant.Web.Read;
 
 namespace TgAssistant.Host.Web;
 
+// Retained only as a legacy diagnostic shell during cleanup. This is not the active operator workflow.
 public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
 {
     private readonly IServiceProvider _services;
@@ -102,7 +103,7 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
                 body = $"<h2>Не удалось открыть очередь</h2><p>{WebUtility.HtmlEncode(ex.Message)}</p><p>Попробуйте перейти на <a href='/queue'>/queue</a>.</p>";
             }
 
-            var htmlReady = WrapShellHtml("Операторская панель", "/", body, context.Request, scope);
+            var htmlReady = WrapShellHtml("Legacy diagnostic shell", "/", body, context.Request, scope);
             return Results.Content(htmlReady, "text/html; charset=utf-8");
         });
 
@@ -180,7 +181,7 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
                     scope));
             }
 
-            var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Операторская панель" : result.Title;
+            var title = string.IsNullOrWhiteSpace(result.Title) ? fallbackTitle ?? "Legacy diagnostic shell" : result.Title;
             var html = WrapShellHtml(title, route, result.Html, context.Request, scope);
             return Results.Content(html, "text/html; charset=utf-8");
         }
@@ -391,14 +392,15 @@ public sealed class WebRuntimeHostedService : IHostedService, IAsyncDisposable
         sb.Append("header h1{margin:0;font-size:1.05rem;}nav{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px;}");
         sb.Append("nav a{color:#dce8ff;text-decoration:none;border:1px solid #4a6288;padding:6px 10px;border-radius:7px;background:rgba(255,255,255,.04);}");
         sb.Append("nav a.active{background:#6289ca;color:#fff;border-color:#6289ca;}");
+        sb.Append(".legacy-note{margin-top:10px;padding:10px 12px;border:1px solid #f6c56d;border-radius:8px;background:#fff0cc;color:#4d3510;font-size:.95rem;}");
         sb.Append("main{max-width:1120px;margin:16px auto;padding:0 14px 24px;}section{background:#fff;padding:12px 14px;border-radius:10px;border:1px solid #d9e3f1;}");
         sb.Append("</style></head><body>");
-        sb.Append("<header><h1>Telegram Assistant — оператор</h1><nav>");
+        sb.Append("<header><h1>Telegram Assistant - legacy diagnostic web shell</h1><nav>");
         sb.Append(RenderNavLink(shellPath, "Панель", activeRoute == "/"));
         sb.Append(RenderNavLink(queuePath, "Очередь", activeRoute == "/queue" || activeRoute == "/inbox"));
         sb.Append(RenderNavLink(casePath, "Кейс", activeRoute == "/case-detail"));
         sb.Append(RenderNavLink(artifactPath, "Артефакт", activeRoute == "/artifact-detail"));
-        sb.Append("</nav></header><main><section>");
+        sb.Append("</nav><div class=\"legacy-note\">This retained web shell is legacy diagnostic-only during cleanup. It is not the target operator workflow for the clean-slate PRD baseline.</div></header><main><section>");
         sb.Append(bodyHtml);
         sb.Append("</section></main></body></html>");
         return sb.ToString();

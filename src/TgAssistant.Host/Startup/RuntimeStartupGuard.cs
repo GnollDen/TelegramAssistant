@@ -46,24 +46,6 @@ public static class RuntimeStartupGuard
             }
         }
 
-        if (selection.Has(RuntimeWorkloadRole.Ops))
-        {
-            var botToken = config.GetValue<string>("Telegram:BotToken")?.Trim() ?? string.Empty;
-            var botOwnerId = config.GetValue<long>("BotChat:OwnerId");
-            var telegramOwnerId = config.GetValue<long>("Telegram:OwnerUserId");
-            var effectiveOwnerId = botOwnerId > 0 ? botOwnerId : telegramOwnerId;
-            if (string.IsNullOrWhiteSpace(botToken))
-            {
-                throw new InvalidOperationException("Ops role requires Telegram:BotToken.");
-            }
-
-            if (effectiveOwnerId <= 0)
-            {
-                throw new InvalidOperationException(
-                    "Ops role requires owner identity via BotChat:OwnerId or Telegram:OwnerUserId.");
-            }
-        }
-
         if (selection.Has(RuntimeWorkloadRole.Web))
         {
             var webUrl = config.GetValue<string>("Web:Url")?.Trim() ?? string.Empty;

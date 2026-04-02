@@ -1,3 +1,5 @@
+// Legacy Stage6 surface retained for reference and diagnostics only. Not part of the PRD target architecture.
+
 namespace TgAssistant.Intelligence.Stage6;
 
 public interface IBotChatService

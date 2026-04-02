@@ -1,6 +1,6 @@
-using TgAssistant.Core.Models;
+using TgAssistant.Core.Legacy.Models;
 
-namespace TgAssistant.Core.Interfaces;
+namespace TgAssistant.Core.Legacy.Interfaces;
 
 public interface IStrategyEngine
 {
