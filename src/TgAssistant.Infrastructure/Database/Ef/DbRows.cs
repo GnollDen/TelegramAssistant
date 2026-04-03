@@ -640,6 +640,8 @@ public class DbDurableDossier
     public Guid? LastModelPassRunId { get; set; }
     public string DossierType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public string SummaryJson { get; set; } = "{}";
     public string PayloadJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
@@ -655,10 +657,46 @@ public class DbDurableProfile
     public Guid? LastModelPassRunId { get; set; }
     public string ProfileScope { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public string SummaryJson { get; set; } = "{}";
     public string PayloadJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableDossierRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableDossierId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class DbDurableProfileRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableProfileId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class DbDurablePairDynamics
@@ -705,6 +743,8 @@ public class DbDurableEvent
     public Guid? LastModelPassRunId { get; set; }
     public string EventType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public float EventConfidence { get; set; }
     public string ClosureState { get; set; } = string.Empty;
@@ -714,6 +754,25 @@ public class DbDurableEvent
     public string PayloadJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableEventRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableEventId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public float EventConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class DbDurableTimelineEpisode
@@ -726,6 +785,8 @@ public class DbDurableTimelineEpisode
     public Guid? LastModelPassRunId { get; set; }
     public string EpisodeType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public string ClosureState { get; set; } = string.Empty;
     public DateTime? StartedAtUtc { get; set; }
@@ -734,6 +795,24 @@ public class DbDurableTimelineEpisode
     public string PayloadJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableTimelineEpisodeRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableTimelineEpisodeId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class DbDurableStoryArc
@@ -746,6 +825,8 @@ public class DbDurableStoryArc
     public Guid? LastModelPassRunId { get; set; }
     public string ArcType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public string ClosureState { get; set; } = string.Empty;
     public DateTime? OpenedAtUtc { get; set; }
@@ -754,6 +835,24 @@ public class DbDurableStoryArc
     public string PayloadJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableStoryArcRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableStoryArcId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class DbPeriod

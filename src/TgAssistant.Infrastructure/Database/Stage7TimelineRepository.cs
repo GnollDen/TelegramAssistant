@@ -154,6 +154,63 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             storyArcBoundaryConfidence,
             now,
             ct);
+        var eventRevision = await UpsertEventRevisionAsync(
+            db,
+            eventRow,
+            auditRecord,
+            eventConfidence,
+            freshness,
+            stability,
+            eventBoundaryConfidence,
+            eventClosureState,
+            contradictionMarkersJson,
+            eventRow.SummaryJson,
+            eventRow.PayloadJson,
+            now,
+            ct);
+        var timelineRevision = await UpsertTimelineEpisodeRevisionAsync(
+            db,
+            timelineRow,
+            auditRecord,
+            timelineConfidence,
+            freshness,
+            stability,
+            episodeBoundaryConfidence,
+            episodeClosureState,
+            contradictionMarkersJson,
+            timelineRow.SummaryJson,
+            timelineRow.PayloadJson,
+            now,
+            ct);
+        var storyArcRevision = await UpsertStoryArcRevisionAsync(
+            db,
+            storyArcRow,
+            auditRecord,
+            storyArcConfidence,
+            freshness,
+            stability,
+            storyArcBoundaryConfidence,
+            storyArcClosureState,
+            contradictionMarkersJson,
+            storyArcRow.SummaryJson,
+            storyArcRow.PayloadJson,
+            now,
+            ct);
+        eventRow.CurrentRevisionNumber = eventRevision.RevisionNumber;
+        eventRow.CurrentRevisionHash = eventRevision.RevisionHash;
+        eventRow.SummaryJson = eventRevision.SummaryJson;
+        eventRow.PayloadJson = eventRevision.PayloadJson;
+        eventRow.UpdatedAt = now;
+        timelineRow.CurrentRevisionNumber = timelineRevision.RevisionNumber;
+        timelineRow.CurrentRevisionHash = timelineRevision.RevisionHash;
+        timelineRow.SummaryJson = timelineRevision.SummaryJson;
+        timelineRow.PayloadJson = timelineRevision.PayloadJson;
+        timelineRow.UpdatedAt = now;
+        storyArcRow.CurrentRevisionNumber = storyArcRevision.RevisionNumber;
+        storyArcRow.CurrentRevisionHash = storyArcRevision.RevisionHash;
+        storyArcRow.SummaryJson = storyArcRevision.SummaryJson;
+        storyArcRow.PayloadJson = storyArcRevision.PayloadJson;
+        storyArcRow.UpdatedAt = now;
 
         await SyncEvidenceLinksAsync(db, eventMetadata.Id, scopeKey, evidenceItemIds, EventEvidenceLinkRole, now, ct);
         await SyncEvidenceLinksAsync(db, timelineMetadata.Id, scopeKey, evidenceItemIds, TimelineEpisodeEvidenceLinkRole, now, ct);
@@ -178,6 +235,9 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             Event = MapEvent(eventRow),
             TimelineEpisode = MapTimelineEpisode(timelineRow),
             StoryArc = MapStoryArc(storyArcRow),
+            CurrentEventRevision = MapEventRevision(eventRevision),
+            CurrentTimelineEpisodeRevision = MapTimelineEpisodeRevision(timelineRevision),
+            CurrentStoryArcRevision = MapStoryArcRevision(storyArcRevision),
             EvidenceItemIds = [.. evidenceItemIds.OrderBy(x => x)]
         };
     }
@@ -365,6 +425,185 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         row.SummaryJson = BuildStoryArcSummaryJson(auditRecord, bootstrapResult, closureState, boundaryConfidence);
         row.PayloadJson = BuildStoryArcPayloadJson(auditRecord, bootstrapResult, closureState, boundaryConfidence);
         row.UpdatedAt = now;
+        return row;
+    }
+
+    private static async Task<DbDurableEventRevision> UpsertEventRevisionAsync(
+        TgAssistantDbContext db,
+        DbDurableEvent eventRow,
+        ModelPassAuditRecord auditRecord,
+        float confidence,
+        float freshness,
+        float stability,
+        float boundaryConfidence,
+        string closureState,
+        string contradictionMarkersJson,
+        string summaryJson,
+        string payloadJson,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var revisionHash = ComputeTimelineRevisionHash(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            confidence,
+            freshness,
+            stability,
+            boundaryConfidence,
+            closureState,
+            eventRow.EventConfidence);
+        var existing = await db.DurableEventRevisions.FirstOrDefaultAsync(
+            x => x.DurableEventId == eventRow.Id && x.RevisionHash == revisionHash,
+            ct);
+        if (existing != null)
+        {
+            existing.ModelPassRunId = auditRecord.ModelPassRunId;
+            return existing;
+        }
+
+        var nextRevisionNumber = await db.DurableEventRevisions
+            .Where(x => x.DurableEventId == eventRow.Id)
+            .Select(x => (int?)x.RevisionNumber)
+            .MaxAsync(ct) ?? 0;
+
+        var row = new DbDurableEventRevision
+        {
+            Id = Guid.NewGuid(),
+            DurableEventId = eventRow.Id,
+            RevisionNumber = nextRevisionNumber + 1,
+            RevisionHash = revisionHash,
+            ModelPassRunId = auditRecord.ModelPassRunId,
+            Confidence = confidence,
+            Freshness = freshness,
+            Stability = stability,
+            BoundaryConfidence = boundaryConfidence,
+            EventConfidence = eventRow.EventConfidence,
+            ClosureState = closureState,
+            ContradictionMarkersJson = contradictionMarkersJson,
+            SummaryJson = summaryJson,
+            PayloadJson = payloadJson,
+            CreatedAt = now
+        };
+        db.DurableEventRevisions.Add(row);
+        return row;
+    }
+
+    private static async Task<DbDurableTimelineEpisodeRevision> UpsertTimelineEpisodeRevisionAsync(
+        TgAssistantDbContext db,
+        DbDurableTimelineEpisode episodeRow,
+        ModelPassAuditRecord auditRecord,
+        float confidence,
+        float freshness,
+        float stability,
+        float boundaryConfidence,
+        string closureState,
+        string contradictionMarkersJson,
+        string summaryJson,
+        string payloadJson,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var revisionHash = ComputeTimelineRevisionHash(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            confidence,
+            freshness,
+            stability,
+            boundaryConfidence,
+            closureState);
+        var existing = await db.DurableTimelineEpisodeRevisions.FirstOrDefaultAsync(
+            x => x.DurableTimelineEpisodeId == episodeRow.Id && x.RevisionHash == revisionHash,
+            ct);
+        if (existing != null)
+        {
+            existing.ModelPassRunId = auditRecord.ModelPassRunId;
+            return existing;
+        }
+
+        var nextRevisionNumber = await db.DurableTimelineEpisodeRevisions
+            .Where(x => x.DurableTimelineEpisodeId == episodeRow.Id)
+            .Select(x => (int?)x.RevisionNumber)
+            .MaxAsync(ct) ?? 0;
+
+        var row = new DbDurableTimelineEpisodeRevision
+        {
+            Id = Guid.NewGuid(),
+            DurableTimelineEpisodeId = episodeRow.Id,
+            RevisionNumber = nextRevisionNumber + 1,
+            RevisionHash = revisionHash,
+            ModelPassRunId = auditRecord.ModelPassRunId,
+            Confidence = confidence,
+            Freshness = freshness,
+            Stability = stability,
+            BoundaryConfidence = boundaryConfidence,
+            ClosureState = closureState,
+            ContradictionMarkersJson = contradictionMarkersJson,
+            SummaryJson = summaryJson,
+            PayloadJson = payloadJson,
+            CreatedAt = now
+        };
+        db.DurableTimelineEpisodeRevisions.Add(row);
+        return row;
+    }
+
+    private static async Task<DbDurableStoryArcRevision> UpsertStoryArcRevisionAsync(
+        TgAssistantDbContext db,
+        DbDurableStoryArc storyArcRow,
+        ModelPassAuditRecord auditRecord,
+        float confidence,
+        float freshness,
+        float stability,
+        float boundaryConfidence,
+        string closureState,
+        string contradictionMarkersJson,
+        string summaryJson,
+        string payloadJson,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var revisionHash = ComputeTimelineRevisionHash(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            confidence,
+            freshness,
+            stability,
+            boundaryConfidence,
+            closureState);
+        var existing = await db.DurableStoryArcRevisions.FirstOrDefaultAsync(
+            x => x.DurableStoryArcId == storyArcRow.Id && x.RevisionHash == revisionHash,
+            ct);
+        if (existing != null)
+        {
+            existing.ModelPassRunId = auditRecord.ModelPassRunId;
+            return existing;
+        }
+
+        var nextRevisionNumber = await db.DurableStoryArcRevisions
+            .Where(x => x.DurableStoryArcId == storyArcRow.Id)
+            .Select(x => (int?)x.RevisionNumber)
+            .MaxAsync(ct) ?? 0;
+
+        var row = new DbDurableStoryArcRevision
+        {
+            Id = Guid.NewGuid(),
+            DurableStoryArcId = storyArcRow.Id,
+            RevisionNumber = nextRevisionNumber + 1,
+            RevisionHash = revisionHash,
+            ModelPassRunId = auditRecord.ModelPassRunId,
+            Confidence = confidence,
+            Freshness = freshness,
+            Stability = stability,
+            BoundaryConfidence = boundaryConfidence,
+            ClosureState = closureState,
+            ContradictionMarkersJson = contradictionMarkersJson,
+            SummaryJson = summaryJson,
+            PayloadJson = payloadJson,
+            CreatedAt = now
+        };
+        db.DurableStoryArcRevisions.Add(row);
         return row;
     }
 
@@ -724,6 +963,29 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             ? $"person:{trackedPersonId:D}:story_arc:{Stage7StoryArcTypes.OperatorTrackedArc}"
             : $"pair:{operatorPersonId:D}:{trackedPersonId:D}:story_arc:{Stage7StoryArcTypes.OperatorTrackedArc}";
 
+    private static string ComputeTimelineRevisionHash(
+        string summaryJson,
+        string payloadJson,
+        string contradictionMarkersJson,
+        float confidence,
+        float freshness,
+        float stability,
+        float boundaryConfidence,
+        string closureState,
+        float? eventConfidence = null)
+    {
+        return Stage7RevisionHashHelper.Compute(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            Stage7RevisionHashHelper.FormatFloat(confidence),
+            Stage7RevisionHashHelper.FormatFloat(freshness),
+            Stage7RevisionHashHelper.FormatFloat(stability),
+            Stage7RevisionHashHelper.FormatFloat(boundaryConfidence),
+            eventConfidence == null ? string.Empty : Stage7RevisionHashHelper.FormatFloat(eventConfidence.Value),
+            closureState);
+    }
+
     private static Stage7DurableEvent MapEvent(DbDurableEvent row)
     {
         return new Stage7DurableEvent
@@ -736,6 +998,8 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             LastModelPassRunId = row.LastModelPassRunId,
             EventType = row.EventType,
             Status = row.Status,
+            CurrentRevisionNumber = row.CurrentRevisionNumber,
+            CurrentRevisionHash = row.CurrentRevisionHash,
             BoundaryConfidence = row.BoundaryConfidence,
             EventConfidence = row.EventConfidence,
             ClosureState = row.ClosureState,
@@ -758,6 +1022,8 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             LastModelPassRunId = row.LastModelPassRunId,
             EpisodeType = row.EpisodeType,
             Status = row.Status,
+            CurrentRevisionNumber = row.CurrentRevisionNumber,
+            CurrentRevisionHash = row.CurrentRevisionHash,
             BoundaryConfidence = row.BoundaryConfidence,
             ClosureState = row.ClosureState,
             StartedAtUtc = row.StartedAtUtc,
@@ -779,12 +1045,78 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             LastModelPassRunId = row.LastModelPassRunId,
             ArcType = row.ArcType,
             Status = row.Status,
+            CurrentRevisionNumber = row.CurrentRevisionNumber,
+            CurrentRevisionHash = row.CurrentRevisionHash,
             BoundaryConfidence = row.BoundaryConfidence,
             ClosureState = row.ClosureState,
             OpenedAtUtc = row.OpenedAtUtc,
             ClosedAtUtc = row.ClosedAtUtc,
             SummaryJson = row.SummaryJson,
             PayloadJson = row.PayloadJson
+        };
+    }
+
+    private static Stage7DurableEventRevision MapEventRevision(DbDurableEventRevision row)
+    {
+        return new Stage7DurableEventRevision
+        {
+            Id = row.Id,
+            DurableEventId = row.DurableEventId,
+            RevisionNumber = row.RevisionNumber,
+            RevisionHash = row.RevisionHash,
+            ModelPassRunId = row.ModelPassRunId,
+            Confidence = row.Confidence,
+            Freshness = row.Freshness,
+            Stability = row.Stability,
+            BoundaryConfidence = row.BoundaryConfidence,
+            EventConfidence = row.EventConfidence,
+            ClosureState = row.ClosureState,
+            ContradictionMarkersJson = row.ContradictionMarkersJson,
+            SummaryJson = row.SummaryJson,
+            PayloadJson = row.PayloadJson,
+            CreatedAt = row.CreatedAt
+        };
+    }
+
+    private static Stage7DurableTimelineEpisodeRevision MapTimelineEpisodeRevision(DbDurableTimelineEpisodeRevision row)
+    {
+        return new Stage7DurableTimelineEpisodeRevision
+        {
+            Id = row.Id,
+            DurableTimelineEpisodeId = row.DurableTimelineEpisodeId,
+            RevisionNumber = row.RevisionNumber,
+            RevisionHash = row.RevisionHash,
+            ModelPassRunId = row.ModelPassRunId,
+            Confidence = row.Confidence,
+            Freshness = row.Freshness,
+            Stability = row.Stability,
+            BoundaryConfidence = row.BoundaryConfidence,
+            ClosureState = row.ClosureState,
+            ContradictionMarkersJson = row.ContradictionMarkersJson,
+            SummaryJson = row.SummaryJson,
+            PayloadJson = row.PayloadJson,
+            CreatedAt = row.CreatedAt
+        };
+    }
+
+    private static Stage7DurableStoryArcRevision MapStoryArcRevision(DbDurableStoryArcRevision row)
+    {
+        return new Stage7DurableStoryArcRevision
+        {
+            Id = row.Id,
+            DurableStoryArcId = row.DurableStoryArcId,
+            RevisionNumber = row.RevisionNumber,
+            RevisionHash = row.RevisionHash,
+            ModelPassRunId = row.ModelPassRunId,
+            Confidence = row.Confidence,
+            Freshness = row.Freshness,
+            Stability = row.Stability,
+            BoundaryConfidence = row.BoundaryConfidence,
+            ClosureState = row.ClosureState,
+            ContradictionMarkersJson = row.ContradictionMarkersJson,
+            SummaryJson = row.SummaryJson,
+            PayloadJson = row.PayloadJson,
+            CreatedAt = row.CreatedAt
         };
     }
 }

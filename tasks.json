@@ -458,8 +458,8 @@
         "IMPLEMENT-004",
         "IMPLEMENT-005"
       ],
-      "status": "pending",
-      "notes": "This is the first real product-grade knowledge layer required by the PRD."
+      "status": "done",
+      "notes": "This is the first real product-grade knowledge layer required by the PRD. IMPLEMENT-006-A/B/C now materialize dossier/profile, pair-dynamics, and timeline/event/story-arc durable families with shared metadata and evidence links, and IMPLEMENT-006-D adds consistent revision and idempotent rerun behavior across those families so identical reruns reuse stable durable identities while changed reruns append family-specific revisions instead of duplicating rows."
     },
     {
       "id": "IMPLEMENT-007",

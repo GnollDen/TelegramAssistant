@@ -738,12 +738,12 @@
         "IMPLEMENT-006-B",
         "IMPLEMENT-006-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Reruns create revisions instead of duplicate durable rows.",
         "Object-family-specific revision rules are consistent."
       ],
-      "notes": "Clean split because revision behavior should be validated after object families exist."
+      "notes": "Clean split because revision behavior should be validated after object families exist. Added current_revision_number/current_revision_hash plus revision history storage for dossier/profile and timeline families, reused a shared Stage7 revision hash helper across repositories, and extended the stage7 dossier/profile, pair-dynamics, and timeline smokes to verify same-input reruns reuse stable durable IDs and revision IDs while changed-input reruns create new revisions on the same durable objects; dotnet build TelegramAssistant.sln and all three stage7 family smokes passed."
     },
     {
       "id": "IMPLEMENT-007-A",

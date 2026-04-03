@@ -50,12 +50,17 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
     public DbSet<DbDurableDossier> DurableDossiers => Set<DbDurableDossier>();
+    public DbSet<DbDurableDossierRevision> DurableDossierRevisions => Set<DbDurableDossierRevision>();
     public DbSet<DbDurableProfile> DurableProfiles => Set<DbDurableProfile>();
+    public DbSet<DbDurableProfileRevision> DurableProfileRevisions => Set<DbDurableProfileRevision>();
     public DbSet<DbDurablePairDynamics> DurablePairDynamics => Set<DbDurablePairDynamics>();
     public DbSet<DbDurablePairDynamicsRevision> DurablePairDynamicsRevisions => Set<DbDurablePairDynamicsRevision>();
     public DbSet<DbDurableEvent> DurableEvents => Set<DbDurableEvent>();
+    public DbSet<DbDurableEventRevision> DurableEventRevisions => Set<DbDurableEventRevision>();
     public DbSet<DbDurableTimelineEpisode> DurableTimelineEpisodes => Set<DbDurableTimelineEpisode>();
+    public DbSet<DbDurableTimelineEpisodeRevision> DurableTimelineEpisodeRevisions => Set<DbDurableTimelineEpisodeRevision>();
     public DbSet<DbDurableStoryArc> DurableStoryArcs => Set<DbDurableStoryArc>();
+    public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -937,6 +942,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
             e.Property(x => x.DossierType).HasColumnName("dossier_type");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
             e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
             e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -945,6 +952,29 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableDossierRevision>(e =>
+        {
+            e.ToTable("durable_dossier_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableDossierId).HasColumnName("durable_dossier_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Coverage).HasColumnName("coverage");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableDossierId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurableDossierId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurableDossierId, x.CreatedAt });
         });
 
         modelBuilder.Entity<DbDurableProfile>(e =>
@@ -958,6 +988,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
             e.Property(x => x.ProfileScope).HasColumnName("profile_scope");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
             e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
             e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
@@ -966,6 +998,29 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableProfileRevision>(e =>
+        {
+            e.ToTable("durable_profile_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableProfileId).HasColumnName("durable_profile_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Coverage).HasColumnName("coverage");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableProfileId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurableProfileId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurableProfileId, x.CreatedAt });
         });
 
         modelBuilder.Entity<DbDurablePairDynamics>(e =>
@@ -1026,6 +1081,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
             e.Property(x => x.EventType).HasColumnName("event_type");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
             e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
             e.Property(x => x.EventConfidence).HasColumnName("event_confidence");
             e.Property(x => x.ClosureState).HasColumnName("closure_state");
@@ -1043,6 +1100,31 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
+        modelBuilder.Entity<DbDurableEventRevision>(e =>
+        {
+            e.ToTable("durable_event_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableEventId).HasColumnName("durable_event_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.EventConfidence).HasColumnName("event_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableEventId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurableEventId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurableEventId, x.CreatedAt });
+        });
+
         modelBuilder.Entity<DbDurableTimelineEpisode>(e =>
         {
             e.ToTable("durable_timeline_episodes");
@@ -1055,6 +1137,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
             e.Property(x => x.EpisodeType).HasColumnName("episode_type");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
             e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
             e.Property(x => x.ClosureState).HasColumnName("closure_state");
             e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
@@ -1071,6 +1155,30 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
+        modelBuilder.Entity<DbDurableTimelineEpisodeRevision>(e =>
+        {
+            e.ToTable("durable_timeline_episode_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableTimelineEpisodeId).HasColumnName("durable_timeline_episode_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableTimelineEpisodeId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurableTimelineEpisodeId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurableTimelineEpisodeId, x.CreatedAt });
+        });
+
         modelBuilder.Entity<DbDurableStoryArc>(e =>
         {
             e.ToTable("durable_story_arcs");
@@ -1083,6 +1191,8 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
             e.Property(x => x.ArcType).HasColumnName("arc_type");
             e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
             e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
             e.Property(x => x.ClosureState).HasColumnName("closure_state");
             e.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc");
@@ -1097,6 +1207,30 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.Status })
                 .HasFilter("related_person_id IS NOT NULL");
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableStoryArcRevision>(e =>
+        {
+            e.ToTable("durable_story_arc_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurableStoryArcId).HasColumnName("durable_story_arc_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurableStoryArcId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurableStoryArcId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurableStoryArcId, x.CreatedAt });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

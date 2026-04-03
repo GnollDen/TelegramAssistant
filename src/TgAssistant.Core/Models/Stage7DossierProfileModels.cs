@@ -38,6 +38,8 @@ public class Stage7DurableDossier
     public Guid? LastModelPassRunId { get; set; }
     public string DossierType { get; set; } = Stage7DossierTypes.PersonDossier;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public string SummaryJson { get; set; } = "{}";
     public string PayloadJson { get; set; } = "{}";
 }
@@ -51,8 +53,44 @@ public class Stage7DurableProfile
     public Guid? LastModelPassRunId { get; set; }
     public string ProfileScope { get; set; } = Stage7ProfileScopes.Global;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public string SummaryJson { get; set; } = "{}";
     public string PayloadJson { get; set; } = "{}";
+}
+
+public class Stage7DurableDossierRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableDossierId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Stage7DurableProfileRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableProfileId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class Stage7DossierProfileFormationResult
@@ -62,5 +100,7 @@ public class Stage7DossierProfileFormationResult
     public Stage6BootstrapPersonRef? TrackedPerson { get; set; }
     public Stage7DurableDossier? Dossier { get; set; }
     public Stage7DurableProfile? Profile { get; set; }
+    public Stage7DurableDossierRevision? CurrentDossierRevision { get; set; }
+    public Stage7DurableProfileRevision? CurrentProfileRevision { get; set; }
     public List<Guid> EvidenceItemIds { get; set; } = [];
 }

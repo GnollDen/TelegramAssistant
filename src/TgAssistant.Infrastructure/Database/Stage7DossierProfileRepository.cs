@@ -99,6 +99,42 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
 
         var dossierRow = await UpsertDossierAsync(db, dossierMetadata.Id, auditRecord, bootstrapResult, now, ct);
         var profileRow = await UpsertProfileAsync(db, profileMetadata.Id, auditRecord, bootstrapResult, now, ct);
+        var dossierRevision = await UpsertDossierRevisionAsync(
+            db,
+            dossierRow,
+            auditRecord,
+            dossierConfidence,
+            dossierCoverage,
+            freshness,
+            stability,
+            contradictionMarkersJson,
+            dossierRow.SummaryJson,
+            dossierRow.PayloadJson,
+            now,
+            ct);
+        var profileRevision = await UpsertProfileRevisionAsync(
+            db,
+            profileRow,
+            auditRecord,
+            profileConfidence,
+            profileCoverage,
+            freshness,
+            stability,
+            contradictionMarkersJson,
+            profileRow.SummaryJson,
+            profileRow.PayloadJson,
+            now,
+            ct);
+        dossierRow.CurrentRevisionNumber = dossierRevision.RevisionNumber;
+        dossierRow.CurrentRevisionHash = dossierRevision.RevisionHash;
+        dossierRow.SummaryJson = dossierRevision.SummaryJson;
+        dossierRow.PayloadJson = dossierRevision.PayloadJson;
+        dossierRow.UpdatedAt = now;
+        profileRow.CurrentRevisionNumber = profileRevision.RevisionNumber;
+        profileRow.CurrentRevisionHash = profileRevision.RevisionHash;
+        profileRow.SummaryJson = profileRevision.SummaryJson;
+        profileRow.PayloadJson = profileRevision.PayloadJson;
+        profileRow.UpdatedAt = now;
         await SyncEvidenceLinksAsync(db, dossierMetadata.Id, scopeKey, evidenceItemIds, DossierEvidenceLinkRole, now, ct);
         await SyncEvidenceLinksAsync(db, profileMetadata.Id, scopeKey, evidenceItemIds, ProfileEvidenceLinkRole, now, ct);
 
@@ -117,6 +153,8 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             TrackedPerson = trackedPerson,
             Dossier = MapDossier(dossierRow),
             Profile = MapProfile(profileRow),
+            CurrentDossierRevision = MapDossierRevision(dossierRevision),
+            CurrentProfileRevision = MapProfileRevision(profileRevision),
             EvidenceItemIds = [.. evidenceItemIds.OrderBy(x => x)]
         };
     }
@@ -239,6 +277,118 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         row.SummaryJson = BuildProfileSummaryJson(auditRecord, bootstrapResult);
         row.PayloadJson = BuildProfilePayloadJson(auditRecord, bootstrapResult);
         row.UpdatedAt = now;
+        return row;
+    }
+
+    private static async Task<DbDurableDossierRevision> UpsertDossierRevisionAsync(
+        TgAssistantDbContext db,
+        DbDurableDossier dossierRow,
+        ModelPassAuditRecord auditRecord,
+        float confidence,
+        float coverage,
+        float freshness,
+        float stability,
+        string contradictionMarkersJson,
+        string summaryJson,
+        string payloadJson,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var revisionHash = ComputeDossierProfileRevisionHash(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            confidence,
+            coverage,
+            freshness,
+            stability);
+        var existing = await db.DurableDossierRevisions.FirstOrDefaultAsync(
+            x => x.DurableDossierId == dossierRow.Id && x.RevisionHash == revisionHash,
+            ct);
+        if (existing != null)
+        {
+            existing.ModelPassRunId = auditRecord.ModelPassRunId;
+            return existing;
+        }
+
+        var nextRevisionNumber = await db.DurableDossierRevisions
+            .Where(x => x.DurableDossierId == dossierRow.Id)
+            .Select(x => (int?)x.RevisionNumber)
+            .MaxAsync(ct) ?? 0;
+
+        var row = new DbDurableDossierRevision
+        {
+            Id = Guid.NewGuid(),
+            DurableDossierId = dossierRow.Id,
+            RevisionNumber = nextRevisionNumber + 1,
+            RevisionHash = revisionHash,
+            ModelPassRunId = auditRecord.ModelPassRunId,
+            Confidence = confidence,
+            Coverage = coverage,
+            Freshness = freshness,
+            Stability = stability,
+            ContradictionMarkersJson = contradictionMarkersJson,
+            SummaryJson = summaryJson,
+            PayloadJson = payloadJson,
+            CreatedAt = now
+        };
+        db.DurableDossierRevisions.Add(row);
+        return row;
+    }
+
+    private static async Task<DbDurableProfileRevision> UpsertProfileRevisionAsync(
+        TgAssistantDbContext db,
+        DbDurableProfile profileRow,
+        ModelPassAuditRecord auditRecord,
+        float confidence,
+        float coverage,
+        float freshness,
+        float stability,
+        string contradictionMarkersJson,
+        string summaryJson,
+        string payloadJson,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var revisionHash = ComputeDossierProfileRevisionHash(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            confidence,
+            coverage,
+            freshness,
+            stability);
+        var existing = await db.DurableProfileRevisions.FirstOrDefaultAsync(
+            x => x.DurableProfileId == profileRow.Id && x.RevisionHash == revisionHash,
+            ct);
+        if (existing != null)
+        {
+            existing.ModelPassRunId = auditRecord.ModelPassRunId;
+            return existing;
+        }
+
+        var nextRevisionNumber = await db.DurableProfileRevisions
+            .Where(x => x.DurableProfileId == profileRow.Id)
+            .Select(x => (int?)x.RevisionNumber)
+            .MaxAsync(ct) ?? 0;
+
+        var row = new DbDurableProfileRevision
+        {
+            Id = Guid.NewGuid(),
+            DurableProfileId = profileRow.Id,
+            RevisionNumber = nextRevisionNumber + 1,
+            RevisionHash = revisionHash,
+            ModelPassRunId = auditRecord.ModelPassRunId,
+            Confidence = confidence,
+            Coverage = coverage,
+            Freshness = freshness,
+            Stability = stability,
+            ContradictionMarkersJson = contradictionMarkersJson,
+            SummaryJson = summaryJson,
+            PayloadJson = payloadJson,
+            CreatedAt = now
+        };
+        db.DurableProfileRevisions.Add(row);
         return row;
     }
 
@@ -464,6 +614,25 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
     private static string BuildProfileObjectKey(Guid personId)
         => $"person:{personId:D}:profile:{Stage7ProfileScopes.Global}";
 
+    private static string ComputeDossierProfileRevisionHash(
+        string summaryJson,
+        string payloadJson,
+        string contradictionMarkersJson,
+        float confidence,
+        float coverage,
+        float freshness,
+        float stability)
+    {
+        return Stage7RevisionHashHelper.Compute(
+            summaryJson,
+            payloadJson,
+            contradictionMarkersJson,
+            Stage7RevisionHashHelper.FormatFloat(confidence),
+            Stage7RevisionHashHelper.FormatFloat(coverage),
+            Stage7RevisionHashHelper.FormatFloat(freshness),
+            Stage7RevisionHashHelper.FormatFloat(stability));
+    }
+
     private static Stage7DurableDossier MapDossier(DbDurableDossier row)
     {
         return new Stage7DurableDossier
@@ -475,6 +644,8 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             LastModelPassRunId = row.LastModelPassRunId,
             DossierType = row.DossierType,
             Status = row.Status,
+            CurrentRevisionNumber = row.CurrentRevisionNumber,
+            CurrentRevisionHash = row.CurrentRevisionHash,
             SummaryJson = row.SummaryJson,
             PayloadJson = row.PayloadJson
         };
@@ -491,8 +662,50 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             LastModelPassRunId = row.LastModelPassRunId,
             ProfileScope = row.ProfileScope,
             Status = row.Status,
+            CurrentRevisionNumber = row.CurrentRevisionNumber,
+            CurrentRevisionHash = row.CurrentRevisionHash,
             SummaryJson = row.SummaryJson,
             PayloadJson = row.PayloadJson
+        };
+    }
+
+    private static Stage7DurableDossierRevision MapDossierRevision(DbDurableDossierRevision row)
+    {
+        return new Stage7DurableDossierRevision
+        {
+            Id = row.Id,
+            DurableDossierId = row.DurableDossierId,
+            RevisionNumber = row.RevisionNumber,
+            RevisionHash = row.RevisionHash,
+            ModelPassRunId = row.ModelPassRunId,
+            Confidence = row.Confidence,
+            Coverage = row.Coverage,
+            Freshness = row.Freshness,
+            Stability = row.Stability,
+            ContradictionMarkersJson = row.ContradictionMarkersJson,
+            SummaryJson = row.SummaryJson,
+            PayloadJson = row.PayloadJson,
+            CreatedAt = row.CreatedAt
+        };
+    }
+
+    private static Stage7DurableProfileRevision MapProfileRevision(DbDurableProfileRevision row)
+    {
+        return new Stage7DurableProfileRevision
+        {
+            Id = row.Id,
+            DurableProfileId = row.DurableProfileId,
+            RevisionNumber = row.RevisionNumber,
+            RevisionHash = row.RevisionHash,
+            ModelPassRunId = row.ModelPassRunId,
+            Confidence = row.Confidence,
+            Coverage = row.Coverage,
+            Freshness = row.Freshness,
+            Stability = row.Stability,
+            ContradictionMarkersJson = row.ContradictionMarkersJson,
+            SummaryJson = row.SummaryJson,
+            PayloadJson = row.PayloadJson,
+            CreatedAt = row.CreatedAt
         };
     }
 }

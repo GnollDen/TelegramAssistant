@@ -41,6 +41,8 @@ public class Stage7DurableEvent
     public Guid? LastModelPassRunId { get; set; }
     public string EventType { get; set; } = Stage7EventTypes.BootstrapAnchorEvent;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public float EventConfidence { get; set; }
     public string ClosureState { get; set; } = Stage7ClosureStates.Open;
@@ -60,6 +62,8 @@ public class Stage7DurableTimelineEpisode
     public Guid? LastModelPassRunId { get; set; }
     public string EpisodeType { get; set; } = Stage7TimelineEpisodeTypes.BootstrapEpisode;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public string ClosureState { get; set; } = Stage7ClosureStates.Open;
     public DateTime? StartedAtUtc { get; set; }
@@ -78,12 +82,69 @@ public class Stage7DurableStoryArc
     public Guid? LastModelPassRunId { get; set; }
     public string ArcType { get; set; } = Stage7StoryArcTypes.OperatorTrackedArc;
     public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
     public float BoundaryConfidence { get; set; }
     public string ClosureState { get; set; } = Stage7ClosureStates.Open;
     public DateTime? OpenedAtUtc { get; set; }
     public DateTime? ClosedAtUtc { get; set; }
     public string SummaryJson { get; set; } = "{}";
     public string PayloadJson { get; set; } = "{}";
+}
+
+public class Stage7DurableEventRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableEventId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public float EventConfidence { get; set; }
+    public string ClosureState { get; set; } = Stage7ClosureStates.Open;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Stage7DurableTimelineEpisodeRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableTimelineEpisodeId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = Stage7ClosureStates.Open;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
+public class Stage7DurableStoryArcRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurableStoryArcId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = Stage7ClosureStates.Open;
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
 }
 
 public class Stage7TimelineFormationResult
@@ -95,5 +156,8 @@ public class Stage7TimelineFormationResult
     public Stage7DurableEvent? Event { get; set; }
     public Stage7DurableTimelineEpisode? TimelineEpisode { get; set; }
     public Stage7DurableStoryArc? StoryArc { get; set; }
+    public Stage7DurableEventRevision? CurrentEventRevision { get; set; }
+    public Stage7DurableTimelineEpisodeRevision? CurrentTimelineEpisodeRevision { get; set; }
+    public Stage7DurableStoryArcRevision? CurrentStoryArcRevision { get; set; }
     public List<Guid> EvidenceItemIds { get; set; } = [];
 }

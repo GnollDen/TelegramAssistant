@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -479,14 +477,13 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         float freshness,
         float stability)
     {
-        var basis = string.Join("|",
+        return Stage7RevisionHashHelper.Compute(
             summaryJson,
             payloadJson,
             contradictionMarkersJson,
-            confidence.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture),
-            freshness.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture),
-            stability.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture));
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(basis)));
+            Stage7RevisionHashHelper.FormatFloat(confidence),
+            Stage7RevisionHashHelper.FormatFloat(freshness),
+            Stage7RevisionHashHelper.FormatFloat(stability));
     }
 
     private static Stage7DurablePairDynamics MapPairDynamics(DbDurablePairDynamics row)

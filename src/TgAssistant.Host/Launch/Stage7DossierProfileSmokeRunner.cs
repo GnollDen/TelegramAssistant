@@ -28,15 +28,33 @@ public static class Stage7DossierProfileSmokeRunner
         };
 
         var firstResult = await service.FormAsync(successRequest, ct);
-        AssertReady(firstResult, "first success");
+        AssertReady(firstResult, expectedDossierRevisionNumber: 1, expectedProfileRevisionNumber: 1, "first success");
         var secondResult = await service.FormAsync(successRequest, ct);
-        AssertReady(secondResult, "second success");
+        AssertReady(secondResult, expectedDossierRevisionNumber: 1, expectedProfileRevisionNumber: 1, "second success");
         if (firstResult.Dossier!.Id != secondResult.Dossier!.Id
             || firstResult.Profile!.Id != secondResult.Profile!.Id
             || firstResult.Dossier.DurableObjectMetadataId != secondResult.Dossier.DurableObjectMetadataId
-            || firstResult.Profile.DurableObjectMetadataId != secondResult.Profile.DurableObjectMetadataId)
+            || firstResult.Profile.DurableObjectMetadataId != secondResult.Profile.DurableObjectMetadataId
+            || firstResult.CurrentDossierRevision!.Id != secondResult.CurrentDossierRevision!.Id
+            || firstResult.CurrentProfileRevision!.Id != secondResult.CurrentProfileRevision!.Id)
         {
             throw new InvalidOperationException("Stage7 dossier/profile smoke failed: rerun changed durable dossier/profile identities.");
+        }
+
+        var changedResult = await service.FormAsync(new Stage7DossierProfileFormationRequest
+        {
+            BootstrapResult = BuildChangedBootstrapResult(),
+            RunKind = "smoke",
+            TriggerKind = "manual_smoke",
+            TriggerRef = "implement-006-d-dossier-profile-changed"
+        }, ct);
+        AssertReady(changedResult, expectedDossierRevisionNumber: 2, expectedProfileRevisionNumber: 2, "changed success");
+        if (changedResult.Dossier!.Id != firstResult.Dossier.Id
+            || changedResult.Profile!.Id != firstResult.Profile!.Id
+            || changedResult.CurrentDossierRevision!.Id == firstResult.CurrentDossierRevision!.Id
+            || changedResult.CurrentProfileRevision!.Id == firstResult.CurrentProfileRevision!.Id)
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: changed input did not create new revisions on stable durable objects.");
         }
 
         var needMoreData = await service.FormAsync(new Stage7DossierProfileFormationRequest
@@ -55,11 +73,13 @@ public static class Stage7DossierProfileSmokeRunner
         }
     }
 
-    private static void AssertReady(Stage7DossierProfileFormationResult result, string label)
+    private static void AssertReady(Stage7DossierProfileFormationResult result, int expectedDossierRevisionNumber, int expectedProfileRevisionNumber, string label)
     {
         if (!result.Formed
             || result.Dossier == null
             || result.Profile == null
+            || result.CurrentDossierRevision == null
+            || result.CurrentProfileRevision == null
             || result.EvidenceItemIds.Count == 0
             || !string.Equals(result.AuditRecord.Envelope.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
@@ -69,6 +89,14 @@ public static class Stage7DossierProfileSmokeRunner
         if (result.Dossier.DurableObjectMetadataId == result.Profile.DurableObjectMetadataId)
         {
             throw new InvalidOperationException($"Stage7 dossier/profile smoke failed: {label} did not keep dossier/profile metadata explicit.");
+        }
+
+        if (result.Dossier.CurrentRevisionNumber != expectedDossierRevisionNumber
+            || result.Profile.CurrentRevisionNumber != expectedProfileRevisionNumber
+            || result.CurrentDossierRevision.RevisionNumber != expectedDossierRevisionNumber
+            || result.CurrentProfileRevision.RevisionNumber != expectedProfileRevisionNumber)
+        {
+            throw new InvalidOperationException($"Stage7 dossier/profile smoke failed: {label} did not preserve expected dossier/profile revision numbers.");
         }
     }
 
@@ -309,11 +337,34 @@ public static class Stage7DossierProfileSmokeRunner
         };
     }
 
+    private static Stage6BootstrapGraphResult BuildChangedBootstrapResult()
+    {
+        var result = BuildReadyBootstrapResult();
+        result.ContradictionOutputs =
+        [
+            .. result.ContradictionOutputs,
+            new Stage6BootstrapPoolOutput
+            {
+                Id = Guid.Parse("37000000-0000-0000-0000-000000000004"),
+                ScopeKey = result.ScopeKey,
+                TrackedPersonId = result.TrackedPerson!.PersonId,
+                OutputType = Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                OutputKey = "contradiction:changed",
+                RelationshipEdgeAnchorId = Guid.Parse("38000000-0000-0000-0000-000000000002"),
+                Status = "active"
+            }
+        ];
+        result.AuditRecord.Envelope.OutputSummary.Summary = "Changed bootstrap pressure for dossier/profile revision smoke.";
+        return result;
+    }
+
     private sealed class InMemoryStage7DossierProfileRepository : IStage7DossierProfileRepository
     {
         private readonly Dictionary<string, Guid> _metadataIds = [];
         private readonly Dictionary<string, Stage7DurableDossier> _dossiers = [];
         private readonly Dictionary<string, Stage7DurableProfile> _profiles = [];
+        private readonly Dictionary<Guid, List<Stage7DurableDossierRevision>> _dossierRevisions = [];
+        private readonly Dictionary<Guid, List<Stage7DurableProfileRevision>> _profileRevisions = [];
 
         public Task<Stage7DossierProfileFormationResult> UpsertAsync(
             ModelPassAuditRecord auditRecord,
@@ -353,8 +404,39 @@ public static class Stage7DossierProfileSmokeRunner
             dossier.DurableObjectMetadataId = dossierMetadataId;
             dossier.LastModelPassRunId = auditRecord.ModelPassRunId;
             dossier.Status = "active";
-            dossier.SummaryJson = "{\"family\":\"dossier\"}";
-            dossier.PayloadJson = "{\"fields\":[\"tracked_person_name\",\"operator_attachment\"]}";
+            if (!_dossierRevisions.TryGetValue(dossier.Id, out var dossierRevisions))
+            {
+                dossierRevisions = [];
+                _dossierRevisions[dossier.Id] = dossierRevisions;
+            }
+
+            var dossierRevisionHash = $"{bootstrapResult.DiscoveryOutputs.Count}:{bootstrapResult.ContradictionOutputs.Count}:{bootstrapResult.AmbiguityOutputs.Count}";
+            var dossierRevision = dossierRevisions.FirstOrDefault(x => string.Equals(x.RevisionHash, dossierRevisionHash, StringComparison.Ordinal));
+            if (dossierRevision == null)
+            {
+                dossierRevision = new Stage7DurableDossierRevision
+                {
+                    Id = Guid.NewGuid(),
+                    DurableDossierId = dossier.Id,
+                    RevisionNumber = dossierRevisions.Count + 1,
+                    RevisionHash = dossierRevisionHash,
+                    ModelPassRunId = auditRecord.ModelPassRunId,
+                    Confidence = 0.72f,
+                    Coverage = 0.85f,
+                    Freshness = 1.0f,
+                    Stability = bootstrapResult.ContradictionOutputs.Count == 0 ? 1.0f : 0.70f,
+                    ContradictionMarkersJson = "{}",
+                    SummaryJson = $"{{\"family\":\"dossier\",\"contradictions\":{bootstrapResult.ContradictionOutputs.Count}}}",
+                    PayloadJson = $"{{\"fields\":[\"tracked_person_name\",\"operator_attachment\"],\"linked_people\":{bootstrapResult.DiscoveryOutputs.Count}}}",
+                    CreatedAt = DateTime.UtcNow
+                };
+                dossierRevisions.Add(dossierRevision);
+            }
+
+            dossier.CurrentRevisionNumber = dossierRevision.RevisionNumber;
+            dossier.CurrentRevisionHash = dossierRevision.RevisionHash;
+            dossier.SummaryJson = dossierRevision.SummaryJson;
+            dossier.PayloadJson = dossierRevision.PayloadJson;
 
             if (!_profiles.TryGetValue(profileKey, out var profile))
             {
@@ -371,8 +453,39 @@ public static class Stage7DossierProfileSmokeRunner
             profile.DurableObjectMetadataId = profileMetadataId;
             profile.LastModelPassRunId = auditRecord.ModelPassRunId;
             profile.Status = "active";
-            profile.SummaryJson = "{\"family\":\"profile\"}";
-            profile.PayloadJson = "{\"traits\":[\"profile_context\",\"bootstrap_pressure\"]}";
+            if (!_profileRevisions.TryGetValue(profile.Id, out var profileRevisions))
+            {
+                profileRevisions = [];
+                _profileRevisions[profile.Id] = profileRevisions;
+            }
+
+            var profileRevisionHash = $"{bootstrapResult.AmbiguityOutputs.Count}:{bootstrapResult.ContradictionOutputs.Count}:{bootstrapResult.SliceOutputs.Count}";
+            var profileRevision = profileRevisions.FirstOrDefault(x => string.Equals(x.RevisionHash, profileRevisionHash, StringComparison.Ordinal));
+            if (profileRevision == null)
+            {
+                profileRevision = new Stage7DurableProfileRevision
+                {
+                    Id = Guid.NewGuid(),
+                    DurableProfileId = profile.Id,
+                    RevisionNumber = profileRevisions.Count + 1,
+                    RevisionHash = profileRevisionHash,
+                    ModelPassRunId = auditRecord.ModelPassRunId,
+                    Confidence = 0.64f,
+                    Coverage = 0.80f,
+                    Freshness = 1.0f,
+                    Stability = bootstrapResult.ContradictionOutputs.Count == 0 ? 1.0f : 0.68f,
+                    ContradictionMarkersJson = "{}",
+                    SummaryJson = $"{{\"family\":\"profile\",\"ambiguity\":{bootstrapResult.AmbiguityOutputs.Count}}}",
+                    PayloadJson = $"{{\"traits\":[\"profile_context\",\"bootstrap_pressure\"],\"slices\":{bootstrapResult.SliceOutputs.Count}}}",
+                    CreatedAt = DateTime.UtcNow
+                };
+                profileRevisions.Add(profileRevision);
+            }
+
+            profile.CurrentRevisionNumber = profileRevision.RevisionNumber;
+            profile.CurrentRevisionHash = profileRevision.RevisionHash;
+            profile.SummaryJson = profileRevision.SummaryJson;
+            profile.PayloadJson = profileRevision.PayloadJson;
 
             return Task.FromResult(new Stage7DossierProfileFormationResult
             {
@@ -381,6 +494,8 @@ public static class Stage7DossierProfileSmokeRunner
                 TrackedPerson = trackedPerson,
                 Dossier = dossier,
                 Profile = profile,
+                CurrentDossierRevision = dossierRevision,
+                CurrentProfileRevision = profileRevision,
                 EvidenceItemIds =
                 [
                     bootstrapResult.AuditRecord.Envelope.EvidenceItemId!.Value
