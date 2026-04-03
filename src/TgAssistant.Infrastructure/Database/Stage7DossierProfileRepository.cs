@@ -55,10 +55,11 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             (auditRecord.Normalization.NormalizedPayload.Inferences.Count + auditRecord.Normalization.NormalizedPayload.Hypotheses.Count) / 3f,
             0.25f,
             1.0f);
-        var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
         var dossierDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Dossier);
         var profileDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Profile);
+        var dossierFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.Dossier, bootstrapResult.LatestEvidenceAtUtc, now);
+        var profileFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.Profile, bootstrapResult.LatestEvidenceAtUtc, now);
         var contradictionMarkersJson = JsonSerializer.Serialize(
             bootstrapResult.ContradictionOutputs
                 .Select(x => new
@@ -78,7 +79,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             auditRecord,
             dossierConfidence,
             dossierCoverage,
-            freshness,
+            dossierFreshness,
             stability,
             dossierDecayPolicy,
             contradictionMarkersJson,
@@ -94,7 +95,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             auditRecord,
             profileConfidence,
             profileCoverage,
-            freshness,
+            profileFreshness,
             stability,
             profileDecayPolicy,
             contradictionMarkersJson,
@@ -110,7 +111,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             auditRecord,
             dossierConfidence,
             dossierCoverage,
-            freshness,
+            dossierFreshness,
             stability,
             contradictionMarkersJson,
             dossierRow.SummaryJson,
@@ -123,7 +124,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             auditRecord,
             profileConfidence,
             profileCoverage,
-            freshness,
+            profileFreshness,
             stability,
             contradictionMarkersJson,
             profileRow.SummaryJson,
@@ -674,32 +675,6 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         return values.Length == 0
             ? fallback
             : Math.Clamp(values.Average(), 0.30f, 0.98f);
-    }
-
-    private static float ComputeFreshness(DateTime? latestEvidenceAtUtc)
-    {
-        if (latestEvidenceAtUtc == null)
-        {
-            return 0.25f;
-        }
-
-        var age = DateTime.UtcNow - latestEvidenceAtUtc.Value;
-        if (age <= TimeSpan.FromDays(2))
-        {
-            return 1.0f;
-        }
-
-        if (age <= TimeSpan.FromDays(7))
-        {
-            return 0.85f;
-        }
-
-        if (age <= TimeSpan.FromDays(30))
-        {
-            return 0.65f;
-        }
-
-        return 0.40f;
     }
 
     private static float ComputeStability(int contradictionCount)

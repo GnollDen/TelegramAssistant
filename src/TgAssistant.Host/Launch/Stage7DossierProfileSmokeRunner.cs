@@ -58,6 +58,7 @@ public static class Stage7DossierProfileSmokeRunner
         }
 
         AssertDossierFieldNormalizer();
+        AssertDurableRecencyBehavior();
 
         var needMoreData = await service.FormAsync(new Stage7DossierProfileFormationRequest
         {
@@ -136,6 +137,39 @@ public static class Stage7DossierProfileSmokeRunner
             || !string.Equals(proposalField.FamilyKey, "preferences.chef_note", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage7 dossier/profile smoke failed: unapproved dossier field family did not remain proposal-only.");
+        }
+    }
+
+    private static void AssertDurableRecencyBehavior()
+    {
+        var staleEvidenceAtUtc = DateTime.UtcNow.AddDays(-20);
+        var dossierFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.Dossier, staleEvidenceAtUtc);
+        var episodeFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.TimelineEpisode, staleEvidenceAtUtc);
+        if (dossierFreshness <= episodeFreshness)
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: stable traits did not remain fresher than local episodes for the same evidence age.");
+        }
+
+        var dossierAssessment = DurableDecayPolicyCatalog.Assess(
+            Stage7DurableObjectFamilies.Dossier,
+            DurableDecayPolicyCatalog.Serialize(Stage7DurableObjectFamilies.Dossier),
+            $"{{\"latest_evidence_at_utc\":\"{staleEvidenceAtUtc:O}\"}}",
+            hasContradictions: true);
+        var episodeAssessment = DurableDecayPolicyCatalog.Assess(
+            Stage7DurableObjectFamilies.TimelineEpisode,
+            DurableDecayPolicyCatalog.Serialize(Stage7DurableObjectFamilies.TimelineEpisode),
+            $"{{\"latest_evidence_at_utc\":\"{staleEvidenceAtUtc:O}\"}}",
+            hasContradictions: true);
+
+        if (dossierAssessment.ShouldDowngrade)
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: stable traits downgraded too early under contradictory refresh.");
+        }
+
+        if (!episodeAssessment.ShouldDowngrade
+            || !string.Equals(episodeAssessment.RecommendedTruthLayer, ModelNormalizationTruthLayers.ProposalLayer, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: stale local episodes were not downgraded under contradictory refresh.");
         }
     }
 

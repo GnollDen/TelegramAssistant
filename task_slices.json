@@ -55,7 +55,7 @@
       "description": "Produce a code-backed valid-core inventory note covering src/, deploy/, runtime entrypoints, and planning authority surfaces.",
       "executor_agent": "architect-reviewer",
       "dependencies": [],
-      "status": "done",
+      "status": "pending",
       "acceptance_focus": [
         "Inventory clearly separates keep, keep_with_refactor, quarantine_disable, and delete_rewrite.",
         "Every retained area is justified against the PRD and current code."
@@ -1099,12 +1099,12 @@
       "dependencies": [
         "IMPLEMENT-015-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Reads and refreshes can down-rank stale situational conclusions.",
         "Stable traits remain more persistent than local episodes under the same policy."
       ],
-      "notes": "Clean split because recency-aware read behavior should follow explicit decay semantics."
+      "notes": "Applied policy-aware freshness scoring in Stage7 durable refresh paths and recency-aware downgrade in Stage8 outcome gating so stale situational/local conclusions lose authority under contradictory refresh while stable traits remain more persistent, then verified with dotnet build TelegramAssistant.sln and --stage7-dossier-profile-smoke."
     },
     {
       "id": "IMPLEMENT-016-A",

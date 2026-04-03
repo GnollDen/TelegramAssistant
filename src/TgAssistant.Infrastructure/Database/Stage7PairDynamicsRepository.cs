@@ -57,9 +57,9 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             + auditRecord.Normalization.NormalizedPayload.Hypotheses.Count) / 6f,
             0.25f,
             1.0f);
-        var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
         var decayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.PairDynamics);
+        var freshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.PairDynamics, bootstrapResult.LatestEvidenceAtUtc, now);
         var contradictionMarkersJson = BuildContradictionMarkersJson(bootstrapResult);
         var summaryJson = BuildSummaryJson(auditRecord, bootstrapResult);
         var payloadJson = BuildPayloadJson(auditRecord, bootstrapResult);
@@ -440,32 +440,6 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         return values.Length == 0
             ? fallback
             : Math.Clamp(values.Average(), 0.30f, 0.98f);
-    }
-
-    private static float ComputeFreshness(DateTime? latestEvidenceAtUtc)
-    {
-        if (latestEvidenceAtUtc == null)
-        {
-            return 0.25f;
-        }
-
-        var age = DateTime.UtcNow - latestEvidenceAtUtc.Value;
-        if (age <= TimeSpan.FromDays(2))
-        {
-            return 1.0f;
-        }
-
-        if (age <= TimeSpan.FromDays(7))
-        {
-            return 0.85f;
-        }
-
-        if (age <= TimeSpan.FromDays(30))
-        {
-            return 0.65f;
-        }
-
-        return 0.40f;
     }
 
     private static float ComputeStability(int contradictionCount)

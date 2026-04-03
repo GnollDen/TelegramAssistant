@@ -678,8 +678,8 @@
         "IMPLEMENT-006",
         "IMPLEMENT-007"
       ],
-      "status": "pending",
-      "notes": "Addresses stale guidance risk from outdated durable knowledge in Stage 8."
+      "status": "done",
+      "notes": "Addresses stale guidance risk from outdated durable knowledge in Stage 8. Completed by persisting explicit decay classes/policies, applying policy-aware freshness scoring in Stage7 refresh paths, and using recency-aware Stage8 gating to downgrade stale contradictory situational/local conclusions more aggressively than stable traits."
     },
     {
       "id": "IMPLEMENT-016",

@@ -69,9 +69,26 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         foreach (var row in rows)
         {
             var hasContradictions = HasNonEmptyJsonArray(row.ContradictionMarkersJson);
-            var decision = ResolveDecision(request.ResultStatus, hasContradictions, request.ForcePromotionBlocked);
+            var isReadyResult = string.Equals(request.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal);
+            var recencyAssessment = DurableDecayPolicyCatalog.Assess(
+                row.ObjectFamily,
+                row.DecayPolicyJson,
+                row.MetadataJson,
+                hasContradictions && isReadyResult,
+                now);
+            var decision = ResolveDecision(request.ResultStatus, hasContradictions, request.ForcePromotionBlocked, recencyAssessment);
             row.PromotionState = decision.PromotionState;
             row.TruthLayer = decision.TruthLayer;
+            if (recencyAssessment.FreshnessCap.HasValue)
+            {
+                row.Freshness = Math.Min(row.Freshness, recencyAssessment.FreshnessCap.Value);
+            }
+
+            if (recencyAssessment.StabilityCap.HasValue)
+            {
+                row.Stability = Math.Min(row.Stability, recencyAssessment.StabilityCap.Value);
+            }
+
             row.LastPromotionRunId = request.ModelPassRunId;
             row.MetadataJson = MergeGateMetadataJson(
                 row.MetadataJson,
@@ -82,6 +99,7 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                 request.RuntimeControlState,
                 request.ForcePromotionBlocked,
                 hasContradictions,
+                recencyAssessment,
                 now);
             row.UpdatedAt = now;
 
@@ -106,13 +124,21 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
     private static (string PromotionState, string TruthLayer) ResolveDecision(
         string resultStatus,
         bool hasContradictions,
-        bool forcePromotionBlocked)
+        bool forcePromotionBlocked,
+        DurableRecencyAssessment recencyAssessment)
     {
         if (string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
             if (forcePromotionBlocked)
             {
                 return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer);
+            }
+
+            if (recencyAssessment.ShouldDowngrade
+                && !string.IsNullOrWhiteSpace(recencyAssessment.RecommendedPromotionState)
+                && !string.IsNullOrWhiteSpace(recencyAssessment.RecommendedTruthLayer))
+            {
+                return (recencyAssessment.RecommendedPromotionState, recencyAssessment.RecommendedTruthLayer);
             }
 
             return hasContradictions
@@ -156,6 +182,7 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         string? runtimeControlState,
         bool forcedByRuntimeState,
         bool hasContradictions,
+        DurableRecencyAssessment recencyAssessment,
         DateTime appliedAtUtc)
     {
         JsonObject root;
@@ -185,6 +212,10 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
             ["runtime_control_state"] = string.IsNullOrWhiteSpace(runtimeControlState) ? null : runtimeControlState,
             ["forced_by_runtime_state"] = forcedByRuntimeState,
             ["has_contradictions"] = hasContradictions,
+            ["recency_state"] = recencyAssessment.State,
+            ["recency_age_days"] = recencyAssessment.AgeDays,
+            ["recency_downgraded"] = recencyAssessment.ShouldDowngrade,
+            ["latest_evidence_at_utc"] = recencyAssessment.LatestEvidenceAtUtc?.ToString("O"),
             ["applied_at_utc"] = appliedAtUtc.ToString("O")
         };
 

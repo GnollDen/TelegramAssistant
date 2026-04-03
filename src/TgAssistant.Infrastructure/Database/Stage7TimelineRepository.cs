@@ -62,11 +62,13 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         var eventBoundaryConfidence = ComputeBoundaryConfidence(bootstrapResult, 0.88f);
         var episodeBoundaryConfidence = ComputeBoundaryConfidence(bootstrapResult, 0.83f);
         var storyArcBoundaryConfidence = ComputeBoundaryConfidence(bootstrapResult, 0.78f);
-        var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
         var eventDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Event);
         var timelineDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.TimelineEpisode);
         var storyArcDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.StoryArc);
+        var eventFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.Event, bootstrapResult.LatestEvidenceAtUtc, now);
+        var timelineFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.TimelineEpisode, bootstrapResult.LatestEvidenceAtUtc, now);
+        var storyArcFreshness = DurableDecayPolicyCatalog.ComputeFreshness(Stage7DurableObjectFamilies.StoryArc, bootstrapResult.LatestEvidenceAtUtc, now);
         var contradictionMarkersJson = BuildContradictionMarkersJson(bootstrapResult);
         var eventClosureState = ResolveEventClosureState(bootstrapResult);
         var episodeClosureState = ResolveTimelineEpisodeClosureState(bootstrapResult);
@@ -82,7 +84,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             auditRecord,
             eventConfidence,
             Math.Clamp(auditRecord.Normalization.NormalizedPayload.Facts.Count / 4f, 0.25f, 1.0f),
-            freshness,
+            eventFreshness,
             stability,
             eventDecayPolicy,
             contradictionMarkersJson,
@@ -102,7 +104,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
                 (auditRecord.Normalization.NormalizedPayload.Inferences.Count + bootstrapResult.SliceOutputs.Count) / 4f,
                 0.25f,
                 1.0f),
-            freshness,
+            timelineFreshness,
             stability,
             timelineDecayPolicy,
             contradictionMarkersJson,
@@ -124,7 +126,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
                 + bootstrapResult.SliceOutputs.Count) / 5f,
                 0.25f,
                 1.0f),
-            freshness,
+            storyArcFreshness,
             stability,
             storyArcDecayPolicy,
             contradictionMarkersJson,
@@ -165,7 +167,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             eventRow,
             auditRecord,
             eventConfidence,
-            freshness,
+            eventFreshness,
             stability,
             eventBoundaryConfidence,
             eventClosureState,
@@ -179,7 +181,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             timelineRow,
             auditRecord,
             timelineConfidence,
-            freshness,
+            timelineFreshness,
             stability,
             episodeBoundaryConfidence,
             episodeClosureState,
@@ -193,7 +195,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             storyArcRow,
             auditRecord,
             storyArcConfidence,
-            freshness,
+            storyArcFreshness,
             stability,
             storyArcBoundaryConfidence,
             storyArcClosureState,
@@ -876,32 +878,6 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         return values.Length == 0
             ? fallback
             : Math.Clamp(values.Average(), 0.30f, 0.98f);
-    }
-
-    private static float ComputeFreshness(DateTime? latestEvidenceAtUtc)
-    {
-        if (latestEvidenceAtUtc == null)
-        {
-            return 0.25f;
-        }
-
-        var age = DateTime.UtcNow - latestEvidenceAtUtc.Value;
-        if (age <= TimeSpan.FromDays(2))
-        {
-            return 1.0f;
-        }
-
-        if (age <= TimeSpan.FromDays(7))
-        {
-            return 0.85f;
-        }
-
-        if (age <= TimeSpan.FromDays(30))
-        {
-            return 0.65f;
-        }
-
-        return 0.40f;
     }
 
     private static float ComputeStability(int contradictionCount)
