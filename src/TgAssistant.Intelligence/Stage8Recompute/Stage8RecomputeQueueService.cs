@@ -198,7 +198,9 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             var gateResult = await _outcomeGateRepository.ApplyOutcomeGateAsync(new Stage8OutcomeGateRequest
             {
                 ScopeKey = leasedItem.ScopeKey,
+                PersonId = leasedItem.PersonId,
                 TargetFamily = leasedItem.TargetFamily,
+                TargetRef = leasedItem.TargetRef,
                 ResultStatus = resultStatus,
                 ModelPassRunId = modelPassRunId,
                 TriggerKind = leasedItem.TriggerKind,
@@ -307,7 +309,9 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         var gateResult = await _outcomeGateRepository.ApplyOutcomeGateAsync(new Stage8OutcomeGateRequest
         {
             ScopeKey = queueItem.ScopeKey,
+            PersonId = queueItem.PersonId,
             TargetFamily = queueItem.TargetFamily,
+            TargetRef = queueItem.TargetRef,
             ResultStatus = resultStatus,
             ModelPassRunId = branch.LastModelPassRunId,
             TriggerKind = queueItem.TriggerKind,

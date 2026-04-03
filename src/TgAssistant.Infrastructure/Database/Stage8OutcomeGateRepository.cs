@@ -52,9 +52,18 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var rows = await db.DurableObjectMetadata
-            .Where(x => x.ScopeKey == scopeKey && objectFamilies.Contains(x.ObjectFamily))
-            .ToListAsync(ct);
+        var targetPersonId = ResolveTargetPersonId(request);
+        var hasExplicitScopeOnlyTarget = string.Equals(request.TargetRef, $"scope:{scopeKey}", StringComparison.Ordinal);
+        var rowsQuery = db.DurableObjectMetadata
+            .Where(x => x.ScopeKey == scopeKey && objectFamilies.Contains(x.ObjectFamily));
+        if (targetPersonId.HasValue && !hasExplicitScopeOnlyTarget)
+        {
+            rowsQuery = rowsQuery.Where(x =>
+                x.OwnerPersonId == targetPersonId.Value
+                || x.RelatedPersonId == targetPersonId.Value);
+        }
+
+        var rows = await rowsQuery.ToListAsync(ct);
 
         if (rows.Count == 0)
         {
@@ -94,6 +103,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                 row.MetadataJson,
                 decision.PromotionState,
                 request.ResultStatus,
+                request.TargetRef,
+                targetPersonId,
                 request.TriggerKind,
                 request.TriggerRef,
                 request.RuntimeControlState,
@@ -177,6 +188,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         string? existingMetadataJson,
         string promotionState,
         string resultStatus,
+        string? targetRef,
+        Guid? targetPersonId,
         string? triggerKind,
         string? triggerRef,
         string? runtimeControlState,
@@ -207,6 +220,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         {
             ["promotion_state"] = promotionState,
             ["result_status"] = resultStatus,
+            ["target_ref"] = string.IsNullOrWhiteSpace(targetRef) ? null : targetRef,
+            ["target_person_id"] = targetPersonId?.ToString("D"),
             ["trigger_kind"] = string.IsNullOrWhiteSpace(triggerKind) ? null : triggerKind,
             ["trigger_ref"] = string.IsNullOrWhiteSpace(triggerRef) ? null : triggerRef,
             ["runtime_control_state"] = string.IsNullOrWhiteSpace(runtimeControlState) ? null : runtimeControlState,
@@ -220,6 +235,23 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         };
 
         return root.ToJsonString();
+    }
+
+    private static Guid? ResolveTargetPersonId(Stage8OutcomeGateRequest request)
+    {
+        if (request.PersonId.HasValue)
+        {
+            return request.PersonId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TargetRef)
+            && request.TargetRef.StartsWith("person:", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(request.TargetRef["person:".Length..], out var parsedPersonId))
+        {
+            return parsedPersonId;
+        }
+
+        return null;
     }
 
     private static Stage8OutcomeGateResult BuildResult(

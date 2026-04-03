@@ -180,7 +180,9 @@ public class Stage8BackfillRecoveryTelemetry
 public class Stage8OutcomeGateRequest
 {
     public string ScopeKey { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
     public string TargetFamily { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
     public string ResultStatus { get; set; } = ModelPassResultStatuses.BlockedInvalidInput;
     public Guid? ModelPassRunId { get; set; }
     public string? TriggerKind { get; set; }
