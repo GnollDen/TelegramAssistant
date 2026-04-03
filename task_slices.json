@@ -1829,12 +1829,12 @@
       "dependencies": [
         "OPINT-002-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Action writes are auditable and include operator identity plus scope/person linkage.",
         "Mandatory explanation policy is enforced for reject/defer/clarify paths."
       ],
-      "notes": "This slice intentionally excludes recompute orchestration, which is OPINT-003."
+      "notes": "Completed on 2026-04-03 by adding clean operator-layer `IResolutionActionService` contracts, transactional `ResolutionActionCommandService`, and active persistence via migration 0052 for accepted resolution actions plus deny-safe operator audit events. The service validates tracked-person/session scope, enforces the OPINT-001 explanation policy for reject/defer/clarify, stores structured clarification payload JSON when provided, and keeps recompute orchestration out of scope for OPINT-003. Verified with `dotnet build TelegramAssistant.sln`."
     },
     {
       "id": "OPINT-002-C",

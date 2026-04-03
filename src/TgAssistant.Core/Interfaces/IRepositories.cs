@@ -303,6 +303,13 @@ public interface IResolutionReadService
         CancellationToken ct = default);
 }
 
+public interface IResolutionActionService
+{
+    Task<ResolutionActionResult> SubmitAsync(
+        ResolutionActionRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeTriggerService
 {
     Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);

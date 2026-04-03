@@ -1020,6 +1020,63 @@ public class DbRuntimeControlState
     public DateTime? DeactivatedAtUtc { get; set; }
 }
 
+public class DbOperatorResolutionAction
+{
+    public Guid Id { get; set; }
+    public string RequestId { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string AffectedFamily { get; set; } = string.Empty;
+    public string AffectedObjectRef { get; set; } = string.Empty;
+    public string Decision { get; set; } = string.Empty;
+    public string? Explanation { get; set; }
+    public string? ClarificationPayloadJson { get; set; }
+    public string OperatorId { get; set; } = string.Empty;
+    public string OperatorDisplay { get; set; } = string.Empty;
+    public string OperatorSessionId { get; set; } = string.Empty;
+    public string Surface { get; set; } = string.Empty;
+    public string SurfaceSubject { get; set; } = string.Empty;
+    public string AuthSource { get; set; } = string.Empty;
+    public DateTime AuthTimeUtc { get; set; }
+    public DateTime SessionAuthenticatedAtUtc { get; set; }
+    public DateTime SessionLastSeenAtUtc { get; set; }
+    public DateTime? SessionExpiresAtUtc { get; set; }
+    public string ActiveMode { get; set; } = string.Empty;
+    public string? UnfinishedStepKind { get; set; }
+    public string? UnfinishedStepState { get; set; }
+    public DateTime? UnfinishedStepStartedAtUtc { get; set; }
+    public DateTime SubmittedAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public class DbOperatorAuditEvent
+{
+    public Guid AuditEventId { get; set; }
+    public string RequestId { get; set; } = string.Empty;
+    public string? ScopeKey { get; set; }
+    public Guid? TrackedPersonId { get; set; }
+    public string? ScopeItemKey { get; set; }
+    public string? ItemType { get; set; }
+    public string OperatorId { get; set; } = string.Empty;
+    public string OperatorDisplay { get; set; } = string.Empty;
+    public string OperatorSessionId { get; set; } = string.Empty;
+    public string Surface { get; set; } = string.Empty;
+    public string SurfaceSubject { get; set; } = string.Empty;
+    public string AuthSource { get; set; } = string.Empty;
+    public string ActiveMode { get; set; } = string.Empty;
+    public string? UnfinishedStepKind { get; set; }
+    public string? ActionType { get; set; }
+    public string? SessionEventType { get; set; }
+    public string DecisionOutcome { get; set; } = string.Empty;
+    public string? FailureReason { get; set; }
+    public string DetailsJson { get; set; } = "{}";
+    public DateTime EventTimeUtc { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }
