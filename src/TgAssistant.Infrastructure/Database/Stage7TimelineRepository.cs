@@ -64,6 +64,9 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         var storyArcBoundaryConfidence = ComputeBoundaryConfidence(bootstrapResult, 0.78f);
         var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
+        var eventDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Event);
+        var timelineDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.TimelineEpisode);
+        var storyArcDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.StoryArc);
         var contradictionMarkersJson = BuildContradictionMarkersJson(bootstrapResult);
         var eventClosureState = ResolveEventClosureState(bootstrapResult);
         var episodeClosureState = ResolveTimelineEpisodeClosureState(bootstrapResult);
@@ -81,6 +84,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             Math.Clamp(auditRecord.Normalization.NormalizedPayload.Facts.Count / 4f, 0.25f, 1.0f),
             freshness,
             stability,
+            eventDecayPolicy,
             contradictionMarkersJson,
             BuildMetadataJson(bootstrapResult, Stage7DurableObjectFamilies.Event, eventClosureState, eventBoundaryConfidence),
             now,
@@ -100,6 +104,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
                 1.0f),
             freshness,
             stability,
+            timelineDecayPolicy,
             contradictionMarkersJson,
             BuildMetadataJson(bootstrapResult, Stage7DurableObjectFamilies.TimelineEpisode, episodeClosureState, episodeBoundaryConfidence),
             now,
@@ -121,6 +126,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
                 1.0f),
             freshness,
             stability,
+            storyArcDecayPolicy,
             contradictionMarkersJson,
             BuildMetadataJson(bootstrapResult, Stage7DurableObjectFamilies.StoryArc, storyArcClosureState, storyArcBoundaryConfidence),
             now,
@@ -254,6 +260,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         float coverage,
         float freshness,
         float stability,
+        DurableDecayPolicySnapshot decayPolicy,
         string contradictionMarkersJson,
         string metadataJson,
         DateTime now,
@@ -286,6 +293,8 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         row.Coverage = coverage;
         row.Freshness = freshness;
         row.Stability = stability;
+        row.DecayClass = decayPolicy.DecayClass;
+        row.DecayPolicyJson = JsonSerializer.Serialize(decayPolicy);
         row.ContradictionMarkersJson = contradictionMarkersJson;
         row.MetadataJson = metadataJson;
         row.UpdatedAt = now;

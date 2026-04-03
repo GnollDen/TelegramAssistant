@@ -59,6 +59,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             1.0f);
         var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
+        var decayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.PairDynamics);
         var contradictionMarkersJson = BuildContradictionMarkersJson(bootstrapResult);
         var summaryJson = BuildSummaryJson(auditRecord, bootstrapResult);
         var payloadJson = BuildPayloadJson(auditRecord, bootstrapResult);
@@ -73,6 +74,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             coverage,
             freshness,
             stability,
+            decayPolicy,
             contradictionMarkersJson,
             BuildMetadataJson(bootstrapResult),
             now,
@@ -139,6 +141,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         float coverage,
         float freshness,
         float stability,
+        DurableDecayPolicySnapshot decayPolicy,
         string contradictionMarkersJson,
         string metadataJson,
         DateTime now,
@@ -172,6 +175,8 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         row.Coverage = coverage;
         row.Freshness = freshness;
         row.Stability = stability;
+        row.DecayClass = decayPolicy.DecayClass;
+        row.DecayPolicyJson = JsonSerializer.Serialize(decayPolicy);
         row.ContradictionMarkersJson = contradictionMarkersJson;
         row.MetadataJson = metadataJson;
         row.UpdatedAt = now;

@@ -57,6 +57,8 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             1.0f);
         var freshness = ComputeFreshness(bootstrapResult.LatestEvidenceAtUtc);
         var stability = ComputeStability(bootstrapResult.ContradictionOutputs.Count);
+        var dossierDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Dossier);
+        var profileDecayPolicy = DurableDecayPolicyCatalog.Resolve(Stage7DurableObjectFamilies.Profile);
         var contradictionMarkersJson = JsonSerializer.Serialize(
             bootstrapResult.ContradictionOutputs
                 .Select(x => new
@@ -78,6 +80,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             dossierCoverage,
             freshness,
             stability,
+            dossierDecayPolicy,
             contradictionMarkersJson,
             BuildDossierMetadataJson(bootstrapResult, dossierFieldRegistry),
             now,
@@ -93,6 +96,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             profileCoverage,
             freshness,
             stability,
+            profileDecayPolicy,
             contradictionMarkersJson,
             BuildProfileMetadataJson(bootstrapResult),
             now,
@@ -171,6 +175,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         float coverage,
         float freshness,
         float stability,
+        DurableDecayPolicySnapshot decayPolicy,
         string contradictionMarkersJson,
         string metadataJson,
         DateTime now,
@@ -203,6 +208,8 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         row.Coverage = coverage;
         row.Freshness = freshness;
         row.Stability = stability;
+        row.DecayClass = decayPolicy.DecayClass;
+        row.DecayPolicyJson = JsonSerializer.Serialize(decayPolicy);
         row.ContradictionMarkersJson = contradictionMarkersJson;
         row.MetadataJson = metadataJson;
         row.UpdatedAt = now;

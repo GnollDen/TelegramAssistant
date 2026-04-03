@@ -908,12 +908,15 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Coverage).HasColumnName("coverage");
             e.Property(x => x.Freshness).HasColumnName("freshness");
             e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.DecayClass).HasColumnName("decay_class");
+            e.Property(x => x.DecayPolicyJson).HasColumnName("decay_policy_json").HasColumnType("jsonb");
             e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
             e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.ObjectFamily, x.ObjectKey }).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.ObjectFamily, x.PromotionState, x.UpdatedAt });
+            e.HasIndex(x => new { x.ScopeKey, x.DecayClass, x.UpdatedAt });
             e.HasIndex(x => new { x.ScopeKey, x.OwnerPersonId, x.ObjectFamily })
                 .HasFilter("owner_person_id IS NOT NULL");
             e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.ObjectFamily })

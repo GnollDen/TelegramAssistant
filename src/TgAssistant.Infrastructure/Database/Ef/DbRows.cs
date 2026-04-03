@@ -616,6 +616,8 @@ public class DbDurableObjectMetadata
     public float Coverage { get; set; }
     public float Freshness { get; set; }
     public float Stability { get; set; }
+    public string DecayClass { get; set; } = DurableDecayClasses.SituationalState;
+    public string DecayPolicyJson { get; set; } = "{}";
     public string ContradictionMarkersJson { get; set; } = "[]";
     public string MetadataJson { get; set; } = "{}";
     public DateTime CreatedAt { get; set; }

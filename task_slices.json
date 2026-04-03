@@ -1082,12 +1082,12 @@
       "dependencies": [
         "IMPLEMENT-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Durable object families have distinct freshness and decay classes.",
         "Local episodes no longer inherit the same persistence behavior as stable traits."
       ],
-      "notes": "Clean split because temporal decay policy should be explicit before read-model behavior is changed."
+      "notes": "Added DurableDecayPolicyCatalog plus durable_object_metadata decay_class/decay_policy_json persistence, mapped Stage7 dossier/profile to stable_trait, pair_dynamics/story_arc to situational_state, and event/timeline_episode to local_episode, then verified with dotnet build TelegramAssistant.sln."
     },
     {
       "id": "IMPLEMENT-015-B",
