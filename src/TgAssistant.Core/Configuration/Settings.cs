@@ -130,6 +130,9 @@ public class LlmGatewayProviderSettings
     public string ChatCompletionsPath { get; set; } = "/v1/chat/completions";
     public string EmbeddingsPath { get; set; } = "/v1/embeddings";
     public int TimeoutSeconds { get; set; } = 120;
+    public decimal? TotalCostUsdPer1kTokens { get; set; }
+    public decimal? PromptCostUsdPer1kTokens { get; set; }
+    public decimal? CompletionCostUsdPer1kTokens { get; set; }
 }
 
 public class LlmGatewayExperimentSettings

@@ -15,9 +15,11 @@ public sealed class LlmGatewayMetrics
     private readonly Counter<long> _promptTokensTotal = Meter.CreateCounter<long>("llm_gateway_prompt_tokens_total");
     private readonly Counter<long> _completionTokensTotal = Meter.CreateCounter<long>("llm_gateway_completion_tokens_total");
     private readonly Counter<long> _fallbackTotal = Meter.CreateCounter<long>("llm_gateway_fallback_total");
+    private readonly Counter<double> _spendUsdTotal = Meter.CreateCounter<double>("llm_gateway_spend_usd_total");
     private readonly Histogram<double> _providerLatencyMs = Meter.CreateHistogram<double>("llm_gateway_provider_latency_ms");
     private readonly Histogram<double> _endToEndLatencyMs = Meter.CreateHistogram<double>("llm_gateway_end_to_end_latency_ms");
     private readonly Histogram<double> _tokensPerSecond = Meter.CreateHistogram<double>("llm_gateway_tokens_per_second");
+    private readonly Histogram<double> _requestSpendUsd = Meter.CreateHistogram<double>("llm_gateway_request_spend_usd");
 
     public void RecordSuccess(
         LlmGatewayRequest request,
@@ -71,6 +73,27 @@ public sealed class LlmGatewayMetrics
         }
 
         _fallbackTotal.Add(1, tags);
+    }
+
+    public void RecordSpend(
+        LlmGatewayRequest request,
+        string provider,
+        string model,
+        bool fallbackApplied,
+        string? fallbackFromProvider,
+        decimal spendUsd,
+        string spendSource)
+    {
+        if (spendUsd <= 0m)
+        {
+            return;
+        }
+
+        var tags = BuildCommonTags(request, provider, model, "success", fallbackApplied, fallbackFromProvider, null);
+        tags.Add("spend_source", Normalize(spendSource));
+        var spendValue = (double)spendUsd;
+        _spendUsdTotal.Add(spendValue, tags);
+        _requestSpendUsd.Record(spendValue, tags);
     }
 
     private void AddTokenMetrics(TagList tags, LlmUsageInfo usage, int providerLatencyMs)

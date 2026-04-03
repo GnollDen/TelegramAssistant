@@ -1485,12 +1485,12 @@
       "dependencies": [
         "GATEWAY-006-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "OpenRouter usage includes Grafana-queryable spend or price-derived spend dimensions.",
         "Cost visibility aligns with existing budget and usage accounting."
       ],
-      "notes": "Track OpenRouter spend separately because it remains the stable baseline for embeddings/media and the current fallback path for text compatibility."
+      "notes": "Done on 2026-04-03: added OpenRouter spend metrics (`llm_gateway_spend_usd_total`, `llm_gateway_request_spend_usd`) wired to gateway usage/request labels so Grafana can correlate spend with request volume and token metrics. Spend source is explicit (`provider` when usage.cost is present, `derived` from per-1k token prices in `LlmGateway.Providers.*`) to stay aligned with existing usage/budget accounting semantics."
     },
     {
       "id": "GATEWAY-006-C",

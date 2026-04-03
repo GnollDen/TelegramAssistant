@@ -87,6 +87,19 @@ public class LlmGatewayService : ILlmGateway
                     Math.Max(0, (int)startedAt.ElapsedMilliseconds),
                     response.Usage);
 
+                var (spendUsd, spendSource) = ResolveSpendUsd(providerResult.ProviderId, providerResult.Usage);
+                if (spendUsd.HasValue)
+                {
+                    _metrics.RecordSpend(
+                        request,
+                        response.Provider,
+                        response.Model,
+                        response.FallbackApplied,
+                        response.FallbackFromProvider,
+                        spendUsd.Value,
+                        spendSource);
+                }
+
                 return response;
             }
             catch (LlmGatewayException ex)
@@ -194,5 +207,48 @@ public class LlmGatewayService : ILlmGateway
             Modality = request.Modality,
             Retryable = false
         };
+    }
+
+    private (decimal? SpendUsd, string Source) ResolveSpendUsd(string providerId, LlmUsageInfo usage)
+    {
+        if (!string.Equals(providerId, OpenRouterProviderClient.ProviderIdValue, StringComparison.OrdinalIgnoreCase))
+        {
+            return (null, string.Empty);
+        }
+
+        if (usage.CostUsd is > 0m)
+        {
+            return (usage.CostUsd.Value, "provider");
+        }
+
+        var providerSettings = _settings.GetProvider(providerId);
+        if (providerSettings is null)
+        {
+            return (null, string.Empty);
+        }
+
+        var promptTokens = usage.PromptTokens ?? 0;
+        var completionTokens = usage.CompletionTokens ?? 0;
+        var totalTokens = usage.TotalTokens ?? (promptTokens + completionTokens);
+        if (totalTokens <= 0)
+        {
+            return (null, string.Empty);
+        }
+
+        decimal? derivedSpend = null;
+        if (providerSettings.PromptCostUsdPer1kTokens is > 0m || providerSettings.CompletionCostUsdPer1kTokens is > 0m)
+        {
+            var promptPrice = providerSettings.PromptCostUsdPer1kTokens ?? 0m;
+            var completionPrice = providerSettings.CompletionCostUsdPer1kTokens ?? providerSettings.PromptCostUsdPer1kTokens ?? 0m;
+            derivedSpend = ((promptTokens * promptPrice) + (completionTokens * completionPrice)) / 1000m;
+        }
+        else if (providerSettings.TotalCostUsdPer1kTokens is > 0m)
+        {
+            derivedSpend = (totalTokens * providerSettings.TotalCostUsdPer1kTokens.Value) / 1000m;
+        }
+
+        return derivedSpend is > 0m
+            ? (derivedSpend.Value, "derived")
+            : (null, string.Empty);
     }
 }

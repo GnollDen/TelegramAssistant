@@ -54,6 +54,7 @@ public static class LlmGatewayAnalyticsSmokeRunner
         AssertMetric(samples, "llm_gateway_provider_latency_ms", "provider", "model", "modality", "status");
         AssertMetric(samples, "llm_gateway_end_to_end_latency_ms", "provider", "model", "modality", "status");
         AssertMetric(samples, "llm_gateway_tokens_per_second", "provider", "model", "modality", "status");
+        AssertMetric(samples, "llm_gateway_spend_usd_total", "provider", "model", "modality", "status", "spend_source");
         AssertMetric(samples, "llm_gateway_fallback_total", "from_provider", "to_provider", "reason", "modality");
 
         if (!samples.Any(sample => sample.Name == "llm_gateway_requests_total"
@@ -61,6 +62,15 @@ public static class LlmGatewayAnalyticsSmokeRunner
                                    && string.Equals(routeKind, "fallback", StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("LLM gateway analytics smoke failed: request metrics did not expose fallback route dimension.");
+        }
+
+        if (!samples.Any(sample => sample.Name == "llm_gateway_spend_usd_total"
+                                   && sample.Tags.TryGetValue("provider", out var provider)
+                                   && string.Equals(provider, OpenRouterProviderClient.ProviderIdValue, StringComparison.Ordinal)
+                                   && sample.Tags.TryGetValue("spend_source", out var spendSource)
+                                   && string.Equals(spendSource, "derived", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("LLM gateway analytics smoke failed: openrouter spend metrics did not emit price-derived spend labels.");
         }
     }
 
@@ -123,7 +133,9 @@ public static class LlmGatewayAnalyticsSmokeRunner
                     ApiKey = "openrouter-analytics-key",
                     DefaultModel = "openrouter-default-analytics",
                     ChatCompletionsPath = "/chat/completions",
-                    EmbeddingsPath = "/embeddings"
+                    EmbeddingsPath = "/embeddings",
+                    PromptCostUsdPer1kTokens = 0.12m,
+                    CompletionCostUsdPer1kTokens = 0.24m
                 }
             }
         };
@@ -224,8 +236,7 @@ public static class LlmGatewayAnalyticsSmokeRunner
                 {
                     prompt_tokens = 14,
                     completion_tokens = 6,
-                    total_tokens = 20,
-                    cost = 0.0020m
+                    total_tokens = 20
                 }
             },
             "openrouter-analytics-fallback-1");
