@@ -980,7 +980,7 @@
       "dependencies": [
         "IMPLEMENT-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Blocked graph branches are explicit and queryable.",
         "Blocked state is scoped to affected branches only."
@@ -997,12 +997,12 @@
       "dependencies": [
         "IMPLEMENT-012-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Unaffected dossier, pair, and timeline branches continue progressing safely.",
         "Affected branches remain blocked and auditable until clarification arrives."
       ],
-      "notes": "Clean split because continuation behavior should be tested separately from blocked-branch storage."
+      "notes": "Completed by teaching Stage8RecomputeQueueService to query clarification_branch_states before execution, short-circuit only the matching blocked target family into an auditable need_operator_clarification completion with clarification gating preserved, and extending --stage8-recompute-smoke to prove a blocked timeline branch stays blocked while dossier/profile work in the same scope continues."
     },
     {
       "id": "IMPLEMENT-013-A",

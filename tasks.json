@@ -608,8 +608,8 @@
         "IMPLEMENT-006",
         "IMPLEMENT-007"
       ],
-      "status": "pending",
-      "notes": "Prevents operator silence from degrading the entire knowledge graph into a stalled state."
+      "status": "done",
+      "notes": "Completed through IMPLEMENT-012-A/B: clarification_branch_states now persist branch-scoped unresolved clarification blocks, and Stage8 recompute execution consults those branch states so only the affected target family remains clarification-blocked while unaffected dossier/profile, pair-dynamics, or timeline work in the same scope can continue safely."
     },
     {
       "id": "IMPLEMENT-013",

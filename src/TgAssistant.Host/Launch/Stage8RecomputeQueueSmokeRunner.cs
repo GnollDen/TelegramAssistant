@@ -17,6 +17,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         var gateRepository = new InMemoryStage8OutcomeGateRepository();
         var defectRepository = new InMemoryRuntimeDefectRepository();
         var controlStateService = new InMemoryRuntimeControlStateService();
+        var clarificationBranchStateRepository = new InMemoryClarificationBranchStateRepository();
         var loggerFactory = LoggerFactory.Create(_ => { });
         var service = new Stage8RecomputeQueueService(
             repository,
@@ -27,6 +28,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             controlStateService,
             gateRepository,
             defectRepository,
+            clarificationBranchStateRepository,
             loggerFactory.CreateLogger<Stage8RecomputeQueueService>(),
             baseRetryDelay: TimeSpan.FromMilliseconds(1),
             maxRetryDelay: TimeSpan.FromMilliseconds(5));
@@ -139,6 +141,54 @@ public static class Stage8RecomputeQueueSmokeRunner
         if (!string.Equals(defectRepository.LastRequest?.DefectClass, RuntimeDefectClasses.Normalization, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification-gated outcome did not persist a normalization defect.");
+        }
+
+        clarificationBranchStateRepository.AddOpenBranch(
+            scopeKey: "chat:stage8-recompute-smoke-branch-block",
+            branchFamily: Stage8RecomputeTargetFamilies.TimelineObjects,
+            targetType: "timeline_bundle",
+            targetRef: "person:81000000-0000-0000-0000-000000000005",
+            personId: Guid.Parse("81000000-0000-0000-0000-000000000005"),
+            blockReason: "Timeline clarification remains unresolved.");
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-recompute-smoke-branch-block",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000005"),
+            TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+            TriggerKind = "branch_scope_smoke",
+            TriggerRef = "implement-012-b-dossier"
+        }, ct);
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-recompute-smoke-branch-block",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000005"),
+            TargetFamily = Stage8RecomputeTargetFamilies.TimelineObjects,
+            TriggerKind = "branch_scope_smoke",
+            TriggerRef = "implement-012-b-timeline"
+        }, ct);
+
+        var unaffectedExecution = await service.ExecuteNextAsync(ct);
+        if (!unaffectedExecution.Executed
+            || !string.Equals(unaffectedExecution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal)
+            || !string.Equals(unaffectedExecution.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal)
+            || dossierProfileService.CallCount != 2)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: unaffected dossier/profile branch did not continue under a sibling clarification block.");
+        }
+
+        var blockedBranchExecution = await service.ExecuteNextAsync(ct);
+        if (!blockedBranchExecution.Executed
+            || !string.Equals(blockedBranchExecution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal)
+            || !string.Equals(blockedBranchExecution.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal)
+            || timelineService.CallCount != 1)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: blocked timeline branch did not remain clarification-blocked without re-execution.");
+        }
+
+        if (!string.Equals(gateRepository.LastRequest?.TargetFamily, Stage8RecomputeTargetFamilies.TimelineObjects, StringComparison.Ordinal)
+            || !string.Equals(gateRepository.LastRequest?.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: blocked timeline branch did not keep clarification gate state explicit.");
         }
 
         controlStateService.NextDecision = new RuntimeControlEnforcementDecision
@@ -583,5 +633,69 @@ public static class Stage8RecomputeQueueSmokeRunner
             };
             return Task.FromResult(LastDecision);
         }
+    }
+
+    private sealed class InMemoryClarificationBranchStateRepository : IClarificationBranchStateRepository
+    {
+        private readonly List<ClarificationBranchStateRecord> _branches = [];
+
+        public void AddOpenBranch(
+            string scopeKey,
+            string branchFamily,
+            string targetType,
+            string targetRef,
+            Guid? personId,
+            string blockReason)
+        {
+            _branches.Add(new ClarificationBranchStateRecord
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = scopeKey,
+                BranchFamily = branchFamily,
+                BranchKey = $"{scopeKey}|{branchFamily}|{targetType}|{targetRef}",
+                Stage = branchFamily == Stage8RecomputeTargetFamilies.Stage6Bootstrap
+                    ? "stage6_bootstrap"
+                    : "stage7_durable_formation",
+                PassFamily = branchFamily switch
+                {
+                    Stage8RecomputeTargetFamilies.DossierProfile => "dossier_profile",
+                    Stage8RecomputeTargetFamilies.PairDynamics => "pair_dynamics",
+                    Stage8RecomputeTargetFamilies.TimelineObjects => "timeline_objects",
+                    _ => "graph_init"
+                },
+                TargetType = targetType,
+                TargetRef = targetRef,
+                PersonId = personId,
+                LastModelPassRunId = Guid.Parse("86000000-0000-0000-0000-000000000001"),
+                Status = ClarificationBranchStatuses.Open,
+                BlockReason = blockReason,
+                RequiredAction = "operator_clarification",
+                FirstBlockedAtUtc = DateTime.UtcNow,
+                LastBlockedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        public Task<ClarificationBranchStateRecord?> ApplyOutcomeAsync(
+            ModelPassAuditRecord record,
+            CancellationToken ct = default)
+            => Task.FromResult<ClarificationBranchStateRecord?>(null);
+
+        public Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAsync(
+            string scopeKey,
+            CancellationToken ct = default)
+            => Task.FromResult(_branches
+                .Where(x => string.Equals(x.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal))
+                .ToList());
+
+        public Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAndFamilyAsync(
+            string scopeKey,
+            string branchFamily,
+            CancellationToken ct = default)
+            => Task.FromResult(_branches
+                .Where(x => string.Equals(x.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.BranchFamily, branchFamily, StringComparison.Ordinal)
+                    && string.Equals(x.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal))
+                .ToList());
     }
 }

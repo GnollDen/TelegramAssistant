@@ -18,6 +18,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
     private readonly IRuntimeControlStateService _runtimeControlStateService;
     private readonly IStage8OutcomeGateRepository _outcomeGateRepository;
     private readonly IRuntimeDefectRepository _runtimeDefectRepository;
+    private readonly IClarificationBranchStateRepository _clarificationBranchStateRepository;
     private readonly ILogger<Stage8RecomputeQueueService> _logger;
     private readonly TimeSpan _baseRetryDelay;
     private readonly TimeSpan _maxRetryDelay;
@@ -31,6 +32,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         IRuntimeControlStateService runtimeControlStateService,
         IStage8OutcomeGateRepository outcomeGateRepository,
         IRuntimeDefectRepository runtimeDefectRepository,
+        IClarificationBranchStateRepository clarificationBranchStateRepository,
         ILogger<Stage8RecomputeQueueService> logger,
         TimeSpan? baseRetryDelay = null,
         TimeSpan? maxRetryDelay = null)
@@ -43,6 +45,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         _runtimeControlStateService = runtimeControlStateService;
         _outcomeGateRepository = outcomeGateRepository;
         _runtimeDefectRepository = runtimeDefectRepository;
+        _clarificationBranchStateRepository = clarificationBranchStateRepository;
         _logger = logger;
         _baseRetryDelay = baseRetryDelay ?? DefaultBaseRetryDelay;
         _maxRetryDelay = maxRetryDelay ?? DefaultMaxRetryDelay;
@@ -103,6 +106,12 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                     ExecutionStatus = Stage8RecomputeExecutionStatuses.Rescheduled,
                     Error = deferReason
                 };
+            }
+
+            var blockedBranchResult = await TryCompleteBlockedBranchAsync(leasedItem, runtimeControl.State, ct);
+            if (blockedBranchResult != null)
+            {
+                return blockedBranchResult;
             }
 
             var (resultStatus, modelPassRunId) = await ExecuteScopedRecomputeAsync(leasedItem, ct);
@@ -191,6 +200,64 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 Error = ex.Message
             };
         }
+    }
+
+    private async Task<Stage8RecomputeExecutionResult?> TryCompleteBlockedBranchAsync(
+        Stage8RecomputeQueueItem queueItem,
+        string runtimeControlState,
+        CancellationToken ct)
+    {
+        var openBranches = await _clarificationBranchStateRepository.GetOpenByScopeAndFamilyAsync(
+            queueItem.ScopeKey,
+            queueItem.TargetFamily,
+            ct);
+        if (openBranches.Count == 0)
+        {
+            return null;
+        }
+
+        var branch = openBranches
+            .FirstOrDefault(x => BranchMatches(queueItem, x))
+            ?? openBranches[0];
+        var resultStatus = ModelPassResultStatuses.NeedOperatorClarification;
+        var gateResult = await _outcomeGateRepository.ApplyOutcomeGateAsync(new Stage8OutcomeGateRequest
+        {
+            ScopeKey = queueItem.ScopeKey,
+            TargetFamily = queueItem.TargetFamily,
+            ResultStatus = resultStatus,
+            ModelPassRunId = branch.LastModelPassRunId,
+            TriggerKind = queueItem.TriggerKind,
+            TriggerRef = queueItem.TriggerRef,
+            RuntimeControlState = runtimeControlState
+        }, ct);
+
+        await _repository.CompleteAsync(queueItem.Id, queueItem.LeaseToken!.Value, resultStatus, branch.LastModelPassRunId, ct);
+        queueItem.Status = Stage8RecomputeQueueStatuses.Completed;
+        queueItem.ActiveDedupeKey = null;
+        queueItem.LastError = null;
+        queueItem.LastResultStatus = resultStatus;
+        queueItem.LastModelPassRunId = branch.LastModelPassRunId;
+        queueItem.LeaseToken = null;
+        queueItem.LeasedUntilUtc = null;
+        queueItem.CompletedAtUtc = DateTime.UtcNow;
+
+        _logger.LogInformation(
+            "Stage8 recompute held on open clarification branch while other families remain eligible: queue_item_id={QueueItemId}, scope_key={ScopeKey}, target_family={TargetFamily}, branch_key={BranchKey}, clarification_blocked={ClarificationBlocked}",
+            queueItem.Id,
+            queueItem.ScopeKey,
+            queueItem.TargetFamily,
+            branch.BranchKey,
+            gateResult.ClarificationBlockedCount);
+
+        return new Stage8RecomputeExecutionResult
+        {
+            Executed = true,
+            QueueItem = queueItem,
+            ExecutionStatus = Stage8RecomputeExecutionStatuses.Completed,
+            ResultStatus = resultStatus,
+            ModelPassRunId = branch.LastModelPassRunId,
+            Error = branch.BlockReason
+        };
     }
 
     private async Task<(string ResultStatus, Guid? ModelPassRunId)> ExecuteScopedRecomputeAsync(
@@ -360,6 +427,25 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 
     private static string EscapeJson(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static bool BranchMatches(Stage8RecomputeQueueItem queueItem, ClarificationBranchStateRecord branch)
+    {
+        if (!string.Equals(queueItem.ScopeKey, branch.ScopeKey, StringComparison.Ordinal)
+            || !string.Equals(queueItem.TargetFamily, branch.BranchFamily, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(queueItem.TargetRef)
+            && string.Equals(queueItem.TargetRef, branch.TargetRef, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return queueItem.PersonId != null
+            && branch.PersonId != null
+            && queueItem.PersonId == branch.PersonId;
+    }
 
     private static bool ShouldDeferExecution(RuntimeControlEnforcementDecision decision, Stage8RecomputeQueueItem queueItem)
     {
