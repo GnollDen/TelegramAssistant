@@ -1519,12 +1519,12 @@
       "dependencies": [
         "GATEWAY-006-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Next contract-family candidates are ordered by rollout safety and value.",
         "Unsuitable or high-risk families are explicitly excluded from near-term rollout."
       ],
-      "notes": "Select the next bounded normalization targets only after gateway analytics are available, so family choice can consider real usage, cost, and latency."
+      "notes": "Done on 2026-04-03: ranked post-EditDiff contract-family candidates by safety/schema clarity/validation clarity/operational value in docs/planning/GATEWAY-007-A_CONTRACT_FAMILY_RANKING_2026-04-03.md. Selected `SessionSummary v1` for bounded next rollout and explicitly excluded high-risk families (cheap extraction batch and broad multi-family rollout)."
     },
     {
       "id": "GATEWAY-007-B",
