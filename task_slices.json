@@ -52,6 +52,10 @@
     {
       "id": "phase-d-llm-gateway",
       "title": "Phase D. LLM Gateway Foundation and Controlled Adoption"
+    },
+    {
+      "id": "phase-e-prd-alignment-hardening",
+      "title": "Phase E. PRD Alignment and Runtime Hardening"
     }
   ],
   "slices": [
@@ -1453,6 +1457,142 @@
         "Unsafe broader migrations remain deferred until justified."
       ],
       "notes": "This is the rollout recommendation output after the pilot gate closes."
+    },
+    {
+      "id": "ALIGN-201-A",
+      "parent_task_id": "ALIGN-201",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "critical",
+      "description": "Reconcile the default compose, appsettings, and startup-guard contract for the intended baseline roles.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-104-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Baseline runtime config no longer contradicts startup guard expectations.",
+        "Required baseline settings are explicit and coherent across compose and appsettings."
+      ],
+      "notes": "Start with the compose/startup mismatch identified by the audit."
+    },
+    {
+      "id": "ALIGN-201-B",
+      "parent_task_id": "ALIGN-201",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "critical",
+      "description": "Move schema-changing initialization off the ordinary startup path or gate it behind an explicit operator-only mode.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "ALIGN-201-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "DDL no longer runs on the default startup path.",
+        "Operational initialization behavior is explicit and safe."
+      ],
+      "notes": "Ops hardening slice for startup/database initialization."
+    },
+    {
+      "id": "ALIGN-202-A",
+      "parent_task_id": "ALIGN-202",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "critical",
+      "description": "Produce a Stage7/Stage8 semantic alignment note that maps the current code to PRD durable-formation and crystallization expectations.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "ALIGN-201-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Current Stage7/Stage8 semantics are described precisely against the PRD.",
+        "Drift is explicit rather than hidden in optimistic wording."
+      ],
+      "notes": "Architecture-first slice before any semantic correction or docs narrowing."
+    },
+    {
+      "id": "ALIGN-202-B",
+      "parent_task_id": "ALIGN-202",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "critical",
+      "description": "Apply the bounded Stage7/Stage8 semantic corrections or documentation narrowing needed so code, backlog, and PRD claims no longer materially disagree.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "ALIGN-202-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Stage7/Stage8 claims are no longer overstated relative to the code.",
+        "Any remaining drift is documented with a bounded follow-up path."
+      ],
+      "notes": "Bounded correction/narrowing slice, not a full feature rebuild."
+    },
+    {
+      "id": "ALIGN-203-A",
+      "parent_task_id": "ALIGN-203",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "high",
+      "description": "Audit and tighten the remaining legacy trigger bridge and correction-store exposure in active registrations and runtime paths.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "ALIGN-202-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Legacy-to-active bridges are explicit and justified.",
+        "Correction-only storage is not ambient in default runtime composition."
+      ],
+      "notes": "Discovery and boundary-tightening slice."
+    },
+    {
+      "id": "ALIGN-203-B",
+      "parent_task_id": "ALIGN-203",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "high",
+      "description": "Apply the approved boundary hardening so legacy bridges and correction-only seams remain reachable only through explicit, justified paths.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "ALIGN-203-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Default runtime no longer exposes avoidable legacy or correction-only seams.",
+        "Remaining bridges are clearly documented and intentionally gated."
+      ],
+      "notes": "Boundary hardening after the focused audit."
+    },
+    {
+      "id": "ALIGN-204-A",
+      "parent_task_id": "ALIGN-204",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "high",
+      "description": "Normalize README and planning index into one clean authority chain reflecting the current runtime baseline and active tracks.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "ALIGN-203-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "README and planning index tell one coherent story.",
+        "Top-level docs do not compete or conflict on current baseline authority."
+      ],
+      "notes": "Authority-chain normalization slice."
+    },
+    {
+      "id": "ALIGN-204-B",
+      "parent_task_id": "ALIGN-204",
+      "phase": "phase-e-prd-alignment-hardening",
+      "priority": "high",
+      "description": "Reclassify gateway prep docs and cleanup/audit notes as active, reference-only, or historical so docs no longer overclaim PRD completion or hide current drift.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "ALIGN-204-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway prep and cleanup notes are classified honestly.",
+        "Active docs reflect current drift and target-state without ambiguity."
+      ],
+      "notes": "Final docs hardening slice for the alignment phase."
     }
   ]
 }

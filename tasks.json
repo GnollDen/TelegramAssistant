@@ -144,6 +144,16 @@
         "GATEWAY-004",
         "GATEWAY-005"
       ]
+    },
+    {
+      "id": "phase-e-prd-alignment-hardening",
+      "title": "Phase E. PRD Alignment and Runtime Hardening",
+      "task_ids": [
+        "ALIGN-201",
+        "ALIGN-202",
+        "ALIGN-203",
+        "ALIGN-204"
+      ]
     }
   ],
   "tasks": [
@@ -922,6 +932,94 @@
       ],
       "status": "pending",
       "notes": "This is the rollout gate for the gateway track. No broad migration beyond the pilot before this task is closed."
+    },
+    {
+      "id": "ALIGN-201",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Harden the runtime and ops baseline so docker-compose, startup guards, and schema-initialization behavior agree on the active contract and do not perform risky DDL on the normal startup path.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Default compose/runtime config satisfies the startup guard for the intended baseline roles or is explicitly gated out of that baseline.",
+        "Schema-changing initialization is removed from ordinary startup or placed behind an explicit operator-only gate.",
+        "Runtime baseline behavior is documented and verifiable without hidden required settings."
+      ],
+      "test_steps": [
+        "Verify compose/env/appsettings align with RuntimeStartupGuard expectations for the baseline roles.",
+        "Trace startup initialization and confirm DDL does not run on the standard path unless explicitly requested.",
+        "Run dotnet build TelegramAssistant.sln and relevant startup/list-smokes verification."
+      ],
+      "dependencies": [
+        "CLEANUP-104"
+      ],
+      "status": "pending",
+      "notes": "This is the runtime/ops hardening batch identified by the post-clean audit."
+    },
+    {
+      "id": "ALIGN-202",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Tighten Stage 7 and Stage 8 semantics against the PRD so durable formation and crystallization are represented as intended rather than as a simplified durable-write plus recompute queue model.",
+      "executor_agent": "architect-reviewer",
+      "acceptance_criteria": [
+        "The code and planning notes explain what currently counts as Stage 7 durable formation and Stage 8 crystallization.",
+        "Any semantic drift between PRD and current implementation is either corrected or explicitly documented with a bounded remediation path.",
+        "Promotion and crystallizer semantics are no longer overstated in docs or backlog relative to the real code."
+      ],
+      "test_steps": [
+        "Review Stage7/Stage8 services, storage, and docs against the PRD and confirm the selected corrections or narrowed claims.",
+        "Verify updated semantics remain consistent across code comments, docs, and backlog notes.",
+        "Run dotnet build TelegramAssistant.sln if code changes are required."
+      ],
+      "dependencies": [
+        "ALIGN-201"
+      ],
+      "status": "pending",
+      "notes": "This is an alignment-hardening task, not a broad feature expansion."
+    },
+    {
+      "id": "ALIGN-203",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Seal the remaining legacy boundary seams that can still affect active behavior, especially the legacy trigger bridge, correction-store exposure, and any diagnostic-only services still leaking into default runtime expectations.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "Legacy-to-active bridges are explicit, justified, and isolated rather than ambient in the default runtime path.",
+        "Correction-only or legacy-only repositories are not presented as baseline runtime dependencies.",
+        "Any remaining diagnostic clusters stay reachable only through explicit gates."
+      ],
+      "test_steps": [
+        "Trace callers and registrations for the legacy trigger bridge and correction-store paths.",
+        "Verify default runtime wiring no longer exposes correction-only or legacy-only surfaces unintentionally.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "ALIGN-202"
+      ],
+      "status": "pending",
+      "notes": "This follows the audit finding that active and frozen boundaries are still not perfectly hermetic."
+    },
+    {
+      "id": "ALIGN-204",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Normalize the docs authority chain after the alignment fixes so README, planning index, gateway prep docs, and cleanup notes reflect the current runtime baseline and target-state honestly.",
+      "executor_agent": "technical-writer",
+      "acceptance_criteria": [
+        "README points cleanly to the active planning authority rather than competing top-level narratives.",
+        "Gateway prep and cleanup/audit notes are correctly classified as active, reference-only, or historical.",
+        "Active docs no longer overclaim PRD completion or hide current drift."
+      ],
+      "test_steps": [
+        "Open README and the planning index and verify they form a single authority chain.",
+        "Check that cleanup/audit notes and gateway prep docs are classified consistently with their current role.",
+        "Run any available markdown/link integrity validation used by the repo."
+      ],
+      "dependencies": [
+        "ALIGN-203"
+      ],
+      "status": "pending",
+      "notes": "Final alignment/docs pass after runtime and semantic hardening."
     }
   ]
 }
