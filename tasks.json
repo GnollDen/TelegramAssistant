@@ -864,8 +864,8 @@
       "dependencies": [
         "GATEWAY-001"
       ],
-      "status": "pending",
-      "notes": "Gateway is not considered ready for pilot cutover without independent smoke coverage."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-002-A/B: the host now exposes standalone gateway success and failure smoke entrypoints covering codex-lb text/chat, openrouter embeddings/audio, retryable fallback to openrouter, and fail-fast normalized auth/schema errors without migrating the broader active LLM surface."
     },
     {
       "id": "GATEWAY-003",

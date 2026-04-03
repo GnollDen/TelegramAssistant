@@ -1349,12 +1349,12 @@
       "dependencies": [
         "GATEWAY-002-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Retryable and non-retryable provider failures map into normalized gateway errors.",
         "Fallback behavior is observable and testable under smoke conditions."
       ],
-      "notes": "Failure-path smoke coverage and fallback validation."
+      "notes": "Completed on 2026-04-03 by adding standalone --llm-gateway-failure-smoke coverage for retryable codex-lb failure fallback into openrouter plus fail-fast auth and schema-mismatch checks, asserting normalized exception taxonomy and fallback audit fields without migrating active callers."
     },
     {
       "id": "GATEWAY-003-A",
