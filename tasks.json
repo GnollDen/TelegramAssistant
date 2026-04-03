@@ -777,8 +777,8 @@
       "dependencies": [
         "CLEANUP-102"
       ],
-      "status": "pending",
-      "notes": "High-risk cleanup batch. Focus on boundary truth and stale repository surface first; only then consider any future schema reduction."
+      "status": "done",
+      "notes": "Completed via CLEANUP-103-A/B on 2026-04-03: the active versus frozen DB boundary was re-audited, legacy-only eval/review repositories were isolated, dead model-pass-envelope and summary repositories were removed without schema drops, and identity-merge storage was retained behind a dedicated correction-store registration instead of the active baseline repository block."
     },
     {
       "id": "CLEANUP-104",

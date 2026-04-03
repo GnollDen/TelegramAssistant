@@ -73,12 +73,6 @@ public interface IArchiveMessageSubstrateRepository
         CancellationToken ct = default);
 }
 
-public interface IModelPassEnvelopeRepository
-{
-    Task<ModelPassEnvelope> UpsertAsync(ModelPassEnvelope envelope, CancellationToken ct = default);
-    Task<ModelPassEnvelope?> GetByIdAsync(Guid runId, CancellationToken ct = default);
-}
-
 public interface IModelOutputNormalizer
 {
     ModelNormalizationResult Normalize(ModelNormalizationRequest request);
@@ -381,12 +375,6 @@ public interface IFactRepository
     Task<long> CountWithoutEmbeddingAsync(string model, CancellationToken ct = default);
     Task SupersedeFactAsync(Guid oldFactId, Fact newFact, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid id, ConfidenceStatus status, CancellationToken ct = default);
-}
-
-public interface ISummaryRepository
-{
-    Task SaveAsync(DailySummary summary, CancellationToken ct = default);
-    Task<List<DailySummary>> GetByEntityAsync(Guid entityId, DateOnly from, DateOnly to, CancellationToken ct = default);
 }
 
 public interface IChatDialogSummaryRepository

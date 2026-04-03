@@ -1239,12 +1239,12 @@
       "dependencies": [
         "CLEANUP-103-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Retired repositories are gone or isolated cleanly.",
         "DbContext and registrations reflect the intended active/frozen boundary without schema drift."
       ],
-      "notes": "No broad table drops here; repository and mapping cleanup only."
+      "notes": "Completed on 2026-04-03: removed the dead IModelPassEnvelopeRepository/ModelPassEnvelopeRepository and ISummaryRepository/SummaryRepository surfaces from the active core and DI, kept the underlying model_pass_runs and daily_summaries schema intact, and moved IIdentityMergeRepository registration into a dedicated correction-store block so it is no longer presented as part of the active baseline repository surface. Targeted rg verification and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "CLEANUP-104-A",

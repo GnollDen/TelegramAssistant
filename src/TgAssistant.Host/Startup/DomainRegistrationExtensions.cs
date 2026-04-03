@@ -33,6 +33,7 @@ public static partial class ServiceRegistrationExtensions
         bool includeLegacyStage6ClusterDiagnostics = false)
     {
         services.AddActiveRepositoryServices();
+        services.AddCorrectionRepositoryServices();
 
         if (includeLegacyStage6Diagnostics || includeLegacyStage6ClusterDiagnostics)
         {
@@ -166,7 +167,6 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IMessageRepository, MessageRepository>();
         services.AddSingleton<IRealtimeMessageSubstrateRepository, RealtimeMessageSubstrateRepository>();
         services.AddSingleton<IArchiveMessageSubstrateRepository, ArchiveMessageSubstrateRepository>();
-        services.AddSingleton<IModelPassEnvelopeRepository, ModelPassEnvelopeRepository>();
         services.AddSingleton<IModelOutputNormalizer, ModelOutputNormalizer>();
         services.AddSingleton<IModelPassAuditStore, ModelPassAuditStore>();
         services.AddSingleton<IStage6BootstrapRepository, Stage6BootstrapRepository>();
@@ -177,8 +177,6 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IRuntimeDefectRepository, RuntimeDefectRepository>();
         services.AddSingleton<IClarificationBranchStateRepository, ClarificationBranchStateRepository>();
-        // Retained active correction store even though no default caller resolves it yet.
-        services.AddSingleton<IIdentityMergeRepository, IdentityMergeRepository>();
         services.AddSingleton<IRuntimeControlStateRepository, RuntimeControlStateRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
@@ -199,11 +197,19 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IFactReviewCommandRepository, FactReviewCommandRepository>();
         services.AddSingleton<IFactRepository, FactRepository>();
         services.AddSingleton<IRelationshipRepository, RelationshipRepository>();
-        services.AddSingleton<ISummaryRepository, SummaryRepository>();
         services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
         services.AddSingleton<IChatSessionRepository, ChatSessionRepository>();
         services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
         services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();
+        return services;
+    }
+
+    private static IServiceCollection AddCorrectionRepositoryServices(this IServiceCollection services)
+    {
+        // Active-table correction store retained outside the baseline repository block until it gains
+        // an explicit operator/API entrypoint. This keeps default-runtime baseline wiring distinct
+        // from dormant correction tooling without deleting the reversible merge path.
+        services.AddSingleton<IIdentityMergeRepository, IdentityMergeRepository>();
         return services;
     }
 
