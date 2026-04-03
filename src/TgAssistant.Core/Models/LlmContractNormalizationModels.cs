@@ -5,7 +5,8 @@ namespace TgAssistant.Core.Models;
 public enum LlmContractKind
 {
     Unspecified = 0,
-    EditDiffV1 = 1
+    EditDiffV1 = 1,
+    SessionSummaryV1 = 2
 }
 
 public enum LlmContractNormalizationStatus

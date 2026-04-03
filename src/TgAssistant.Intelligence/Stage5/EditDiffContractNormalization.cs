@@ -6,7 +6,7 @@ namespace TgAssistant.Intelligence.Stage5;
 
 public sealed class EditDiffContractSchemaProvider : ILlmContractSchemaProvider
 {
-    private const string SchemaJson =
+    private const string EditDiffSchemaJson =
         """
         {
           "type": "object",
@@ -56,22 +56,53 @@ public sealed class EditDiffContractSchemaProvider : ILlmContractSchemaProvider
         }
         """;
 
+    private const string SessionSummarySchemaJson =
+        """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary"
+          ],
+          "properties": {
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            }
+          }
+        }
+        """;
+
     public LlmContractSchemaDescriptor? GetSchema(LlmContractKind kind)
     {
-        if (kind != LlmContractKind.EditDiffV1)
+        if (kind == LlmContractKind.EditDiffV1)
         {
-            return null;
+            return new LlmContractSchemaDescriptor
+            {
+                Kind = LlmContractKind.EditDiffV1,
+                SchemaRef = "edit_diff/v1",
+                SchemaName = "edit_diff_v1",
+                SchemaJson = EditDiffSchemaJson,
+                SystemInstruction =
+                    "You are a contract normalizer. Convert reasoning notes into strict JSON that exactly matches the provided schema. Return only JSON."
+            };
         }
 
-        return new LlmContractSchemaDescriptor
+        if (kind == LlmContractKind.SessionSummaryV1)
         {
-            Kind = LlmContractKind.EditDiffV1,
-            SchemaRef = "edit_diff/v1",
-            SchemaName = "edit_diff_v1",
-            SchemaJson = SchemaJson,
-            SystemInstruction =
-                "You are a contract normalizer. Convert reasoning notes into strict JSON that exactly matches the provided schema. Return only JSON."
-        };
+            return new LlmContractSchemaDescriptor
+            {
+                Kind = LlmContractKind.SessionSummaryV1,
+                SchemaRef = "session_summary/v1",
+                SchemaName = "session_summary_v1",
+                SchemaJson = SessionSummarySchemaJson,
+                SystemInstruction =
+                    "You are a contract normalizer. Convert raw summary reasoning into strict JSON with only the `summary` field. Return only JSON."
+            };
+        }
+
+        return null;
     }
 }
 
@@ -91,15 +122,20 @@ public sealed class EditDiffContractValidator : ILlmContractValidator
 
     public LlmContractValidationResult Validate(LlmContractKind kind, string normalizedPayloadJson)
     {
-        if (kind != LlmContractKind.EditDiffV1)
+        return kind switch
         {
-            return new LlmContractValidationResult
+            LlmContractKind.EditDiffV1 => ValidateEditDiff(normalizedPayloadJson),
+            LlmContractKind.SessionSummaryV1 => ValidateSessionSummary(normalizedPayloadJson),
+            _ => new LlmContractValidationResult
             {
                 IsValid = false,
                 Errors = ["schema:unsupported_contract_kind"]
-            };
-        }
+            }
+        };
+    }
 
+    private static LlmContractValidationResult ValidateEditDiff(string normalizedPayloadJson)
+    {
         var errors = new List<string>();
         try
         {
@@ -146,6 +182,54 @@ public sealed class EditDiffContractValidator : ILlmContractValidator
             if (string.Equals(classification, "important_added", StringComparison.Ordinal) && (!addedImportant!.Value || !shouldAffectMemory!.Value))
             {
                 errors.Add("business:important_added_requires_added_important_and_memory_impact");
+            }
+
+            return new LlmContractValidationResult
+            {
+                IsValid = errors.Count == 0,
+                Errors = errors
+            };
+        }
+        catch (JsonException)
+        {
+            return new LlmContractValidationResult
+            {
+                IsValid = false,
+                Errors = ["schema:json_parse_error"]
+            };
+        }
+    }
+
+    private static LlmContractValidationResult ValidateSessionSummary(string normalizedPayloadJson)
+    {
+        var errors = new List<string>();
+        try
+        {
+            using var document = JsonDocument.Parse(normalizedPayloadJson);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                errors.Add("schema:root_not_object");
+                return new LlmContractValidationResult { IsValid = false, Errors = errors };
+            }
+
+            var summary = TryGetRequiredString(root, "summary", errors);
+            if (errors.Count > 0)
+            {
+                return new LlmContractValidationResult { IsValid = false, Errors = errors };
+            }
+
+            if (string.IsNullOrWhiteSpace(summary))
+            {
+                errors.Add("schema:summary_invalid");
+            }
+            else
+            {
+                var normalized = summary.Trim();
+                if (normalized.Length > 1200)
+                {
+                    errors.Add("schema:summary_too_long");
+                }
             }
 
             return new LlmContractValidationResult

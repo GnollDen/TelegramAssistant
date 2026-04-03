@@ -294,6 +294,7 @@ public class AnalysisSettings
     public int HistoricalSummaryContextItems { get; set; } = 6;
     public bool SummaryEnabled { get; set; } = true;
     public bool SummaryWorkerEnabled { get; set; } = false;
+    public bool SummaryContractNormalizationEnabled { get; set; } = false;
     public string SummaryModel { get; set; } = "openai/gpt-4o-mini";
     public int SummaryPollIntervalSeconds { get; set; } = 30;
     public int SummaryBatchSize { get; set; } = 100;

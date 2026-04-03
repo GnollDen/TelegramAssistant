@@ -1536,12 +1536,12 @@
       "dependencies": [
         "GATEWAY-007-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "One additional contract family is wired through reasoning plus shaping plus app validation.",
         "Feature-gated rollout and fallback behavior exist for the new family."
       ],
-      "notes": "Keep the rollout bounded to one family at a time; do not broaden provider migration or generalize beyond the selected family."
+      "notes": "Done on 2026-04-03: implemented bounded `SessionSummary v1` as the next contract family with schema provider and app validator wiring in the existing contract-normalization path, added `AnalysisSettings.SummaryContractNormalizationEnabled` feature gate, and preserved explicit fallback-to-raw-summary behavior when normalization is invalid/unavailable. Verification: dotnet build TelegramAssistant.sln and --llm-contract-normalization-smoke."
     },
     {
       "id": "GATEWAY-007-C",

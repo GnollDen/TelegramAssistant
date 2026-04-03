@@ -26,6 +26,7 @@ public class OpenRouterAnalysisService
     private readonly ExtractionSchemaValidator _schemaValidator;
     private readonly IAnalysisUsageRepository _usageRepository;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
+    private readonly ILlmContractNormalizer _contractNormalizer;
     private readonly ILogger<OpenRouterAnalysisService> _logger;
 
     public OpenRouterAnalysisService(
@@ -34,6 +35,7 @@ public class OpenRouterAnalysisService
         ExtractionSchemaValidator schemaValidator,
         IAnalysisUsageRepository usageRepository,
         IBudgetGuardrailService budgetGuardrailService,
+        ILlmContractNormalizer contractNormalizer,
         ILogger<OpenRouterAnalysisService> logger)
     {
         _http = http;
@@ -41,6 +43,7 @@ public class OpenRouterAnalysisService
         _schemaValidator = schemaValidator;
         _usageRepository = usageRepository;
         _budgetGuardrailService = budgetGuardrailService;
+        _contractNormalizer = contractNormalizer;
         _logger = logger;
     }
 
@@ -159,7 +162,65 @@ public class OpenRouterAnalysisService
             NormalizeMaxTokens(_analysis.SummaryMaxTokens, 256, 8000),
             0.0f,
             phase: "summary");
-        return await SendAndExtractJsonAsync(req, "summary", ct);
+        var rawSummary = await SendAndExtractJsonAsync(req, "summary", ct);
+        if (!_analysis.SummaryContractNormalizationEnabled)
+        {
+            return rawSummary;
+        }
+
+        try
+        {
+            var normalization = await _contractNormalizer.NormalizeAsync(
+                new LlmContractNormalizationRequest
+                {
+                    ContractKind = LlmContractKind.SessionSummaryV1,
+                    RawReasoningPayload = rawSummary,
+                    TaskKey = "stage5_summary_contract_normalization",
+                    Trace = new LlmTraceContext
+                    {
+                        PathKey = "stage5:summary:contract_normalization",
+                        ScopeTags = ["stage5", "summary", "contract_normalization"]
+                    },
+                    Limits = new LlmExecutionLimits
+                    {
+                        MaxTokens = Math.Clamp(_analysis.SummaryMaxTokens, 128, 1200),
+                        Temperature = 0f,
+                        TimeoutMs = Math.Max(1000, _analysis.HttpTimeoutSeconds * 1000)
+                    }
+                },
+                ct);
+
+            if (normalization.Status == LlmContractNormalizationStatus.Success
+                && !string.IsNullOrWhiteSpace(normalization.NormalizedPayloadJson))
+            {
+                _logger.LogInformation(
+                    "Stage5 summary contract normalization applied. status={Status}, schema_ref={SchemaRef}, provider={Provider}, model={Model}, fallback_attempt={FallbackAttempt}",
+                    normalization.Status,
+                    normalization.SchemaRef,
+                    normalization.ProviderMetadata?.Provider ?? "n/a",
+                    normalization.ProviderMetadata?.Model ?? "n/a",
+                    normalization.ProviderMetadata?.FallbackAttempt ?? false);
+                return normalization.NormalizedPayloadJson;
+            }
+
+            _logger.LogWarning(
+                "Stage5 summary contract normalization fallback to raw summary. status={Status}, failure_reason={FailureReason}, validation_errors={ValidationErrors}",
+                normalization.Status,
+                normalization.Diagnostics.FailureReason ?? "n/a",
+                string.Join(" | ", normalization.Diagnostics.ValidationErrors));
+            return rawSummary;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Stage5 summary contract normalization failed unexpectedly; fallback to raw summary.");
+            return rawSummary;
+        }
     }
 
     public async Task<string> CompleteTextAsync(

@@ -15,6 +15,8 @@ public static class LlmContractNormalizationSmokeRunner
         await RunFallbackScenarioAsync(ct);
         await RunProviderErrorScenarioAsync(ct);
         await RunBusinessValidationScenarioAsync(ct);
+        await RunSummaryContractSuccessScenarioAsync(ct);
+        await RunSummaryContractSchemaInvalidScenarioAsync(ct);
     }
 
     private static async Task RunSuccessScenarioAsync(CancellationToken ct)
@@ -138,6 +140,49 @@ public static class LlmContractNormalizationSmokeRunner
         }
     }
 
+    private static async Task RunSummaryContractSuccessScenarioAsync(CancellationToken ct)
+    {
+        var gateway = new StubGateway((request, _) =>
+        {
+            var payload = """{"summary":"Сессия: обсудили встречу и согласовали время созвона на завтра."}""";
+            return Task.FromResult(BuildResponse(request, payload));
+        });
+
+        var normalizer = BuildNormalizer(gateway);
+        var result = await normalizer.NormalizeAsync(
+            BuildRequest("Reasoning for summary success.", LlmContractKind.SessionSummaryV1),
+            ct);
+
+        if (result.Status != LlmContractNormalizationStatus.Success)
+        {
+            throw new InvalidOperationException("Contract normalization smoke failed: summary family success scenario did not return success.");
+        }
+    }
+
+    private static async Task RunSummaryContractSchemaInvalidScenarioAsync(CancellationToken ct)
+    {
+        var gateway = new StubGateway((request, _) =>
+        {
+            var payload = """{"summary":""}""";
+            return Task.FromResult(BuildResponse(request, payload));
+        });
+
+        var normalizer = BuildNormalizer(gateway);
+        var result = await normalizer.NormalizeAsync(
+            BuildRequest("Reasoning for summary invalid.", LlmContractKind.SessionSummaryV1),
+            ct);
+
+        if (result.Status != LlmContractNormalizationStatus.SchemaInvalid)
+        {
+            throw new InvalidOperationException("Contract normalization smoke failed: summary family invalid scenario did not return schema_invalid.");
+        }
+
+        if (!result.Diagnostics.ValidationErrors.Any(error => string.Equals(error, "schema:summary_invalid", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Contract normalization smoke failed: summary family invalid scenario did not expose summary validation error.");
+        }
+    }
+
     private static OpenRouterContractNormalizer BuildNormalizer(ILlmGateway gateway)
     {
         var loggerFactory = LoggerFactory.Create(builder => builder.AddFilter(_ => false));
@@ -148,11 +193,11 @@ public static class LlmContractNormalizationSmokeRunner
             loggerFactory.CreateLogger<OpenRouterContractNormalizer>());
     }
 
-    private static LlmContractNormalizationRequest BuildRequest(string reasoning)
+    private static LlmContractNormalizationRequest BuildRequest(string reasoning, LlmContractKind kind = LlmContractKind.EditDiffV1)
     {
         return new LlmContractNormalizationRequest
         {
-            ContractKind = LlmContractKind.EditDiffV1,
+            ContractKind = kind,
             RawReasoningPayload = reasoning,
             TaskKey = "contract_normalization_smoke",
             Trace = new LlmTraceContext
