@@ -38,6 +38,7 @@ Top-level routing:
 - Reference-only ALIGN boundary audit: [ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md)
 - Reference-only ALIGN bridge-gate hardening note: [ALIGN-203-B_LEGACY_BRIDGE_GATE_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-203-B_LEGACY_BRIDGE_GATE_2026-04-03.md)
 - Reference-only Stage7/Stage8 semantic drift evidence: [ALIGN-202-A_STAGE7_STAGE8_SEMANTIC_ALIGNMENT_NOTE_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-202-A_STAGE7_STAGE8_SEMANTIC_ALIGNMENT_NOTE_2026-04-03.md)
+- Reference-only bounded baseline proof: [BOUNDED_BASELINE_PROOF_CHAT_885574984_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/BOUNDED_BASELINE_PROOF_CHAT_885574984_2026-04-03.md)
 
 ### Option docs
 
