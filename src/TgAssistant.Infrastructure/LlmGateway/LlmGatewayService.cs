@@ -105,16 +105,18 @@ public class LlmGatewayService : ILlmGateway
             catch (LlmGatewayException ex)
             {
                 lastFailure = ex;
+
+                _metrics.RecordFailure(
+                    request,
+                    providerId,
+                    providerRequest.Model,
+                    index > 0,
+                    index > 0 ? routingDecision.PrimaryProvider : null,
+                    ex.Category.ToString(),
+                    Math.Max(0, (int)startedAt.ElapsedMilliseconds));
+
                 if (!ex.Retryable || index == providerOrder.Count - 1)
                 {
-                    _metrics.RecordFailure(
-                        request,
-                        providerId,
-                        providerRequest.Model,
-                        index > 0,
-                        index > 0 ? routingDecision.PrimaryProvider : null,
-                        ex.Category.ToString(),
-                        Math.Max(0, (int)startedAt.ElapsedMilliseconds));
                     throw;
                 }
 

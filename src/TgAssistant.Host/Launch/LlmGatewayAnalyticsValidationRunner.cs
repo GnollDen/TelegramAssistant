@@ -98,13 +98,26 @@ public static class LlmGatewayAnalyticsValidationRunner
             ]
         };
 
+        var hasPrimaryRetryableFailureAccounting = HasRequestSample(
+            samples,
+            provider: CodexLbChatProviderClient.ProviderIdValue,
+            status: "error",
+            routeKind: "primary");
+        var hasFallbackSuccessAccounting = HasRequestSample(
+            samples,
+            provider: OpenRouterProviderClient.ProviderIdValue,
+            status: "success",
+            routeKind: "fallback");
+
         report.AllChecksPassed = report.Metrics.All(metric => metric.Emitted && metric.HasRequiredTags)
             && spendSources.Contains("provider", StringComparer.Ordinal)
             && spendSources.Contains("derived", StringComparer.Ordinal)
             && routeKinds.Contains("primary", StringComparer.Ordinal)
             && routeKinds.Contains("fallback", StringComparer.Ordinal)
             && statuses.Contains("success", StringComparer.Ordinal)
-            && statuses.Contains("error", StringComparer.Ordinal);
+            && statuses.Contains("error", StringComparer.Ordinal)
+            && hasPrimaryRetryableFailureAccounting
+            && hasFallbackSuccessAccounting;
         report.Recommendation = report.AllChecksPassed
             ? "analytics_ready_for_rollout_ops_decisions"
             : "hold_rollout_until_analytics_coverage_is_complete";
@@ -118,6 +131,22 @@ public static class LlmGatewayAnalyticsValidationRunner
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(resolvedOutputPath, json, ct);
         return report;
+    }
+
+    private static bool HasRequestSample(
+        IReadOnlyList<MetricSample> samples,
+        string provider,
+        string status,
+        string routeKind)
+    {
+        return samples.Any(sample =>
+            string.Equals(sample.Name, "llm_gateway_requests_total", StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("provider", out var taggedProvider)
+            && string.Equals(taggedProvider, provider, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("status", out var taggedStatus)
+            && string.Equals(taggedStatus, status, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
+            && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal));
     }
 
     private static async Task ExecuteScenarioAsync(
