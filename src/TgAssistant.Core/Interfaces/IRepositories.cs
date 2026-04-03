@@ -237,6 +237,7 @@ public interface IStage8RecomputeQueueRepository
         string error,
         DateTime nextAvailableAtUtc,
         bool terminalFailure,
+        Stage8BackfillRecoveryTelemetry? recoveryTelemetry = null,
         CancellationToken ct = default);
 
     Task<Stage8BackfillCheckpoint?> GetBackfillCheckpointAsync(

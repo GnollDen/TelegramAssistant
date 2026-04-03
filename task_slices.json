@@ -1133,12 +1133,12 @@
       "dependencies": [
         "IMPLEMENT-016-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Deadlocks and transient conflicts recover without corrupting progress.",
         "Retry and recovery behavior is observable for pilot validation."
       ],
-      "notes": "Clean split because deadlock recovery should be validated after bounded concurrency and checkpoints exist."
+      "notes": "Completed by extending stage8_backfill_scope_checkpoints with retry/deadlock/transient counters plus last recovery/backoff telemetry, classifying Postgres deadlock/serialization/lock conflicts in Stage8RecomputeQueueService into bounded retries, persisting recovery telemetry through repository reschedules, and expanding --stage8-recompute-smoke to verify deadlock retry checkpoint metrics and successful recovery on a subsequent attempt."
     }
   ]
 }

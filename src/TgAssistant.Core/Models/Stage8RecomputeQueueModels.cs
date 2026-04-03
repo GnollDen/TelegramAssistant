@@ -41,6 +41,15 @@ public static class Stage8BackfillCheckpointStatuses
     public const string Failed = "failed";
 }
 
+public static class Stage8BackfillRecoveryKinds
+{
+    public const string None = "none";
+    public const string LeaseExpiredResume = "lease_expired_resume";
+    public const string DeadlockRetry = "deadlock_retry";
+    public const string TransientConflictRetry = "transient_conflict_retry";
+    public const string GeneralRetry = "general_retry";
+}
+
 public static class Stage8PromotionStates
 {
     public const string Pending = "pending";
@@ -135,10 +144,25 @@ public class Stage8BackfillCheckpoint
     public int CompletedItemCount { get; set; }
     public int FailedItemCount { get; set; }
     public int ResumeCount { get; set; }
+    public int RetryCount { get; set; }
+    public int DeadlockRetryCount { get; set; }
+    public int TransientRetryCount { get; set; }
+    public string LastRecoveryKind { get; set; } = Stage8BackfillRecoveryKinds.None;
+    public DateTime? LastRecoveryAtUtc { get; set; }
+    public DateTime? LastBackoffUntilUtc { get; set; }
     public DateTime FirstStartedAtUtc { get; set; }
     public DateTime? LastCheckpointAtUtc { get; set; }
     public DateTime? LastCompletedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class Stage8BackfillRecoveryTelemetry
+{
+    public string RecoveryKind { get; set; } = Stage8BackfillRecoveryKinds.None;
+    public bool IsDeadlock { get; set; }
+    public bool IsTransientConflict { get; set; }
+    public DateTime? NextAttemptAtUtc { get; set; }
+    public DateTime OccurredAtUtc { get; set; }
 }
 
 public class Stage8OutcomeGateRequest

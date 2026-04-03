@@ -248,6 +248,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             "synthetic backfill retry",
             DateTime.UtcNow,
             terminalFailure: false,
+            recoveryTelemetry: null,
             ct);
         var resumedBackfillLease = await repository.LeaseNextBackfillAsync(
             DateTime.UtcNow,
@@ -320,6 +321,74 @@ public static class Stage8RecomputeQueueSmokeRunner
             || !string.Equals(recoveredCheckpoint.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: stale lease recovery did not leave an auditable checkpoint resume trail.");
+        }
+
+        await repository.CompleteAsync(
+            recoveredLease.Id,
+            recoveredLease.LeaseToken!.Value,
+            ModelPassResultStatuses.ResultReady,
+            Guid.Parse("86000000-0000-0000-0000-000000000002"),
+            ct);
+
+        // Drain any leftover backfill work from the prior bounded-concurrency checks so
+        // the deadlock scenario below executes the intended synthetic scope deterministically.
+        await service.ExecuteBackfillBatchAsync(new Stage8BackfillExecutionRequest
+        {
+            MaxConcurrentScopes = 1,
+            MaxItems = 4,
+            WorkerId = "backfill-smoke-drain",
+            LeaseDuration = TimeSpan.FromMilliseconds(20)
+        }, ct);
+
+        pairDynamicsService.ConflictFailuresRemaining = 1;
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-backfill-deadlock",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000013"),
+            TargetFamily = Stage8RecomputeTargetFamilies.PairDynamics,
+            TriggerKind = "backfill_smoke",
+            TriggerRef = "implement-016-b-deadlock"
+        }, ct);
+        var deadlockBatch = await service.ExecuteBackfillBatchAsync(new Stage8BackfillExecutionRequest
+        {
+            MaxConcurrentScopes = 1,
+            MaxItems = 1,
+            WorkerId = "backfill-smoke-deadlock",
+            LeaseDuration = TimeSpan.FromMilliseconds(20)
+        }, ct);
+        if (deadlockBatch.ExecutedCount != 1
+            || deadlockBatch.RescheduledCount != 1
+            || deadlockBatch.Items.Count != 1
+            || deadlockBatch.Items[0].QueueItem == null
+            || !string.Equals(deadlockBatch.Items[0].ExecutionStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Stage8 recompute queue smoke failed: synthetic deadlock did not reschedule backfill work. executed={deadlockBatch.ExecutedCount}, rescheduled={deadlockBatch.RescheduledCount}, items={deadlockBatch.Items.Count}, first_status={deadlockBatch.Items.FirstOrDefault()?.ExecutionStatus ?? "<none>"}");
+        }
+
+        var deadlockCheckpoint = await repository.GetBackfillCheckpointAsync("chat:stage8-backfill-deadlock", ct);
+        if (deadlockCheckpoint == null
+            || deadlockCheckpoint.RetryCount < 1
+            || deadlockCheckpoint.DeadlockRetryCount < 1
+            || !string.Equals(deadlockCheckpoint.LastRecoveryKind, Stage8BackfillRecoveryKinds.DeadlockRetry, StringComparison.Ordinal)
+            || deadlockCheckpoint.LastBackoffUntilUtc == null)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: deadlock retry telemetry was not persisted on the backfill checkpoint.");
+        }
+
+        await Task.Delay(10, ct);
+        var deadlockRecoveryBatch = await service.ExecuteBackfillBatchAsync(new Stage8BackfillExecutionRequest
+        {
+            MaxConcurrentScopes = 1,
+            MaxItems = 1,
+            WorkerId = "backfill-smoke-deadlock",
+            LeaseDuration = TimeSpan.FromMilliseconds(20)
+        }, ct);
+        if (deadlockRecoveryBatch.CompletedCount != 1
+            || deadlockRecoveryBatch.Items.Count != 1
+            || !string.Equals(deadlockRecoveryBatch.Items[0].ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: rescheduled deadlock work did not recover on the next bounded backfill attempt.");
         }
 
         controlStateService.NextDecision = new RuntimeControlEnforcementDecision
@@ -528,11 +597,11 @@ public static class Stage8RecomputeQueueSmokeRunner
             item.LastModelPassRunId = modelPassRunId;
             item.CompletedAtUtc = DateTime.UtcNow;
             item.UpdatedAtUtc = item.CompletedAtUtc.Value;
-            ReleaseCheckpoint(item, resultStatus, modelPassRunId, terminalFailure: false, error: null, item.CompletedAtUtc.Value);
+            ReleaseCheckpoint(item, resultStatus, modelPassRunId, terminalFailure: false, error: null, recoveryTelemetry: null, item.CompletedAtUtc.Value);
             return Task.CompletedTask;
         }
 
-        public Task RescheduleAsync(Guid queueItemId, Guid leaseToken, string error, DateTime nextAvailableAtUtc, bool terminalFailure, CancellationToken ct = default)
+        public Task RescheduleAsync(Guid queueItemId, Guid leaseToken, string error, DateTime nextAvailableAtUtc, bool terminalFailure, Stage8BackfillRecoveryTelemetry? recoveryTelemetry = null, CancellationToken ct = default)
         {
             var item = GetLeased(queueItemId, leaseToken);
             item.Status = terminalFailure ? Stage8RecomputeQueueStatuses.Failed : Stage8RecomputeQueueStatuses.Pending;
@@ -546,7 +615,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             item.AvailableAtUtc = nextAvailableAtUtc;
             item.CompletedAtUtc = terminalFailure ? DateTime.UtcNow : null;
             item.UpdatedAtUtc = DateTime.UtcNow;
-            ReleaseCheckpoint(item, item.LastResultStatus, modelPassRunId: null, terminalFailure, error, item.UpdatedAtUtc);
+            ReleaseCheckpoint(item, item.LastResultStatus, modelPassId: null, terminalFailure, error, recoveryTelemetry, item.UpdatedAtUtc);
             return Task.CompletedTask;
         }
 
@@ -601,9 +670,10 @@ public static class Stage8RecomputeQueueSmokeRunner
         private void ReleaseCheckpoint(
             Stage8RecomputeQueueItem item,
             string resultStatus,
-            Guid? modelPassRunId,
+            Guid? modelPassId,
             bool terminalFailure,
             string? error,
+            Stage8BackfillRecoveryTelemetry? recoveryTelemetry,
             DateTime nowUtc)
         {
             if (!_checkpoints.TryGetValue(item.ScopeKey, out var checkpoint))
@@ -628,8 +698,14 @@ public static class Stage8RecomputeQueueSmokeRunner
             checkpoint.LastQueueItemId = item.Id;
             checkpoint.LastTargetFamily = item.TargetFamily;
             checkpoint.LastResultStatus = resultStatus;
-            checkpoint.LastModelPassRunId = modelPassIdOrExisting(modelPassRunId, checkpoint.LastModelPassRunId);
+            checkpoint.LastModelPassRunId = modelPassIdOrExisting(modelPassId, checkpoint.LastModelPassRunId);
             checkpoint.LastError = error;
+            checkpoint.LastRecoveryKind = recoveryTelemetry?.RecoveryKind
+                ?? (string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal)
+                    ? Stage8BackfillRecoveryKinds.GeneralRetry
+                    : Stage8BackfillRecoveryKinds.None);
+            checkpoint.LastRecoveryAtUtc = recoveryTelemetry?.OccurredAtUtc;
+            checkpoint.LastBackoffUntilUtc = recoveryTelemetry?.NextAttemptAtUtc;
             checkpoint.LastCheckpointAtUtc = nowUtc;
             checkpoint.UpdatedAtUtc = nowUtc;
             checkpoint.LastCompletedAtUtc = string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal)
@@ -639,9 +715,25 @@ public static class Stage8RecomputeQueueSmokeRunner
             {
                 checkpoint.FailedItemCount += 1;
             }
-            else if (!string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
+            else if (string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
+            {
+                checkpoint.RetryCount += 1;
+                if (recoveryTelemetry?.IsDeadlock == true)
+                {
+                    checkpoint.DeadlockRetryCount += 1;
+                }
+
+                if (recoveryTelemetry?.IsTransientConflict == true)
+                {
+                    checkpoint.TransientRetryCount += 1;
+                }
+            }
+            else
             {
                 checkpoint.CompletedItemCount += 1;
+                checkpoint.LastRecoveryKind = Stage8BackfillRecoveryKinds.None;
+                checkpoint.LastRecoveryAtUtc = null;
+                checkpoint.LastBackoffUntilUtc = null;
             }
         }
 
@@ -667,6 +759,12 @@ public static class Stage8RecomputeQueueSmokeRunner
                 CompletedItemCount = checkpoint.CompletedItemCount,
                 FailedItemCount = checkpoint.FailedItemCount,
                 ResumeCount = checkpoint.ResumeCount,
+                RetryCount = checkpoint.RetryCount,
+                DeadlockRetryCount = checkpoint.DeadlockRetryCount,
+                TransientRetryCount = checkpoint.TransientRetryCount,
+                LastRecoveryKind = checkpoint.LastRecoveryKind,
+                LastRecoveryAtUtc = checkpoint.LastRecoveryAtUtc,
+                LastBackoffUntilUtc = checkpoint.LastBackoffUntilUtc,
                 FirstStartedAtUtc = checkpoint.FirstStartedAtUtc,
                 LastCheckpointAtUtc = checkpoint.LastCheckpointAtUtc,
                 LastCompletedAtUtc = checkpoint.LastCompletedAtUtc,
@@ -777,10 +875,17 @@ public static class Stage8RecomputeQueueSmokeRunner
         public static readonly Guid ReadyRunId = Guid.Parse("84000000-0000-0000-0000-000000000001");
         public int CallCount { get; private set; }
         public int FailuresRemaining { get; set; }
+        public int ConflictFailuresRemaining { get; set; }
 
         public Task<Stage7PairDynamicsFormationResult> FormAsync(Stage7PairDynamicsFormationRequest request, CancellationToken ct = default)
         {
             CallCount += 1;
+            if (ConflictFailuresRemaining > 0)
+            {
+                ConflictFailuresRemaining -= 1;
+                throw new InvalidOperationException("deadlock detected while updating synthetic pair-dynamics rows");
+            }
+
             if (FailuresRemaining > 0)
             {
                 FailuresRemaining -= 1;

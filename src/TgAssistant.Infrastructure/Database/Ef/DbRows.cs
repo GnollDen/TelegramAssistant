@@ -926,6 +926,12 @@ public class DbStage8BackfillScopeCheckpoint
     public int CompletedItemCount { get; set; }
     public int FailedItemCount { get; set; }
     public int ResumeCount { get; set; }
+    public int RetryCount { get; set; }
+    public int DeadlockRetryCount { get; set; }
+    public int TransientRetryCount { get; set; }
+    public string LastRecoveryKind { get; set; } = Stage8BackfillRecoveryKinds.None;
+    public DateTime? LastRecoveryAtUtc { get; set; }
+    public DateTime? LastBackoffUntilUtc { get; set; }
     public DateTime FirstStartedAtUtc { get; set; }
     public DateTime? LastCheckpointAtUtc { get; set; }
     public DateTime? LastCompletedAtUtc { get; set; }

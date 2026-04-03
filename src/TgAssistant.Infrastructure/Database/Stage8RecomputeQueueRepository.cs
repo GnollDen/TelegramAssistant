@@ -216,6 +216,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             modelPassRunId,
             lastError: null,
             terminalFailure: false,
+            recoveryTelemetry: null,
             nowUtc,
             ct);
     }
@@ -226,6 +227,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         string error,
         DateTime nextAvailableAtUtc,
         bool terminalFailure,
+        Stage8BackfillRecoveryTelemetry? recoveryTelemetry = null,
         CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -269,6 +271,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             modelPassRunId: null,
             lastError: error,
             terminalFailure,
+            recoveryTelemetry,
             nowUtc,
             ct);
     }
@@ -449,6 +452,9 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
                 active_lease_owner = null,
                 lease_expires_at_utc = null,
                 last_error = coalesce(nullif(last_error, ''), 'lease_expired_resume'),
+                last_recovery_kind = {Stage8BackfillRecoveryKinds.LeaseExpiredResume},
+                last_recovery_at_utc = {nowUtc},
+                last_backoff_until_utc = null,
                 resume_count = resume_count + 1,
                 last_checkpoint_at_utc = {nowUtc},
                 updated_at_utc = {nowUtc}
@@ -511,6 +517,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         Guid? modelPassRunId,
         string? lastError,
         bool terminalFailure,
+        Stage8BackfillRecoveryTelemetry? recoveryTelemetry,
         DateTime nowUtc,
         CancellationToken ct)
     {
@@ -551,6 +558,12 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         checkpoint.LastResultStatus = resultStatus;
         checkpoint.LastModelPassRunId = modelPassRunId;
         checkpoint.LastError = lastError;
+        checkpoint.LastRecoveryKind = recoveryTelemetry?.RecoveryKind
+            ?? (string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal)
+                ? Stage8BackfillRecoveryKinds.GeneralRetry
+                : Stage8BackfillRecoveryKinds.None);
+        checkpoint.LastRecoveryAtUtc = recoveryTelemetry?.OccurredAtUtc;
+        checkpoint.LastBackoffUntilUtc = recoveryTelemetry?.NextAttemptAtUtc;
         checkpoint.LastCheckpointAtUtc = nowUtc;
         checkpoint.LastCompletedAtUtc = nowUtc;
         checkpoint.UpdatedAtUtc = nowUtc;
@@ -561,10 +574,23 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         else if (string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
         {
             checkpoint.LastCompletedAtUtc = null;
+            checkpoint.RetryCount += 1;
+            if (recoveryTelemetry?.IsDeadlock == true)
+            {
+                checkpoint.DeadlockRetryCount += 1;
+            }
+
+            if (recoveryTelemetry?.IsTransientConflict == true)
+            {
+                checkpoint.TransientRetryCount += 1;
+            }
         }
         else
         {
             checkpoint.CompletedItemCount += 1;
+            checkpoint.LastRecoveryAtUtc = null;
+            checkpoint.LastBackoffUntilUtc = null;
+            checkpoint.LastRecoveryKind = Stage8BackfillRecoveryKinds.None;
         }
 
         await db.SaveChangesAsync(ct);
@@ -658,6 +684,12 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             CompletedItemCount = row.CompletedItemCount,
             FailedItemCount = row.FailedItemCount,
             ResumeCount = row.ResumeCount,
+            RetryCount = row.RetryCount,
+            DeadlockRetryCount = row.DeadlockRetryCount,
+            TransientRetryCount = row.TransientRetryCount,
+            LastRecoveryKind = row.LastRecoveryKind,
+            LastRecoveryAtUtc = row.LastRecoveryAtUtc,
+            LastBackoffUntilUtc = row.LastBackoffUntilUtc,
             FirstStartedAtUtc = row.FirstStartedAtUtc,
             LastCheckpointAtUtc = row.LastCheckpointAtUtc,
             LastCompletedAtUtc = row.LastCompletedAtUtc,

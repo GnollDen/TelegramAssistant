@@ -562,8 +562,8 @@
         "IMPLEMENT-015",
         "IMPLEMENT-016"
       ],
-      "status": "pending",
-      "notes": "This final task bundles pilot migration, release-readiness docs, and the go/no-go gate because all three depend on the same implementation evidence."
+      "status": "done",
+      "notes": "Completed through IMPLEMENT-010-A/B/C after all dependencies were satisfied: resumable pilot rebuild/backfill flow is in place, runbooks were updated for clean-architecture pilot rollout/rollback, and the pre-rollout audit gate is recorded in execution backlog state."
     },
     {
       "id": "IMPLEMENT-011",
@@ -701,8 +701,8 @@
         "IMPLEMENT-007",
         "IMPLEMENT-009"
       ],
-      "status": "pending",
-      "notes": "Addresses resource starvation and transactional instability during large pilot rebuilds and backfills."
+      "status": "done",
+      "notes": "Completed through IMPLEMENT-016-A/B: bounded per-scope backfill leasing with durable checkpoints now includes deadlock/transient conflict classification, bounded retry backoff, and persisted recovery telemetry (retry/deadlock/transient counters plus recovery timestamps) with smoke coverage for retry and recovery behavior."
     }
   ]
 }

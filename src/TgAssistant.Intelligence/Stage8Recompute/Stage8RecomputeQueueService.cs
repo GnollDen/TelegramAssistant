@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -159,6 +161,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                     deferReason,
                     nextAvailableAtUtc,
                     terminalFailure: false,
+                    recoveryTelemetry: null,
                     ct);
 
                 leasedItem.Status = Stage8RecomputeQueueStatuses.Pending;
@@ -235,14 +238,16 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         catch (Exception ex)
         {
             var terminalFailure = leasedItem.AttemptCount >= leasedItem.MaxAttempts;
-            var nextAvailableAtUtc = nowUtc.Add(ComputeRetryDelay(leasedItem.AttemptCount));
-            await RecordExecutionFailureDefectAsync(leasedItem, ex, terminalFailure, ct);
+            var recoveryTelemetry = ClassifyRecoveryTelemetry(ex, leasedItem.AttemptCount, nowUtc);
+            var nextAvailableAtUtc = recoveryTelemetry.NextAttemptAtUtc ?? nowUtc.Add(ComputeRetryDelay(leasedItem.AttemptCount));
+            await RecordExecutionFailureDefectAsync(leasedItem, ex, terminalFailure, recoveryTelemetry, ct);
             await _repository.RescheduleAsync(
                 leasedItem.Id,
                 leasedItem.LeaseToken!.Value,
                 ex.Message,
                 nextAvailableAtUtc,
                 terminalFailure,
+                recoveryTelemetry,
                 ct);
 
             leasedItem.Status = terminalFailure
@@ -259,13 +264,15 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 
             _logger.LogWarning(
                 ex,
-                "Stage8 recompute execution failed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, terminal={TerminalFailure}, attempt={AttemptCount}, max_attempts={MaxAttempts}",
+                "Stage8 recompute execution failed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, terminal={TerminalFailure}, attempt={AttemptCount}, max_attempts={MaxAttempts}, recovery_kind={RecoveryKind}, retryable_conflict={RetryableConflict}",
                 leasedItem.Id,
                 leasedItem.TargetFamily,
                 leasedItem.TargetRef,
                 terminalFailure,
                 leasedItem.AttemptCount,
-                leasedItem.MaxAttempts);
+                leasedItem.MaxAttempts,
+                recoveryTelemetry.RecoveryKind,
+                recoveryTelemetry.IsDeadlock || recoveryTelemetry.IsTransientConflict);
 
             return new Stage8RecomputeExecutionResult
             {
@@ -404,6 +411,33 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         return retryDelay <= _maxRetryDelay ? retryDelay : _maxRetryDelay;
     }
 
+    private Stage8BackfillRecoveryTelemetry ClassifyRecoveryTelemetry(
+        Exception ex,
+        int attemptCount,
+        DateTime nowUtc)
+    {
+        var recoveryKind = Stage8BackfillRecoveryKinds.GeneralRetry;
+        var isDeadlock = IsDeadlock(ex);
+        var isTransientConflict = isDeadlock || IsTransientConflict(ex);
+        if (isDeadlock)
+        {
+            recoveryKind = Stage8BackfillRecoveryKinds.DeadlockRetry;
+        }
+        else if (isTransientConflict)
+        {
+            recoveryKind = Stage8BackfillRecoveryKinds.TransientConflictRetry;
+        }
+
+        return new Stage8BackfillRecoveryTelemetry
+        {
+            RecoveryKind = recoveryKind,
+            IsDeadlock = isDeadlock,
+            IsTransientConflict = isTransientConflict,
+            OccurredAtUtc = nowUtc,
+            NextAttemptAtUtc = nowUtc.Add(ComputeRetryDelay(attemptCount))
+        };
+    }
+
     private async Task RecordOutcomeDefectsAsync(
         Stage8RecomputeQueueItem queueItem,
         string resultStatus,
@@ -486,6 +520,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         Stage8RecomputeQueueItem queueItem,
         Exception ex,
         bool terminalFailure,
+        Stage8BackfillRecoveryTelemetry recoveryTelemetry,
         CancellationToken ct)
     {
         return _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
@@ -498,8 +533,39 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             ObjectType = queueItem.TargetFamily,
             ObjectRef = queueItem.TargetRef,
             Summary = "Stage8 crystallization queue execution failed.",
-            DetailsJson = $$"""{"error":"{{EscapeJson(ex.Message)}}","terminal":{{(terminalFailure ? "true" : "false")}}}"""
+            DetailsJson = $$"""{"error":"{{EscapeJson(ex.Message)}}","terminal":{{(terminalFailure ? "true" : "false")}},"recovery_kind":"{{recoveryTelemetry.RecoveryKind}}","is_deadlock":{{(recoveryTelemetry.IsDeadlock ? "true" : "false")}},"is_transient_conflict":{{(recoveryTelemetry.IsTransientConflict ? "true" : "false")}},"next_attempt_at_utc":"{{recoveryTelemetry.NextAttemptAtUtc?.ToString("O")}}"}"""
         }, ct);
+    }
+
+    private static bool IsDeadlock(Exception ex)
+    {
+        return FindPostgresException(ex) is { SqlState: PostgresErrorCodes.DeadlockDetected }
+               || ex.Message.Contains("deadlock detected", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTransientConflict(Exception ex)
+    {
+        var postgres = FindPostgresException(ex);
+        if (postgres != null)
+        {
+            return string.Equals(postgres.SqlState, PostgresErrorCodes.SerializationFailure, StringComparison.Ordinal)
+                   || string.Equals(postgres.SqlState, PostgresErrorCodes.LockNotAvailable, StringComparison.Ordinal);
+        }
+
+        return ex.Message.Contains("could not serialize access", StringComparison.OrdinalIgnoreCase)
+               || ex.Message.Contains("could not obtain lock", StringComparison.OrdinalIgnoreCase)
+               || ex.Message.Contains("transient conflict", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static PostgresException? FindPostgresException(Exception ex)
+    {
+        return ex switch
+        {
+            PostgresException postgres => postgres,
+            DbUpdateException { InnerException: PostgresException postgres } => postgres,
+            _ when ex.InnerException != null => FindPostgresException(ex.InnerException),
+            _ => null
+        };
     }
 
     private static string EscapeJson(string value)

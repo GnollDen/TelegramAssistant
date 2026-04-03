@@ -1333,12 +1333,19 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.CompletedItemCount).HasColumnName("completed_item_count");
             e.Property(x => x.FailedItemCount).HasColumnName("failed_item_count");
             e.Property(x => x.ResumeCount).HasColumnName("resume_count");
+            e.Property(x => x.RetryCount).HasColumnName("retry_count");
+            e.Property(x => x.DeadlockRetryCount).HasColumnName("deadlock_retry_count");
+            e.Property(x => x.TransientRetryCount).HasColumnName("transient_retry_count");
+            e.Property(x => x.LastRecoveryKind).HasColumnName("last_recovery_kind");
+            e.Property(x => x.LastRecoveryAtUtc).HasColumnName("last_recovery_at_utc");
+            e.Property(x => x.LastBackoffUntilUtc).HasColumnName("last_backoff_until_utc");
             e.Property(x => x.FirstStartedAtUtc).HasColumnName("first_started_at_utc");
             e.Property(x => x.LastCheckpointAtUtc).HasColumnName("last_checkpoint_at_utc");
             e.Property(x => x.LastCompletedAtUtc).HasColumnName("last_completed_at_utc");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
             e.HasIndex(x => new { x.Status, x.LeaseExpiresAtUtc, x.UpdatedAtUtc });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.LastRecoveryKind, x.LastRecoveryAtUtc });
         });
 
         modelBuilder.Entity<DbRuntimeDefect>(e =>
