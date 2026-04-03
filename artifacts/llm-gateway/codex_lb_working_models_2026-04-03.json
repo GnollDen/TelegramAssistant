@@ -135,5 +135,19 @@
       "default_reasoning_level": "medium"
     }
   ],
-  "all_requested_models_available": true
+  "all_requested_models_available": true,
+  "compatibility_constraints": {
+    "captured_at_utc": "2026-04-03T14:23:13Z",
+    "gateway_default_model_policy": {
+      "codex_lb_text_tools_and_ab_baseline": "gpt-5.4-mini",
+      "avoid_model": "gpt-5.3",
+      "avoid_reason_code": "no_plan_support_for_model",
+      "observed_http_status": 503
+    },
+    "edit_diff_pilot_policy": {
+      "response_mode": "text",
+      "avoid_response_format": "json_object",
+      "avoid_observed_http_status": 502
+    }
+  }
 }
