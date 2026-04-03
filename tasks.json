@@ -142,7 +142,8 @@
         "GATEWAY-002",
         "GATEWAY-003",
         "GATEWAY-004",
-        "GATEWAY-005"
+        "GATEWAY-005",
+        "GATEWAY-006"
       ]
     },
     {
@@ -932,6 +933,28 @@
       ],
       "status": "done",
       "notes": "Completed on 2026-04-03 via GATEWAY-005-A/B. The rollout gate recorded a NO-GO for broader migration because gateway smokes and governance signals were healthy but replay A/B and pilot validation showed 100% fallback from codex-lb to openrouter and only 1/4 normalized parity versus the legacy path. The published recommendation keeps the gateway foundation and bounded edit-diff pilot in place, defers broader text/embeddings/audio migration, and requires primary-provider success plus materially improved parity before broader rollout is reconsidered."
+    },
+    {
+      "id": "GATEWAY-006",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Add Grafana-facing gateway analytics so provider-specific spend, token usage, throughput, and latency are visible for rollout decisions and ongoing operations.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "OpenRouter requests expose provider spend or price-derived spend, token usage, and request counts in Grafana-usable form.",
+        "All gateway providers expose request rate, tokens per second, end-to-end latency, provider latency, and token usage metrics.",
+        "Gateway analytics are available for pilot and bounded production paths without requiring replay-only artifacts."
+      ],
+      "test_steps": [
+        "Run gateway success and failure paths and verify metrics are emitted by provider, modality, model, and status.",
+        "Verify OpenRouter cost or price-derived spend is queryable together with request and token usage dimensions.",
+        "Run dotnet build TelegramAssistant.sln and the gateway smokes or bounded verification commands required by the touched code."
+      ],
+      "dependencies": [
+        "GATEWAY-005"
+      ],
+      "status": "pending",
+      "notes": "Persistent observability follow-up after the initial gateway foundation and rollout gate: expose Grafana-ready metrics for throughput, latency, token usage, and OpenRouter spend so selective production use can be measured honestly."
     },
     {
       "id": "ALIGN-201",

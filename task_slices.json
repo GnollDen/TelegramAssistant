@@ -1459,6 +1459,57 @@
       "notes": "Completed on 2026-04-03 with rollout recommendation note at docs/planning/GATEWAY-005-B_ROLLOUT_RECOMMENDATION_2026-04-03.md. Recommendation keeps the gateway foundation and bounded edit-diff pilot in place, defers broader text/embeddings/audio migration, and requires codex-lb primary-success evidence plus materially improved parity before a new rollout gate is opened."
     },
     {
+      "id": "GATEWAY-006-A",
+      "parent_task_id": "GATEWAY-006",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Instrument gateway request analytics so Grafana can show provider/model/modality request rate, token usage, provider latency, end-to-end latency, and tokens per second.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-005-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway metrics are emitted per provider, model, modality, and status.",
+        "Grafana-ready analytics exist for RPS, token usage, provider latency, end-to-end latency, and TPS."
+      ],
+      "notes": "Add the baseline observability surface for the gateway so selective production and pilot paths can be monitored without replay-only reports."
+    },
+    {
+      "id": "GATEWAY-006-B",
+      "parent_task_id": "GATEWAY-006",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Add OpenRouter spend analytics so Grafana can show provider cost or price-derived spend alongside token usage and request volume.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-006-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "OpenRouter usage includes Grafana-queryable spend or price-derived spend dimensions.",
+        "Cost visibility aligns with existing budget and usage accounting."
+      ],
+      "notes": "Track OpenRouter spend separately because it remains the stable baseline for embeddings/media and the current fallback path for text compatibility."
+    },
+    {
+      "id": "GATEWAY-006-C",
+      "parent_task_id": "GATEWAY-006",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Add bounded gateway analytics verification so the Grafana-facing RPS, TPS, latency, and OpenRouter spend metrics are confirmed end-to-end.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-006-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway analytics are proven end-to-end on bounded safe paths.",
+        "The emitted metrics are sufficient for rollout and operational decisions in Grafana."
+      ],
+      "notes": "Close the analytics follow-up with an end-to-end verification path that proves Grafana-facing gateway metrics are trustworthy."
+    },
+    {
       "id": "ALIGN-201-A",
       "parent_task_id": "ALIGN-201",
       "phase": "phase-e-prd-alignment-hardening",
