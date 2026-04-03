@@ -1127,7 +1127,7 @@
         "ALIGN-204"
       ],
       "status": "pending",
-      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. No product code changes in this step."
+      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. OPINT-001-A/B are complete, including defaults-for-now recorded in docs/planning/OPINT-001-B_EXECUTION_DEFAULTS_2026-04-03.md for explanation policy, evidence depth, and bounded tracked-person pilot scope. Parent stays pending until OPINT-001-C defines the auth/session policy contract. No product code changes in this step."
     },
     {
       "id": "OPINT-002",

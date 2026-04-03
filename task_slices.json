@@ -1778,12 +1778,12 @@
       "dependencies": [
         "OPINT-001-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Ambiguous PRD decisions are converted into explicit wave-safe defaults.",
         "Assumptions are captured as notes for future refinement, not blockers for P0 execution."
       ],
-      "notes": "If assumptions change later, only affected downstream slices are updated."
+      "notes": "Done 2026-04-03: recorded defaults-for-now in docs/planning/OPINT-001-B_EXECUTION_DEFAULTS_2026-04-03.md. P0 now assumes mandatory explanations for reject/defer/clarify, summarized evidence drilldown for MVP, a fixed bounded-pilot tracked-person selector with one active tracked person at a time, and no cross-person resolution expansion unless a later authority note changes the default."
     },
     {
       "id": "OPINT-001-C",
