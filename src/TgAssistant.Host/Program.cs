@@ -10,6 +10,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
+using TgAssistant.Host.BootstrapSeed;
 using TgAssistant.Host.Health;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
@@ -185,6 +186,10 @@ try
     var runReadinessCheck = args.Any(arg => string.Equals(arg, "--readiness-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
     var runOperatorSchemaInit = args.Any(arg => string.Equals(arg, "--operator-schema-init", StringComparison.OrdinalIgnoreCase));
+    var runSeedBootstrapScope = args.Any(arg => string.Equals(arg, "--seed-bootstrap-scope", StringComparison.OrdinalIgnoreCase));
+    var bootstrapSeedRequest = runSeedBootstrapScope
+        ? BootstrapScopeSeedArgsParser.ParseOrThrow(args)
+        : null;
     var preservedVerificationEntrypoints = new[]
     {
         "--foundation-smoke",
@@ -425,6 +430,33 @@ try
             Log.Information(
                 "Readiness check passed: dependency and role-contract admission checks are healthy. alias_used={HealthAliasUsed}",
                 runHealthCheck);
+            return;
+        }
+
+        if (runSeedBootstrapScope)
+        {
+            if (!runtimeRoleSelection.Has(RuntimeWorkloadRole.Ops))
+            {
+                throw new InvalidOperationException("--seed-bootstrap-scope is operator-only and requires runtime role including 'ops'.");
+            }
+
+            if (runOperatorSchemaInit)
+            {
+                throw new InvalidOperationException("--seed-bootstrap-scope cannot be combined with --operator-schema-init.");
+            }
+
+            var seedCommand = scope.ServiceProvider.GetRequiredService<BootstrapScopeSeedCommand>();
+            var seedResult = await seedCommand.RunAsync(bootstrapSeedRequest!, CancellationToken.None);
+            var report = BootstrapScopeSeedReportFormatter.Format(seedResult);
+            Log.Information(
+                "Bootstrap scope seed command completed via --seed-bootstrap-scope. mode={Mode}, contract_status={ContractStatus}, bootstrap_ready={BootstrapReady}, scope_key={ScopeKey}, operator_person_id={OperatorPersonId}, tracked_person_id={TrackedPersonId}",
+                seedResult.DryRun ? "dry-run" : "apply",
+                seedResult.ContractStatus,
+                seedResult.BootstrapReady,
+                seedResult.ScopeKey,
+                seedResult.OperatorPersonId,
+                seedResult.TrackedPersonId);
+            Console.WriteLine(report);
             return;
         }
 

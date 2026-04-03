@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Host.BootstrapSeed;
 using TgAssistant.Host.Launch;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Infrastructure.Database;
@@ -51,6 +52,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IBudgetGuardrailService, BudgetGuardrailService>();
         services.AddSingleton<LaunchReadinessVerificationService>();
         services.AddSingleton<Stage5ScopedRepairCommand>();
+        services.AddSingleton<BootstrapScopeSeedCommand>();
         services.AddSingleton<IExternalArchiveImportContractValidator, ExternalArchiveImportContractValidator>();
         services.AddSingleton<IExternalArchiveProvenanceWeightingService, ExternalArchiveProvenanceWeightingService>();
         services.AddSingleton<IExternalArchiveLinkagePlanner, ExternalArchiveLinkagePlanner>();
