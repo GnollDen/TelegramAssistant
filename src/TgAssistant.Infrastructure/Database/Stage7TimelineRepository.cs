@@ -42,6 +42,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
         var trackedPerson = bootstrapResult.TrackedPerson;
         var operatorPerson = bootstrapResult.OperatorPerson;
@@ -133,6 +134,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             BuildMetadataJson(bootstrapResult, Stage7DurableObjectFamilies.StoryArc, storyArcClosureState, storyArcBoundaryConfidence),
             now,
             ct);
+        await db.SaveChangesAsync(ct);
 
         var eventRow = await UpsertEventAsync(
             db,
@@ -162,6 +164,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             storyArcBoundaryConfidence,
             now,
             ct);
+        await db.SaveChangesAsync(ct);
         var eventRevision = await UpsertEventRevisionAsync(
             db,
             eventRow,
@@ -225,6 +228,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         await SyncEvidenceLinksAsync(db, storyArcMetadata.Id, scopeKey, evidenceItemIds, StoryArcEvidenceLinkRole, now, ct);
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
             "Stage7 durable timeline persisted: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, event_id={EventId}, episode_id={EpisodeId}, story_arc_id={StoryArcId}",
