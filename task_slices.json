@@ -1451,12 +1451,12 @@
       "dependencies": [
         "GATEWAY-005-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Next migration order is explicit.",
         "Unsafe broader migrations remain deferred until justified."
       ],
-      "notes": "This is the rollout recommendation output after the pilot gate closes."
+      "notes": "Completed on 2026-04-03 with rollout recommendation note at docs/planning/GATEWAY-005-B_ROLLOUT_RECOMMENDATION_2026-04-03.md. Recommendation keeps the gateway foundation and bounded edit-diff pilot in place, defers broader text/embeddings/audio migration, and requires codex-lb primary-success evidence plus materially improved parity before a new rollout gate is opened."
     },
     {
       "id": "ALIGN-201-A",

@@ -930,8 +930,8 @@
       "dependencies": [
         "GATEWAY-004"
       ],
-      "status": "pending",
-      "notes": "This is the rollout gate for the gateway track. No broad migration beyond the pilot before this task is closed."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-005-A/B. The rollout gate recorded a NO-GO for broader migration because gateway smokes and governance signals were healthy but replay A/B and pilot validation showed 100% fallback from codex-lb to openrouter and only 1/4 normalized parity versus the legacy path. The published recommendation keeps the gateway foundation and bounded edit-diff pilot in place, defers broader text/embeddings/audio migration, and requires primary-provider success plus materially improved parity before broader rollout is reconsidered."
     },
     {
       "id": "ALIGN-201",
