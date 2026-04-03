@@ -1065,12 +1065,12 @@
       "dependencies": [
         "IMPLEMENT-014-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Duplicate semantic keys are normalized or blocked before durable write.",
         "Unapproved field families remain proposal-only."
       ],
-      "notes": "Clean split because enforcement behavior should be verified after the registry exists."
+      "notes": "Normalizes approved alias variants into one canonical durable field payload, keeps unapproved families in proposal_fields, and reuses persisted registry aliases during Stage7 dossier writes. Verified with dotnet build TelegramAssistant.sln and --stage7-dossier-profile-smoke."
     },
     {
       "id": "IMPLEMENT-015-A",

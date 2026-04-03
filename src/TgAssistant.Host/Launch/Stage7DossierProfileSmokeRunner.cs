@@ -57,6 +57,8 @@ public static class Stage7DossierProfileSmokeRunner
             throw new InvalidOperationException("Stage7 dossier/profile smoke failed: changed input did not create new revisions on stable durable objects.");
         }
 
+        AssertDossierFieldNormalizer();
+
         var needMoreData = await service.FormAsync(new Stage7DossierProfileFormationRequest
         {
             BootstrapResult = BuildNeedMoreDataBootstrapResult(),
@@ -70,6 +72,70 @@ public static class Stage7DossierProfileSmokeRunner
             || !string.Equals(needMoreData.AuditRecord.Envelope.ResultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage7 dossier/profile smoke failed: need_more_data bootstrap should not materialize durable dossier/profile outputs.");
+        }
+    }
+
+    private static void AssertDossierFieldNormalizer()
+    {
+        var registrySnapshot = new DossierFieldRegistrySnapshot
+        {
+            FieldMappings =
+            [
+                DossierFieldRegistryCatalog.Resolve("preferences", "favorite_food"),
+                DossierFieldRegistryCatalog.Resolve("preferences", "gastronomic_preferences"),
+                DossierFieldRegistryCatalog.Resolve("preferences", "chef_note")
+            ]
+        };
+        var writePlan = DossierFieldRegistryCatalog.BuildDurableWritePlan(
+            [
+                new NormalizedFactCandidate
+                {
+                    Category = "preferences",
+                    Key = "favorite_food",
+                    Value = "pizza",
+                    Confidence = 0.82f,
+                    EvidenceRefs = ["evidence:approved-1"]
+                },
+                new NormalizedFactCandidate
+                {
+                    Category = "preferences",
+                    Key = "gastronomic_preferences",
+                    Value = "pasta",
+                    Confidence = 0.91f,
+                    EvidenceRefs = ["evidence:approved-2"]
+                },
+                new NormalizedFactCandidate
+                {
+                    Category = "preferences",
+                    Key = "chef_note",
+                    Value = "likes truffle tasting menus",
+                    Confidence = 0.55f,
+                    EvidenceRefs = ["evidence:proposal-1"]
+                }
+            ],
+            registrySnapshot);
+
+        if (writePlan.ApprovedFields.Count != 1
+            || writePlan.ProposalOnlyFields.Count != 1
+            || writePlan.CollapsedApprovedDuplicateCount != 1)
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: dossier field normalizer did not separate approved and proposal-only families as expected.");
+        }
+
+        var approvedField = writePlan.ApprovedFields[0];
+        if (!string.Equals(approvedField.FamilyKey, "preferences.favorite_food", StringComparison.Ordinal)
+            || !string.Equals(approvedField.CanonicalKey, "favorite_food", StringComparison.Ordinal)
+            || approvedField.ObservedInputs.Count != 2
+            || !string.Equals(approvedField.PrimaryValue, "pasta", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: approved alias variants did not collapse into one canonical dossier field.");
+        }
+
+        var proposalField = writePlan.ProposalOnlyFields[0];
+        if (!string.Equals(proposalField.ApprovalState, DossierFieldApprovalStates.ProposalOnly, StringComparison.Ordinal)
+            || !string.Equals(proposalField.FamilyKey, "preferences.chef_note", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage7 dossier/profile smoke failed: unapproved dossier field family did not remain proposal-only.");
         }
     }
 

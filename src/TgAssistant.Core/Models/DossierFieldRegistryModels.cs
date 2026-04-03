@@ -41,6 +41,36 @@ public sealed class DossierFieldRegistrySnapshot
     public int AliasCount { get; init; }
 }
 
+public sealed class DossierFieldObservedInput
+{
+    public string ObservedCategory { get; init; } = string.Empty;
+    public string ObservedKey { get; init; } = string.Empty;
+    public string Value { get; init; } = string.Empty;
+    public float Confidence { get; init; }
+    public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
+}
+
+public sealed class DossierFieldDurableWriteCandidate
+{
+    public string ObservedCategory { get; set; } = string.Empty;
+    public string ObservedKey { get; set; } = string.Empty;
+    public string FamilyKey { get; set; } = string.Empty;
+    public string CanonicalCategory { get; set; } = string.Empty;
+    public string CanonicalKey { get; set; } = string.Empty;
+    public string ApprovalState { get; set; } = DossierFieldApprovalStates.ProposalOnly;
+    public string PrimaryValue { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public List<string> EvidenceRefs { get; } = [];
+    public List<DossierFieldObservedInput> ObservedInputs { get; } = [];
+}
+
+public sealed class DossierFieldDurableWritePlan
+{
+    public List<DossierFieldDurableWriteCandidate> ApprovedFields { get; init; } = [];
+    public List<DossierFieldDurableWriteCandidate> ProposalOnlyFields { get; init; } = [];
+    public int CollapsedApprovedDuplicateCount { get; init; }
+}
+
 public static class DossierFieldRegistryCatalog
 {
     private static readonly IReadOnlyList<DossierFieldRegistryEntry> SeededEntriesValue =
@@ -71,7 +101,12 @@ public static class DossierFieldRegistryCatalog
             "bootstrap_discovery",
             "mention_count",
             ("bootstrap_discovery", "discovered_mentions_count"),
-            ("bootstrap_discovery", "mention_total"))
+            ("bootstrap_discovery", "mention_total")),
+        Create(
+            "preferences",
+            "favorite_food",
+            ("preferences", "food_preference"),
+            ("preferences", "gastronomic_preferences"))
     ];
 
     private static readonly IReadOnlyDictionary<string, DossierFieldRegistryEntry> AliasLookup =
@@ -148,6 +183,65 @@ public static class DossierFieldRegistryCatalog
     public static string ComposeAliasToken(string category, string key)
         => $"{NormalizeToken(category)}.{NormalizeToken(key)}";
 
+    public static DossierFieldDurableWritePlan BuildDurableWritePlan(
+        IEnumerable<NormalizedFactCandidate> facts,
+        DossierFieldRegistrySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var mappingLookup = snapshot.FieldMappings
+            .Where(x => !string.IsNullOrWhiteSpace(x.ObservedCategory) && !string.IsNullOrWhiteSpace(x.ObservedKey))
+            .GroupBy(x => ComposeAliasToken(x.ObservedCategory, x.ObservedKey), StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.Ordinal);
+        var approvedFields = new Dictionary<string, DossierFieldDurableWriteCandidate>(StringComparer.Ordinal);
+        var proposalFields = new List<DossierFieldDurableWriteCandidate>();
+        var collapsedApprovedDuplicateCount = 0;
+
+        foreach (var fact in facts)
+        {
+            var observedCategory = NormalizeToken(fact.Category);
+            var observedKey = NormalizeToken(fact.Key);
+            if (observedCategory.Length == 0 || observedKey.Length == 0)
+            {
+                continue;
+            }
+
+            var observedToken = ComposeAliasToken(observedCategory, observedKey);
+            var resolution = mappingLookup.GetValueOrDefault(observedToken)
+                ?? Resolve(observedCategory, observedKey);
+            var candidate = CreateDurableWriteCandidate(fact, observedCategory, observedKey, resolution);
+
+            if (!string.Equals(candidate.ApprovalState, DossierFieldApprovalStates.Approved, StringComparison.Ordinal))
+            {
+                proposalFields.Add(candidate);
+                continue;
+            }
+
+            if (approvedFields.TryGetValue(candidate.FamilyKey, out var existing))
+            {
+                MergeApprovedCandidate(existing, candidate);
+                collapsedApprovedDuplicateCount++;
+                continue;
+            }
+
+            approvedFields[candidate.FamilyKey] = candidate;
+        }
+
+        return new DossierFieldDurableWritePlan
+        {
+            ApprovedFields = approvedFields.Values
+                .OrderBy(x => x.CanonicalCategory, StringComparer.Ordinal)
+                .ThenBy(x => x.CanonicalKey, StringComparer.Ordinal)
+                .ToList(),
+            ProposalOnlyFields = proposalFields
+                .OrderBy(x => x.ObservedCategory, StringComparer.Ordinal)
+                .ThenBy(x => x.ObservedKey, StringComparer.Ordinal)
+                .ToList(),
+            CollapsedApprovedDuplicateCount = collapsedApprovedDuplicateCount
+        };
+    }
+
     private static IEnumerable<string> EnumerateAliasTokens(DossierFieldRegistryEntry entry)
     {
         yield return ComposeAliasToken(entry.CanonicalCategory, entry.CanonicalKey);
@@ -181,5 +275,68 @@ public static class DossierFieldRegistryCatalog
                 })
                 .ToArray()
         };
+    }
+
+    private static DossierFieldDurableWriteCandidate CreateDurableWriteCandidate(
+        NormalizedFactCandidate fact,
+        string observedCategory,
+        string observedKey,
+        DossierFieldRegistryResolution resolution)
+    {
+        var candidate = new DossierFieldDurableWriteCandidate
+        {
+            ObservedCategory = observedCategory,
+            ObservedKey = observedKey,
+            FamilyKey = resolution.FamilyKey,
+            CanonicalCategory = resolution.CanonicalCategory,
+            CanonicalKey = resolution.CanonicalKey,
+            ApprovalState = resolution.ApprovalState,
+            PrimaryValue = fact.Value,
+            Confidence = fact.Confidence
+        };
+        candidate.EvidenceRefs.AddRange(fact.EvidenceRefs.Distinct(StringComparer.Ordinal));
+        candidate.ObservedInputs.Add(new DossierFieldObservedInput
+        {
+            ObservedCategory = observedCategory,
+            ObservedKey = observedKey,
+            Value = fact.Value,
+            Confidence = fact.Confidence,
+            EvidenceRefs = fact.EvidenceRefs.Distinct(StringComparer.Ordinal).ToArray()
+        });
+        return candidate;
+    }
+
+    private static void MergeApprovedCandidate(
+        DossierFieldDurableWriteCandidate existing,
+        DossierFieldDurableWriteCandidate candidate)
+    {
+        if (candidate.Confidence > existing.Confidence)
+        {
+            existing.PrimaryValue = candidate.PrimaryValue;
+            existing.Confidence = candidate.Confidence;
+            existing.ObservedCategory = candidate.ObservedCategory;
+            existing.ObservedKey = candidate.ObservedKey;
+        }
+
+        foreach (var evidenceRef in candidate.EvidenceRefs)
+        {
+            if (!existing.EvidenceRefs.Contains(evidenceRef, StringComparer.Ordinal))
+            {
+                existing.EvidenceRefs.Add(evidenceRef);
+            }
+        }
+
+        foreach (var observedInput in candidate.ObservedInputs)
+        {
+            if (existing.ObservedInputs.Any(x =>
+                    string.Equals(x.ObservedCategory, observedInput.ObservedCategory, StringComparison.Ordinal)
+                    && string.Equals(x.ObservedKey, observedInput.ObservedKey, StringComparison.Ordinal)
+                    && string.Equals(x.Value, observedInput.Value, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            existing.ObservedInputs.Add(observedInput);
+        }
     }
 }

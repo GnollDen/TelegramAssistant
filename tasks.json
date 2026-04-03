@@ -655,8 +655,8 @@
         "IMPLEMENT-004",
         "IMPLEMENT-006"
       ],
-      "status": "pending",
-      "notes": "Addresses dossier schema drift caused by open-ended LLM field generation."
+      "status": "done",
+      "notes": "Addresses dossier schema drift caused by open-ended LLM field generation. Completed by adding a canonical registry plus alias catalog and enforcing Stage7 dossier normalizer gating so approved aliases collapse into canonical durable fields while unapproved families remain proposal-only."
     },
     {
       "id": "IMPLEMENT-015",
