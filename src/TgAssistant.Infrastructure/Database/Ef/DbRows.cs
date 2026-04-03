@@ -563,6 +563,23 @@ public class DbBootstrapGraphEdge
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbBootstrapDiscoveryOutput
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string DiscoveryType { get; set; } = string.Empty;
+    public string DiscoveryKey { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public Guid? CandidateIdentityStateId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbDurableObjectMetadata
 {
     public Guid Id { get; set; }

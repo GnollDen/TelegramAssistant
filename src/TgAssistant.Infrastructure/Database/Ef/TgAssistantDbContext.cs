@@ -45,6 +45,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbNormalizationRun> NormalizationRuns => Set<DbNormalizationRun>();
     public DbSet<DbBootstrapGraphNode> BootstrapGraphNodes => Set<DbBootstrapGraphNode>();
     public DbSet<DbBootstrapGraphEdge> BootstrapGraphEdges => Set<DbBootstrapGraphEdge>();
+    public DbSet<DbBootstrapDiscoveryOutput> BootstrapDiscoveryOutputs => Set<DbBootstrapDiscoveryOutput>();
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
 
@@ -813,6 +814,32 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             e.HasIndex(x => new { x.ScopeKey, x.FromNodeRef, x.ToNodeRef, x.EdgeType }).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.EdgeType, x.Status });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbBootstrapDiscoveryOutput>(e =>
+        {
+            e.ToTable("bootstrap_discovery_outputs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.DiscoveryType).HasColumnName("discovery_type");
+            e.Property(x => x.DiscoveryKey).HasColumnName("discovery_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.CandidateIdentityStateId).HasColumnName("candidate_identity_state_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.DiscoveryType, x.DiscoveryKey }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.DiscoveryType, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.DiscoveryType })
+                .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.CandidateIdentityStateId).HasFilter("candidate_identity_state_id IS NOT NULL");
+            e.HasIndex(x => x.SourceMessageId).HasFilter("source_message_id IS NOT NULL");
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 

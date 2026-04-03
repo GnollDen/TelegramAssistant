@@ -179,6 +179,7 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
                 SourceRef = source.SourceRef,
                 SourceObjectId = source.Id,
                 EvidenceItemId = evidence.Id,
+                SourceMessageId = source.SourceMessageId,
                 ObservedAtUtc = evidence.ObservedAt
             })
             .Take(5)
@@ -195,6 +196,153 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
             SourceRefs = sourceRows,
             Reason = "Tracked person and operator root resolved successfully."
         };
+    }
+
+    public async Task<List<Stage6BootstrapDiscoveryOutput>> UpsertDiscoveryOutputsAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapScopeResolution resolution,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(auditRecord);
+        ArgumentNullException.ThrowIfNull(auditRecord.Envelope);
+        ArgumentNullException.ThrowIfNull(resolution);
+
+        if (!string.Equals(resolution.ResolutionStatus, Stage6BootstrapStatuses.Ready, StringComparison.Ordinal)
+            || resolution.TrackedPerson == null
+            || resolution.OperatorPerson == null)
+        {
+            throw new InvalidOperationException("Stage 6 bootstrap discovery outputs require a ready scope resolution.");
+        }
+
+        var evidenceItemIds = resolution.SourceRefs
+            .Where(x => x.EvidenceItemId != null)
+            .Select(x => x.EvidenceItemId!.Value)
+            .Distinct()
+            .ToArray();
+        var sourceMessageIds = resolution.SourceRefs
+            .Where(x => x.SourceMessageId != null)
+            .Select(x => x.SourceMessageId!.Value)
+            .Distinct()
+            .ToArray();
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var now = DateTime.UtcNow;
+        var outputs = new List<Stage6BootstrapDiscoveryOutput>();
+
+        if (evidenceItemIds.Length > 0)
+        {
+            var linkedPersonRows = await (
+                from link in db.EvidenceItemPersonLinks.AsNoTracking()
+                join person in db.Persons.AsNoTracking() on link.PersonId equals person.Id
+                where link.ScopeKey == resolution.ScopeKey
+                    && evidenceItemIds.Contains(link.EvidenceItemId)
+                    && person.Status == ActiveStatus
+                    && person.Id != resolution.TrackedPerson.PersonId
+                    && person.Id != resolution.OperatorPerson.PersonId
+                select new
+                {
+                    person.Id,
+                    person.ScopeKey,
+                    person.PersonType,
+                    person.DisplayName,
+                    person.CanonicalName,
+                    link.EvidenceItemId
+                })
+                .ToListAsync(ct);
+
+            foreach (var personGroup in linkedPersonRows.GroupBy(x => x.Id).OrderBy(x => x.Key))
+            {
+                var person = personGroup.First();
+                var personRef = new Stage6BootstrapPersonRef
+                {
+                    PersonId = person.Id,
+                    ScopeKey = person.ScopeKey,
+                    PersonType = person.PersonType,
+                    DisplayName = person.DisplayName,
+                    CanonicalName = person.CanonicalName
+                };
+                var payloadJson = JsonSerializer.Serialize(new
+                {
+                    discovery_type = Stage6BootstrapDiscoveryTypes.LinkedPerson,
+                    tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                    person_ref = personRef.PersonRef,
+                    display_name = personRef.DisplayName,
+                    person_type = personRef.PersonType,
+                    evidence_refs = personGroup
+                        .Select(x => $"evidence:{x.EvidenceItemId:D}")
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                });
+
+                var row = await UpsertDiscoveryOutputAsync(
+                    db,
+                    resolution.ScopeKey,
+                    resolution.TrackedPerson.PersonId,
+                    auditRecord.ModelPassRunId,
+                    Stage6BootstrapDiscoveryTypes.LinkedPerson,
+                    personRef.PersonRef,
+                    payloadJson,
+                    now,
+                    personId: personRef.PersonId,
+                    ct: ct);
+                outputs.Add(MapDiscoveryOutput(row));
+            }
+        }
+
+        if (sourceMessageIds.Length > 0)
+        {
+            var candidateRows = await db.CandidateIdentityStates
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == resolution.ScopeKey
+                    && x.SourceMessageId != null
+                    && sourceMessageIds.Contains(x.SourceMessageId.Value))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+            foreach (var row in candidateRows)
+            {
+                var discoveryType = ResolveDiscoveryType(row);
+                if (discoveryType == null)
+                {
+                    continue;
+                }
+
+                var payloadJson = JsonSerializer.Serialize(new
+                {
+                    discovery_type = discoveryType,
+                    tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                    candidate_identity_state_id = row.Id,
+                    candidate_type = row.CandidateType,
+                    display_label = row.DisplayLabel,
+                    source_binding_type = row.SourceBindingType,
+                    source_binding_value = row.SourceBindingValue,
+                    source_binding_normalized = row.SourceBindingNormalized,
+                    source_message_id = row.SourceMessageId,
+                    matched_person_id = row.MatchedPersonId
+                });
+
+                var discoveryKey = $"{discoveryType}:{row.Id:D}";
+                var outputRow = await UpsertDiscoveryOutputAsync(
+                    db,
+                    resolution.ScopeKey,
+                    resolution.TrackedPerson.PersonId,
+                    auditRecord.ModelPassRunId,
+                    discoveryType,
+                    discoveryKey,
+                    payloadJson,
+                    now,
+                    candidateIdentityStateId: row.Id,
+                    sourceMessageId: row.SourceMessageId,
+                    ct: ct);
+                outputs.Add(MapDiscoveryOutput(outputRow));
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return outputs
+            .OrderBy(x => x.DiscoveryType, StringComparer.Ordinal)
+            .ThenBy(x => x.DiscoveryKey, StringComparer.Ordinal)
+            .ToList();
     }
 
     public async Task<Stage6BootstrapGraphResult> UpsertGraphInitializationAsync(
@@ -257,6 +405,50 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
                 MapEdge(edge)
             ]
         };
+    }
+
+    private static async Task<DbBootstrapDiscoveryOutput> UpsertDiscoveryOutputAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        Guid modelPassRunId,
+        string discoveryType,
+        string discoveryKey,
+        string payloadJson,
+        DateTime now,
+        Guid? personId = null,
+        Guid? candidateIdentityStateId = null,
+        long? sourceMessageId = null,
+        CancellationToken ct = default)
+    {
+        var row = await db.BootstrapDiscoveryOutputs.FirstOrDefaultAsync(
+            x => x.ScopeKey == scopeKey
+                && x.TrackedPersonId == trackedPersonId
+                && x.DiscoveryType == discoveryType
+                && x.DiscoveryKey == discoveryKey,
+            ct);
+        if (row == null)
+        {
+            row = new DbBootstrapDiscoveryOutput
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                DiscoveryType = discoveryType,
+                DiscoveryKey = discoveryKey,
+                CreatedAt = now
+            };
+            db.BootstrapDiscoveryOutputs.Add(row);
+        }
+
+        row.LastModelPassRunId = modelPassRunId;
+        row.PersonId = personId;
+        row.CandidateIdentityStateId = candidateIdentityStateId;
+        row.SourceMessageId = sourceMessageId;
+        row.Status = ActiveStatus;
+        row.PayloadJson = payloadJson;
+        row.UpdatedAt = now;
+        return row;
     }
 
     private static async Task<DbBootstrapGraphNode> UpsertNodeAsync(
@@ -371,6 +563,37 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
             Status = row.Status,
             PayloadJson = row.PayloadJson
         };
+    }
+
+    private static Stage6BootstrapDiscoveryOutput MapDiscoveryOutput(DbBootstrapDiscoveryOutput row)
+    {
+        return new Stage6BootstrapDiscoveryOutput
+        {
+            Id = row.Id,
+            ScopeKey = row.ScopeKey,
+            TrackedPersonId = row.TrackedPersonId,
+            LastModelPassRunId = row.LastModelPassRunId,
+            DiscoveryType = row.DiscoveryType,
+            DiscoveryKey = row.DiscoveryKey,
+            PersonId = row.PersonId,
+            CandidateIdentityStateId = row.CandidateIdentityStateId,
+            SourceMessageId = row.SourceMessageId,
+            Status = row.Status,
+            PayloadJson = row.PayloadJson
+        };
+    }
+
+    private static string? ResolveDiscoveryType(DbCandidateIdentityState row)
+    {
+        if (string.Equals(row.CandidateType, Stage6BootstrapDiscoveryTypes.Mention, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(row.Status, Stage6BootstrapDiscoveryTypes.Mention, StringComparison.OrdinalIgnoreCase))
+        {
+            return Stage6BootstrapDiscoveryTypes.Mention;
+        }
+
+        return row.MatchedPersonId == null
+            ? Stage6BootstrapDiscoveryTypes.CandidateIdentity
+            : null;
     }
 
     private static string BuildOperatorNodePayload(Stage6BootstrapScopeResolution resolution, Guid modelPassRunId)

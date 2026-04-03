@@ -647,12 +647,12 @@
       "dependencies": [
         "IMPLEMENT-005-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Linked person, candidate identity, and mention are stored distinctly.",
         "Discovery outputs are idempotent across reruns."
       ],
-      "notes": "Clean split because identity discovery should be validated separately from graph init."
+      "notes": "Clean split because identity discovery should be validated separately from graph init. Stage6BootstrapRepository now writes non-durable bootstrap_discovery_outputs keyed by tracked-person scope natural identity, differentiating linked_person rows from unresolved candidate_identity and mention outputs discovered from person-linked evidence and candidate_identity_states; Stage6BootstrapService returns discovery outputs alongside graph init, and --stage6-bootstrap-smoke now verifies distinct discovery types plus stable discovery IDs across reruns."
     },
     {
       "id": "IMPLEMENT-005-C",

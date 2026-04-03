@@ -24,13 +24,15 @@ public static class Stage6BootstrapSmokeRunner
             PersonId = InMemoryStage6BootstrapRepository.SuccessTrackedPersonId,
             RunKind = "smoke",
             TriggerKind = "manual_smoke",
-            TriggerRef = "implement-005-a"
+            TriggerRef = "implement-005-b"
         };
 
         var firstSuccess = await service.RunGraphInitializationAsync(successRequest, ct);
         AssertReady(firstSuccess, "first success");
+        AssertDiscoveryOutputs(firstSuccess, "first success");
         var secondSuccess = await service.RunGraphInitializationAsync(successRequest, ct);
         AssertReady(secondSuccess, "second success");
+        AssertDiscoveryOutputs(secondSuccess, "second success");
         if (firstSuccess.Nodes.Count != secondSuccess.Nodes.Count
             || firstSuccess.Edges.Count != secondSuccess.Edges.Count
             || firstSuccess.Nodes[0].Id != secondSuccess.Nodes[0].Id
@@ -39,18 +41,20 @@ public static class Stage6BootstrapSmokeRunner
         {
             throw new InvalidOperationException("Stage6 bootstrap smoke failed: rerun changed non-durable graph seed identities.");
         }
+        AssertDiscoveryIdempotency(firstSuccess, secondSuccess);
 
         var needMoreData = await service.RunGraphInitializationAsync(new Stage6BootstrapRequest
         {
             ScopeKey = InMemoryStage6BootstrapRepository.MissingOperatorScopeKey,
             RunKind = "smoke",
             TriggerKind = "manual_smoke",
-            TriggerRef = "implement-005-a-missing-operator"
+            TriggerRef = "implement-005-b-missing-operator"
         }, ct);
         if (!string.Equals(needMoreData.AuditRecord.Envelope.ResultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal)
             || needMoreData.GraphInitialized
             || needMoreData.Nodes.Count != 0
-            || needMoreData.Edges.Count != 0)
+            || needMoreData.Edges.Count != 0
+            || needMoreData.DiscoveryOutputs.Count != 0)
         {
             throw new InvalidOperationException("Stage6 bootstrap smoke failed: missing operator attachment was not surfaced as need_more_data.");
         }
@@ -67,6 +71,47 @@ public static class Stage6BootstrapSmokeRunner
         }
     }
 
+    private static void AssertDiscoveryOutputs(Stage6BootstrapGraphResult result, string label)
+    {
+        if (result.DiscoveryOutputs.Count != 3)
+        {
+            throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} did not produce three differentiated discovery outputs.");
+        }
+
+        var discoveryTypes = result.DiscoveryOutputs
+            .Select(x => x.DiscoveryType)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+        var expectedTypes = new[]
+        {
+            Stage6BootstrapDiscoveryTypes.CandidateIdentity,
+            Stage6BootstrapDiscoveryTypes.LinkedPerson,
+            Stage6BootstrapDiscoveryTypes.Mention
+        };
+        if (!discoveryTypes.SequenceEqual(expectedTypes, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} did not differentiate linked_person, candidate_identity, and mention outputs.");
+        }
+    }
+
+    private static void AssertDiscoveryIdempotency(Stage6BootstrapGraphResult first, Stage6BootstrapGraphResult second)
+    {
+        var firstMap = first.DiscoveryOutputs.ToDictionary(x => $"{x.DiscoveryType}|{x.DiscoveryKey}", x => x.Id);
+        var secondMap = second.DiscoveryOutputs.ToDictionary(x => $"{x.DiscoveryType}|{x.DiscoveryKey}", x => x.Id);
+        if (firstMap.Count != secondMap.Count)
+        {
+            throw new InvalidOperationException("Stage6 bootstrap smoke failed: discovery output count changed on rerun.");
+        }
+
+        foreach (var (key, id) in firstMap)
+        {
+            if (!secondMap.TryGetValue(key, out var rerunId) || rerunId != id)
+            {
+                throw new InvalidOperationException("Stage6 bootstrap smoke failed: discovery output IDs changed on rerun.");
+            }
+        }
+    }
+
     private sealed class InMemoryStage6BootstrapRepository : IStage6BootstrapRepository
     {
         internal static readonly Guid SuccessTrackedPersonId = Guid.Parse("20000000-0000-0000-0000-000000000001");
@@ -75,6 +120,7 @@ public static class Stage6BootstrapSmokeRunner
 
         private readonly Dictionary<string, Stage6BootstrapGraphNode> _nodes = [];
         private readonly Dictionary<string, Stage6BootstrapGraphEdge> _edges = [];
+        private readonly Dictionary<string, Stage6BootstrapDiscoveryOutput> _discoveryOutputs = [];
 
         public Task<Stage6BootstrapScopeResolution> ResolveScopeAsync(Stage6BootstrapRequest request, CancellationToken ct = default)
         {
@@ -110,6 +156,7 @@ public static class Stage6BootstrapSmokeRunner
                             SourceRef = "smoke:source-1",
                             SourceObjectId = Guid.Parse("21000000-0000-0000-0000-000000000001"),
                             EvidenceItemId = Guid.Parse("22000000-0000-0000-0000-000000000001"),
+                            SourceMessageId = 11_001,
                             ObservedAtUtc = DateTime.UtcNow
                         }
                     ]
@@ -194,6 +241,51 @@ public static class Stage6BootstrapSmokeRunner
             });
         }
 
+        public Task<List<Stage6BootstrapDiscoveryOutput>> UpsertDiscoveryOutputsAsync(
+            ModelPassAuditRecord auditRecord,
+            Stage6BootstrapScopeResolution resolution,
+            CancellationToken ct = default)
+        {
+            if (resolution.TrackedPerson == null)
+            {
+                return Task.FromResult(new List<Stage6BootstrapDiscoveryOutput>());
+            }
+
+            var linkedPerson = UpsertDiscoveryOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapDiscoveryTypes.LinkedPerson,
+                "person:20000000-0000-0000-0000-000000000010",
+                personId: Guid.Parse("20000000-0000-0000-0000-000000000010"),
+                payloadJson: "{\"discovery_type\":\"linked_person\"}");
+            var candidateIdentity = UpsertDiscoveryOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapDiscoveryTypes.CandidateIdentity,
+                "candidate_identity:23000000-0000-0000-0000-000000000001",
+                candidateIdentityStateId: Guid.Parse("23000000-0000-0000-0000-000000000001"),
+                sourceMessageId: 11_001,
+                payloadJson: "{\"discovery_type\":\"candidate_identity\"}");
+            var mention = UpsertDiscoveryOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapDiscoveryTypes.Mention,
+                "mention:23000000-0000-0000-0000-000000000002",
+                candidateIdentityStateId: Guid.Parse("23000000-0000-0000-0000-000000000002"),
+                sourceMessageId: 11_001,
+                payloadJson: "{\"discovery_type\":\"mention\"}");
+
+            return Task.FromResult(new List<Stage6BootstrapDiscoveryOutput>
+            {
+                candidateIdentity,
+                linkedPerson,
+                mention
+            });
+        }
+
         private Stage6BootstrapGraphNode UpsertNode(
             string scopeKey,
             Stage6BootstrapPersonRef person,
@@ -218,6 +310,40 @@ public static class Stage6BootstrapSmokeRunner
             node.LastModelPassRunId = modelPassRunId;
             node.PayloadJson = $"{{\"person_ref\":\"{person.PersonRef}\"}}";
             return node;
+        }
+
+        private Stage6BootstrapDiscoveryOutput UpsertDiscoveryOutput(
+            string scopeKey,
+            Guid trackedPersonId,
+            Guid modelPassRunId,
+            string discoveryType,
+            string discoveryKey,
+            string payloadJson,
+            Guid? personId = null,
+            Guid? candidateIdentityStateId = null,
+            long? sourceMessageId = null)
+        {
+            var key = $"{scopeKey}|{trackedPersonId:D}|{discoveryType}|{discoveryKey}";
+            if (!_discoveryOutputs.TryGetValue(key, out var output))
+            {
+                output = new Stage6BootstrapDiscoveryOutput
+                {
+                    Id = Guid.NewGuid(),
+                    ScopeKey = scopeKey,
+                    TrackedPersonId = trackedPersonId,
+                    DiscoveryType = discoveryType,
+                    DiscoveryKey = discoveryKey,
+                    Status = "active"
+                };
+                _discoveryOutputs[key] = output;
+            }
+
+            output.LastModelPassRunId = modelPassRunId;
+            output.PersonId = personId;
+            output.CandidateIdentityStateId = candidateIdentityStateId;
+            output.SourceMessageId = sourceMessageId;
+            output.PayloadJson = payloadJson;
+            return output;
         }
     }
 

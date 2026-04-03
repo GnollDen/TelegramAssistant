@@ -50,12 +50,14 @@ public class Stage6BootstrapService : IStage6BootstrapService
         }
 
         var result = await _bootstrapRepository.UpsertGraphInitializationAsync(auditRecord, resolution, ct);
+        result.DiscoveryOutputs = await _bootstrapRepository.UpsertDiscoveryOutputsAsync(auditRecord, resolution, ct);
         _logger.LogInformation(
-            "Stage6 bootstrap graph initialized: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, node_count={NodeCount}, edge_count={EdgeCount}",
+            "Stage6 bootstrap graph initialized: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, node_count={NodeCount}, edge_count={EdgeCount}, discovery_count={DiscoveryCount}",
             result.AuditRecord.Envelope.ScopeKey,
             resolution.TrackedPerson?.PersonId,
             result.Nodes.Count,
-            result.Edges.Count);
+            result.Edges.Count,
+            result.DiscoveryOutputs.Count);
 
         return result;
     }

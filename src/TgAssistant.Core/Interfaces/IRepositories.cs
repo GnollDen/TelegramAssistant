@@ -106,6 +106,11 @@ public interface IStage6BootstrapRepository
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapScopeResolution resolution,
         CancellationToken ct = default);
+
+    Task<List<Stage6BootstrapDiscoveryOutput>> UpsertDiscoveryOutputsAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapScopeResolution resolution,
+        CancellationToken ct = default);
 }
 
 public interface IStage6BootstrapService

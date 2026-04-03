@@ -19,6 +19,13 @@ public static class Stage6BootstrapEdgeTypes
     public const string TrackedPersonAttachment = "tracked_person_attachment";
 }
 
+public static class Stage6BootstrapDiscoveryTypes
+{
+    public const string LinkedPerson = "linked_person";
+    public const string CandidateIdentity = "candidate_identity";
+    public const string Mention = "mention";
+}
+
 public class Stage6BootstrapRequest
 {
     public Guid? PersonId { get; set; }
@@ -45,6 +52,7 @@ public class Stage6BootstrapSourceRef
     public string SourceRef { get; set; } = string.Empty;
     public Guid? SourceObjectId { get; set; }
     public Guid? EvidenceItemId { get; set; }
+    public long? SourceMessageId { get; set; }
     public DateTime? ObservedAtUtc { get; set; }
 }
 
@@ -86,10 +94,26 @@ public class Stage6BootstrapGraphEdge
     public string PayloadJson { get; set; } = "{}";
 }
 
+public class Stage6BootstrapDiscoveryOutput
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string DiscoveryType { get; set; } = string.Empty;
+    public string DiscoveryKey { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public Guid? CandidateIdentityStateId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = "{}";
+}
+
 public class Stage6BootstrapGraphResult
 {
     public ModelPassAuditRecord AuditRecord { get; set; } = new();
     public bool GraphInitialized { get; set; }
     public List<Stage6BootstrapGraphNode> Nodes { get; set; } = [];
     public List<Stage6BootstrapGraphEdge> Edges { get; set; } = [];
+    public List<Stage6BootstrapDiscoveryOutput> DiscoveryOutputs { get; set; } = [];
 }
