@@ -374,11 +374,18 @@ public sealed class BootstrapScopeSeedCommand
             result.TrackedAction = BootstrapSeedAction.Reused;
         }
 
+        if (plan.Operator.NewPerson != null || plan.Tracked.NewPerson != null)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
         if (plan.NewLink != null)
         {
             db.PersonOperatorLinks.Add(plan.NewLink);
             plan.Link = plan.NewLink;
             result.RelationAction = BootstrapSeedAction.Created;
+
+            await db.SaveChangesAsync(ct);
         }
         else
         {
@@ -398,6 +405,8 @@ public sealed class BootstrapScopeSeedCommand
             db.SourceObjects.Add(plan.NewSource);
             plan.Source = plan.NewSource;
             result.SourceAction = BootstrapSeedAction.Created;
+
+            await db.SaveChangesAsync(ct);
         }
         else
         {
@@ -410,6 +419,8 @@ public sealed class BootstrapScopeSeedCommand
             db.EvidenceItems.Add(plan.NewEvidence);
             plan.Evidence = plan.NewEvidence;
             result.EvidenceAction = BootstrapSeedAction.Created;
+
+            await db.SaveChangesAsync(ct);
         }
         else
         {
@@ -422,6 +433,8 @@ public sealed class BootstrapScopeSeedCommand
             db.EvidenceItemPersonLinks.Add(plan.NewEvidenceLink);
             plan.EvidenceLink = plan.NewEvidenceLink;
             result.EvidenceLinkAction = BootstrapSeedAction.Created;
+
+            await db.SaveChangesAsync(ct);
         }
         else
         {
