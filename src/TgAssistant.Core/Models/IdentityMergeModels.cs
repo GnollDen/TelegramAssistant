@@ -21,6 +21,12 @@ public static class IdentityMergeReviewStatuses
     public const string Approved = "approved";
 }
 
+public static class IdentityMergeCorrectionKinds
+{
+    public const string MergeApplied = "merge_applied";
+    public const string MergeReversed = "merge_reversed";
+}
+
 public class IdentityMergeApplyRequest
 {
     public Guid TargetPersonId { get; set; }
@@ -59,10 +65,30 @@ public class IdentityMergeRecord
     public Guid? ModelPassRunId { get; set; }
     public string BeforeStateJson { get; set; } = "{}";
     public string AfterStateJson { get; set; } = "{}";
+    public string RecomputePlanJson { get; set; } = "{}";
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public DateTime? AppliedAtUtc { get; set; }
+    public DateTime? RecomputeEnqueuedAtUtc { get; set; }
     public DateTime? ReversedAtUtc { get; set; }
+}
+
+public class IdentityMergeRecomputePlan
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string CorrectionKind { get; set; } = IdentityMergeCorrectionKinds.MergeApplied;
+    public bool GlobalRerunRequired { get; set; }
+    public List<Guid> AffectedPersonIds { get; set; } = [];
+    public List<string> InvalidatedObjectFamilies { get; set; } = [];
+    public List<IdentityMergeRecomputeTarget> Targets { get; set; } = [];
+}
+
+public class IdentityMergeRecomputeTarget
+{
+    public Guid? PersonId { get; set; }
+    public string TargetFamily { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public int Priority { get; set; } = 100;
 }
 
 public class IdentityMergeSnapshot

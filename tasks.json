@@ -632,8 +632,8 @@
         "IMPLEMENT-006",
         "IMPLEMENT-007"
       ],
-      "status": "pending",
-      "notes": "Addresses poisoned-graph risk from identity resolution errors on large archives."
+      "status": "done",
+      "notes": "Completed through IMPLEMENT-013-A/B: identity merges now persist reversible before/after snapshots with confidence-tier review gates, and applied or reversed corrections trigger bounded durable-object invalidation plus scoped Stage8 dossier/profile, pair-dynamics, and timeline recompute plans for only the affected persons rather than defaulting to global reruns."
     },
     {
       "id": "IMPLEMENT-014",

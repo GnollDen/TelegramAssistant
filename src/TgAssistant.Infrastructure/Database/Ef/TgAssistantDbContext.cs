@@ -1349,13 +1349,16 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
             e.Property(x => x.BeforeStateJson).HasColumnName("before_state_json").HasColumnType("jsonb");
             e.Property(x => x.AfterStateJson).HasColumnName("after_state_json").HasColumnType("jsonb");
+            e.Property(x => x.RecomputePlanJson).HasColumnName("recompute_plan_json").HasColumnType("jsonb");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
             e.Property(x => x.AppliedAtUtc).HasColumnName("applied_at_utc");
+            e.Property(x => x.RecomputeEnqueuedAtUtc).HasColumnName("recompute_enqueued_at_utc");
             e.Property(x => x.ReversedAtUtc).HasColumnName("reversed_at_utc");
             e.HasIndex(x => new { x.ScopeKey, x.Status, x.CreatedAtUtc });
             e.HasIndex(x => new { x.ScopeKey, x.TargetPersonId, x.SourcePersonId, x.CreatedAtUtc });
             e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => x.RecomputeEnqueuedAtUtc).HasFilter("recompute_enqueued_at_utc IS NOT NULL");
         });
 
         modelBuilder.Entity<DbRuntimeControlState>(e =>

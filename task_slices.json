@@ -895,7 +895,7 @@
         "IMPLEMENT-006-D",
         "IMPLEMENT-009-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pilot rebuild resumes cleanly after interruption.",
         "Counts and object identities remain stable across restart."
@@ -1036,7 +1036,7 @@
         "Corrections invalidate only affected graph and durable branches by default.",
         "Global rerun remains exceptional rather than normal recovery."
       ],
-      "notes": "Clean split because invalidation/recompute behavior should be verified after reversible merge state exists."
+      "notes": "Completed by extending IdentityMergeRepository with bounded correction plans that invalidate only durable_object_metadata rows tied to the affected owner/related person ids, persist recompute_plan_json plus recompute_enqueued_at_utc on identity_merge_histories, and enqueue scoped Stage8 dossier/profile, pair-dynamics, and timeline reruns for the touched persons instead of any global rerun."
     },
     {
       "id": "IMPLEMENT-014-A",

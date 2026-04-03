@@ -944,9 +944,11 @@ public class DbIdentityMergeHistory
     public Guid? ModelPassRunId { get; set; }
     public string BeforeStateJson { get; set; } = "{}";
     public string AfterStateJson { get; set; } = "{}";
+    public string RecomputePlanJson { get; set; } = "{}";
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public DateTime? AppliedAtUtc { get; set; }
+    public DateTime? RecomputeEnqueuedAtUtc { get; set; }
     public DateTime? ReversedAtUtc { get; set; }
 }
 

@@ -11,6 +11,21 @@ namespace TgAssistant.Infrastructure.Database;
 public class IdentityMergeRepository : IIdentityMergeRepository
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly (string TargetFamily, int Priority)[] CorrectionTargetFamilies =
+    [
+        (Stage8RecomputeTargetFamilies.DossierProfile, 40),
+        (Stage8RecomputeTargetFamilies.PairDynamics, 50),
+        (Stage8RecomputeTargetFamilies.TimelineObjects, 60)
+    ];
+    private static readonly string[] InvalidatedObjectFamilies =
+    [
+        Stage7DurableObjectFamilies.Dossier,
+        Stage7DurableObjectFamilies.Profile,
+        Stage7DurableObjectFamilies.PairDynamics,
+        Stage7DurableObjectFamilies.Event,
+        Stage7DurableObjectFamilies.TimelineEpisode,
+        Stage7DurableObjectFamilies.StoryArc
+    ];
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly ILogger<IdentityMergeRepository> _logger;
@@ -90,6 +105,7 @@ public class IdentityMergeRepository : IIdentityMergeRepository
             ModelPassRunId = request.ModelPassRunId,
             BeforeStateJson = SerializeSnapshot(beforeSnapshot),
             AfterStateJson = SerializeSnapshot(afterSnapshot),
+            RecomputePlanJson = "{}",
             CreatedAtUtc = nowUtc,
             UpdatedAtUtc = nowUtc,
             AppliedAtUtc = string.Equals(status, IdentityMergeStatuses.Applied, StringComparison.Ordinal) ? nowUtc : null
@@ -100,13 +116,20 @@ public class IdentityMergeRepository : IIdentityMergeRepository
         if (string.Equals(status, IdentityMergeStatuses.Applied, StringComparison.Ordinal))
         {
             await ApplySnapshotAsync(db, beforeSnapshot.ScopeKey, target.Id, source.Id, afterSnapshot, ct);
+            var recomputePlan = BuildRecomputePlan(
+                scopeKey,
+                target.Id,
+                source.Id,
+                IdentityMergeCorrectionKinds.MergeApplied);
+            await ApplyCorrectionEffectsAsync(db, row, recomputePlan, ct);
             _logger.LogInformation(
-                "Identity merge applied: merge_id={MergeId}, scope_key={ScopeKey}, target_person_id={TargetPersonId}, source_person_id={SourcePersonId}, confidence_tier={ConfidenceTier}",
+                "Identity merge applied with bounded recompute plan: merge_id={MergeId}, scope_key={ScopeKey}, target_person_id={TargetPersonId}, source_person_id={SourcePersonId}, confidence_tier={ConfidenceTier}, queued_targets={QueuedTargets}",
                 row.Id,
                 row.ScopeKey,
                 row.TargetPersonId,
                 row.SourcePersonId,
-                row.ConfidenceTier);
+                row.ConfidenceTier,
+                recomputePlan.Targets.Count);
         }
         else
         {
@@ -165,16 +188,23 @@ public class IdentityMergeRepository : IIdentityMergeRepository
         row.ReversedBy = NormalizeActor(request.RequestedBy, fallback: "system");
         row.ReversalReason = NormalizeReason(request.Reason);
         row.UpdatedAtUtc = nowUtc;
+        var recomputePlan = BuildRecomputePlan(
+            row.ScopeKey,
+            row.TargetPersonId,
+            row.SourcePersonId,
+            IdentityMergeCorrectionKinds.MergeReversed);
+        await ApplyCorrectionEffectsAsync(db, row, recomputePlan, ct);
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
         _logger.LogInformation(
-            "Identity merge reversed: merge_id={MergeId}, scope_key={ScopeKey}, target_person_id={TargetPersonId}, source_person_id={SourcePersonId}",
+            "Identity merge reversed with bounded recompute plan: merge_id={MergeId}, scope_key={ScopeKey}, target_person_id={TargetPersonId}, source_person_id={SourcePersonId}, queued_targets={QueuedTargets}",
             row.Id,
             row.ScopeKey,
             row.TargetPersonId,
-            row.SourcePersonId);
+            row.SourcePersonId,
+            recomputePlan.Targets.Count);
 
         return Map(row);
     }
@@ -471,11 +501,177 @@ public class IdentityMergeRepository : IIdentityMergeRepository
             ModelPassRunId = row.ModelPassRunId,
             BeforeStateJson = row.BeforeStateJson,
             AfterStateJson = row.AfterStateJson,
+            RecomputePlanJson = row.RecomputePlanJson,
             CreatedAtUtc = row.CreatedAtUtc,
             UpdatedAtUtc = row.UpdatedAtUtc,
             AppliedAtUtc = row.AppliedAtUtc,
+            RecomputeEnqueuedAtUtc = row.RecomputeEnqueuedAtUtc,
             ReversedAtUtc = row.ReversedAtUtc
         };
+    }
+
+    private static IdentityMergeRecomputePlan BuildRecomputePlan(
+        string scopeKey,
+        Guid targetPersonId,
+        Guid sourcePersonId,
+        string correctionKind)
+    {
+        var affectedPersonIds = new[] { targetPersonId, sourcePersonId }
+            .Distinct()
+            .ToList();
+
+        var targets = affectedPersonIds
+            .SelectMany(personId => CorrectionTargetFamilies.Select(target => new IdentityMergeRecomputeTarget
+            {
+                PersonId = personId,
+                TargetFamily = target.TargetFamily,
+                TargetRef = $"person:{personId:D}",
+                Priority = target.Priority
+            }))
+            .OrderBy(x => x.Priority)
+            .ThenBy(x => x.TargetFamily, StringComparer.Ordinal)
+            .ThenBy(x => x.TargetRef, StringComparer.Ordinal)
+            .ToList();
+
+        return new IdentityMergeRecomputePlan
+        {
+            ScopeKey = scopeKey,
+            CorrectionKind = correctionKind,
+            GlobalRerunRequired = false,
+            AffectedPersonIds = affectedPersonIds,
+            InvalidatedObjectFamilies = InvalidatedObjectFamilies.ToList(),
+            Targets = targets
+        };
+    }
+
+    private static async Task ApplyCorrectionEffectsAsync(
+        TgAssistantDbContext db,
+        DbIdentityMergeHistory row,
+        IdentityMergeRecomputePlan plan,
+        CancellationToken ct)
+    {
+        await InvalidateDurableMetadataAsync(db, row, plan, ct);
+        await EnqueueRecomputeTargetsAsync(db, row, plan, ct);
+        row.RecomputePlanJson = JsonSerializer.Serialize(plan, SnapshotJsonOptions);
+        row.RecomputeEnqueuedAtUtc = DateTime.UtcNow;
+        row.UpdatedAtUtc = row.RecomputeEnqueuedAtUtc.Value;
+    }
+
+    private static async Task InvalidateDurableMetadataAsync(
+        TgAssistantDbContext db,
+        DbIdentityMergeHistory row,
+        IdentityMergeRecomputePlan plan,
+        CancellationToken ct)
+    {
+        var affectedPersonIds = plan.AffectedPersonIds.ToHashSet();
+        var rows = await db.DurableObjectMetadata
+            .Where(x => x.ScopeKey == row.ScopeKey
+                && plan.InvalidatedObjectFamilies.Contains(x.ObjectFamily)
+                && ((x.OwnerPersonId != null && affectedPersonIds.Contains(x.OwnerPersonId.Value))
+                    || (x.RelatedPersonId != null && affectedPersonIds.Contains(x.RelatedPersonId.Value))))
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        foreach (var metadata in rows)
+        {
+            metadata.PromotionState = Stage8PromotionStates.Pending;
+            metadata.TruthLayer = ModelNormalizationTruthLayers.ProposalLayer;
+            metadata.MetadataJson = MergeCorrectionMetadata(
+                metadata.MetadataJson,
+                row.Id,
+                plan,
+                nowUtc);
+            metadata.UpdatedAt = nowUtc;
+        }
+    }
+
+    private static async Task EnqueueRecomputeTargetsAsync(
+        TgAssistantDbContext db,
+        DbIdentityMergeHistory row,
+        IdentityMergeRecomputePlan plan,
+        CancellationToken ct)
+    {
+        if (plan.Targets.Count == 0)
+        {
+            return;
+        }
+
+        var dedupeKeys = plan.Targets
+            .Select(target => BuildDedupeKey(plan.ScopeKey, target.TargetFamily, target.TargetRef))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var existingRows = await db.Stage8RecomputeQueueItems
+            .Where(x => x.ActiveDedupeKey != null && dedupeKeys.Contains(x.ActiveDedupeKey))
+            .ToListAsync(ct);
+        var nowUtc = DateTime.UtcNow;
+
+        foreach (var target in plan.Targets)
+        {
+            var dedupeKey = BuildDedupeKey(plan.ScopeKey, target.TargetFamily, target.TargetRef);
+            var existing = existingRows.FirstOrDefault(x => string.Equals(x.ActiveDedupeKey, dedupeKey, StringComparison.Ordinal));
+            if (existing != null)
+            {
+                if (string.Equals(existing.Status, Stage8RecomputeQueueStatuses.Pending, StringComparison.Ordinal))
+                {
+                    existing.Priority = Math.Min(existing.Priority, target.Priority);
+                    existing.AvailableAtUtc = existing.AvailableAtUtc <= nowUtc ? existing.AvailableAtUtc : nowUtc;
+                    existing.UpdatedAtUtc = nowUtc;
+                }
+
+                continue;
+            }
+
+            db.Stage8RecomputeQueueItems.Add(new DbStage8RecomputeQueueItem
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = plan.ScopeKey,
+                PersonId = target.PersonId,
+                TargetFamily = target.TargetFamily,
+                TargetRef = target.TargetRef,
+                DedupeKey = dedupeKey,
+                ActiveDedupeKey = dedupeKey,
+                TriggerKind = plan.CorrectionKind,
+                TriggerRef = row.Id.ToString("D"),
+                Status = Stage8RecomputeQueueStatuses.Pending,
+                Priority = target.Priority,
+                AttemptCount = 0,
+                MaxAttempts = 5,
+                AvailableAtUtc = nowUtc,
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc
+            });
+        }
+    }
+
+    private static string BuildDedupeKey(string scopeKey, string targetFamily, string targetRef)
+        => $"{scopeKey}|{targetFamily}|{targetRef}";
+
+    private static string MergeCorrectionMetadata(
+        string? existingMetadataJson,
+        Guid mergeId,
+        IdentityMergeRecomputePlan plan,
+        DateTime invalidatedAtUtc)
+    {
+        var root = ParseObject(existingMetadataJson);
+        root["identity_correction"] = new JsonObject
+        {
+            ["merge_id"] = mergeId.ToString("D"),
+            ["correction_kind"] = plan.CorrectionKind,
+            ["global_rerun_required"] = plan.GlobalRerunRequired,
+            ["invalidated_at_utc"] = invalidatedAtUtc.ToString("O"),
+            ["affected_person_ids"] = new JsonArray(plan.AffectedPersonIds.Select(x => JsonValue.Create(x.ToString("D"))).ToArray()),
+            ["target_families"] = new JsonArray(
+                plan.Targets
+                    .Select(x => x.TargetFamily)
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(x => JsonValue.Create(x))
+                    .ToArray())
+        };
+        return root.ToJsonString();
     }
 
     private static IdentityMergePersonState MapPersonState(DbPerson row)
