@@ -1553,12 +1553,12 @@
       "dependencies": [
         "GATEWAY-007-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Parity, schema validity, fallback behavior, and operational metrics are sufficient to judge the added family.",
         "A clear continue/hold recommendation exists before opening another family."
       ],
-      "notes": "Close the bounded family rollout with explicit evidence, not assumption, before expanding normalization to more contract families."
+      "notes": "Done on 2026-04-03: added bounded `SessionSummary v1` family validation path via `--llm-contract-family-validate`, generating artifacts/llm-gateway/session_summary_family_validation_report.json with parity/schema/fallback/provider-error/metrics checks and Grafana query hints. Validation outcome: all checks passed; recommendation = continue_bounded_reasoning_plus_shaping_for_next_single_family."
     },
     {
       "id": "ALIGN-201-A",

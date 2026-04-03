@@ -976,8 +976,8 @@
       "dependencies": [
         "GATEWAY-006"
       ],
-      "status": "pending",
-      "notes": "Follow-up bounded rollout after the initial EditDiff v1 normalization path: extend reasoning-plus-shaping adoption only through explicit family-by-family evidence and validation gates."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-007-A/B/C. Ranked post-EditDiff families and selected bounded `SessionSummary v1`; implemented schema+validator+feature-gated fallback path; and validated parity/schema/fallback/operational metrics through --llm-contract-family-validate with report artifact artifacts/llm-gateway/session_summary_family_validation_report.json. Recommendation: continue bounded reasoning-plus-shaping to the next single family only."
     },
     {
       "id": "ALIGN-201",

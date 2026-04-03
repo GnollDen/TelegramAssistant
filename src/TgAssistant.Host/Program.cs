@@ -115,6 +115,7 @@ try
     var runLlmGatewayAnalyticsValidate = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-validate", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmContractNormalizationSmoke = args.Any(arg => string.Equals(arg, "--llm-contract-normalization-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmContractFamilyValidate = args.Any(arg => string.Equals(arg, "--llm-contract-family-validate", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
     var runEditDiffPilotSmoke = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-smoke", StringComparison.OrdinalIgnoreCase));
     var runEditDiffPilotValidate = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-validate", StringComparison.OrdinalIgnoreCase));
@@ -126,6 +127,10 @@ try
     var llmGatewayAnalyticsValidateOutput = llmGatewayAnalyticsValidateOutputArg is null
         ? null
         : llmGatewayAnalyticsValidateOutputArg["--llm-gateway-analytics-validate-output=".Length..];
+    var llmContractFamilyValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-contract-family-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var llmContractFamilyValidateOutput = llmContractFamilyValidateOutputArg is null
+        ? null
+        : llmContractFamilyValidateOutputArg["--llm-contract-family-validate-output=".Length..];
     var editDiffPilotValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--edit-diff-pilot-validate-output=", StringComparison.OrdinalIgnoreCase));
     var editDiffPilotValidateOutput = editDiffPilotValidateOutputArg is null
         ? null
@@ -193,6 +198,7 @@ try
         "--llm-gateway-analytics-validate",
         "--llm-gateway-experiment-smoke",
         "--llm-contract-normalization-smoke",
+        "--llm-contract-family-validate",
         "--llm-gateway-replay-ab",
         "--edit-diff-pilot-smoke",
         "--edit-diff-pilot-validate",
@@ -306,6 +312,18 @@ try
     {
         await LlmContractNormalizationSmokeRunner.RunAsync();
         Log.Information("LLM contract normalization smoke requested via --llm-contract-normalization-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmContractFamilyValidate)
+    {
+        var report = await LlmContractFamilyValidationRunner.RunAsync(llmContractFamilyValidateOutput);
+        Log.Information(
+            "LLM contract family validation requested via --llm-contract-family-validate. output={OutputPath}, family={Family}, checks_passed={ChecksPassed}, recommendation={Recommendation}. Exiting after successful verification.",
+            report.OutputPath,
+            report.ContractFamily,
+            report.AllChecksPassed,
+            report.Recommendation);
         return;
     }
 
