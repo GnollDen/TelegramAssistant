@@ -1468,12 +1468,12 @@
       "dependencies": [
         "CLEANUP-104-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Baseline runtime config no longer contradicts startup guard expectations.",
         "Required baseline settings are explicit and coherent across compose and appsettings."
       ],
-      "notes": "Start with the compose/startup mismatch identified by the audit."
+      "notes": "Done 2026-04-03 (commit 1c90ee7): baseline compose/appsettings/startup guard contract aligned for ingest runtime."
     },
     {
       "id": "ALIGN-201-B",
@@ -1485,12 +1485,12 @@
       "dependencies": [
         "ALIGN-201-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "DDL no longer runs on the default startup path.",
         "Operational initialization behavior is explicit and safe."
       ],
-      "notes": "Ops hardening slice for startup/database initialization."
+      "notes": "Done 2026-04-03: schema-changing initialization moved behind explicit operator-only startup switch --operator-schema-init, with default startup path skipping DDL."
     },
     {
       "id": "ALIGN-202-A",

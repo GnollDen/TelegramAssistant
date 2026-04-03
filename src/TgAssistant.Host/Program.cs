@@ -171,6 +171,7 @@ try
     var runLivenessCheck = args.Any(arg => string.Equals(arg, "--liveness-check", StringComparison.OrdinalIgnoreCase));
     var runReadinessCheck = args.Any(arg => string.Equals(arg, "--readiness-check", StringComparison.OrdinalIgnoreCase));
     var runHealthCheck = args.Any(arg => string.Equals(arg, "--healthcheck", StringComparison.OrdinalIgnoreCase));
+    var runOperatorSchemaInit = args.Any(arg => string.Equals(arg, "--operator-schema-init", StringComparison.OrdinalIgnoreCase));
     var preservedVerificationEntrypoints = new[]
     {
         "--foundation-smoke",
@@ -361,8 +362,17 @@ try
             return;
         }
 
-        var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
-        await dbInit.InitializeAsync();
+        if (runOperatorSchemaInit)
+        {
+            var dbInit = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+            await dbInit.InitializeAsync();
+            Log.Information("Operator-requested schema initialization completed via --operator-schema-init.");
+        }
+        else
+        {
+            Log.Information(
+                "Default startup path skips schema-changing initialization. Use --operator-schema-init for explicit operator-only schema migration mode.");
+        }
 
         var redisQueue = scope.ServiceProvider.GetRequiredService<RedisMessageQueue>();
         await redisQueue.InitializeAsync();

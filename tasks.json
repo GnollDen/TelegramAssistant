@@ -952,8 +952,8 @@
       "dependencies": [
         "CLEANUP-104"
       ],
-      "status": "pending",
-      "notes": "This is the runtime/ops hardening batch identified by the post-clean audit."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via ALIGN-201-A/B. Baseline compose/appsettings/startup guard contract was aligned and schema-changing initialization was removed from default startup by gating it behind explicit operator-only switch --operator-schema-init."
     },
     {
       "id": "ALIGN-202",

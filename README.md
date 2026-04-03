@@ -55,6 +55,7 @@ npm run build
 Current runtime baseline (as of 2026-04-03):
 
 - Default compose role set: `ingest,stage5,maintenance,ops`
+- Default startup path does not run schema-changing DDL. Use explicit operator-only mode `--operator-schema-init` when migrations must be applied.
 - Primary runtime composition: `src/TgAssistant.Host/Program.cs`
 - Runtime settings baseline: `src/TgAssistant.Host/appsettings.json`
 - Local orchestration baseline: `docker-compose.yml`
