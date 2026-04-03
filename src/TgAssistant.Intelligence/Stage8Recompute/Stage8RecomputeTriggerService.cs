@@ -56,12 +56,6 @@ public class Stage8RecomputeTriggerService : IStage8RecomputeTriggerService
     {
         ArgumentNullException.ThrowIfNull(evt);
 
-        var plan = BuildTriggerPlan(evt);
-        if (plan == null)
-        {
-            return;
-        }
-
         var scopeKey = await ResolveScopeKeyAsync(evt, ct);
         if (string.IsNullOrWhiteSpace(scopeKey))
         {
@@ -74,31 +68,84 @@ public class Stage8RecomputeTriggerService : IStage8RecomputeTriggerService
             return;
         }
 
-        var triggerRef = $"domain_review_event:{evt.Id:D}";
+        await HandleSignalAsync(new Stage8RecomputeTriggerSignal
+        {
+            ScopeKey = scopeKey,
+            ObjectType = evt.ObjectType ?? string.Empty,
+            Action = evt.Action ?? string.Empty,
+            TriggerSource = "domain_review_event",
+            TriggerRef = $"domain_review_event:{evt.Id:D}"
+        }, ct);
+    }
+
+    public async Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(signal);
+
+        var scopeKey = signal.ScopeKey?.Trim();
+        if (string.IsNullOrWhiteSpace(scopeKey))
+        {
+            _logger.LogDebug(
+                "Stage8 trigger signal ignored: missing scope key. source={TriggerSource}, object_type={ObjectType}, action={Action}, trigger_ref={TriggerRef}",
+                signal.TriggerSource,
+                signal.ObjectType,
+                signal.Action,
+                signal.TriggerRef);
+            return;
+        }
+
+        var plan = BuildTriggerPlan(signal);
+        if (plan == null)
+        {
+            return;
+        }
+
+        var triggerRef = string.IsNullOrWhiteSpace(signal.TriggerRef)
+            ? $"{(string.IsNullOrWhiteSpace(signal.TriggerSource) ? "direct_signal" : signal.TriggerSource)}:{Guid.NewGuid():N}"
+            : signal.TriggerRef.Trim();
+        var priority = signal.Priority ?? plan.Priority;
         foreach (var family in plan.TargetFamilies)
         {
             _ = await _queueService.EnqueueAsync(new Stage8RecomputeQueueRequest
             {
                 ScopeKey = scopeKey,
+                PersonId = signal.PersonId,
                 TargetFamily = family,
                 TriggerKind = plan.TriggerKind,
                 TriggerRef = triggerRef,
-                Priority = plan.Priority
+                Priority = priority
             }, ct);
         }
 
         _logger.LogInformation(
-            "Stage8 trigger ingested: domain_review_event_id={EventId}, trigger_kind={TriggerKind}, scope_key={ScopeKey}, target_families={TargetFamilies}",
-            evt.Id,
+            "Stage8 trigger ingested: source={TriggerSource}, trigger_ref={TriggerRef}, trigger_kind={TriggerKind}, scope_key={ScopeKey}, person_id={PersonId}, target_families={TargetFamilies}",
+            string.IsNullOrWhiteSpace(signal.TriggerSource) ? "direct_signal" : signal.TriggerSource,
+            triggerRef,
             plan.TriggerKind,
             scopeKey,
+            signal.PersonId,
             string.Join(",", plan.TargetFamilies));
     }
 
-    private static TriggerPlan? BuildTriggerPlan(DomainReviewEvent evt)
+    private static TriggerPlan? BuildTriggerPlan(Stage8RecomputeTriggerSignal signal)
     {
-        var action = evt.Action?.Trim() ?? string.Empty;
-        var objectType = evt.ObjectType?.Trim() ?? string.Empty;
+        if (signal.TargetFamilies.Count > 0)
+        {
+            var explicitFamilies = signal.TargetFamilies
+                .Where(family => Stage8RecomputeTargetFamilies.All.Contains(family, StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (explicitFamilies.Count > 0)
+            {
+                return new TriggerPlan(
+                    string.IsNullOrWhiteSpace(signal.TriggerSource) ? "direct_signal" : signal.TriggerSource.Trim(),
+                    50,
+                    explicitFamilies);
+            }
+        }
+
+        var action = signal.Action?.Trim() ?? string.Empty;
+        var objectType = signal.ObjectType?.Trim() ?? string.Empty;
 
         if (string.Equals(objectType, "clarification_answer", StringComparison.OrdinalIgnoreCase)
             || (string.Equals(objectType, "clarification_question", StringComparison.OrdinalIgnoreCase)

@@ -11,18 +11,18 @@ public class ExternalArchiveIngestionService : IExternalArchiveIngestionService
 
     private readonly IExternalArchivePreparationService _preparationService;
     private readonly IExternalArchiveIngestionRepository _repository;
-    private readonly IDomainReviewEventRepository _reviewEvents;
+    private readonly IStage8RecomputeTriggerService _stage8TriggerService;
     private readonly ILogger<ExternalArchiveIngestionService> _logger;
 
     public ExternalArchiveIngestionService(
         IExternalArchivePreparationService preparationService,
         IExternalArchiveIngestionRepository repository,
-        IDomainReviewEventRepository reviewEvents,
+        IStage8RecomputeTriggerService stage8TriggerService,
         ILogger<ExternalArchiveIngestionService> logger)
     {
         _preparationService = preparationService;
         _repository = repository;
-        _reviewEvents = reviewEvents;
+        _stage8TriggerService = stage8TriggerService;
         _logger = logger;
     }
 
@@ -46,7 +46,7 @@ public class ExternalArchiveIngestionService : IExternalArchiveIngestionService
         {
             var replayRecords = await _repository.GetRecordsByRunIdAsync(existingBatch.RunId, ct);
             var replayLinks = await _repository.GetLinkageArtifactsByRunIdAsync(existingBatch.RunId, ct);
-            await AddReviewEventAsync(existingBatch, "external_archive_replayed", "idempotent replay detected", request.Actor, ct);
+            await EmitStage8TriggerAsync(request, existingBatch, "external_archive_replayed", ct);
 
             _logger.LogInformation(
                 "External archive replay detected: run_id={RunId}, case_id={CaseId}, records={RecordCount}, links={LinkCount}",
@@ -202,12 +202,7 @@ public class ExternalArchiveIngestionService : IExternalArchiveIngestionService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await AddReviewEventAsync(
-            persistedBatch,
-            "external_archive_ingested",
-            $"accepted={acceptedCount}, replayed={replayedCount}, rejected={rejectedCount}, links={persistedLinkages}",
-            request.Actor,
-            ct);
+        await EmitStage8TriggerAsync(request, persistedBatch, "external_archive_ingested", ct);
 
         _logger.LogInformation(
             "External archive ingested: run_id={RunId}, case_id={CaseId}, source_class={SourceClass}, accepted={Accepted}, replayed={Replayed}, rejected={Rejected}, linkages={Linkages}",
@@ -229,22 +224,30 @@ public class ExternalArchiveIngestionService : IExternalArchiveIngestionService
         };
     }
 
-    private async Task AddReviewEventAsync(
+    private async Task EmitStage8TriggerAsync(
+        ExternalArchiveImportRequest request,
         ExternalArchiveImportBatch batch,
         string action,
-        string reason,
-        string actor,
         CancellationToken ct)
     {
-        _ = await _reviewEvents.AddAsync(new DomainReviewEvent
+        var scopeKey = ResolveScopeKey(request);
+        if (string.IsNullOrWhiteSpace(scopeKey))
         {
+            _logger.LogDebug(
+                "Stage8 trigger skipped for external archive batch due to unresolved scope key: run_id={RunId}, case_id={CaseId}, action={Action}",
+                batch.RunId,
+                batch.CaseId,
+                action);
+            return;
+        }
+
+        await _stage8TriggerService.HandleSignalAsync(new Stage8RecomputeTriggerSignal
+        {
+            ScopeKey = scopeKey,
             ObjectType = "external_archive_batch",
-            ObjectId = batch.RunId.ToString(),
             Action = action,
-            NewValueRef = $"status={batch.Status}",
-            Reason = reason,
-            Actor = string.IsNullOrWhiteSpace(actor) ? "system" : actor,
-            CreatedAt = DateTime.UtcNow
+            TriggerSource = "external_archive",
+            TriggerRef = $"external_archive_batch:{batch.RunId:D}"
         }, ct);
     }
 
@@ -278,5 +281,26 @@ public class ExternalArchiveIngestionService : IExternalArchiveIngestionService
         };
 
         return ExternalArchiveHashing.ComputeSha256(JsonSerializer.Serialize(canonical, JsonOptions));
+    }
+
+    private static string? ResolveScopeKey(ExternalArchiveImportRequest request)
+    {
+        var chatIds = request.Records
+            .Where(x => x.ChatId.HasValue)
+            .Select(x => x.ChatId!.Value)
+            .Distinct()
+            .ToList();
+        if (chatIds.Count == 1)
+        {
+            return $"chat:{chatIds[0]}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SourceRef)
+            && request.SourceRef.StartsWith("chat:", StringComparison.OrdinalIgnoreCase))
+        {
+            return request.SourceRef.Trim();
+        }
+
+        return null;
     }
 }

@@ -70,6 +70,18 @@ public class Stage8RecomputeQueueRequest
     public DateTime? AvailableAtUtc { get; set; }
 }
 
+public class Stage8RecomputeTriggerSignal
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public string ObjectType { get; set; } = string.Empty;
+    public string Action { get; set; } = string.Empty;
+    public string TriggerSource { get; set; } = string.Empty;
+    public string? TriggerRef { get; set; }
+    public int? Priority { get; set; }
+    public List<string> TargetFamilies { get; set; } = [];
+}
+
 public class Stage8RecomputeQueueItem
 {
     public Guid Id { get; set; }

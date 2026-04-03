@@ -295,6 +295,8 @@ public interface IStage8RecomputeQueueService
 
 public interface IStage8RecomputeTriggerService
 {
+    Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);
+
     Task HandleDomainReviewEventAsync(DomainReviewEvent evt, CancellationToken ct = default);
 }
 
