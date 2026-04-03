@@ -64,6 +64,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
     public DbSet<DbRuntimeDefect> RuntimeDefects => Set<DbRuntimeDefect>();
     public DbSet<DbClarificationBranchState> ClarificationBranchStates => Set<DbClarificationBranchState>();
+    public DbSet<DbIdentityMergeHistory> IdentityMergeHistories => Set<DbIdentityMergeHistory>();
     public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
@@ -1326,6 +1327,35 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.Status, x.LastBlockedAtUtc });
             e.HasIndex(x => new { x.ScopeKey, x.BranchFamily, x.Status, x.LastBlockedAtUtc });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbIdentityMergeHistory>(e =>
+        {
+            e.ToTable("identity_merge_histories");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TargetPersonId).HasColumnName("target_person_id");
+            e.Property(x => x.SourcePersonId).HasColumnName("source_person_id");
+            e.Property(x => x.ConfidenceTier).HasColumnName("confidence_tier");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.ReviewStatus).HasColumnName("review_status");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.RequestedBy).HasColumnName("requested_by");
+            e.Property(x => x.ReviewedBy).HasColumnName("reviewed_by");
+            e.Property(x => x.ReviewNote).HasColumnName("review_note");
+            e.Property(x => x.ReversedBy).HasColumnName("reversed_by");
+            e.Property(x => x.ReversalReason).HasColumnName("reversal_reason");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.BeforeStateJson).HasColumnName("before_state_json").HasColumnType("jsonb");
+            e.Property(x => x.AfterStateJson).HasColumnName("after_state_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.AppliedAtUtc).HasColumnName("applied_at_utc");
+            e.Property(x => x.ReversedAtUtc).HasColumnName("reversed_at_utc");
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.TargetPersonId, x.SourcePersonId, x.CreatedAtUtc });
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
         });
 
         modelBuilder.Entity<DbRuntimeControlState>(e =>

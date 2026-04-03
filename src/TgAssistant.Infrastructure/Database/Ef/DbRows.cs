@@ -926,6 +926,30 @@ public class DbClarificationBranchState
     public DateTime? ResolvedAtUtc { get; set; }
 }
 
+public class DbIdentityMergeHistory
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TargetPersonId { get; set; }
+    public Guid SourcePersonId { get; set; }
+    public string ConfidenceTier { get; set; } = IdentityMergeConfidenceTiers.Medium;
+    public string Status { get; set; } = IdentityMergeStatuses.PendingReview;
+    public string ReviewStatus { get; set; } = IdentityMergeReviewStatuses.Pending;
+    public string Reason { get; set; } = string.Empty;
+    public string RequestedBy { get; set; } = "system";
+    public string? ReviewedBy { get; set; }
+    public string? ReviewNote { get; set; }
+    public string? ReversedBy { get; set; }
+    public string? ReversalReason { get; set; }
+    public Guid? ModelPassRunId { get; set; }
+    public string BeforeStateJson { get; set; } = "{}";
+    public string AfterStateJson { get; set; } = "{}";
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? AppliedAtUtc { get; set; }
+    public DateTime? ReversedAtUtc { get; set; }
+}
+
 public class DbRuntimeControlState
 {
     public long Id { get; set; }

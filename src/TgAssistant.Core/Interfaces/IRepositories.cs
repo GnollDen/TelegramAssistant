@@ -121,6 +121,21 @@ public interface IClarificationBranchStateRepository
         CancellationToken ct = default);
 }
 
+public interface IIdentityMergeRepository
+{
+    Task<IdentityMergeRecord> ExecuteMergeAsync(
+        IdentityMergeApplyRequest request,
+        CancellationToken ct = default);
+
+    Task<IdentityMergeRecord?> GetByIdAsync(
+        Guid mergeId,
+        CancellationToken ct = default);
+
+    Task<IdentityMergeRecord> ReverseAsync(
+        IdentityMergeReverseRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage6BootstrapRepository
 {
     Task<Stage6BootstrapScopeResolution> ResolveScopeAsync(Stage6BootstrapRequest request, CancellationToken ct = default);

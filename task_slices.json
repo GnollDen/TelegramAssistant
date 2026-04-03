@@ -1014,12 +1014,12 @@
       "dependencies": [
         "IMPLEMENT-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Merges and splits can be reversed without losing prior state.",
         "Weak merges are clearly tiered and review-gated."
       ],
-      "notes": "Clean split because merge history and confidence policy are foundational before recompute behavior."
+      "notes": "Implemented active identity merge history via 0046_identity_merge_histories.sql plus IdentityMergeRepository over persons, person_identity_bindings, person_operator_links, candidate_identity_states, and relationship_edge_anchors. Merge requests now persist before/after snapshots, weak or cross-type merges remain pending_review unless explicitly approved, applied merges rewrite the active identity graph transactionally, and ReverseAsync restores the preserved pre-merge state without pulling recompute logic into this slice."
     },
     {
       "id": "IMPLEMENT-013-B",

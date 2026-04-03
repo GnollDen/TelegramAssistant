@@ -193,6 +193,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IRuntimeDefectRepository, RuntimeDefectRepository>();
         services.AddSingleton<IClarificationBranchStateRepository, ClarificationBranchStateRepository>();
+        services.AddSingleton<IIdentityMergeRepository, IdentityMergeRepository>();
         services.AddSingleton<IRuntimeControlStateRepository, RuntimeControlStateRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
