@@ -184,6 +184,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
         services.AddSingleton<IEvalRepository, EvalRepository>();
         services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();
+        services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
         return services;
     }
 
@@ -195,7 +196,6 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IOfflineEventRepository, OfflineEventRepository>();
         services.AddSingleton<IStateProfileRepository, StateProfileRepository>();
         services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
-        services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
         services.AddSingleton<IStrategyDraftRepository, StrategyDraftRepository>();
         services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
         services.AddSingleton<IStage6ArtifactRepository, Stage6ArtifactRepository>();
