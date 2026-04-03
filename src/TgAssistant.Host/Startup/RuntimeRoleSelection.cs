@@ -20,6 +20,8 @@ public sealed record RuntimeRoleSelection(RuntimeWorkloadRole Roles, string Sour
     public static string[] AllowedCombinationDisplay { get; } =
     {
         "ingest",
+        "ops",
+        "maintenance",
         "ingest,ops",
         "stage5",
         "stage5,maintenance",
@@ -38,6 +40,8 @@ public static class RuntimeRoleParser
     private static readonly HashSet<RuntimeWorkloadRole> AllowedCombinations = new()
     {
         RuntimeWorkloadRole.Ingest,
+        RuntimeWorkloadRole.Ops,
+        RuntimeWorkloadRole.Maintenance,
         RuntimeWorkloadRole.Ingest | RuntimeWorkloadRole.Ops,
         RuntimeWorkloadRole.Stage5,
         RuntimeWorkloadRole.Stage5 | RuntimeWorkloadRole.Maintenance,

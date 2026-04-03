@@ -111,6 +111,7 @@ try
     var runNormalizationSmoke = args.Any(arg => string.Equals(arg, "--normalization-smoke", StringComparison.OrdinalIgnoreCase));
     var runModelPassAuditSmoke = args.Any(arg => string.Equals(arg, "--model-pass-audit-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewaySuccessSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-success-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmGatewayCodexMediaSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-codex-media-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayAnalyticsSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayAnalyticsValidate = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-validate", StringComparison.OrdinalIgnoreCase));
@@ -203,6 +204,7 @@ try
         "--normalization-smoke",
         "--model-pass-audit-smoke",
         "--llm-gateway-success-smoke",
+        "--llm-gateway-codex-media-smoke",
         "--llm-gateway-failure-smoke",
         "--llm-gateway-analytics-smoke",
         "--llm-gateway-analytics-validate",
@@ -284,6 +286,13 @@ try
     {
         await LlmGatewaySuccessSmokeRunner.RunAsync();
         Log.Information("LLM gateway success smoke requested via --llm-gateway-success-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmGatewayCodexMediaSmoke)
+    {
+        await LlmGatewayCodexMediaSmokeRunner.RunAsync();
+        Log.Information("LLM gateway codex-media smoke requested via --llm-gateway-codex-media-smoke. Exiting after successful verification.");
         return;
     }
 

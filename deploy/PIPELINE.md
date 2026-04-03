@@ -11,6 +11,36 @@
 Default deploy path: preserved substrate/runtime shell only (`app`, `mcp`, `postgres`, `redis`, monitoring).
 Legacy web/bot/Stage6 diagnostic surfaces are not part of the accepted baseline and are not deployed by default.
 
+Default `docker compose up -d` service set:
+- `postgres`
+- `redis`
+- `app`
+- `mcp`
+- `postgres-exporter`
+- `redis-exporter`
+- `prometheus`
+- `grafana`
+
+Startup-critical env for the default stack:
+- `POSTGRES_PASSWORD`
+- `GRAFANA_ADMIN_PASSWORD`
+- `MCP_SSE_AUTH_TOKEN`
+- `TG_API_ID`
+- `TG_API_HASH`
+- `TG_PHONE`
+- `TG_OWNER_ID`
+- `GEMINI_API_KEY`
+- `CLAUDE_API_KEY`
+
+Optional Grafana exposure env:
+- `GRAFANA_BIND_ADDRESS` (default `127.0.0.1`)
+- `GRAFANA_SERVER_DOMAIN` (default `localhost`)
+- `GRAFANA_SERVER_ROOT_URL` (default Grafana internal protocol/domain/port pattern)
+- `GRAFANA_SERVER_SERVE_FROM_SUB_PATH` (default `false`)
+
+Operational note:
+- `--seed-bootstrap-scope` can run under `Runtime__Role=ops`. That bounded path still needs the DB/Redis baseline, but it does not require Telegram ingest env unless you intentionally use an ingest-bearing runtime role.
+
 ## GitHub Repository Secrets
 
 Go to: Repository → Settings → Secrets and variables → Actions
@@ -81,6 +111,19 @@ docker compose exec redis redis-cli
 ```
 
 `docker compose up -d` in the default stack does not start any legacy web, bot, or Stage6 operator service.
+
+Bounded seed run example:
+
+```bash
+docker compose run --rm \
+  -e Runtime__Role=ops \
+  app \
+  --seed-bootstrap-scope \
+  --seed-dry-run \
+  --seed-scope-key=chat:<chat-id> \
+  --seed-operator-full-name="Operator Name" \
+  --seed-tracked-full-name="Tracked Name"
+```
 
 ## Rollback
 

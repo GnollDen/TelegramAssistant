@@ -7,7 +7,6 @@ using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
-using TgAssistant.Infrastructure.OpenRouter;
 using TgAssistant.Intelligence.Stage5;
 
 namespace TgAssistant.Intelligence.Stage6;
@@ -45,7 +44,7 @@ public class BotChatService : IBotChatService
     private readonly IStage6ArtifactRepository _stage6ArtifactRepository;
     private readonly IStage6ArtifactFreshnessService _stage6ArtifactFreshnessService;
     private readonly IStage6CaseRepository _stage6CaseRepository;
-    private readonly OpenRouterAnalysisService _analysisService;
+    private readonly ILlmGateway _llmGateway;
     private readonly EmbeddingSettings _embeddingSettings;
     private readonly AnalysisSettings _analysisSettings;
     private readonly BotChatSettings _botChatSettings;
@@ -68,7 +67,7 @@ public class BotChatService : IBotChatService
         IStage6ArtifactRepository stage6ArtifactRepository,
         IStage6ArtifactFreshnessService stage6ArtifactFreshnessService,
         IStage6CaseRepository stage6CaseRepository,
-        OpenRouterAnalysisService analysisService,
+        ILlmGateway llmGateway,
         IOptions<EmbeddingSettings> embeddingSettings,
         IOptions<AnalysisSettings> analysisSettings,
         IOptions<BotChatSettings> botChatSettings,
@@ -90,7 +89,7 @@ public class BotChatService : IBotChatService
         _stage6ArtifactRepository = stage6ArtifactRepository;
         _stage6ArtifactFreshnessService = stage6ArtifactFreshnessService;
         _stage6CaseRepository = stage6CaseRepository;
-        _analysisService = analysisService;
+        _llmGateway = llmGateway;
         _embeddingSettings = embeddingSettings.Value;
         _analysisSettings = analysisSettings.Value;
         _botChatSettings = botChatSettings.Value;
@@ -177,23 +176,25 @@ public class BotChatService : IBotChatService
         var localContext = await BuildLocalChatContextAsync(transportChatId, sourceMessageId, ct);
         var stage6Context = await BuildStage6ContextAsync(transportChatId, ct);
         var systemPrompt = BotChatPromptBuilder.BuildSystemPrompt(localContext, facts, stage6Context);
-        var model = ResolveReplyModel();
-        diagnostics.ResolvedModel = model;
-        var messages = new List<OpenRouterMessage>
+        var messages = new List<LlmGatewayMessage>
         {
-            new() { Role = "system", Content = systemPrompt },
-            new() { Role = "user", Content = normalizedMessage }
+            LlmGatewayMessage.FromText(LlmMessageRole.System, systemPrompt),
+            LlmGatewayMessage.FromText(LlmMessageRole.User, normalizedMessage)
         };
         var tools = BuildTools();
-        var firstResponse = await _analysisService.CompleteChatWithToolsAsync(
-            model,
+        var firstResponse = await ExecuteGatewayTurnAsync(
+            modality: LlmModality.Tools,
+            taskKey: "legacy_stage6_bot_chat_tools",
             messages,
             tools,
-            ReplyMaxTokens,
+            transportChatId,
+            sourceMessageId,
+            responseMode: LlmResponseMode.ToolCalls,
             ct);
+        diagnostics.ResolvedModel = firstResponse.Model;
         diagnostics.ChatCompletionCalls++;
-        var firstText = NormalizeResponseText(firstResponse.Content);
-        var rawToolCalls = firstResponse.ToolCalls ?? [];
+        var firstText = NormalizeResponseText(firstResponse.Output.Text);
+        var rawToolCalls = firstResponse.Output.ToolCalls ?? [];
         var droppedToolCalls = Math.Max(0, rawToolCalls.Count - MaxToolCallsPerTurn);
         diagnostics.DroppedToolCalls = droppedToolCalls;
         if (droppedToolCalls > 0)
@@ -217,10 +218,12 @@ public class BotChatService : IBotChatService
             return diagnostics;
         }
 
-        messages.Add(new OpenRouterMessage
+        messages.Add(new LlmGatewayMessage
         {
-            Role = "assistant",
-            Content = string.IsNullOrWhiteSpace(firstText) ? string.Empty : firstText,
+            Role = LlmMessageRole.Assistant,
+            ContentParts = string.IsNullOrWhiteSpace(firstText)
+                ? []
+                : [LlmMessageContentPart.FromText(firstText)],
             ToolCalls = toolCalls
         });
 
@@ -228,8 +231,8 @@ public class BotChatService : IBotChatService
         {
             ct.ThrowIfCancellationRequested();
             string toolResult;
-            var toolName = toolCall.Function.Name;
-            var toolArgs = toolCall.Function.Arguments ?? "{}";
+            var toolName = toolCall.Name;
+            var toolArgs = toolCall.ArgumentsJson ?? "{}";
             diagnostics.ToolCallsExecuted.Add(toolName);
             _logger.LogInformation(
                 "Executing tool {ToolName} with args: {Args}",
@@ -264,29 +267,31 @@ public class BotChatService : IBotChatService
                 "Tool {ToolName} finished. args: {Args}",
                 toolName,
                 toolArgs);
-            messages.Add(new OpenRouterMessage
+            messages.Add(new LlmGatewayMessage
             {
-                Role = "tool",
+                Role = LlmMessageRole.Tool,
                 Name = toolName,
                 ToolCallId = toolCall.Id,
-                Content = toolResult
+                ContentParts = [LlmMessageContentPart.FromText(toolResult)]
             });
         }
 
-        messages.Add(new OpenRouterMessage
-        {
-            Role = "system",
-            Content = BotChatPromptBuilder.BuildPostToolInstruction()
-        });
+        messages.Add(
+            LlmGatewayMessage.FromText(
+                LlmMessageRole.System,
+                BotChatPromptBuilder.BuildPostToolInstruction()));
 
-        var secondResponse = await _analysisService.CompleteChatWithToolsAsync(
-            model,
+        var secondResponse = await ExecuteGatewayTurnAsync(
+            modality: LlmModality.TextChat,
+            taskKey: "legacy_stage6_bot_chat_reply",
             messages,
-            null,
-            ReplyMaxTokens,
+            [],
+            transportChatId,
+            sourceMessageId,
+            responseMode: LlmResponseMode.Text,
             ct);
         diagnostics.ChatCompletionCalls++;
-        var reply = NormalizeResponseText(secondResponse.Content);
+        var reply = NormalizeResponseText(secondResponse.Output.Text);
 
         if (string.IsNullOrWhiteSpace(reply))
         {
@@ -325,74 +330,100 @@ public class BotChatService : IBotChatService
         return $"Пересборка summary запрошена: chat_id={chatId}, session_index={sessionIndex}.";
     }
 
-    private string ResolveReplyModel()
-    {
-        if (!string.IsNullOrWhiteSpace(_analysisSettings.CheapBaselineModel))
-        {
-            return _analysisSettings.CheapBaselineModel.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(_analysisSettings.CheapModel))
-        {
-            return _analysisSettings.CheapModel.Trim();
-        }
-
-        return "openai/gpt-4o-mini";
-    }
-
     private static string BuildSessionSummaryCheckpointKey(long chatId, int sessionIndex)
     {
         return $"{SessionSummaryCheckpointPrefix}:{chatId}:{sessionIndex}";
     }
 
-    private static List<OpenRouterTool> BuildTools()
+    private async Task<LlmGatewayResponse> ExecuteGatewayTurnAsync(
+        LlmModality modality,
+        string taskKey,
+        List<LlmGatewayMessage> messages,
+        List<LlmToolDefinition> tools,
+        long? transportChatId,
+        long? sourceMessageId,
+        LlmResponseMode responseMode,
+        CancellationToken ct)
+    {
+        var request = new LlmGatewayRequest
+        {
+            Modality = modality,
+            TaskKey = taskKey,
+            Messages = messages,
+            ToolDefinitions = tools,
+            ResponseMode = responseMode,
+            Limits = new LlmExecutionLimits
+            {
+                MaxTokens = ReplyMaxTokens,
+                Temperature = 0.2f,
+                TimeoutMs = Math.Max(1, _analysisSettings.HttpTimeoutSeconds) * 1000
+            },
+            Trace = new LlmTraceContext
+            {
+                PathKey = "legacy_stage6_bot_chat",
+                RequestId = BuildGatewayRequestId(taskKey, transportChatId, sourceMessageId),
+                IsImportScope = false,
+                IsOptionalPath = true,
+                ScopeTags =
+                [
+                    "stage6",
+                    "legacy",
+                    "bot_chat"
+                ]
+            }
+        };
+
+        return await _llmGateway.ExecuteAsync(request, ct);
+    }
+
+    private static string BuildGatewayRequestId(string taskKey, long? transportChatId, long? sourceMessageId)
+    {
+        return $"{taskKey}:{transportChatId ?? 0}:{sourceMessageId ?? 0}:{Guid.NewGuid():N}";
+    }
+
+    private static List<LlmToolDefinition> BuildTools()
     {
         return
         [
-            new OpenRouterTool
+            new LlmToolDefinition
             {
-                Type = "function",
-                Function = new OpenRouterFunctionDefinition
-                {
-                    Name = "get_entity_dossier",
-                    Description = "Get full dossier facts for an entity by name.",
-                    Parameters = new Dictionary<string, object?>
+                Name = "get_entity_dossier",
+                Description = "Get full dossier facts for an entity by name.",
+                ParametersJsonSchema = JsonSerializer.Serialize(
+                    new Dictionary<string, object?>
                     {
                         ["type"] = "object",
-                ["properties"] = new Dictionary<string, object?>
-                {
-                    ["entity_name"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "Entity name to search for."
-                    }
-                    ,
-                    ["limit"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "integer",
-                        ["description"] = "Max number of facts to return.",
-                        ["minimum"] = 5,
-                        ["maximum"] = 200
+                        ["properties"] = new Dictionary<string, object?>
+                        {
+                            ["entity_name"] = new Dictionary<string, object?>
+                            {
+                                ["type"] = "string",
+                                ["description"] = "Entity name to search for."
+                            },
+                            ["limit"] = new Dictionary<string, object?>
+                            {
+                                ["type"] = "integer",
+                                ["description"] = "Max number of facts to return.",
+                                ["minimum"] = 5,
+                                ["maximum"] = 200
+                            },
+                            ["category_filter"] = new Dictionary<string, object?>
+                            {
+                                ["type"] = "string",
+                                ["description"] = "Optional category (e.g., Work, Health) to filter facts."
+                            }
+                        },
+                        ["required"] = new[] { "entity_name" },
+                        ["additionalProperties"] = false
                     },
-                    ["category_filter"] = new Dictionary<string, object?>
-                    {
-                        ["type"] = "string",
-                        ["description"] = "Optional category (e.g., Work, Health) to filter facts."
-                    }
-                },
-                ["required"] = new[] { "entity_name" },
-                ["additionalProperties"] = false
-            }
-                }
+                    JsonOptions)
             },
-            new OpenRouterTool
+            new LlmToolDefinition
             {
-                Type = "function",
-                Function = new OpenRouterFunctionDefinition
-                {
-                    Name = "get_relationships",
-                    Description = "Get known relationships for an entity by name.",
-                    Parameters = new Dictionary<string, object?>
+                Name = "get_relationships",
+                Description = "Get known relationships for an entity by name.",
+                ParametersJsonSchema = JsonSerializer.Serialize(
+                    new Dictionary<string, object?>
                     {
                         ["type"] = "object",
                         ["properties"] = new Dictionary<string, object?>
@@ -405,15 +436,15 @@ public class BotChatService : IBotChatService
                         },
                         ["required"] = new[] { "entity_name" },
                         ["additionalProperties"] = false
-                    }
-                }
+                    },
+                    JsonOptions)
             }
         ];
     }
 
-    private async Task<string> ExecuteToolCallAsync(OpenRouterToolCall toolCall, CancellationToken ct)
+    private async Task<string> ExecuteToolCallAsync(LlmToolCall toolCall, CancellationToken ct)
     {
-        var toolName = toolCall.Function.Name?.Trim();
+        var toolName = toolCall.Name?.Trim();
         var dossierArgs = ParseDossierToolArgs(toolCall);
         if (string.IsNullOrWhiteSpace(dossierArgs.EntityName))
         {
@@ -648,15 +679,15 @@ public class BotChatService : IBotChatService
         }
     }
 
-    private static DossierToolArgs ParseDossierToolArgs(OpenRouterToolCall toolCall)
+    private static DossierToolArgs ParseDossierToolArgs(LlmToolCall toolCall)
     {
-        var entityName = ExtractEntityName(toolCall.Function.Arguments);
+        var entityName = ExtractEntityName(toolCall.ArgumentsJson);
         var limit = DefaultDossierLimit;
         string? categoryFilter = null;
 
         try
         {
-            using var doc = JsonDocument.Parse(toolCall.Function.Arguments ?? "{}");
+            using var doc = JsonDocument.Parse(toolCall.ArgumentsJson ?? "{}");
             if (doc.RootElement.TryGetProperty("limit", out var limitNode) &&
                 limitNode.ValueKind == JsonValueKind.Number &&
                 limitNode.TryGetInt32(out var parsedLimit))

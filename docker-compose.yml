@@ -53,6 +53,8 @@ services:
       Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
       Database__ConnectionString: "Host=127.0.0.1;Database=tgassistant;Username=tgassistant;Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       Redis__ConnectionString: "127.0.0.1:6379"
+      Redis__StreamName: ${REDIS_STREAM_NAME:-tg-messages}
+      Redis__ConsumerGroup: ${REDIS_CONSUMER_GROUP:-batch-workers}
       Redis__ConsumerName: ${REDIS_CONSUMER_NAME:-worker}
       Redis__EnablePendingReclaim: ${REDIS_ENABLE_PENDING_RECLAIM:-true}
       Redis__DeadLetterStreamName: ${REDIS_DEAD_LETTER_STREAM_NAME:-tg-messages-dlq}
@@ -330,6 +332,9 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: ${GRAFANA_SERVER_DOMAIN:-localhost}
+      GF_SERVER_ROOT_URL: ${GRAFANA_SERVER_ROOT_URL:-%(protocol)s://%(domain)s:%(http_port)s/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GRAFANA_SERVER_SERVE_FROM_SUB_PATH:-false}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       LLM_BUDGET_HOURLY_USD: ${LLM_BUDGET_HOURLY_USD:-0.50}
       LLM_BUDGET_DAILY_USD: ${LLM_BUDGET_DAILY_USD:-10.00}
@@ -338,4 +343,4 @@ services:
       - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:3000:3000"

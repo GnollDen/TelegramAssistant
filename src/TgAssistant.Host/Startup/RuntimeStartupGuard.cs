@@ -48,7 +48,6 @@ public static class RuntimeStartupGuard
                     "Ingest role requires Telegram:ApiId, Telegram:ApiHash, Telegram:PhoneNumber, and Telegram:OwnerUserId.");
             }
         }
-
     }
 
     private static void ValidateLlmGatewayStartupConfig(IConfiguration config)
@@ -73,4 +72,5 @@ public static class RuntimeStartupGuard
             || value.Contains("__required", StringComparison.OrdinalIgnoreCase)
             || value.Contains("placeholder", StringComparison.OrdinalIgnoreCase);
     }
+
 }

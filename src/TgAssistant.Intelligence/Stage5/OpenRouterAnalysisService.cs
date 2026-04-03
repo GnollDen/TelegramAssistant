@@ -1,7 +1,4 @@
-using System.Net.Http.Json;
-using System.Net.Http.Headers;
 using System.Net;
-using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -17,16 +14,15 @@ public class OpenRouterAnalysisService
 {
     private const int CheapTransientRetryAttempts = 2;
     private const int CheapTransientRetryBaseDelayMs = 600;
-    private const string OpenRouterRequestIdHeader = "x-request-id";
     private const int ErrorBodySnippetLimit = 260;
     private const int SchemaFailureSnippetLimit = 420;
 
-    private readonly HttpClient _http;
     private readonly AnalysisSettings _analysis;
     private readonly ExtractionSchemaValidator _schemaValidator;
     private readonly IAnalysisUsageRepository _usageRepository;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILlmContractNormalizer _contractNormalizer;
+    private readonly ILlmGateway _gateway;
     private readonly ILogger<OpenRouterAnalysisService> _logger;
 
     public OpenRouterAnalysisService(
@@ -36,14 +32,16 @@ public class OpenRouterAnalysisService
         IAnalysisUsageRepository usageRepository,
         IBudgetGuardrailService budgetGuardrailService,
         ILlmContractNormalizer contractNormalizer,
+        ILlmGateway gateway,
         ILogger<OpenRouterAnalysisService> logger)
     {
-        _http = http;
+        _ = http;
         _analysis = analysis.Value;
         _schemaValidator = schemaValidator;
         _usageRepository = usageRepository;
         _budgetGuardrailService = budgetGuardrailService;
         _contractNormalizer = contractNormalizer;
+        _gateway = gateway;
         _logger = logger;
     }
 
@@ -95,6 +93,14 @@ public class OpenRouterAnalysisService
             return false;
         }
         catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            return false;
+        }
+        catch (TimeoutException)
         {
             return false;
         }
@@ -360,92 +366,21 @@ public class OpenRouterAnalysisService
         {
             try
             {
-                var attemptTimer = Stopwatch.StartNew();
-                var res = await _http.PostAsJsonAsync("/api/v1/chat/completions", request, JsonOptions, ct);
-                var body = await res.Content.ReadAsStringAsync(ct);
-                attemptTimer.Stop();
-                var requestId = TryGetHeaderValue(res.Headers, OpenRouterRequestIdHeader);
-                if (!res.IsSuccessStatusCode)
+                var gatewayResponse = await _gateway.ExecuteAsync(BuildGatewayRequest(request, phase), ct);
+                await LogUsageAsync(phase, gatewayResponse.Model, gatewayResponse.Usage, gatewayResponse.LatencyMs, ct);
+                return BuildOpenRouterResponse(gatewayResponse);
+            }
+            catch (LlmGatewayException ex)
+            {
+                var mapped = await MapGatewayExceptionAsync(ex, phase, request.Model, ct);
+                if (attempt < maxAttempts && IsTransientCheapException(phase, mapped) && !ct.IsCancellationRequested)
                 {
-                    if (IsBalanceOrQuotaIssue(res.StatusCode, body))
-                    {
-                        await _budgetGuardrailService.RegisterQuotaBlockedAsync(
-                            pathKey: ResolveBudgetPathKey(phase),
-                            modality: ResolveBudgetModality(phase),
-                            reason: "quota_like_provider_failure",
-                            isImportScope: phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
-                            isOptionalPath: IsBudgetOptionalPath(phase),
-                            ct: ct);
-
-                        if (string.Equals(phase, "cheap", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogWarning(
-                                "OpenRouter balance/quota issue detected; persisted quota block applied. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
-                                phase,
-                                request.Model,
-                                (int)res.StatusCode,
-                                requestId ?? "n/a",
-                                attemptTimer.ElapsedMilliseconds);
-                            _logger.LogDebug(
-                                "OpenRouter balance/quota body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
-                                phase,
-                                request.Model,
-                                (int)res.StatusCode,
-                                requestId ?? "n/a",
-                                TruncateForLog(body, ErrorBodySnippetLimit));
-                        }
-                        else
-                        {
-                            _logger.LogWarning(
-                                "OpenRouter balance/quota issue detected. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
-                                phase,
-                                request.Model,
-                                (int)res.StatusCode,
-                                requestId ?? "n/a",
-                                attemptTimer.ElapsedMilliseconds);
-                            _logger.LogDebug(
-                                "OpenRouter balance/quota body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
-                                phase,
-                                request.Model,
-                                (int)res.StatusCode,
-                                requestId ?? "n/a",
-                                TruncateForLog(body, ErrorBodySnippetLimit));
-                        }
-
-                        throw new OpenRouterBalanceException(
-                            $"OpenRouter balance/quota issue status={(int)res.StatusCode}; request_id={requestId ?? "n/a"}",
-                            res.StatusCode);
-                    }
-
-                    if (attempt < maxAttempts && IsTransientStatusCode(res.StatusCode))
-                    {
-                        await DelayBeforeRetryAsync(phase, request.Model, attempt, maxAttempts, $"status={(int)res.StatusCode}", ct);
-                        continue;
-                    }
-
-                    _logger.LogWarning(
-                        "OpenRouter request failed without retry. phase={Phase}, model={Model}, attempt={Attempt}/{MaxAttempts}, status={StatusCode}, request_id={RequestId}, elapsed_ms={ElapsedMs}",
-                        phase,
-                        request.Model,
-                        attempt,
-                        maxAttempts,
-                        (int)res.StatusCode,
-                        requestId ?? "n/a",
-                        attemptTimer.ElapsedMilliseconds);
-                    _logger.LogDebug(
-                        "OpenRouter failure body snippet. phase={Phase}, model={Model}, status={StatusCode}, request_id={RequestId}, body_snippet={BodySnippet}",
-                        phase,
-                        request.Model,
-                        (int)res.StatusCode,
-                        requestId ?? "n/a",
-                        TruncateForLog(body, ErrorBodySnippetLimit));
-                    throw new HttpRequestException(
-                        $"OpenRouter error status={(int)res.StatusCode}; request_id={requestId ?? "n/a"}");
+                    lastError = mapped;
+                    await DelayBeforeRetryAsync(phase, request.Model, attempt, maxAttempts, mapped.GetType().Name, ct);
+                    continue;
                 }
 
-                var parsed = JsonSerializer.Deserialize<OpenRouterResponse>(body, JsonOptions);
-                await LogUsageAsync(phase, request.Model, parsed?.Usage, (int)attemptTimer.ElapsedMilliseconds, ct);
-                return parsed;
+                throw mapped;
             }
             catch (Exception ex) when (attempt < maxAttempts && IsTransientCheapException(phase, ex) && !ct.IsCancellationRequested)
             {
@@ -460,16 +395,6 @@ public class OpenRouterAnalysisService
         }
 
         return null;
-    }
-
-    private static bool IsTransientStatusCode(HttpStatusCode statusCode)
-    {
-        return statusCode == HttpStatusCode.RequestTimeout
-               || statusCode == HttpStatusCode.TooManyRequests
-               || statusCode == HttpStatusCode.BadGateway
-               || statusCode == HttpStatusCode.ServiceUnavailable
-               || statusCode == HttpStatusCode.GatewayTimeout
-               || statusCode == HttpStatusCode.InternalServerError;
     }
 
     private static bool IsTransientCheapException(string phase, Exception ex)
@@ -500,6 +425,196 @@ public class OpenRouterAnalysisService
             reason,
             delayMs);
         await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct);
+    }
+
+    private LlmGatewayRequest BuildGatewayRequest(OpenRouterRequest request, string phase)
+    {
+        var responseMode = request.Tools?.Count > 0
+            ? LlmResponseMode.ToolCalls
+            : string.Equals(request.ResponseFormat?.Type, "json_object", StringComparison.OrdinalIgnoreCase)
+                ? LlmResponseMode.JsonObject
+                : LlmResponseMode.Text;
+
+        return new LlmGatewayRequest
+        {
+            Modality = request.Tools?.Count > 0 ? LlmModality.Tools : LlmModality.TextChat,
+            TaskKey = string.IsNullOrWhiteSpace(phase) ? "stage5_text" : phase.Trim(),
+            ResponseMode = responseMode,
+            Limits = new LlmExecutionLimits
+            {
+                MaxTokens = request.MaxTokens,
+                Temperature = request.Temperature,
+                TimeoutMs = Math.Max(1, _analysis.HttpTimeoutSeconds) * 1000
+            },
+            Trace = new LlmTraceContext
+            {
+                PathKey = ResolveBudgetPathKey(phase),
+                IsImportScope = phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                IsOptionalPath = IsBudgetOptionalPath(phase),
+                ScopeTags =
+                [
+                    "stage5",
+                    string.IsNullOrWhiteSpace(phase) ? "text" : phase.Trim()
+                ]
+            },
+            Messages = request.Messages.Select(ConvertMessage).ToList(),
+            ToolDefinitions = request.Tools?.Select(ConvertToolDefinition).ToList() ?? new List<LlmToolDefinition>()
+        };
+    }
+
+    private static LlmGatewayMessage ConvertMessage(OpenRouterMessage message)
+    {
+        var converted = new LlmGatewayMessage
+        {
+            Role = message.Role.Trim().ToLowerInvariant() switch
+            {
+                "system" => LlmMessageRole.System,
+                "assistant" => LlmMessageRole.Assistant,
+                "tool" => LlmMessageRole.Tool,
+                _ => LlmMessageRole.User
+            },
+            Name = message.Name,
+            ToolCallId = message.ToolCallId,
+            ToolCalls = message.ToolCalls?.Select(ConvertToolCall).ToList() ?? new List<LlmToolCall>()
+        };
+
+        var text = ExtractMessageContent(message.Content);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            converted.ContentParts.Add(LlmMessageContentPart.FromText(text));
+        }
+
+        return converted;
+    }
+
+    private static LlmToolDefinition ConvertToolDefinition(OpenRouterTool tool)
+    {
+        return new LlmToolDefinition
+        {
+            Name = tool.Function.Name,
+            Description = tool.Function.Description,
+            ParametersJsonSchema = SerializeLooseJson(tool.Function.Parameters)
+        };
+    }
+
+    private static LlmToolCall ConvertToolCall(OpenRouterToolCall toolCall)
+    {
+        return new LlmToolCall
+        {
+            Id = toolCall.Id,
+            Name = toolCall.Function.Name,
+            ArgumentsJson = string.IsNullOrWhiteSpace(toolCall.Function.Arguments)
+                ? "{}"
+                : toolCall.Function.Arguments
+        };
+    }
+
+    private static OpenRouterResponse BuildOpenRouterResponse(LlmGatewayResponse response)
+    {
+        return new OpenRouterResponse
+        {
+            Choices =
+            [
+                new OpenRouterChoice
+                {
+                    Message = new OpenRouterResponseMessage
+                    {
+                        Role = "assistant",
+                        Content = response.Output.StructuredPayloadJson ?? response.Output.Text ?? string.Empty,
+                        ToolCalls = response.Output.ToolCalls.Select(ConvertOpenRouterToolCall).ToList()
+                    }
+                }
+            ],
+            Usage = new OpenRouterUsage
+            {
+                PromptTokens = response.Usage.PromptTokens,
+                CompletionTokens = response.Usage.CompletionTokens,
+                TotalTokens = response.Usage.TotalTokens,
+                Cost = response.Usage.CostUsd
+            }
+        };
+    }
+
+    private static OpenRouterToolCall ConvertOpenRouterToolCall(LlmToolCall toolCall)
+    {
+        return new OpenRouterToolCall
+        {
+            Id = toolCall.Id,
+            Function = new OpenRouterToolCallFunction
+            {
+                Name = toolCall.Name,
+                Arguments = toolCall.ArgumentsJson
+            }
+        };
+    }
+
+    private async Task<Exception> MapGatewayExceptionAsync(
+        LlmGatewayException ex,
+        string phase,
+        string model,
+        CancellationToken ct)
+    {
+        if (ex.Category == LlmGatewayErrorCategory.Quota)
+        {
+            await _budgetGuardrailService.RegisterQuotaBlockedAsync(
+                pathKey: ResolveBudgetPathKey(phase),
+                modality: ResolveBudgetModality(phase),
+                reason: "quota_like_provider_failure",
+                isImportScope: phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                isOptionalPath: IsBudgetOptionalPath(phase),
+                ct: ct);
+
+            var statusCode = ex.HttpStatus ?? HttpStatusCode.PaymentRequired;
+            _logger.LogWarning(
+                "Gateway quota issue detected. phase={Phase}, model={Model}, status={StatusCode}, provider={Provider}",
+                phase,
+                model,
+                (int)statusCode,
+                ex.Provider ?? "n/a");
+            return new OpenRouterBalanceException(
+                $"Gateway quota issue status={(int)statusCode}; provider={ex.Provider ?? "unknown"}",
+                statusCode);
+        }
+
+        var status = ex.HttpStatus is null ? "n/a" : ((int)ex.HttpStatus.Value).ToString();
+        _logger.LogWarning(
+            ex,
+            "Gateway text request failed. phase={Phase}, model={Model}, provider={Provider}, category={Category}, retryable={Retryable}, status={StatusCode}",
+            phase,
+            model,
+            ex.Provider ?? "n/a",
+            ex.Category,
+            ex.Retryable,
+            status);
+
+        return ex.Category switch
+        {
+            LlmGatewayErrorCategory.Timeout => new TaskCanceledException(
+                $"Gateway timeout provider={ex.Provider ?? "unknown"} status={status}",
+                ex),
+            LlmGatewayErrorCategory.SchemaMismatch => new InvalidDataException(
+                $"gateway_schema_validation_failed:provider={ex.Provider ?? "unknown"};status={status}",
+                ex),
+            _ => new HttpRequestException(
+                $"Gateway provider error provider={ex.Provider ?? "unknown"} category={ex.Category} status={status}; {ex.Message}",
+                ex,
+                ex.HttpStatus)
+        };
+    }
+
+    private static string SerializeLooseJson(object? value)
+    {
+        if (value is null)
+        {
+            return "{}";
+        }
+
+        return value switch
+        {
+            string text when !string.IsNullOrWhiteSpace(text) => text,
+            JsonElement element => element.GetRawText(),
+            _ => JsonSerializer.Serialize(value, JsonOptions)
+        };
     }
 
     private static string ExtractMessageContent(object? content)
@@ -563,12 +678,7 @@ public class OpenRouterAnalysisService
         return element.ToString();
     }
 
-    private static bool IsBalanceOrQuotaIssue(HttpStatusCode statusCode, string body)
-    {
-        return BudgetErrorClassifier.IsQuotaLike(statusCode, body);
-    }
-
-    private async Task LogUsageAsync(string phase, string model, OpenRouterUsage? usage, int? latencyMs, CancellationToken ct)
+    private async Task LogUsageAsync(string phase, string model, LlmUsageInfo? usage, int? latencyMs, CancellationToken ct)
     {
         if (usage == null)
         {
@@ -582,20 +692,10 @@ public class OpenRouterAnalysisService
             PromptTokens = usage.PromptTokens ?? 0,
             CompletionTokens = usage.CompletionTokens ?? 0,
             TotalTokens = usage.TotalTokens ?? 0,
-            CostUsd = usage.Cost ?? 0m,
+            CostUsd = usage.CostUsd ?? 0m,
             LatencyMs = latencyMs.HasValue ? Math.Max(0, latencyMs.Value) : null,
             CreatedAt = DateTime.UtcNow
         }, ct);
-    }
-
-    private static string? TryGetHeaderValue(HttpResponseHeaders headers, string name)
-    {
-        if (!headers.TryGetValues(name, out var values))
-        {
-            return null;
-        }
-
-        return values.FirstOrDefault();
     }
 
     private static string TruncateForLog(string? value, int maxLen)

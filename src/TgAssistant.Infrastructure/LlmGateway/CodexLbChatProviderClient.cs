@@ -18,7 +18,11 @@ public class CodexLbChatProviderClient : LlmGatewayProviderClientBase, ILlmProvi
 
     public bool Supports(LlmModality modality)
     {
-        return modality is LlmModality.TextChat or LlmModality.Tools;
+        return modality is LlmModality.TextChat
+            or LlmModality.Tools
+            or LlmModality.Vision
+            or LlmModality.AudioTranscription
+            or LlmModality.AudioParalinguistics;
     }
 
     public Task<LlmProviderResult> ExecuteAsync(LlmProviderRequest request, CancellationToken ct = default)
@@ -34,6 +38,26 @@ public class CodexLbChatProviderClient : LlmGatewayProviderClientBase, ILlmProvi
             };
         }
 
+        var schema = request.Request.StructuredOutputSchema;
+        object? responseFormat = null;
+        if (schema is not null)
+        {
+            responseFormat = new
+            {
+                type = "json_schema",
+                json_schema = new
+                {
+                    name = schema.Name,
+                    strict = schema.Strict,
+                    schema = ParseJson(schema.SchemaJson)
+                }
+            };
+        }
+        else if (request.Request.ResponseMode is LlmResponseMode.JsonObject or LlmResponseMode.StructuredAudio)
+        {
+            responseFormat = new { type = "json_object" };
+        }
+
         var payload = new
         {
             model = request.Model,
@@ -47,14 +71,14 @@ public class CodexLbChatProviderClient : LlmGatewayProviderClientBase, ILlmProvi
                     LlmMessageRole.Tool => "tool",
                     _ => "user"
                 },
-                content = BuildTextOnlyContent(message),
+                content = BuildOpenAiCompatibleContent(message, allowBinaryInlineData: true),
                 name = message.Name,
                 tool_call_id = message.ToolCallId,
                 tool_calls = message.ToolCalls.Count > 0 ? BuildToolCalls(message.ToolCalls) : null
             }).ToArray(),
             tools = request.Request.ToolDefinitions.Count > 0 ? BuildToolDefinitions(request.Request.ToolDefinitions) : null,
             tool_choice = request.Request.ToolDefinitions.Count > 0 ? "auto" : null,
-            response_format = request.Request.ResponseMode == LlmResponseMode.JsonObject ? new { type = "json_object" } : null,
+            response_format = responseFormat,
             max_tokens = request.Request.Limits.MaxTokens,
             temperature = request.Request.Limits.Temperature
         };

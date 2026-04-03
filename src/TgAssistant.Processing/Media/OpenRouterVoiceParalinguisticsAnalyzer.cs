@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -16,6 +15,7 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
 {
     private readonly HttpClient _http;
     private readonly GeminiSettings _gemini;
+    private readonly ILlmGateway _gateway;
     private readonly VoiceParalinguisticsSettings _settings;
     private readonly IAnalysisUsageRepository _usageRepository;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
@@ -24,6 +24,7 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
     public OpenRouterVoiceParalinguisticsAnalyzer(
         HttpClient http,
         IOptions<GeminiSettings> gemini,
+        ILlmGateway gateway,
         IOptions<VoiceParalinguisticsSettings> settings,
         IAnalysisUsageRepository usageRepository,
         IBudgetGuardrailService budgetGuardrailService,
@@ -31,15 +32,13 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
     {
         _http = http;
         _gemini = gemini.Value;
+        _gateway = gateway;
         _settings = settings.Value;
         _usageRepository = usageRepository;
         _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
-        _http.BaseAddress = new Uri(_gemini.BaseUrl);
-        if (!_http.DefaultRequestHeaders.Contains("Authorization"))
-        {
-            _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_gemini.ApiKey}");
-        }
+        _ = _http;
+        _ = _gemini;
     }
 
     public async Task<string> AnalyzeAsync(string filePath, CancellationToken ct = default)
@@ -55,14 +54,14 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         {
             var bytes = await File.ReadAllBytesAsync(wavPath, ct);
             var base64 = Convert.ToBase64String(bytes);
-            var parsed = await SendCompletionRequestAsync(base64, includeResponseFormat: true, ct);
-            var text = NormalizeMessageContent(parsed?.Choices?.FirstOrDefault()?.Message?.Content).Trim();
+            var response = await SendCompletionRequestAsync(base64, includeResponseFormat: true, ct);
+            var text = response.Text.Trim();
             if (string.IsNullOrWhiteSpace(text))
             {
                 throw new InvalidOperationException("Empty voice paralinguistics response");
             }
 
-            await TryLogUsageAsync(parsed?.Usage, ct);
+            await TryLogUsageAsync(response.Usage, ct);
             if (TryNormalizePayload(text, out var payloadJson))
             {
                 return payloadJson;
@@ -352,50 +351,66 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         return content.ToString() ?? string.Empty;
     }
 
-    private async Task<VoiceOpenRouterResponse?> SendCompletionRequestAsync(string base64Audio, bool includeResponseFormat, CancellationToken ct)
+    private async Task<(string Text, LlmUsageInfo Usage)> SendCompletionRequestAsync(
+        string base64Audio,
+        bool includeResponseFormat,
+        CancellationToken ct)
     {
-        var request = new VoiceOpenRouterRequest
+        var request = new LlmGatewayRequest
         {
-            Model = _settings.Model,
-            MaxTokens = _settings.MaxTokens,
-            ResponseFormat = includeResponseFormat
-                ? new VoiceOpenRouterResponseFormat { Type = "json_object" }
-                : null,
-            Messages = new[]
+            Modality = LlmModality.AudioParalinguistics,
+            TaskKey = "audio_paralinguistics",
+            ResponseMode = includeResponseFormat ? LlmResponseMode.StructuredAudio : LlmResponseMode.Text,
+            Limits = new LlmExecutionLimits
             {
-                new VoiceOpenRouterMessage
+                MaxTokens = _settings.MaxTokens,
+                Temperature = 0f,
+                TimeoutMs = 30000
+            },
+            Trace = new LlmTraceContext
+            {
+                PathKey = "audio_paralinguistics",
+                IsImportScope = false,
+                IsOptionalPath = true,
+                ScopeTags = ["media", "audio_paralinguistics"]
+            },
+            Messages =
+            [
+                new LlmGatewayMessage
                 {
-                    Role = "user",
-                    Content = new object[]
-                    {
-                        new { type = "input_audio", input_audio = new { data = base64Audio, format = "wav" } },
-                        new
+                    Role = LlmMessageRole.User,
+                    ContentParts =
+                    [
+                        new LlmMessageContentPart
                         {
-                            type = "text",
-                            text =
-                                "Return strict JSON only: {\"primary_emotion\":\"...\",\"secondary_emotion\":\"...\",\"valence\":-1..1,\"arousal\":0..1,\"dominance\":0..1,\"sarcasm_probability\":0..1,\"confidence\":0..1,\"evidence\":[\"...\"]}. Analyze tone/prosody/tempo/pauses/intensity from audio signal, not lexical meaning."
-                        }
-                    }
+                            Type = LlmContentPartType.InlineData,
+                            MimeType = "audio/wav",
+                            InlineDataBase64 = base64Audio
+                        },
+                        LlmMessageContentPart.FromText(
+                            "Return strict JSON only: {\"primary_emotion\":\"...\",\"secondary_emotion\":\"...\",\"valence\":-1..1,\"arousal\":0..1,\"dominance\":0..1,\"sarcasm_probability\":0..1,\"confidence\":0..1,\"evidence\":[\"...\"]}. Analyze tone/prosody/tempo/pauses/intensity from audio signal, not lexical meaning.")
+                    ]
                 }
-            }
+            ]
         };
 
-        var json = JsonSerializer.Serialize(request, JsonOptions);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        using var response = await _http.PostAsync("/api/v1/chat/completions", content, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            if (includeResponseFormat && IsUnsupportedResponseFormatError(response.StatusCode, body))
+            var response = await _gateway.ExecuteAsync(request, ct);
+            var text = NormalizeMessageContent(response.Output.StructuredPayloadJson ?? response.Output.Text).Trim();
+            return (text, response.Usage);
+        }
+        catch (LlmGatewayException ex)
+        {
+            if (includeResponseFormat && IsUnsupportedResponseFormatError(ex))
             {
                 _logger.LogWarning(
-                    "Voice model {Model} does not support response_format=json_object, retrying without response_format.",
+                    "Voice model {Model} does not support structured/json response mode, retrying without structured response mode.",
                     _settings.Model);
                 return await SendCompletionRequestAsync(base64Audio, includeResponseFormat: false, ct);
             }
 
-            if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, body))
+            if (ex.Category == LlmGatewayErrorCategory.Quota)
             {
                 await _budgetGuardrailService.RegisterQuotaBlockedAsync(
                     pathKey: "audio_paralinguistics",
@@ -406,17 +421,23 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
                     ct: ct);
             }
 
-            throw new HttpRequestException($"OpenRouter error {(int)response.StatusCode}: {body}");
+            throw new HttpRequestException(
+                $"Gateway paralinguistics error provider={ex.Provider ?? "unknown"} category={ex.Category} status={ex.HttpStatus}; {ex.Message}",
+                ex,
+                ex.HttpStatus);
         }
-
-        return JsonSerializer.Deserialize<VoiceOpenRouterResponse>(body, JsonOptions);
     }
 
-    private static bool IsUnsupportedResponseFormatError(HttpStatusCode statusCode, string body)
+    private static bool IsUnsupportedResponseFormatError(LlmGatewayException ex)
     {
-        return statusCode == HttpStatusCode.BadRequest
-               && body.Contains("response_format", StringComparison.OrdinalIgnoreCase)
-               && body.Contains("not supported", StringComparison.OrdinalIgnoreCase);
+        if (ex.HttpStatus != HttpStatusCode.BadRequest)
+        {
+            return false;
+        }
+
+        var payload = ex.RawReasonCode ?? ex.Message;
+        return payload.Contains("response_format", StringComparison.OrdinalIgnoreCase)
+               && payload.Contains("not supported", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task ConvertToWavAsync(string inputPath, string outputPath, CancellationToken ct)
@@ -456,7 +477,7 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private async Task TryLogUsageAsync(VoiceOpenRouterUsage? usage, CancellationToken ct)
+    private async Task TryLogUsageAsync(LlmUsageInfo? usage, CancellationToken ct)
     {
         if (usage == null)
         {
@@ -470,51 +491,9 @@ public class OpenRouterVoiceParalinguisticsAnalyzer : IVoiceParalinguisticsAnaly
             PromptTokens = usage.PromptTokens ?? 0,
             CompletionTokens = usage.CompletionTokens ?? 0,
             TotalTokens = usage.TotalTokens ?? 0,
-            CostUsd = usage.Cost ?? 0m,
+            CostUsd = usage.CostUsd ?? 0m,
             CreatedAt = DateTime.UtcNow
         }, ct);
     }
 
-    private sealed class VoiceOpenRouterRequest
-    {
-        public string Model { get; set; } = string.Empty;
-        public VoiceOpenRouterMessage[] Messages { get; set; } = Array.Empty<VoiceOpenRouterMessage>();
-        public int? MaxTokens { get; set; }
-        public VoiceOpenRouterResponseFormat? ResponseFormat { get; set; }
-    }
-
-    private sealed class VoiceOpenRouterResponseFormat
-    {
-        public string Type { get; set; } = "json_object";
-    }
-
-    private sealed class VoiceOpenRouterMessage
-    {
-        public string Role { get; set; } = string.Empty;
-        public object Content { get; set; } = string.Empty;
-    }
-
-    private sealed class VoiceOpenRouterResponse
-    {
-        public List<VoiceOpenRouterChoice>? Choices { get; set; }
-        public VoiceOpenRouterUsage? Usage { get; set; }
-    }
-
-    private sealed class VoiceOpenRouterChoice
-    {
-        public VoiceOpenRouterResponseMessage? Message { get; set; }
-    }
-
-    private sealed class VoiceOpenRouterResponseMessage
-    {
-        public object? Content { get; set; }
-    }
-
-    private sealed class VoiceOpenRouterUsage
-    {
-        public int? PromptTokens { get; set; }
-        public int? CompletionTokens { get; set; }
-        public int? TotalTokens { get; set; }
-        public decimal? Cost { get; set; }
-    }
 }

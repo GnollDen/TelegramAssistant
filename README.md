@@ -54,8 +54,10 @@ npm run build
 
 Current runtime baseline (as of 2026-04-03):
 
+- Default compose services: `postgres`, `redis`, `app`, `mcp`, `postgres-exporter`, `redis-exporter`, `prometheus`, `grafana`
 - Default compose role set: `ingest,stage5,maintenance,ops`
 - Default startup path does not run schema-changing DDL. Use explicit operator-only mode `--operator-schema-init` when migrations must be applied.
+- `--seed-bootstrap-scope` is an operator command and can run under `Runtime__Role=ops`; that bounded path needs DB/Redis baseline only and does not require Telegram ingest admission.
 - Legacy Stage6 diagnostic smokes are not baseline runtime behavior and now require explicit admission flag `--allow-legacy-stage8-bridge` because they retain a bounded legacy-to-active Stage8 bridge.
 - Primary runtime composition: `src/TgAssistant.Host/Program.cs`
 - Runtime settings baseline: `src/TgAssistant.Host/appsettings.json`

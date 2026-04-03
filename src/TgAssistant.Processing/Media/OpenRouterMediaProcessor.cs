@@ -1,14 +1,11 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
-using TgAssistant.Infrastructure.OpenRouter;
 
 namespace TgAssistant.Processing.Media;
 
@@ -26,6 +23,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
 
     private readonly HttpClient _http;
     private readonly GeminiSettings _settings;
+    private readonly ILlmGateway _gateway;
     private readonly MediaSettings _mediaSettings;
     private readonly ArchiveImportSettings _archiveSettings;
     private readonly IStickerCacheRepository _stickerCacheRepository;
@@ -36,6 +34,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     public OpenRouterMediaProcessor(
         HttpClient http,
         IOptions<GeminiSettings> settings,
+        ILlmGateway gateway,
         IOptions<MediaSettings> mediaSettings,
         IOptions<ArchiveImportSettings> archiveSettings,
         IStickerCacheRepository stickerCacheRepository,
@@ -45,14 +44,15 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     {
         _http = http;
         _settings = settings.Value;
+        _gateway = gateway;
         _mediaSettings = mediaSettings.Value;
         _archiveSettings = archiveSettings.Value;
         _stickerCacheRepository = stickerCacheRepository;
         _usageRepository = usageRepository;
         _budgetGuardrailService = budgetGuardrailService;
         _logger = loggerFactory.CreateLogger<OpenRouterMediaProcessor>();
-        _http.BaseAddress = new Uri(_settings.BaseUrl);
-        _http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_settings.ApiKey}");
+        _ = _http;
+        _ = _settings;
     }
 
     public async Task<MediaProcessingResult> ProcessAsync(
@@ -200,7 +200,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     {
         try
         {
-            return await SendRequestAsync(BuildImageRequest(primaryModel, maxTokens, mimeType, base64, prompt), phase, ct);
+            return await SendRequestAsync(BuildImageRequest(primaryModel, maxTokens, mimeType, base64, prompt, phase), phase, ct);
         }
         catch (Exception ex) when (!string.IsNullOrWhiteSpace(fallbackModel) && !string.Equals(primaryModel, fallbackModel, StringComparison.OrdinalIgnoreCase))
         {
@@ -208,28 +208,47 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                 "Primary vision model failed ({PrimaryModel}), switching to fallback ({FallbackModel})",
                 primaryModel,
                 fallbackModel);
-            return await SendRequestAsync(BuildImageRequest(fallbackModel!, maxTokens, mimeType, base64, prompt), phase, ct);
+            return await SendRequestAsync(BuildImageRequest(fallbackModel!, maxTokens, mimeType, base64, prompt, phase), phase, ct);
         }
     }
 
-    private OpenRouterRequest BuildImageRequest(string model, int maxTokens, string mimeType, string base64, string prompt)
+    private LlmGatewayRequest BuildImageRequest(string model, int maxTokens, string mimeType, string base64, string prompt, string phase)
     {
-        return new OpenRouterRequest
+        return new LlmGatewayRequest
         {
-            Model = model,
+            Modality = LlmModality.Vision,
+            TaskKey = phase,
+            ResponseMode = LlmResponseMode.Text,
+            Limits = new LlmExecutionLimits
+            {
+                MaxTokens = maxTokens,
+                Temperature = 0f,
+                TimeoutMs = 30000
+            },
+            Trace = new LlmTraceContext
+            {
+                PathKey = phase,
+                IsImportScope = phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                IsOptionalPath = true,
+                ScopeTags = ["media", "vision"]
+            },
             Messages =
             [
-                new OpenRouterMessage
+                new LlmGatewayMessage
                 {
-                    Role = "user",
-                    Content = new object[]
+                    Role = LlmMessageRole.User,
+                    ContentParts =
                     {
-                        new { type = "image_url", image_url = new { url = $"data:{mimeType};base64,{base64}" } },
-                        new { type = "text", text = prompt }
+                        new LlmMessageContentPart
+                        {
+                            Type = LlmContentPartType.InlineData,
+                            MimeType = mimeType,
+                            InlineDataBase64 = base64
+                        },
+                        LlmMessageContentPart.FromText(prompt)
                     }
                 }
-            ],
-            MaxTokens = maxTokens
+            ]
         };
     }
 
@@ -280,19 +299,25 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         return outputPath;
     }
 
-    private async Task<string> SendRequestAsync(OpenRouterRequest request, string phase, CancellationToken ct)
+    private async Task<string> SendRequestAsync(LlmGatewayRequest request, string phase, CancellationToken ct)
     {
-        var json = JsonSerializer.Serialize(request, JsonOptions);
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(30));
-        var response = await _http.PostAsync("/api/v1/chat/completions", content, cts.Token);
-        var responseJson = await response.Content.ReadAsStringAsync(ct);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            if (BudgetErrorClassifier.IsQuotaLike(response.StatusCode, responseJson))
+            var response = await _gateway.ExecuteAsync(request, ct);
+            var text = response.Output.StructuredPayloadJson ?? response.Output.Text ?? string.Empty;
+            await TryLogUsageAsync(phase, response.Model, response.Usage, ct);
+
+            _logger.LogDebug(
+                "Gateway media response ({Provider}/{Model}): {Text}",
+                response.Provider,
+                response.Model,
+                text.Length > 100 ? text[..100] + "..." : text);
+
+            return text;
+        }
+        catch (LlmGatewayException ex)
+        {
+            if (ex.Category == LlmGatewayErrorCategory.Quota)
             {
                 await _budgetGuardrailService.RegisterQuotaBlockedAsync(
                     pathKey: phase,
@@ -303,65 +328,11 @@ public class OpenRouterMediaProcessor : IMediaProcessor
                     ct: ct);
             }
 
-            _logger.LogWarning("OpenRouter API error {Code}: {Body}", response.StatusCode, responseJson);
-            throw new HttpRequestException($"OpenRouter API error {response.StatusCode}: {responseJson}");
+            throw new HttpRequestException(
+                $"Gateway media request failed. provider={ex.Provider ?? "unknown"} category={ex.Category} status={ex.HttpStatus}; {ex.Message}",
+                ex,
+                ex.HttpStatus);
         }
-
-        var result = JsonSerializer.Deserialize<OpenRouterResponse>(responseJson, JsonOptions);
-        var text = NormalizeMessageContent(result?.Choices?.FirstOrDefault()?.Message?.Content);
-        await TryLogUsageAsync(phase, request.Model, result?.Usage, ct);
-
-        _logger.LogDebug("OpenRouter response ({Model}): {Text}",
-            request.Model, text.Length > 100 ? text[..100] + "..." : text);
-
-        return text;
-    }
-
-    private static string NormalizeMessageContent(object? content)
-    {
-        if (content == null)
-        {
-            return string.Empty;
-        }
-
-        if (content is string text)
-        {
-            return text;
-        }
-
-        if (content is JsonElement element)
-        {
-            if (element.ValueKind == JsonValueKind.String)
-            {
-                return element.GetString() ?? string.Empty;
-            }
-
-            if (element.ValueKind == JsonValueKind.Array)
-            {
-                var parts = element.EnumerateArray()
-                    .Select(part =>
-                    {
-                        if (part.ValueKind == JsonValueKind.String)
-                        {
-                            return part.GetString() ?? string.Empty;
-                        }
-
-                        if (part.ValueKind == JsonValueKind.Object &&
-                            part.TryGetProperty("text", out var textNode) &&
-                            textNode.ValueKind == JsonValueKind.String)
-                        {
-                            return textNode.GetString() ?? string.Empty;
-                        }
-
-                        return string.Empty;
-                    })
-                    .Where(part => !string.IsNullOrWhiteSpace(part));
-
-                return string.Join('\n', parts);
-            }
-        }
-
-        return content.ToString() ?? string.Empty;
     }
 
     private string BuildPhotoPrompt(string filePath)
@@ -449,13 +420,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         };
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    private async Task TryLogUsageAsync(string phase, string model, OpenRouterUsage? usage, CancellationToken ct)
+    private async Task TryLogUsageAsync(string phase, string model, LlmUsageInfo? usage, CancellationToken ct)
     {
         if (usage == null)
         {
@@ -469,7 +434,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             PromptTokens = usage.PromptTokens ?? 0,
             CompletionTokens = usage.CompletionTokens ?? 0,
             TotalTokens = usage.TotalTokens ?? 0,
-            CostUsd = usage.Cost ?? 0m,
+            CostUsd = usage.CostUsd ?? 0m,
             CreatedAt = DateTime.UtcNow
         }, ct);
     }
@@ -504,7 +469,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
     private async Task<MediaProcessingResult> ProcessShortAudioAsync(string wavPath, string phase, CancellationToken ct)
     {
         var bytes = await File.ReadAllBytesAsync(wavPath, ct);
-        var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), phase, ct);
+        var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes), phase), phase, ct);
         var normalized = NormalizeAudioTranscription(response);
 
         return new MediaProcessingResult
@@ -539,7 +504,7 @@ public class OpenRouterMediaProcessor : IMediaProcessor
             for (var i = 0; i < chunkLimit; i++)
             {
                 var bytes = await File.ReadAllBytesAsync(chunks[i], ct);
-                var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes)), phase, ct);
+                var response = await SendRequestAsync(BuildAudioRequest(Convert.ToBase64String(bytes), phase), phase, ct);
                 var normalized = NormalizeAudioTranscription(response);
                 var chunkText = normalized.Transcription;
                 if (string.IsNullOrWhiteSpace(chunkText))
@@ -588,24 +553,43 @@ public class OpenRouterMediaProcessor : IMediaProcessor
         }
     }
 
-    private OpenRouterRequest BuildAudioRequest(string base64Wav)
+    private LlmGatewayRequest BuildAudioRequest(string base64Wav, string phase)
     {
-        return new OpenRouterRequest
+        return new LlmGatewayRequest
         {
-            Model = _mediaSettings.AudioModel,
+            Modality = LlmModality.AudioTranscription,
+            TaskKey = phase,
+            ResponseMode = LlmResponseMode.Text,
+            Limits = new LlmExecutionLimits
+            {
+                MaxTokens = 1000,
+                Temperature = 0f,
+                TimeoutMs = 30000
+            },
+            Trace = new LlmTraceContext
+            {
+                PathKey = phase,
+                IsImportScope = phase.StartsWith("import_", StringComparison.OrdinalIgnoreCase),
+                IsOptionalPath = true,
+                ScopeTags = ["media", "audio_transcription"]
+            },
             Messages =
             [
-                new OpenRouterMessage
+                new LlmGatewayMessage
                 {
-                    Role = "user",
-                    Content = new object[]
+                    Role = LlmMessageRole.User,
+                    ContentParts =
                     {
-                        new { type = "input_audio", input_audio = new { data = base64Wav, format = "wav" } },
-                        new { type = "text", text = AudioTranscriptionPrompt }
+                        new LlmMessageContentPart
+                        {
+                            Type = LlmContentPartType.InlineData,
+                            MimeType = "audio/wav",
+                            InlineDataBase64 = base64Wav
+                        },
+                        LlmMessageContentPart.FromText(AudioTranscriptionPrompt)
                     }
                 }
-            ],
-            MaxTokens = 1000
+            ]
         };
     }
 
