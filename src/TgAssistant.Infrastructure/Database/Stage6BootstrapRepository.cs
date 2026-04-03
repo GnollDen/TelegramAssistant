@@ -345,6 +345,216 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
             .ToList();
     }
 
+    public async Task<Stage6BootstrapPoolOutputSet> UpsertPoolOutputsAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapScopeResolution resolution,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(auditRecord);
+        ArgumentNullException.ThrowIfNull(auditRecord.Envelope);
+        ArgumentNullException.ThrowIfNull(resolution);
+
+        if (!string.Equals(resolution.ResolutionStatus, Stage6BootstrapStatuses.Ready, StringComparison.Ordinal)
+            || resolution.TrackedPerson == null
+            || resolution.OperatorPerson == null)
+        {
+            throw new InvalidOperationException("Stage 6 bootstrap pool outputs require a ready scope resolution.");
+        }
+
+        var sourceMessageIds = resolution.SourceRefs
+            .Where(x => x.SourceMessageId != null)
+            .Select(x => x.SourceMessageId!.Value)
+            .Distinct()
+            .ToArray();
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var now = DateTime.UtcNow;
+        var outputSet = new Stage6BootstrapPoolOutputSet();
+
+        var candidateRows = sourceMessageIds.Length == 0
+            ? []
+            : await db.CandidateIdentityStates
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == resolution.ScopeKey
+                    && x.SourceMessageId != null
+                    && sourceMessageIds.Contains(x.SourceMessageId.Value))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+        var anchorRows = sourceMessageIds.Length == 0
+            ? []
+            : await db.RelationshipEdgeAnchors
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == resolution.ScopeKey
+                    && x.SourceMessageId != null
+                    && sourceMessageIds.Contains(x.SourceMessageId.Value)
+                    && x.Status == ActiveStatus
+                    && (x.FromPersonId == resolution.TrackedPerson.PersonId || x.ToPersonId == resolution.TrackedPerson.PersonId))
+                .OrderBy(x => x.CreatedAt)
+                .ToListAsync(ct);
+
+        foreach (var sliceGroup in resolution.SourceRefs
+                     .GroupBy(BuildSliceOutputKey)
+                     .OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            var sourceMessageId = sliceGroup.Select(x => x.SourceMessageId).Distinct().Count() == 1
+                ? sliceGroup.First().SourceMessageId
+                : null;
+            var payloadJson = JsonSerializer.Serialize(new
+            {
+                output_type = Stage6BootstrapPoolOutputTypes.BootstrapSlice,
+                tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                source_count = sliceGroup.Count(),
+                start_observed_at_utc = sliceGroup.Min(x => x.ObservedAtUtc)?.ToUniversalTime().ToString("O"),
+                end_observed_at_utc = sliceGroup.Max(x => x.ObservedAtUtc)?.ToUniversalTime().ToString("O"),
+                source_refs = sliceGroup.Select(x => new
+                {
+                    x.SourceType,
+                    x.SourceRef,
+                    x.SourceObjectId,
+                    x.EvidenceItemId,
+                    x.SourceMessageId,
+                    observed_at_utc = x.ObservedAtUtc?.ToUniversalTime().ToString("O")
+                }).ToArray()
+            });
+            var row = await UpsertPoolOutputAsync(
+                db,
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.BootstrapSlice,
+                sliceGroup.Key,
+                payloadJson,
+                now,
+                sourceMessageId: sourceMessageId,
+                ct: ct);
+            outputSet.SliceOutputs.Add(MapPoolOutput(row));
+        }
+
+        foreach (var candidateGroup in candidateRows
+                     .Where(x => x.SourceMessageId != null)
+                     .GroupBy(x => x.SourceMessageId!.Value)
+                     .OrderBy(x => x.Key))
+        {
+            if (candidateGroup.Count() <= 1)
+            {
+                continue;
+            }
+
+            var payloadJson = JsonSerializer.Serialize(new
+            {
+                output_type = Stage6BootstrapPoolOutputTypes.AmbiguityPool,
+                tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                source_message_id = candidateGroup.Key,
+                candidate_count = candidateGroup.Count(),
+                candidates = candidateGroup.Select(x => new
+                {
+                    candidate_identity_state_id = x.Id,
+                    candidate_type = x.CandidateType,
+                    status = x.Status,
+                    display_label = x.DisplayLabel,
+                    source_binding_normalized = x.SourceBindingNormalized,
+                    matched_person_id = x.MatchedPersonId
+                }).ToArray()
+            });
+            var row = await UpsertPoolOutputAsync(
+                db,
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.AmbiguityPool,
+                $"source_message:{candidateGroup.Key}",
+                payloadJson,
+                now,
+                sourceMessageId: candidateGroup.Key,
+                ct: ct);
+            outputSet.AmbiguityOutputs.Add(MapPoolOutput(row));
+
+            var matchedPersonIds = candidateGroup
+                .Where(x => x.MatchedPersonId != null)
+                .Select(x => x.MatchedPersonId!.Value)
+                .Distinct()
+                .ToArray();
+            if (matchedPersonIds.Length > 1)
+            {
+                var contradictionRow = await UpsertPoolOutputAsync(
+                    db,
+                    resolution.ScopeKey,
+                    resolution.TrackedPerson.PersonId,
+                    auditRecord.ModelPassRunId,
+                    Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                    $"source_message:{candidateGroup.Key}:candidate_match_conflict",
+                    JsonSerializer.Serialize(new
+                    {
+                        output_type = Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                        tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                        source_message_id = candidateGroup.Key,
+                        contradiction_type = "candidate_identity_match_conflict",
+                        matched_person_ids = matchedPersonIds,
+                        candidate_identity_state_ids = candidateGroup.Select(x => x.Id).ToArray()
+                    }),
+                    now,
+                    sourceMessageId: candidateGroup.Key,
+                    ct: ct);
+                outputSet.ContradictionOutputs.Add(MapPoolOutput(contradictionRow));
+            }
+        }
+
+        foreach (var anchorGroup in anchorRows
+                     .Where(x => x.SourceMessageId != null)
+                     .GroupBy(x => new { SourceMessageId = x.SourceMessageId!.Value, x.AnchorType })
+                     .OrderBy(x => x.Key.SourceMessageId)
+                     .ThenBy(x => x.Key.AnchorType, StringComparer.Ordinal))
+        {
+            var counterpartyIds = anchorGroup
+                .Select(x => ResolveCounterpartyPersonId(x, resolution.TrackedPerson.PersonId))
+                .Where(x => x != null)
+                .Select(x => x!.Value)
+                .Distinct()
+                .ToArray();
+            if (counterpartyIds.Length <= 1)
+            {
+                continue;
+            }
+
+            var row = await UpsertPoolOutputAsync(
+                db,
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                $"source_message:{anchorGroup.Key.SourceMessageId}:anchor_type:{anchorGroup.Key.AnchorType}",
+                JsonSerializer.Serialize(new
+                {
+                    output_type = Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                    tracked_person_ref = resolution.TrackedPerson.PersonRef,
+                    source_message_id = anchorGroup.Key.SourceMessageId,
+                    contradiction_type = "relationship_anchor_conflict",
+                    anchor_type = anchorGroup.Key.AnchorType,
+                    counterparty_person_ids = counterpartyIds,
+                    relationship_edge_anchor_ids = anchorGroup.Select(x => x.Id).ToArray()
+                }),
+                now,
+                sourceMessageId: anchorGroup.Key.SourceMessageId,
+                relationshipEdgeAnchorId: anchorGroup.First().Id,
+                ct: ct);
+            outputSet.ContradictionOutputs.Add(MapPoolOutput(row));
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        outputSet.AmbiguityOutputs = outputSet.AmbiguityOutputs
+            .OrderBy(x => x.OutputKey, StringComparer.Ordinal)
+            .ToList();
+        outputSet.ContradictionOutputs = outputSet.ContradictionOutputs
+            .OrderBy(x => x.OutputKey, StringComparer.Ordinal)
+            .ToList();
+        outputSet.SliceOutputs = outputSet.SliceOutputs
+            .OrderBy(x => x.OutputKey, StringComparer.Ordinal)
+            .ToList();
+        return outputSet;
+    }
+
     public async Task<Stage6BootstrapGraphResult> UpsertGraphInitializationAsync(
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapScopeResolution resolution,
@@ -444,6 +654,50 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
         row.LastModelPassRunId = modelPassRunId;
         row.PersonId = personId;
         row.CandidateIdentityStateId = candidateIdentityStateId;
+        row.SourceMessageId = sourceMessageId;
+        row.Status = ActiveStatus;
+        row.PayloadJson = payloadJson;
+        row.UpdatedAt = now;
+        return row;
+    }
+
+    private static async Task<DbBootstrapPoolOutput> UpsertPoolOutputAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        Guid modelPassRunId,
+        string outputType,
+        string outputKey,
+        string payloadJson,
+        DateTime now,
+        Guid? candidateIdentityStateId = null,
+        Guid? relationshipEdgeAnchorId = null,
+        long? sourceMessageId = null,
+        CancellationToken ct = default)
+    {
+        var row = await db.BootstrapPoolOutputs.FirstOrDefaultAsync(
+            x => x.ScopeKey == scopeKey
+                && x.TrackedPersonId == trackedPersonId
+                && x.OutputType == outputType
+                && x.OutputKey == outputKey,
+            ct);
+        if (row == null)
+        {
+            row = new DbBootstrapPoolOutput
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                OutputType = outputType,
+                OutputKey = outputKey,
+                CreatedAt = now
+            };
+            db.BootstrapPoolOutputs.Add(row);
+        }
+
+        row.LastModelPassRunId = modelPassRunId;
+        row.CandidateIdentityStateId = candidateIdentityStateId;
+        row.RelationshipEdgeAnchorId = relationshipEdgeAnchorId;
         row.SourceMessageId = sourceMessageId;
         row.Status = ActiveStatus;
         row.PayloadJson = payloadJson;
@@ -583,6 +837,24 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
         };
     }
 
+    private static Stage6BootstrapPoolOutput MapPoolOutput(DbBootstrapPoolOutput row)
+    {
+        return new Stage6BootstrapPoolOutput
+        {
+            Id = row.Id,
+            ScopeKey = row.ScopeKey,
+            TrackedPersonId = row.TrackedPersonId,
+            LastModelPassRunId = row.LastModelPassRunId,
+            OutputType = row.OutputType,
+            OutputKey = row.OutputKey,
+            CandidateIdentityStateId = row.CandidateIdentityStateId,
+            RelationshipEdgeAnchorId = row.RelationshipEdgeAnchorId,
+            SourceMessageId = row.SourceMessageId,
+            Status = row.Status,
+            PayloadJson = row.PayloadJson
+        };
+    }
+
     private static string? ResolveDiscoveryType(DbCandidateIdentityState row)
     {
         if (string.Equals(row.CandidateType, Stage6BootstrapDiscoveryTypes.Mention, StringComparison.OrdinalIgnoreCase)
@@ -627,6 +899,30 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
             evidence_count = resolution.EvidenceCount,
             last_model_pass_run_id = modelPassRunId
         });
+
+    private static string BuildSliceOutputKey(Stage6BootstrapSourceRef sourceRef)
+    {
+        if (sourceRef.ObservedAtUtc != null)
+        {
+            return $"day:{sourceRef.ObservedAtUtc.Value.ToUniversalTime():yyyyMMdd}";
+        }
+
+        return sourceRef.SourceMessageId != null
+            ? $"source_message:{sourceRef.SourceMessageId.Value}"
+            : $"source_ref:{sourceRef.SourceRef}";
+    }
+
+    private static Guid? ResolveCounterpartyPersonId(DbRelationshipEdgeAnchor row, Guid trackedPersonId)
+    {
+        if (row.FromPersonId == trackedPersonId)
+        {
+            return row.ToPersonId;
+        }
+
+        return row.ToPersonId == trackedPersonId
+            ? row.FromPersonId
+            : null;
+    }
 
     private static Stage6BootstrapScopeResolution BuildBlockedResolution(string? scopeKey, string reason)
     {

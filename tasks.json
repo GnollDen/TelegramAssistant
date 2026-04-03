@@ -434,8 +434,8 @@
         "IMPLEMENT-003",
         "IMPLEMENT-004"
       ],
-      "status": "pending",
-      "notes": "This is a new bootstrap stage, not a repair of the old Stage6 engine."
+      "status": "done",
+      "notes": "This is a new bootstrap stage, not a repair of the old Stage6 engine. IMPLEMENT-005-A/B/C now provide non-durable operator-root graph initialization, tracked-person attachment, linked-person/candidate/mention discovery, and bootstrap ambiguity_pool, contradiction_pool, and bootstrap_slice outputs with idempotent rerun behavior verified through --stage6-bootstrap-smoke."
     },
     {
       "id": "IMPLEMENT-006",

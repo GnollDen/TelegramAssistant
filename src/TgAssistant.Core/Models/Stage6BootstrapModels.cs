@@ -26,6 +26,13 @@ public static class Stage6BootstrapDiscoveryTypes
     public const string Mention = "mention";
 }
 
+public static class Stage6BootstrapPoolOutputTypes
+{
+    public const string AmbiguityPool = "ambiguity_pool";
+    public const string ContradictionPool = "contradiction_pool";
+    public const string BootstrapSlice = "bootstrap_slice";
+}
+
 public class Stage6BootstrapRequest
 {
     public Guid? PersonId { get; set; }
@@ -109,6 +116,28 @@ public class Stage6BootstrapDiscoveryOutput
     public string PayloadJson { get; set; } = "{}";
 }
 
+public class Stage6BootstrapPoolOutput
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string OutputType { get; set; } = string.Empty;
+    public string OutputKey { get; set; } = string.Empty;
+    public Guid? CandidateIdentityStateId { get; set; }
+    public Guid? RelationshipEdgeAnchorId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = "{}";
+}
+
+public class Stage6BootstrapPoolOutputSet
+{
+    public List<Stage6BootstrapPoolOutput> AmbiguityOutputs { get; set; } = [];
+    public List<Stage6BootstrapPoolOutput> ContradictionOutputs { get; set; } = [];
+    public List<Stage6BootstrapPoolOutput> SliceOutputs { get; set; } = [];
+}
+
 public class Stage6BootstrapGraphResult
 {
     public ModelPassAuditRecord AuditRecord { get; set; } = new();
@@ -116,4 +145,7 @@ public class Stage6BootstrapGraphResult
     public List<Stage6BootstrapGraphNode> Nodes { get; set; } = [];
     public List<Stage6BootstrapGraphEdge> Edges { get; set; } = [];
     public List<Stage6BootstrapDiscoveryOutput> DiscoveryOutputs { get; set; } = [];
+    public List<Stage6BootstrapPoolOutput> AmbiguityOutputs { get; set; } = [];
+    public List<Stage6BootstrapPoolOutput> ContradictionOutputs { get; set; } = [];
+    public List<Stage6BootstrapPoolOutput> SliceOutputs { get; set; } = [];
 }

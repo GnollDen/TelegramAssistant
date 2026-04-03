@@ -664,12 +664,12 @@
       "dependencies": [
         "IMPLEMENT-005-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Bootstrap outputs expose ambiguity and contradiction pools explicitly.",
         "No reviewed dossier/profile semantics leak into bootstrap."
       ],
-      "notes": "Clean split because ambiguity/contradiction pools are a separate non-durable output family."
+      "notes": "Clean split because ambiguity/contradiction pools are a separate non-durable output family. Stage6BootstrapRepository now writes non-durable bootstrap_pool_outputs for ambiguity_pool, contradiction_pool, and bootstrap_slice keyed by tracked-person scope natural identity; Stage6BootstrapService returns those outputs alongside graph/discovery results, and --stage6-bootstrap-smoke verifies all three families plus stable rerun IDs without any durable dossier/profile writes."
     },
     {
       "id": "IMPLEMENT-006-A",

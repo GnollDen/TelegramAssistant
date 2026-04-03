@@ -30,9 +30,11 @@ public static class Stage6BootstrapSmokeRunner
         var firstSuccess = await service.RunGraphInitializationAsync(successRequest, ct);
         AssertReady(firstSuccess, "first success");
         AssertDiscoveryOutputs(firstSuccess, "first success");
+        AssertPoolOutputs(firstSuccess, "first success");
         var secondSuccess = await service.RunGraphInitializationAsync(successRequest, ct);
         AssertReady(secondSuccess, "second success");
         AssertDiscoveryOutputs(secondSuccess, "second success");
+        AssertPoolOutputs(secondSuccess, "second success");
         if (firstSuccess.Nodes.Count != secondSuccess.Nodes.Count
             || firstSuccess.Edges.Count != secondSuccess.Edges.Count
             || firstSuccess.Nodes[0].Id != secondSuccess.Nodes[0].Id
@@ -42,6 +44,7 @@ public static class Stage6BootstrapSmokeRunner
             throw new InvalidOperationException("Stage6 bootstrap smoke failed: rerun changed non-durable graph seed identities.");
         }
         AssertDiscoveryIdempotency(firstSuccess, secondSuccess);
+        AssertPoolOutputIdempotency(firstSuccess, secondSuccess);
 
         var needMoreData = await service.RunGraphInitializationAsync(new Stage6BootstrapRequest
         {
@@ -54,7 +57,10 @@ public static class Stage6BootstrapSmokeRunner
             || needMoreData.GraphInitialized
             || needMoreData.Nodes.Count != 0
             || needMoreData.Edges.Count != 0
-            || needMoreData.DiscoveryOutputs.Count != 0)
+            || needMoreData.DiscoveryOutputs.Count != 0
+            || needMoreData.AmbiguityOutputs.Count != 0
+            || needMoreData.ContradictionOutputs.Count != 0
+            || needMoreData.SliceOutputs.Count != 0)
         {
             throw new InvalidOperationException("Stage6 bootstrap smoke failed: missing operator attachment was not surfaced as need_more_data.");
         }
@@ -94,6 +100,23 @@ public static class Stage6BootstrapSmokeRunner
         }
     }
 
+    private static void AssertPoolOutputs(Stage6BootstrapGraphResult result, string label)
+    {
+        if (result.AmbiguityOutputs.Count != 1
+            || result.ContradictionOutputs.Count != 1
+            || result.SliceOutputs.Count != 1)
+        {
+            throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} did not produce the expected ambiguity, contradiction, and slice outputs.");
+        }
+
+        if (!string.Equals(result.AmbiguityOutputs[0].OutputType, Stage6BootstrapPoolOutputTypes.AmbiguityPool, StringComparison.Ordinal)
+            || !string.Equals(result.ContradictionOutputs[0].OutputType, Stage6BootstrapPoolOutputTypes.ContradictionPool, StringComparison.Ordinal)
+            || !string.Equals(result.SliceOutputs[0].OutputType, Stage6BootstrapPoolOutputTypes.BootstrapSlice, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} returned the wrong pool output types.");
+        }
+    }
+
     private static void AssertDiscoveryIdempotency(Stage6BootstrapGraphResult first, Stage6BootstrapGraphResult second)
     {
         var firstMap = first.DiscoveryOutputs.ToDictionary(x => $"{x.DiscoveryType}|{x.DiscoveryKey}", x => x.Id);
@@ -112,6 +135,34 @@ public static class Stage6BootstrapSmokeRunner
         }
     }
 
+    private static void AssertPoolOutputIdempotency(Stage6BootstrapGraphResult first, Stage6BootstrapGraphResult second)
+    {
+        AssertPoolIdempotency("ambiguity", first.AmbiguityOutputs, second.AmbiguityOutputs);
+        AssertPoolIdempotency("contradiction", first.ContradictionOutputs, second.ContradictionOutputs);
+        AssertPoolIdempotency("slice", first.SliceOutputs, second.SliceOutputs);
+    }
+
+    private static void AssertPoolIdempotency(
+        string label,
+        IReadOnlyCollection<Stage6BootstrapPoolOutput> first,
+        IReadOnlyCollection<Stage6BootstrapPoolOutput> second)
+    {
+        var firstMap = first.ToDictionary(x => $"{x.OutputType}|{x.OutputKey}", x => x.Id);
+        var secondMap = second.ToDictionary(x => $"{x.OutputType}|{x.OutputKey}", x => x.Id);
+        if (firstMap.Count != secondMap.Count)
+        {
+            throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} output count changed on rerun.");
+        }
+
+        foreach (var (key, id) in firstMap)
+        {
+            if (!secondMap.TryGetValue(key, out var rerunId) || rerunId != id)
+            {
+                throw new InvalidOperationException($"Stage6 bootstrap smoke failed: {label} output IDs changed on rerun.");
+            }
+        }
+    }
+
     private sealed class InMemoryStage6BootstrapRepository : IStage6BootstrapRepository
     {
         internal static readonly Guid SuccessTrackedPersonId = Guid.Parse("20000000-0000-0000-0000-000000000001");
@@ -121,6 +172,7 @@ public static class Stage6BootstrapSmokeRunner
         private readonly Dictionary<string, Stage6BootstrapGraphNode> _nodes = [];
         private readonly Dictionary<string, Stage6BootstrapGraphEdge> _edges = [];
         private readonly Dictionary<string, Stage6BootstrapDiscoveryOutput> _discoveryOutputs = [];
+        private readonly Dictionary<string, Stage6BootstrapPoolOutput> _poolOutputs = [];
 
         public Task<Stage6BootstrapScopeResolution> ResolveScopeAsync(Stage6BootstrapRequest request, CancellationToken ct = default)
         {
@@ -286,6 +338,49 @@ public static class Stage6BootstrapSmokeRunner
             });
         }
 
+        public Task<Stage6BootstrapPoolOutputSet> UpsertPoolOutputsAsync(
+            ModelPassAuditRecord auditRecord,
+            Stage6BootstrapScopeResolution resolution,
+            CancellationToken ct = default)
+        {
+            if (resolution.TrackedPerson == null)
+            {
+                return Task.FromResult(new Stage6BootstrapPoolOutputSet());
+            }
+
+            var ambiguity = UpsertPoolOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.AmbiguityPool,
+                "source_message:11001",
+                sourceMessageId: 11_001,
+                payloadJson: "{\"output_type\":\"ambiguity_pool\"}");
+            var contradiction = UpsertPoolOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.ContradictionPool,
+                "source_message:11001:anchor_type:conversation_partner",
+                sourceMessageId: 11_001,
+                payloadJson: "{\"output_type\":\"contradiction_pool\"}");
+            var slice = UpsertPoolOutput(
+                resolution.ScopeKey,
+                resolution.TrackedPerson.PersonId,
+                auditRecord.ModelPassRunId,
+                Stage6BootstrapPoolOutputTypes.BootstrapSlice,
+                "day:20260403",
+                sourceMessageId: 11_001,
+                payloadJson: "{\"output_type\":\"bootstrap_slice\"}");
+
+            return Task.FromResult(new Stage6BootstrapPoolOutputSet
+            {
+                AmbiguityOutputs = [ambiguity],
+                ContradictionOutputs = [contradiction],
+                SliceOutputs = [slice]
+            });
+        }
+
         private Stage6BootstrapGraphNode UpsertNode(
             string scopeKey,
             Stage6BootstrapPersonRef person,
@@ -341,6 +436,36 @@ public static class Stage6BootstrapSmokeRunner
             output.LastModelPassRunId = modelPassRunId;
             output.PersonId = personId;
             output.CandidateIdentityStateId = candidateIdentityStateId;
+            output.SourceMessageId = sourceMessageId;
+            output.PayloadJson = payloadJson;
+            return output;
+        }
+
+        private Stage6BootstrapPoolOutput UpsertPoolOutput(
+            string scopeKey,
+            Guid trackedPersonId,
+            Guid modelPassRunId,
+            string outputType,
+            string outputKey,
+            string payloadJson,
+            long? sourceMessageId = null)
+        {
+            var key = $"{scopeKey}|{trackedPersonId:D}|{outputType}|{outputKey}";
+            if (!_poolOutputs.TryGetValue(key, out var output))
+            {
+                output = new Stage6BootstrapPoolOutput
+                {
+                    Id = Guid.NewGuid(),
+                    ScopeKey = scopeKey,
+                    TrackedPersonId = trackedPersonId,
+                    OutputType = outputType,
+                    OutputKey = outputKey,
+                    Status = "active"
+                };
+                _poolOutputs[key] = output;
+            }
+
+            output.LastModelPassRunId = modelPassRunId;
             output.SourceMessageId = sourceMessageId;
             output.PayloadJson = payloadJson;
             return output;

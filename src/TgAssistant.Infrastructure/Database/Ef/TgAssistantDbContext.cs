@@ -46,6 +46,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbBootstrapGraphNode> BootstrapGraphNodes => Set<DbBootstrapGraphNode>();
     public DbSet<DbBootstrapGraphEdge> BootstrapGraphEdges => Set<DbBootstrapGraphEdge>();
     public DbSet<DbBootstrapDiscoveryOutput> BootstrapDiscoveryOutputs => Set<DbBootstrapDiscoveryOutput>();
+    public DbSet<DbBootstrapPoolOutput> BootstrapPoolOutputs => Set<DbBootstrapPoolOutput>();
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
 
@@ -839,6 +840,31 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.DiscoveryType })
                 .HasFilter("person_id IS NOT NULL");
             e.HasIndex(x => x.CandidateIdentityStateId).HasFilter("candidate_identity_state_id IS NOT NULL");
+            e.HasIndex(x => x.SourceMessageId).HasFilter("source_message_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbBootstrapPoolOutput>(e =>
+        {
+            e.ToTable("bootstrap_pool_outputs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.OutputType).HasColumnName("output_type");
+            e.Property(x => x.OutputKey).HasColumnName("output_key");
+            e.Property(x => x.CandidateIdentityStateId).HasColumnName("candidate_identity_state_id");
+            e.Property(x => x.RelationshipEdgeAnchorId).HasColumnName("relationship_edge_anchor_id");
+            e.Property(x => x.SourceMessageId).HasColumnName("source_message_id");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.OutputType, x.OutputKey }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.OutputType, x.Status });
+            e.HasIndex(x => x.CandidateIdentityStateId).HasFilter("candidate_identity_state_id IS NOT NULL");
+            e.HasIndex(x => x.RelationshipEdgeAnchorId).HasFilter("relationship_edge_anchor_id IS NOT NULL");
             e.HasIndex(x => x.SourceMessageId).HasFilter("source_message_id IS NOT NULL");
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });

@@ -51,13 +51,20 @@ public class Stage6BootstrapService : IStage6BootstrapService
 
         var result = await _bootstrapRepository.UpsertGraphInitializationAsync(auditRecord, resolution, ct);
         result.DiscoveryOutputs = await _bootstrapRepository.UpsertDiscoveryOutputsAsync(auditRecord, resolution, ct);
+        var poolOutputs = await _bootstrapRepository.UpsertPoolOutputsAsync(auditRecord, resolution, ct);
+        result.AmbiguityOutputs = poolOutputs.AmbiguityOutputs;
+        result.ContradictionOutputs = poolOutputs.ContradictionOutputs;
+        result.SliceOutputs = poolOutputs.SliceOutputs;
         _logger.LogInformation(
-            "Stage6 bootstrap graph initialized: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, node_count={NodeCount}, edge_count={EdgeCount}, discovery_count={DiscoveryCount}",
+            "Stage6 bootstrap graph initialized: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, node_count={NodeCount}, edge_count={EdgeCount}, discovery_count={DiscoveryCount}, ambiguity_count={AmbiguityCount}, contradiction_count={ContradictionCount}, slice_count={SliceCount}",
             result.AuditRecord.Envelope.ScopeKey,
             resolution.TrackedPerson?.PersonId,
             result.Nodes.Count,
             result.Edges.Count,
-            result.DiscoveryOutputs.Count);
+            result.DiscoveryOutputs.Count,
+            result.AmbiguityOutputs.Count,
+            result.ContradictionOutputs.Count,
+            result.SliceOutputs.Count);
 
         return result;
     }

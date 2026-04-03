@@ -580,6 +580,23 @@ public class DbBootstrapDiscoveryOutput
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbBootstrapPoolOutput
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string OutputType { get; set; } = string.Empty;
+    public string OutputKey { get; set; } = string.Empty;
+    public Guid? CandidateIdentityStateId { get; set; }
+    public Guid? RelationshipEdgeAnchorId { get; set; }
+    public long? SourceMessageId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbDurableObjectMetadata
 {
     public Guid Id { get; set; }
