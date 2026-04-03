@@ -799,7 +799,7 @@
       "dependencies": [
         "CLEANUP-103"
       ],
-      "status": "pending",
+      "status": "done",
       "notes": "Final post-cleanup docs pass. This should happen after code and DB-boundary cleanup so the authority chain reflects the real project state."
     }
   ]

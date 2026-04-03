@@ -1,5 +1,13 @@
 # LLM Provider Extension Option (2026-04-03)
 
+## Status
+
+Archive-only (superseded by [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)).
+
+## Authority Note
+
+This note is retained only as pre-PRD option history. Active gateway requirements and positioning now live in the gateway PRD.
+
 ## Контекст
 
 Текущее состояние:
@@ -143,4 +151,3 @@ Fallback:
 - переключение провайдеров возможно через конфиг без изменений кода бизнес-логики;
 - есть метрики маршрутизации и fallback;
 - при падении `codex-lb` система не блокирует весь pipeline.
-

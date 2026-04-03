@@ -6,7 +6,7 @@
 
 ## Status
 
-Draft v1
+Active planning authority (v1 baseline)
 
 ## Purpose
 
@@ -19,8 +19,8 @@ Draft v1
 
 ## Related Documents
 
-- [LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md)
 - [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
+- [LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md) (archive-only source note; merged here for active authority)
 
 ## 1. Product Scope
 
@@ -230,4 +230,3 @@ Budget guardrails должны вызываться до outbound запроса
 - Какая стратегия при частичной деградации `codex-lb` (rate-limit bursts): мгновенный fallback или bounded retries?
 - Нужен ли sticky routing по chat/session для консистентности качества?
 - Нужно ли в v1 сохранять provider-specific raw payload для диагностики, и где хранить retention?
-

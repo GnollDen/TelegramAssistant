@@ -1273,7 +1273,7 @@
       "dependencies": [
         "CLEANUP-104-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway option notes and residual planning docs are classified into active, archive-only, or merged.",
         "README and planning docs describe the current cleaned baseline consistently."

@@ -14,7 +14,7 @@ Personal Telegram assistant monorepo focused on message ingestion, processing, a
 - `src/TgAssistant.Infrastructure` — PostgreSQL/Redis integration, EF Core context, repositories, migrations runner
 - `src/TgAssistant.Telegram` — Telegram ingestion (MTProto via WTelegram)
 - `src/TgAssistant.Processing` — processing pipeline and media/archive flows
-- `src/TgAssistant.Intelligence` — Stage5/Stage6 intelligence pipeline
+- `src/TgAssistant.Intelligence` — Stage5 substrate plus Stage6/7/8 implementation track (legacy Stage6 operator flows remain quarantined)
 - `src/TgAssistant.Host` — application entry point and DI/runtime composition
 - `src/TgAssistant.Mcp` — TypeScript MCP server
 - `deploy` — Docker and deployment artifacts

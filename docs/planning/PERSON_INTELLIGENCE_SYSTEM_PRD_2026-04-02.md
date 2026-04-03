@@ -23,11 +23,10 @@ It is not meant to be a giant prompt catalog or a full low-level technical spec.
 
 ## Related Documents
 
-- [PRD-Person-Intelligence-System-2026-04-02.md](C:\Users\thrg0\Downloads\TelegramAssistant\PRD-Person-Intelligence-System-2026-04-02.md)
-- [docs/PRODUCT_DECISIONS.md](C:\Users\thrg0\Downloads\TelegramAssistant\docs\PRODUCT_DECISIONS.md)
-- [STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\STAGE6_SINGLE_OPERATOR_PRD_DRAFT_2026-03-25.md)
-- [PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\PRODUCT_IMPLEMENTATION_GAPS_INTERVIEW_2026-03-25.md)
-- [RUNTIME_TOPOLOGY_NOTE_2026-03-25.md](C:\Users\thrg0\Downloads\TelegramAssistant\repo_inspect\docs\planning\RUNTIME_TOPOLOGY_NOTE_2026-03-25.md)
+- [README.md](/home/codex/projects/TelegramAssistant/README.md)
+- [docs/planning/README.md](/home/codex/projects/TelegramAssistant/docs/planning/README.md)
+- [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
+- Legacy pre-PRD option notes are retained as archive-only context and are not part of active planning authority.
 
 ## 1. Product Identity and Goals
 
