@@ -133,6 +133,17 @@
         "CLEANUP-103",
         "CLEANUP-104"
       ]
+    },
+    {
+      "id": "phase-d-llm-gateway",
+      "title": "Phase D. LLM Gateway Foundation and Controlled Adoption",
+      "task_ids": [
+        "GATEWAY-001",
+        "GATEWAY-002",
+        "GATEWAY-003",
+        "GATEWAY-004",
+        "GATEWAY-005"
+      ]
     }
   ],
   "tasks": [
@@ -801,6 +812,116 @@
       ],
       "status": "done",
       "notes": "Final post-cleanup docs pass. This should happen after code and DB-boundary cleanup so the authority chain reflects the real project state."
+    },
+    {
+      "id": "GATEWAY-001",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Build the LLM Gateway foundation: provider-agnostic contracts, routing policy seam, adapter interface, normalized error surface, and configuration model for modality-aware provider selection.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "A single internal ILlmGateway contract exists for text/chat/tools, embeddings, and audio requests.",
+        "Provider adapters, routing policy, and normalized request/response envelopes are defined without leaking vendor-specific semantics into domain services.",
+        "Configuration supports per-modality provider routing and explicit fallback policy without requiring business-logic edits."
+      ],
+      "test_steps": [
+        "Run unit or contract-level checks for request envelope validation, routing policy selection, and normalized error mapping.",
+        "Verify gateway configuration can express codex-lb for text/chat/tools and openrouter for embeddings/audio without code changes.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "CLEANUP-104"
+      ],
+      "status": "pending",
+      "notes": "Foundation only. No broad caller cutover in this task."
+    },
+    {
+      "id": "GATEWAY-002",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Add gateway smoke coverage and provider sanity checks so the new gateway can be validated independently before any live migration.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Gateway smoke tests exist for codex-lb text/chat, openrouter embeddings, and any active audio path.",
+        "Fallback and normalized error behavior are testable under smoke or integration-style checks.",
+        "Gateway readiness can be validated without migrating the full active LLM surface."
+      ],
+      "test_steps": [
+        "Run gateway smokes for codex-lb text/chat success and failure cases.",
+        "Run gateway smokes for openrouter embeddings and active audio modality, if present.",
+        "Run dotnet build TelegramAssistant.sln and any gateway-specific smoke command set."
+      ],
+      "dependencies": [
+        "GATEWAY-001"
+      ],
+      "status": "pending",
+      "notes": "Gateway is not considered ready for pilot cutover without independent smoke coverage."
+    },
+    {
+      "id": "GATEWAY-003",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Add A/B experimentation support for the gateway so fixed replay sets can compare models/providers by latency, cost, error rate, schema validity, and normalized output quality.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "A/B runs can route the same replay input through different providers or model settings under a stable experiment label.",
+        "Experiment output records provider, model, request id, latency, usage, fallback status, and result validity.",
+        "A/B support works through configuration and does not require domain-service code forks."
+      ],
+      "test_steps": [
+        "Run a replay-based A/B comparison for one text/chat path and verify both experiment branches persist comparable telemetry.",
+        "Verify experiment labels and provider/model metadata are auditable.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "GATEWAY-002"
+      ],
+      "status": "pending",
+      "notes": "Experimentation is part of the gateway foundation, not optional polish."
+    },
+    {
+      "id": "GATEWAY-004",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Migrate one safe pilot text path to the gateway behind a feature flag and prove parity, rollback safety, and governance compatibility before broader rollout.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "One bounded active text path runs through the gateway under an explicit feature flag with rollback.",
+        "Pilot output remains within accepted domain and schema behavior compared with the pre-gateway path.",
+        "Budget, telemetry, and retry semantics remain visible and compatible with the current control plane."
+      ],
+      "test_steps": [
+        "Run the pilot path with gateway disabled and enabled on the same replay set and compare normalized outputs and telemetry.",
+        "Verify rollback to the pre-gateway path works without code changes.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "GATEWAY-003"
+      ],
+      "status": "pending",
+      "notes": "Start with one safe pilot path only; broader migration waits for the verification gate."
+    },
+    {
+      "id": "GATEWAY-005",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Run the gateway verification and rollout gate: replay parity, fallback behavior, smoke stability, A/B evidence, and go/no-go for broader migration of text, embeddings, and audio paths.",
+      "executor_agent": "reviewer",
+      "acceptance_criteria": [
+        "Replay-based parity and A/B evidence exist for the pilot path and are sufficient to assess broader rollout risk.",
+        "Fallback, telemetry, and budget behavior are verified under gateway control.",
+        "A clear go/no-go decision exists for broader gateway adoption, including what should wait."
+      ],
+      "test_steps": [
+        "Review gateway smoke results, A/B outputs, parity comparisons, and pilot rollback evidence.",
+        "Verify broader rollout recommendations distinguish safe next migrations from deferred modalities or providers.",
+        "Run final verification commands required by the touched code paths."
+      ],
+      "dependencies": [
+        "GATEWAY-004"
+      ],
+      "status": "pending",
+      "notes": "This is the rollout gate for the gateway track. No broad migration beyond the pilot before this task is closed."
     }
   ]
 }

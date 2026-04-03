@@ -48,6 +48,10 @@
     {
       "id": "phase-c-post-cleanup",
       "title": "Phase C. Post-Implementation Cleanup and Authority Hardening"
+    },
+    {
+      "id": "phase-d-llm-gateway",
+      "title": "Phase D. LLM Gateway Foundation and Controlled Adoption"
     }
   ],
   "slices": [
@@ -1279,6 +1283,176 @@
         "README and planning docs describe the current cleaned baseline consistently."
       ],
       "notes": "Final docs hardening slice after the planning index is back in place."
+    },
+    {
+      "id": "GATEWAY-001-A",
+      "parent_task_id": "GATEWAY-001",
+      "phase": "phase-d-llm-gateway",
+      "priority": "critical",
+      "description": "Define the gateway contracts: ILlmGateway, request/response envelopes, provider adapter seam, routing policy seam, and normalized error taxonomy.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-104-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway contracts are provider-agnostic and modality-aware.",
+        "Vendor-specific transport details do not leak into domain service contracts."
+      ],
+      "notes": "Foundation contract slice only."
+    },
+    {
+      "id": "GATEWAY-001-B",
+      "parent_task_id": "GATEWAY-001",
+      "phase": "phase-d-llm-gateway",
+      "priority": "critical",
+      "description": "Implement the initial gateway configuration model, routing policy, and provider adapters for codex-lb text/chat/tools and openrouter embeddings/audio.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-001-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Configuration expresses per-modality provider routing and fallback policy.",
+        "Initial provider adapters exist without broad caller cutover."
+      ],
+      "notes": "Initial adapter and routing implementation without migrating active callers."
+    },
+    {
+      "id": "GATEWAY-002-A",
+      "parent_task_id": "GATEWAY-002",
+      "phase": "phase-d-llm-gateway",
+      "priority": "critical",
+      "description": "Add gateway smoke tests for codex-lb text/chat and openrouter embeddings/audio success paths.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-001-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway smoke suite covers the main configured modalities.",
+        "Successful provider responses are normalized and auditable."
+      ],
+      "notes": "Success-path smoke coverage should land before failure/fallback coverage."
+    },
+    {
+      "id": "GATEWAY-002-B",
+      "parent_task_id": "GATEWAY-002",
+      "phase": "phase-d-llm-gateway",
+      "priority": "critical",
+      "description": "Add fallback and failure-path smoke coverage for retryable provider errors, fail-fast policy, and normalized gateway exceptions.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-002-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Retryable and non-retryable provider failures map into normalized gateway errors.",
+        "Fallback behavior is observable and testable under smoke conditions."
+      ],
+      "notes": "Failure-path smoke coverage and fallback validation."
+    },
+    {
+      "id": "GATEWAY-003-A",
+      "parent_task_id": "GATEWAY-003",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Add experiment controls for replay-based A/B runs, including experiment labels, sticky routing keys, and provider/model audit metadata.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-002-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Replay experiments can steer requests by experiment label without branching domain code.",
+        "Provider/model/latency/usage/fallback metadata is captured per experiment branch."
+      ],
+      "notes": "Experiment control plane for the gateway."
+    },
+    {
+      "id": "GATEWAY-003-B",
+      "parent_task_id": "GATEWAY-003",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Add an A/B replay harness and comparison output for one safe text/chat path, including schema-validity and normalized-output checks.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-003-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "A/B replay runs produce comparable structured output and telemetry.",
+        "Comparison output can support a go/no-go decision for pilot cutover."
+      ],
+      "notes": "Replay harness for model/provider comparison, not broader production cutover."
+    },
+    {
+      "id": "GATEWAY-004-A",
+      "parent_task_id": "GATEWAY-004",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Migrate one safe pilot text path to the gateway behind a feature flag with rollback support.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-003-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pilot cutover is bounded to one safe text path.",
+        "Feature-flag rollback exists without code rollback."
+      ],
+      "notes": "Pilot migration only; start with the designated safe text path."
+    },
+    {
+      "id": "GATEWAY-004-B",
+      "parent_task_id": "GATEWAY-004",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Run replay parity and governance validation on the pilot path, confirming budget, telemetry, retry, and normalized output behavior.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-004-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pilot gateway path preserves acceptable domain/output behavior versus the legacy client path.",
+        "Budget and telemetry semantics remain intact under gateway control."
+      ],
+      "notes": "Pilot validation before the rollout gate."
+    },
+    {
+      "id": "GATEWAY-005-A",
+      "parent_task_id": "GATEWAY-005",
+      "phase": "phase-d-llm-gateway",
+      "priority": "critical",
+      "description": "Review gateway smoke, A/B, and pilot parity evidence and record the go/no-go decision for broader rollout.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "GATEWAY-004-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Go/no-go decision is evidence-backed.",
+        "Broader rollout risks and deferred modalities/providers are explicit."
+      ],
+      "notes": "Formal rollout gate based on collected smoke/A-B/pilot evidence."
+    },
+    {
+      "id": "GATEWAY-005-B",
+      "parent_task_id": "GATEWAY-005",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Publish the next-step rollout recommendation for broader text, embeddings, and audio gateway adoption after the pilot gate.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "GATEWAY-005-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Next migration order is explicit.",
+        "Unsafe broader migrations remain deferred until justified."
+      ],
+      "notes": "This is the rollout recommendation output after the pilot gate closes."
     }
   ]
 }
