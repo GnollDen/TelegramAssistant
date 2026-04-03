@@ -733,8 +733,8 @@
       "dependencies": [
         "IMPLEMENT-016"
       ],
-      "status": "pending",
-      "notes": "First post-remediation cleanup batch: only delete candidates already classified as safe after the runtime-critical remediation run."
+      "status": "done",
+      "notes": "Completed via CLEANUP-101-A/B on 2026-04-03: inventory-backed safe-delete batch executed for orphan src/TgAssistant.Web residue and bounded tracked .dotnet/.dotnet stale sentinel/telemetry artifacts, with post-delete absence and no-caller searches revalidated."
     },
     {
       "id": "CLEANUP-102",

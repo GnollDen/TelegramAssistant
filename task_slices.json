@@ -1171,12 +1171,12 @@
       "dependencies": [
         "CLEANUP-101-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Obvious orphan residue is removed cleanly.",
         "Build still passes after the deletions."
       ],
-      "notes": "Write scope should stay limited to proven delete-now candidates only."
+      "notes": "Completed on 2026-04-03 by deleting exactly the bounded CLEANUP-101-A inventory set (orphan src/TgAssistant.Web residue plus listed tracked .dotnet/.dotnet sentinel/telemetry artifacts), then re-validating path absence and zero active callers via targeted solution/runtime searches."
     },
     {
       "id": "CLEANUP-102-A",
