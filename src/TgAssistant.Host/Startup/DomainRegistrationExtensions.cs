@@ -8,6 +8,7 @@ using TgAssistant.Intelligence.Stage6Bootstrap;
 using TgAssistant.Intelligence.Stage7Formation;
 using TgAssistant.Intelligence.Stage8Recompute;
 using TgAssistant.Intelligence.Stage6;
+using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
@@ -28,11 +29,12 @@ public static partial class ServiceRegistrationExtensions
 {
     public static IServiceCollection AddTelegramAssistantDomainServices(
         this IServiceCollection services,
-        bool includeLegacyStage6Diagnostics = false)
+        bool includeLegacyStage6Diagnostics = false,
+        bool includeLegacyStage6ClusterDiagnostics = false)
     {
         services.AddActiveRepositoryServices();
 
-        if (includeLegacyStage6Diagnostics)
+        if (includeLegacyStage6Diagnostics || includeLegacyStage6ClusterDiagnostics)
         {
             services.AddStage6LegacyRepositoryServices();
         }
@@ -70,6 +72,11 @@ public static partial class ServiceRegistrationExtensions
         if (includeLegacyStage6Diagnostics)
         {
             services.AddLegacyStage6DiagnosticServices();
+        }
+
+        if (includeLegacyStage6ClusterDiagnostics)
+        {
+            services.AddLegacyStage6ClusterDiagnosticServices();
         }
 
         return services;
@@ -122,10 +129,6 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<INaturalRewriteGenerator, NaturalRewriteGenerator>();
         services.AddSingleton<IDraftReviewEngine, DraftReviewEngine>();
         services.AddSingleton<DraftReviewVerificationService>();
-        services.AddSingleton<INodeRoleResolver, NodeRoleResolver>();
-        services.AddSingleton<IInfluenceEdgeBuilder, InfluenceEdgeBuilder>();
-        services.AddSingleton<IInformationFlowBuilder, InformationFlowBuilder>();
-        services.AddSingleton<INetworkScoringService, NetworkScoringService>();
         services.AddSingleton<IDraftActionMatcher, DraftActionMatcher>();
         services.AddSingleton<IObservedOutcomeRecorder, ObservedOutcomeRecorder>();
         services.AddSingleton<ILearningSignalBuilder, LearningSignalBuilder>();
@@ -137,6 +140,22 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<ICompetingContextInterpretationService, CompetingContextInterpretationService>();
         services.AddSingleton<ICompetingContextRuntimeService, CompetingContextRuntimeService>();
         services.AddSingleton<CompetingContextVerificationService>();
+        return services;
+    }
+
+    private static IServiceCollection AddLegacyStage6ClusterDiagnosticServices(this IServiceCollection services)
+    {
+        // Legacy Stage6 bot/autocase/network cluster: available only behind explicit legacy diagnostic switches.
+        services.AddSingleton<IBotCommandService, BotCommandService>();
+        services.AddSingleton<IBotChatService, BotChatService>();
+        services.AddSingleton<BotCommandVerificationService>();
+        services.AddSingleton<Stage6AutoCaseGenerationService>();
+        services.AddSingleton<Stage6AutoCaseGenerationVerificationService>();
+        services.AddSingleton<INodeRoleResolver, NodeRoleResolver>();
+        services.AddSingleton<IInfluenceEdgeBuilder, InfluenceEdgeBuilder>();
+        services.AddSingleton<IInformationFlowBuilder, InformationFlowBuilder>();
+        services.AddSingleton<INetworkScoringService, NetworkScoringService>();
+        services.AddSingleton<INetworkGraphService, NetworkGraphService>();
         return services;
     }
 

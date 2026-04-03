@@ -1188,12 +1188,12 @@
       "dependencies": [
         "CLEANUP-101-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Legacy Stage6 bot/autocase/network code is explicitly isolated from active baseline paths.",
         "No active runtime path reaches those clusters by default."
       ],
-      "notes": "Isolation-before-deletion to avoid accidental active-path breakage."
+      "notes": "Completed on 2026-04-03: tightened Stage6 legacy cluster boundary by adding explicit diagnostic switches (`--legacy-bot-smoke`, `--legacy-auto-case-smoke`, `--legacy-network-smoke`) and registering bot/autocase/network services only behind those switches; default runtime path remains unreachable."
     },
     {
       "id": "CLEANUP-102-B",

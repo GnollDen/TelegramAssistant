@@ -15,12 +15,14 @@ using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6;
+using TgAssistant.Intelligence.Stage6.AutoCases;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
 using TgAssistant.Intelligence.Stage6.Control;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.DraftReview;
 using TgAssistant.Intelligence.Stage6.Drafts;
+using TgAssistant.Intelligence.Stage6.Network;
 using TgAssistant.Intelligence.Stage6.Outcome;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
@@ -67,7 +69,7 @@ try
     if (requestedLegacyStage6Entrypoints.Length > 0)
     {
         throw new InvalidOperationException(
-            $"Legacy Stage6 helper entrypoints are not part of the active runtime contract: {string.Join(", ", requestedLegacyStage6Entrypoints)}.");
+            $"Legacy Stage6 helper entrypoints are not part of the active runtime contract: {string.Join(", ", requestedLegacyStage6Entrypoints)}. Use explicit legacy diagnostic switches instead.");
     }
 
     var runFoundationSmoke = args.Any(arg => string.Equals(arg, "--foundation-smoke", StringComparison.OrdinalIgnoreCase));
@@ -82,6 +84,9 @@ try
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLegacyBotSmoke = args.Any(arg => string.Equals(arg, "--legacy-bot-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLegacyAutoCaseSmoke = args.Any(arg => string.Equals(arg, "--legacy-auto-case-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLegacyNetworkSmoke = args.Any(arg => string.Equals(arg, "--legacy-network-smoke", StringComparison.OrdinalIgnoreCase));
     var includeLegacyStage6Diagnostics = runClarificationSmoke
         || runPeriodizationSmoke
         || runStateSmoke
@@ -92,7 +97,13 @@ try
         || runOutcomeSmoke
         || runBudgetSmoke
         || runEvalSmoke
-        || runCompetingContextSmoke;
+        || runCompetingContextSmoke
+        || runLegacyBotSmoke
+        || runLegacyAutoCaseSmoke
+        || runLegacyNetworkSmoke;
+    var includeLegacyStage6ClusterDiagnostics = runLegacyBotSmoke
+        || runLegacyAutoCaseSmoke
+        || runLegacyNetworkSmoke;
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runPassEnvelopeSmoke = args.Any(arg => string.Equals(arg, "--pass-envelope-smoke", StringComparison.OrdinalIgnoreCase));
     var runNormalizationSmoke = args.Any(arg => string.Equals(arg, "--normalization-smoke", StringComparison.OrdinalIgnoreCase));
@@ -174,7 +185,10 @@ try
         "--outcome-smoke",
         "--budget-smoke",
         "--eval-smoke",
-        "--competing-context-smoke"
+        "--competing-context-smoke",
+        "--legacy-bot-smoke",
+        "--legacy-auto-case-smoke",
+        "--legacy-network-smoke"
     };
 
     if (runListSmokes)
@@ -252,7 +266,8 @@ try
             services.AddTelegramAssistantCompositionRoot(
                 config,
                 runtimeRoleSelection,
-                includeLegacyStage6Diagnostics);
+                includeLegacyStage6Diagnostics,
+                includeLegacyStage6ClusterDiagnostics);
 
             Log.Information(
                 "Runtime role selection resolved: roles={Roles}, source={Source}, raw={RawValue}",
@@ -409,6 +424,41 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<CompetingContextVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Legacy Stage6 competing-context diagnostic-only run requested via --competing-context-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runLegacyBotSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<BotCommandVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Legacy Stage6 bot diagnostic-only run requested via --legacy-bot-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runLegacyAutoCaseSmoke)
+        {
+            var verificationService = scope.ServiceProvider.GetRequiredService<Stage6AutoCaseGenerationVerificationService>();
+            await verificationService.RunAsync();
+            Log.Information("Legacy Stage6 auto-case diagnostic-only run requested via --legacy-auto-case-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runLegacyNetworkSmoke)
+        {
+            var service = scope.ServiceProvider.GetRequiredService<INetworkGraphService>();
+            var smokeScope = CaseScopeFactory.CreateSmokeScope("legacy_network");
+            var result = await service.BuildAsync(new NetworkBuildRequest
+            {
+                CaseId = smokeScope.CaseId,
+                ChatId = smokeScope.ChatId,
+                MessageLimit = 240,
+                AsOfUtc = DateTime.UtcNow
+            }, CancellationToken.None);
+            Log.Information(
+                "Legacy Stage6 network diagnostic-only run requested via --legacy-network-smoke. nodes={Nodes}, influence_edges={InfluenceEdges}, information_flows={InformationFlows}. Exiting after successful verification.",
+                result.Nodes.Count,
+                result.InfluenceEdges.Count,
+                result.InformationFlows.Count);
             return;
         }
 
