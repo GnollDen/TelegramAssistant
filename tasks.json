@@ -486,8 +486,8 @@
       "dependencies": [
         "IMPLEMENT-006"
       ],
-      "status": "pending",
-      "notes": "Scoped recompute and promotion governance are core PRD behavior, not late polish."
+      "status": "done",
+      "notes": "Completed via IMPLEMENT-007-A/B/C: Stage8 now has a persistent deduping recompute queue with retry and smallest-sufficient-scope execution, trigger ingestion for clarification answers/edits/deletes/high-signal updates, and truth-layer promotion + clarification gates that update durable_object_metadata promotion_state/truth_layer outcomes with auditable gate metadata."
     },
     {
       "id": "IMPLEMENT-008",

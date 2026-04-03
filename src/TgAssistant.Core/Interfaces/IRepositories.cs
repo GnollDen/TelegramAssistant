@@ -1,3 +1,4 @@
+using TgAssistant.Core.Legacy.Models;
 using TgAssistant.Core.Models;
 
 namespace TgAssistant.Core.Interfaces;
@@ -195,6 +196,13 @@ public interface IStage8RecomputeQueueRepository
         CancellationToken ct = default);
 }
 
+public interface IStage8OutcomeGateRepository
+{
+    Task<Stage8OutcomeGateResult> ApplyOutcomeGateAsync(
+        Stage8OutcomeGateRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeQueueService
 {
     Task<Stage8RecomputeQueueItem> EnqueueAsync(
@@ -202,6 +210,11 @@ public interface IStage8RecomputeQueueService
         CancellationToken ct = default);
 
     Task<Stage8RecomputeExecutionResult> ExecuteNextAsync(CancellationToken ct = default);
+}
+
+public interface IStage8RecomputeTriggerService
+{
+    Task HandleDomainReviewEventAsync(DomainReviewEvent evt, CancellationToken ct = default);
 }
 
 public class EditDiffCandidate

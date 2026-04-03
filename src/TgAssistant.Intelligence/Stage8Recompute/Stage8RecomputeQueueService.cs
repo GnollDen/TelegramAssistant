@@ -15,6 +15,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
     private readonly IStage7DossierProfileService _stage7DossierProfileService;
     private readonly IStage7PairDynamicsService _stage7PairDynamicsService;
     private readonly IStage7TimelineService _stage7TimelineService;
+    private readonly IStage8OutcomeGateRepository _outcomeGateRepository;
     private readonly ILogger<Stage8RecomputeQueueService> _logger;
     private readonly TimeSpan _baseRetryDelay;
     private readonly TimeSpan _maxRetryDelay;
@@ -25,6 +26,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         IStage7DossierProfileService stage7DossierProfileService,
         IStage7PairDynamicsService stage7PairDynamicsService,
         IStage7TimelineService stage7TimelineService,
+        IStage8OutcomeGateRepository outcomeGateRepository,
         ILogger<Stage8RecomputeQueueService> logger,
         TimeSpan? baseRetryDelay = null,
         TimeSpan? maxRetryDelay = null)
@@ -34,6 +36,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         _stage7DossierProfileService = stage7DossierProfileService;
         _stage7PairDynamicsService = stage7PairDynamicsService;
         _stage7TimelineService = stage7TimelineService;
+        _outcomeGateRepository = outcomeGateRepository;
         _logger = logger;
         _baseRetryDelay = baseRetryDelay ?? DefaultBaseRetryDelay;
         _maxRetryDelay = maxRetryDelay ?? DefaultMaxRetryDelay;
@@ -60,6 +63,15 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         try
         {
             var (resultStatus, modelPassRunId) = await ExecuteScopedRecomputeAsync(leasedItem, ct);
+            var gateResult = await _outcomeGateRepository.ApplyOutcomeGateAsync(new Stage8OutcomeGateRequest
+            {
+                ScopeKey = leasedItem.ScopeKey,
+                TargetFamily = leasedItem.TargetFamily,
+                ResultStatus = resultStatus,
+                ModelPassRunId = modelPassRunId,
+                TriggerKind = leasedItem.TriggerKind,
+                TriggerRef = leasedItem.TriggerRef
+            }, ct);
             await _repository.CompleteAsync(leasedItem.Id, leasedItem.LeaseToken!.Value, resultStatus, modelPassRunId, ct);
             leasedItem.Status = Stage8RecomputeQueueStatuses.Completed;
             leasedItem.ActiveDedupeKey = null;
@@ -69,11 +81,15 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             leasedItem.CompletedAtUtc = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}",
+                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}, gate_affected={GateAffected}, gate_promoted={GatePromoted}, gate_promotion_blocked={GatePromotionBlocked}, gate_clarification_blocked={GateClarificationBlocked}",
                 leasedItem.Id,
                 leasedItem.TargetFamily,
                 leasedItem.TargetRef,
-                resultStatus);
+                resultStatus,
+                gateResult.AffectedCount,
+                gateResult.PromotedCount,
+                gateResult.PromotionBlockedCount,
+                gateResult.ClarificationBlockedCount);
 
             return new Stage8RecomputeExecutionResult
             {

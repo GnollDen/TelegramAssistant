@@ -33,6 +33,14 @@ public static class Stage8RecomputeExecutionStatuses
     public const string BlockedInvalidInput = ModelPassResultStatuses.BlockedInvalidInput;
 }
 
+public static class Stage8PromotionStates
+{
+    public const string Pending = "pending";
+    public const string Promoted = "promoted";
+    public const string PromotionBlocked = "promotion_blocked";
+    public const string ClarificationBlocked = "clarification_blocked";
+}
+
 public class Stage8RecomputeQueueRequest
 {
     public string ScopeKey { get; set; } = string.Empty;
@@ -79,4 +87,25 @@ public class Stage8RecomputeExecutionResult
     public string? ResultStatus { get; set; }
     public Guid? ModelPassRunId { get; set; }
     public string? Error { get; set; }
+}
+
+public class Stage8OutcomeGateRequest
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string TargetFamily { get; set; } = string.Empty;
+    public string ResultStatus { get; set; } = ModelPassResultStatuses.BlockedInvalidInput;
+    public Guid? ModelPassRunId { get; set; }
+    public string? TriggerKind { get; set; }
+    public string? TriggerRef { get; set; }
+}
+
+public class Stage8OutcomeGateResult
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string TargetFamily { get; set; } = string.Empty;
+    public string ResultStatus { get; set; } = string.Empty;
+    public int AffectedCount { get; set; }
+    public int PromotedCount { get; set; }
+    public int PromotionBlockedCount { get; set; }
+    public int ClarificationBlockedCount { get; set; }
 }

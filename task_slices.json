@@ -777,7 +777,7 @@
         "Each trigger class maps to a targeted rerun request.",
         "No trigger forces a global rebuild by default."
       ],
-      "notes": "Clean split because triggers should be validated separately from queue internals."
+      "notes": "Implemented and pushed: DomainReviewEvent-based Stage8 trigger ingestion now enqueues scoped recompute requests via Stage8RecomputeTriggerService and repository wiring."
     },
     {
       "id": "IMPLEMENT-007-C",
@@ -789,12 +789,12 @@
       "dependencies": [
         "IMPLEMENT-007-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Promotion outcomes are explicit and auditable.",
         "Clarification-gated scopes do not over-promote durable knowledge."
       ],
-      "notes": "Clean split because governance is separate from trigger/queue mechanics."
+      "notes": "Implemented and pushed: added Stage8 truth-layer outcome gating via Stage8OutcomeGateRepository and wired it into Stage8RecomputeQueueService so crystallization outcomes now mark durable_object_metadata promotion_state/truth_layer as promoted, promotion_blocked, or clarification_blocked with auditable stage8_gate metadata; extended --stage8-recompute-smoke coverage for clarification-gated outcomes and verified with dotnet build TelegramAssistant.sln."
     },
     {
       "id": "IMPLEMENT-008-A",
@@ -807,12 +807,12 @@
         "IMPLEMENT-006-D",
         "IMPLEMENT-007-C"
       ],
-      "status": "blocked",
+      "status": "pending",
       "acceptance_focus": [
         "Future interface track references the clean model only.",
         "No legacy Stage6 operator pages are reused by assumption."
       ],
-      "notes": "Blocked because web/tg moved to a separate PRD track."
+      "notes": "Clean split because governance is separate from trigger/queue mechanics."
     },
     {
       "id": "IMPLEMENT-008-B",
@@ -842,7 +842,7 @@
         "IMPLEMENT-004-C",
         "IMPLEMENT-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Core pipeline metrics are queryable by scope and run family.",
         "Spend and queue depth are visible for governance."

@@ -14,6 +14,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         var dossierProfileService = new FakeStage7DossierProfileService();
         var pairDynamicsService = new FakeStage7PairDynamicsService();
         var timelineService = new FakeStage7TimelineService();
+        var gateRepository = new InMemoryStage8OutcomeGateRepository();
         var loggerFactory = LoggerFactory.Create(_ => { });
         var service = new Stage8RecomputeQueueService(
             repository,
@@ -21,6 +22,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             dossierProfileService,
             pairDynamicsService,
             timelineService,
+            gateRepository,
             loggerFactory.CreateLogger<Stage8RecomputeQueueService>(),
             baseRetryDelay: TimeSpan.FromMilliseconds(1),
             maxRetryDelay: TimeSpan.FromMilliseconds(5));
@@ -58,7 +60,8 @@ public static class Stage8RecomputeQueueSmokeRunner
         if (bootstrapService.CallCount != 1
             || dossierProfileService.CallCount != 1
             || pairDynamicsService.CallCount != 0
-            || timelineService.CallCount != 0)
+            || timelineService.CallCount != 0
+            || gateRepository.CallCount != 1)
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: scoped execution was broader than the requested dossier/profile family.");
         }
@@ -97,6 +100,30 @@ public static class Stage8RecomputeQueueSmokeRunner
             || pairDynamicsService.CallCount != 2)
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: retried pair-dynamics work did not complete on the second attempt.");
+        }
+
+        timelineService.NextResultStatus = ModelPassResultStatuses.NeedOperatorClarification;
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-recompute-smoke-clarification",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000003"),
+            TargetFamily = Stage8RecomputeTargetFamilies.TimelineObjects,
+            TriggerKind = "clarification_smoke",
+            TriggerRef = "implement-007-c-clarification"
+        }, ct);
+
+        var clarificationExecution = await service.ExecuteNextAsync(ct);
+        if (!clarificationExecution.Executed
+            || !string.Equals(clarificationExecution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal)
+            || !string.Equals(clarificationExecution.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification outcome was not persisted as a completed gated execution.");
+        }
+
+        if (!string.Equals(gateRepository.LastRequest?.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal)
+            || !string.Equals(gateRepository.LastRequest?.TargetFamily, Stage8RecomputeTargetFamilies.TimelineObjects, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification gate did not receive crystallization result context.");
         }
     }
 
@@ -369,19 +396,30 @@ public static class Stage8RecomputeQueueSmokeRunner
     private sealed class FakeStage7TimelineService : IStage7TimelineService
     {
         public int CallCount { get; private set; }
+        public string NextResultStatus { get; set; } = ModelPassResultStatuses.ResultReady;
 
         public Task<Stage7TimelineFormationResult> FormAsync(Stage7TimelineFormationRequest request, CancellationToken ct = default)
         {
             CallCount += 1;
             return Task.FromResult(new Stage7TimelineFormationResult
             {
-                AuditRecord = BuildAuditRecord(Guid.Parse("85000000-0000-0000-0000-000000000001"), request.BootstrapResult.ScopeKey, request.BootstrapResult.TrackedPerson?.PersonRef ?? "person:unresolved", "timeline_objects"),
+                AuditRecord = BuildAuditRecord(
+                    Guid.Parse("85000000-0000-0000-0000-000000000001"),
+                    request.BootstrapResult.ScopeKey,
+                    request.BootstrapResult.TrackedPerson?.PersonRef ?? "person:unresolved",
+                    "timeline_objects",
+                    NextResultStatus),
                 Formed = true
             });
         }
     }
 
-    private static ModelPassAuditRecord BuildAuditRecord(Guid runId, string scopeKey, string targetRef, string passFamily)
+    private static ModelPassAuditRecord BuildAuditRecord(
+        Guid runId,
+        string scopeKey,
+        string targetRef,
+        string passFamily,
+        string resultStatus = ModelPassResultStatuses.ResultReady)
     {
         var now = DateTime.UtcNow;
         return new ModelPassAuditRecord
@@ -405,7 +443,7 @@ public static class Stage8RecomputeQueueSmokeRunner
                     TargetType = "person",
                     TargetRef = targetRef
                 },
-                ResultStatus = ModelPassResultStatuses.ResultReady,
+                ResultStatus = resultStatus,
                 OutputSummary = new ModelPassOutputSummary
                 {
                     Summary = "Stage8 recompute smoke completed."
@@ -420,8 +458,31 @@ public static class Stage8RecomputeQueueSmokeRunner
                 TargetType = "person",
                 TargetRef = targetRef,
                 TruthLayer = ModelNormalizationTruthLayers.DerivedButDurable,
-                Status = ModelPassResultStatuses.ResultReady
+                Status = resultStatus
             }
         };
+    }
+
+    private sealed class InMemoryStage8OutcomeGateRepository : IStage8OutcomeGateRepository
+    {
+        public int CallCount { get; private set; }
+        public Stage8OutcomeGateRequest? LastRequest { get; private set; }
+
+        public Task<Stage8OutcomeGateResult> ApplyOutcomeGateAsync(Stage8OutcomeGateRequest request, CancellationToken ct = default)
+        {
+            CallCount += 1;
+            LastRequest = request;
+            var result = new Stage8OutcomeGateResult
+            {
+                ScopeKey = request.ScopeKey,
+                TargetFamily = request.TargetFamily,
+                ResultStatus = request.ResultStatus,
+                AffectedCount = 1,
+                PromotedCount = string.Equals(request.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal) ? 1 : 0,
+                PromotionBlockedCount = string.Equals(request.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal) ? 0 : 1,
+                ClarificationBlockedCount = string.Equals(request.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal) ? 1 : 0
+            };
+            return Task.FromResult(result);
+        }
     }
 }
