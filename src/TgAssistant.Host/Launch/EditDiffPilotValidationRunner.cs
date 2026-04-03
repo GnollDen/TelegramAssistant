@@ -20,6 +20,7 @@ public static class EditDiffPilotValidationRunner
         var analysisSettings = services.GetRequiredService<IOptions<AnalysisSettings>>().Value;
         var legacyService = services.GetRequiredService<OpenRouterAnalysisService>();
         var gateway = services.GetRequiredService<ILlmGateway>();
+        var contractNormalizer = services.GetRequiredService<ILlmContractNormalizer>();
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
 
         var legacyUsageRepository = new RecordingAnalysisUsageRepository();
@@ -31,6 +32,7 @@ public static class EditDiffPilotValidationRunner
             analysisSettings,
             legacyService,
             gateway,
+            contractNormalizer,
             legacyUsageRepository,
             legacyBudgetService,
             loggerFactory,
@@ -40,6 +42,7 @@ public static class EditDiffPilotValidationRunner
             analysisSettings,
             legacyService,
             gateway,
+            contractNormalizer,
             gatewayUsageRepository,
             gatewayBudgetService,
             loggerFactory,
@@ -58,6 +61,7 @@ public static class EditDiffPilotValidationRunner
         var budgetCompatibility = await RunQuotaBudgetProbeAsync(
             analysisSettings,
             legacyService,
+            contractNormalizer,
             loggerFactory,
             ct);
 
@@ -94,6 +98,7 @@ public static class EditDiffPilotValidationRunner
         AnalysisSettings analysisSettings,
         OpenRouterAnalysisService legacyService,
         ILlmGateway gateway,
+        ILlmContractNormalizer contractNormalizer,
         IAnalysisUsageRepository usageRepository,
         IBudgetGuardrailService budgetGuardrailService,
         ILoggerFactory loggerFactory,
@@ -110,6 +115,7 @@ public static class EditDiffPilotValidationRunner
             Options.Create(new LlmGatewaySettings { Enabled = gatewayEnabled }),
             legacyService,
             gateway,
+            contractNormalizer,
             usageRepository,
             budgetGuardrailService,
             loggerFactory.CreateLogger<EditDiffTextCompletionService>());
@@ -317,6 +323,7 @@ public static class EditDiffPilotValidationRunner
     private static async Task<EditDiffPilotBudgetCompatibility> RunQuotaBudgetProbeAsync(
         AnalysisSettings analysisSettings,
         OpenRouterAnalysisService legacyService,
+        ILlmContractNormalizer contractNormalizer,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
@@ -327,6 +334,7 @@ public static class EditDiffPilotValidationRunner
             analysisSettings,
             legacyService,
             quotaGateway,
+            contractNormalizer,
             usageRepository,
             budgetService,
             loggerFactory,

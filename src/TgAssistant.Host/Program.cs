@@ -112,6 +112,7 @@ try
     var runLlmGatewaySuccessSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-success-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmContractNormalizationSmoke = args.Any(arg => string.Equals(arg, "--llm-contract-normalization-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
     var runEditDiffPilotSmoke = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-smoke", StringComparison.OrdinalIgnoreCase));
     var runEditDiffPilotValidate = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-validate", StringComparison.OrdinalIgnoreCase));
@@ -183,6 +184,7 @@ try
         "--llm-gateway-success-smoke",
         "--llm-gateway-failure-smoke",
         "--llm-gateway-experiment-smoke",
+        "--llm-contract-normalization-smoke",
         "--llm-gateway-replay-ab",
         "--edit-diff-pilot-smoke",
         "--edit-diff-pilot-validate",
@@ -271,6 +273,13 @@ try
     {
         await LlmGatewayExperimentSmokeRunner.RunAsync();
         Log.Information("LLM gateway experiment smoke requested via --llm-gateway-experiment-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmContractNormalizationSmoke)
+    {
+        await LlmContractNormalizationSmokeRunner.RunAsync();
+        Log.Information("LLM contract normalization smoke requested via --llm-contract-normalization-smoke. Exiting after successful verification.");
         return;
     }
 

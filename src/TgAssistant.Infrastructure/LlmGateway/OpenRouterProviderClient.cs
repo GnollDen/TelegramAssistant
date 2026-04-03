@@ -80,6 +80,26 @@ public class OpenRouterProviderClient : LlmGatewayProviderClientBase, ILlmProvid
     private Task<LlmProviderResult> ExecuteChatAsync(LlmProviderRequest request, CancellationToken ct)
     {
         var providerSettings = GetRequiredProviderSettings(ProviderId);
+        var schema = request.Request.StructuredOutputSchema;
+        object? responseFormat = null;
+        if (schema is not null)
+        {
+            responseFormat = new
+            {
+                type = "json_schema",
+                json_schema = new
+                {
+                    name = schema.Name,
+                    strict = schema.Strict,
+                    schema = ParseJson(schema.SchemaJson)
+                }
+            };
+        }
+        else if (request.Request.ResponseMode is LlmResponseMode.JsonObject or LlmResponseMode.StructuredAudio)
+        {
+            responseFormat = new { type = "json_object" };
+        }
+
         var payload = new
         {
             model = request.Model,
@@ -100,9 +120,7 @@ public class OpenRouterProviderClient : LlmGatewayProviderClientBase, ILlmProvid
             }).ToArray(),
             tools = request.Request.ToolDefinitions.Count > 0 ? BuildToolDefinitions(request.Request.ToolDefinitions) : null,
             tool_choice = request.Request.ToolDefinitions.Count > 0 ? "auto" : null,
-            response_format = request.Request.ResponseMode is LlmResponseMode.JsonObject or LlmResponseMode.StructuredAudio
-                ? new { type = "json_object" }
-                : null,
+            response_format = responseFormat,
             max_tokens = request.Request.Limits.MaxTokens,
             temperature = request.Request.Limits.Temperature
         };

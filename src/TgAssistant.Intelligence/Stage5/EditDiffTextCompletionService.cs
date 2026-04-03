@@ -12,6 +12,7 @@ public class EditDiffTextCompletionService
     private readonly LlmGatewaySettings _gatewaySettings;
     private readonly OpenRouterAnalysisService _legacyService;
     private readonly ILlmGateway _gateway;
+    private readonly ILlmContractNormalizer _contractNormalizer;
     private readonly IAnalysisUsageRepository _usageRepository;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly ILogger<EditDiffTextCompletionService> _logger;
@@ -21,6 +22,7 @@ public class EditDiffTextCompletionService
         IOptions<LlmGatewaySettings> gatewaySettings,
         OpenRouterAnalysisService legacyService,
         ILlmGateway gateway,
+        ILlmContractNormalizer contractNormalizer,
         IAnalysisUsageRepository usageRepository,
         IBudgetGuardrailService budgetGuardrailService,
         ILogger<EditDiffTextCompletionService> logger)
@@ -29,6 +31,7 @@ public class EditDiffTextCompletionService
         _gatewaySettings = gatewaySettings.Value;
         _legacyService = legacyService;
         _gateway = gateway;
+        _contractNormalizer = contractNormalizer;
         _usageRepository = usageRepository;
         _budgetGuardrailService = budgetGuardrailService;
         _logger = logger;
@@ -51,7 +54,7 @@ public class EditDiffTextCompletionService
 
             var raw = await _legacyService.CompleteTextAsync(
                 legacyModel,
-                EditDiffPromptBuilder.BuildSystemPrompt(),
+                EditDiffPromptBuilder.BuildLegacyContractPrompt(),
                 EditDiffPromptBuilder.BuildUserPrompt(candidate),
                 Math.Clamp(_analysisSettings.EditDiffMaxTokens, 128, 800),
                 "edit_diff",
@@ -110,9 +113,53 @@ public class EditDiffTextCompletionService
                 response.FallbackApplied,
                 response.FallbackFromProvider ?? "n/a");
 
+            var reasoningRaw = NormalizeCompletionPayload(response.Output.StructuredPayloadJson ?? response.Output.Text);
+            var normalizationResult = await _contractNormalizer.NormalizeAsync(
+                new LlmContractNormalizationRequest
+                {
+                    ContractKind = LlmContractKind.EditDiffV1,
+                    RawReasoningPayload = reasoningRaw,
+                    TaskKey = "edit_diff_contract_shaping",
+                    Trace = new LlmTraceContext
+                    {
+                        PathKey = "stage5_edit_diff_contract_shaping",
+                        RequestId = request.Trace.RequestId,
+                        IsImportScope = false,
+                        IsOptionalPath = true,
+                        ScopeTags =
+                        [
+                            "stage5",
+                            "edit_diff",
+                            "contract_shaping"
+                        ]
+                    },
+                    Limits = new LlmExecutionLimits
+                    {
+                        MaxTokens = 320,
+                        Temperature = 0f,
+                        TimeoutMs = request.Limits.TimeoutMs
+                    }
+                },
+                ct);
+
+            var finalPayload = normalizationResult.Status == LlmContractNormalizationStatus.Success
+                ? normalizationResult.NormalizedPayloadJson ?? string.Empty
+                : reasoningRaw;
+            if (normalizationResult.Status != LlmContractNormalizationStatus.Success)
+            {
+                _logger.LogWarning(
+                    "Edit-diff contract normalization failed. status={Status}, failure_reason={FailureReason}, validation_errors={ValidationErrors}",
+                    normalizationResult.Status,
+                    normalizationResult.Diagnostics.FailureReason ?? "n/a",
+                    string.Join(" | ", normalizationResult.Diagnostics.ValidationErrors));
+            }
+
             return new EditDiffTextCompletionResult
             {
-                RawText = NormalizeCompletionPayload(response.Output.StructuredPayloadJson ?? response.Output.Text),
+                RawText = finalPayload,
+                RawReasoningText = reasoningRaw,
+                NormalizationStatus = normalizationResult.Status,
+                NormalizationFailureReason = normalizationResult.Diagnostics.FailureReason,
                 Transport = "llm_gateway",
                 Provider = response.Provider,
                 Model = response.Model,
@@ -212,6 +259,18 @@ public static class EditDiffPromptBuilder
     {
         return """
 You analyze Telegram message edits for memory impact.
+Think step-by-step internally and return concise free-form reasoning in Russian with:
+1) detected change type
+2) whether memory should be affected and why
+3) key evidence from BEFORE/AFTER
+Do not return JSON.
+""";
+    }
+
+    public static string BuildLegacyContractPrompt()
+    {
+        return """
+You analyze Telegram message edits for memory impact.
 Return ONLY JSON with fields:
 - classification: typo | formatting | minor_rephrase | meaning_changed | important_added | important_removed | message_deleted | unknown
 - summary: concise Russian summary of what changed (max 220 chars)
@@ -257,6 +316,9 @@ AFTER:
 public class EditDiffTextCompletionResult
 {
     public string RawText { get; set; } = string.Empty;
+    public string RawReasoningText { get; set; } = string.Empty;
+    public LlmContractNormalizationStatus? NormalizationStatus { get; set; }
+    public string? NormalizationFailureReason { get; set; }
     public string Transport { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;

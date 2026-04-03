@@ -3,6 +3,7 @@ using TgAssistant.Core.Interfaces;
 using TgAssistant.Host.Launch;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Infrastructure.Database;
+using TgAssistant.Infrastructure.LlmGateway;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6Bootstrap;
 using TgAssistant.Intelligence.Stage7Formation;
@@ -70,6 +71,9 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<MessageContentBuilder>();
         services.AddSingleton<AnalysisContextBuilder>();
         services.AddSingleton<SummaryHistoricalRetrievalService>();
+        services.AddSingleton<ILlmContractSchemaProvider, EditDiffContractSchemaProvider>();
+        services.AddSingleton<ILlmContractValidator, EditDiffContractValidator>();
+        services.AddSingleton<ILlmContractNormalizer, OpenRouterContractNormalizer>();
         services.AddSingleton<EditDiffTextCompletionService>();
         services.AddSingleton<Stage5VerificationService>();
         services.AddSingleton<ExtractionApplier>();

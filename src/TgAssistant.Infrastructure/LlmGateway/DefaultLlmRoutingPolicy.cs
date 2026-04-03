@@ -18,6 +18,11 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
 
     public LlmRoutingDecision Resolve(LlmGatewayRequest request)
     {
+        if (request.RouteOverride is not null && !string.IsNullOrWhiteSpace(request.RouteOverride.PrimaryProvider))
+        {
+            return ResolveRouteOverride(request);
+        }
+
         var route = _settings.GetRoute(request.Modality);
         if (route is null)
         {
@@ -62,6 +67,37 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
         ApplyProviderTargets(decision, route.PrimaryProvider, route.PrimaryModel, route.FallbackProviders);
 
         ApplyExperimentOverride(request, decision);
+
+        return decision;
+    }
+
+    private static LlmRoutingDecision ResolveRouteOverride(LlmGatewayRequest request)
+    {
+        var routeOverride = request.RouteOverride!;
+        var decision = new LlmRoutingDecision
+        {
+            PrimaryProvider = routeOverride.PrimaryProvider.Trim(),
+            RetryPolicyClass = "default",
+            TimeoutBudgetClass = "default"
+        };
+
+        foreach (var hint in routeOverride.ProviderModelHints)
+        {
+            if (!string.IsNullOrWhiteSpace(hint.Key) && !string.IsNullOrWhiteSpace(hint.Value))
+            {
+                decision.ProviderModelHints[hint.Key.Trim()] = hint.Value.Trim();
+            }
+        }
+
+        foreach (var fallback in routeOverride.FallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
+        {
+            var providerId = fallback.Provider.Trim();
+            decision.FallbackProviders.Add(providerId);
+            if (!string.IsNullOrWhiteSpace(fallback.Model))
+            {
+                decision.ProviderModelHints[providerId] = fallback.Model.Trim();
+            }
+        }
 
         return decision;
     }

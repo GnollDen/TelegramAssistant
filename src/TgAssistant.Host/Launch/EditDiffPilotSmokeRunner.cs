@@ -15,6 +15,7 @@ public static class EditDiffPilotSmokeRunner
         var analysisSettings = services.GetRequiredService<IOptions<AnalysisSettings>>().Value;
         var legacyService = services.GetRequiredService<OpenRouterAnalysisService>();
         var gateway = services.GetRequiredService<TgAssistant.Core.Interfaces.ILlmGateway>();
+        var contractNormalizer = services.GetRequiredService<ILlmContractNormalizer>();
         var usageRepository = services.GetRequiredService<TgAssistant.Core.Interfaces.IAnalysisUsageRepository>();
         var budgetGuardrailService = services.GetRequiredService<TgAssistant.Core.Interfaces.IBudgetGuardrailService>();
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
@@ -39,6 +40,7 @@ public static class EditDiffPilotSmokeRunner
             Options.Create(new LlmGatewaySettings { Enabled = false }),
             legacyService,
             gateway,
+            contractNormalizer,
             usageRepository,
             budgetGuardrailService,
             loggerFactory.CreateLogger<EditDiffTextCompletionService>());
@@ -53,6 +55,7 @@ public static class EditDiffPilotSmokeRunner
             Options.Create(new LlmGatewaySettings { Enabled = true }),
             legacyService,
             gateway,
+            contractNormalizer,
             usageRepository,
             budgetGuardrailService,
             loggerFactory.CreateLogger<EditDiffTextCompletionService>());

@@ -502,7 +502,7 @@ public abstract class LlmGatewayProviderClientBase
         return $"{(int)statusCode}:{snippet}";
     }
 
-    private static JsonElement ParseJson(string json)
+    protected static JsonElement ParseJson(string json)
     {
         return JsonSerializer.Deserialize<JsonElement>(string.IsNullOrWhiteSpace(json) ? "{}" : json, JsonOptions);
     }

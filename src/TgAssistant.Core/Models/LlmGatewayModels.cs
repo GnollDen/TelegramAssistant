@@ -62,8 +62,10 @@ public class LlmGatewayRequest
     public LlmExecutionLimits Limits { get; set; } = new();
     public LlmTraceContext Trace { get; set; } = new();
     public LlmGatewayExperimentContext Experiment { get; set; } = new();
+    public LlmGatewayRouteOverride? RouteOverride { get; set; }
     public List<LlmToolDefinition> ToolDefinitions { get; set; } = new();
     public LlmResponseMode ResponseMode { get; set; }
+    public LlmStructuredOutputSchema? StructuredOutputSchema { get; set; }
 
     public void Validate()
     {
@@ -80,6 +82,24 @@ public class LlmGatewayRequest
         if (ResponseMode == LlmResponseMode.Unspecified)
         {
             throw CreateValidationException("Gateway request must specify a response mode.");
+        }
+
+        if (StructuredOutputSchema is not null && ResponseMode != LlmResponseMode.JsonObject)
+        {
+            throw CreateValidationException("Structured output schema requires json_object response mode.");
+        }
+
+        if (StructuredOutputSchema is not null)
+        {
+            if (string.IsNullOrWhiteSpace(StructuredOutputSchema.Name))
+            {
+                throw CreateValidationException("Structured output schema requires a non-empty name.");
+            }
+
+            if (string.IsNullOrWhiteSpace(StructuredOutputSchema.SchemaJson))
+            {
+                throw CreateValidationException("Structured output schema requires non-empty schema_json.");
+            }
         }
 
         switch (Modality)
