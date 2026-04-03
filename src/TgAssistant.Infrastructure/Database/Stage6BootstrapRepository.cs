@@ -9,6 +9,7 @@ namespace TgAssistant.Infrastructure.Database;
 public class Stage6BootstrapRepository : IStage6BootstrapRepository
 {
     public const string ActiveStatus = "active";
+    private const string BootstrapSeedSourceKind = "bootstrap_scope_seed";
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
@@ -172,7 +173,11 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
                 && link.PersonId == trackedPerson.Id
                 && evidence.Status == ActiveStatus
                 && source.ScopeKey == scopeKey
-            orderby evidence.ObservedAt descending, evidence.CreatedAt descending
+            orderby source.SourceMessageId != null ? 0 : 1,
+                source.SourceKind == BootstrapSeedSourceKind ? 1 : 0,
+                evidence.ObservedAt descending,
+                evidence.CreatedAt descending,
+                evidence.Id descending
             select new Stage6BootstrapSourceRef
             {
                 SourceType = source.SourceKind,
