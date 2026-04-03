@@ -144,7 +144,8 @@
         "GATEWAY-004",
         "GATEWAY-005",
         "GATEWAY-006",
-        "GATEWAY-007"
+        "GATEWAY-007",
+        "GATEWAY-008"
       ]
     },
     {
@@ -978,6 +979,30 @@
       ],
       "status": "done",
       "notes": "Completed on 2026-04-03 via GATEWAY-007-A/B/C. Ranked post-EditDiff families and selected bounded `SessionSummary v1`; implemented schema+validator+feature-gated fallback path; and validated parity/schema/fallback/operational metrics through --llm-contract-family-validate with report artifact artifacts/llm-gateway/session_summary_family_validation_report.json. Recommendation: continue bounded reasoning-plus-shaping to the next single family only."
+    },
+    {
+      "id": "GATEWAY-008",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Harden gateway observability, readiness, and governance so retry/error accounting, route control, and transport-backed validation are production-grade for bounded selective rollout.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Retryable primary failures that recover via fallback are still visible in provider-level error accounting and observability.",
+        "Startup or readiness checks validate gateway operability for active routes, credentials, and timeout completeness instead of assuming configuration is valid.",
+        "Governance guardrails constrain RouteOverride and model selection enough to prevent silent policy bypass on bounded production paths.",
+        "At least one bounded transport-backed validation path proves the gateway beyond synthetic handler-only smokes."
+      ],
+      "test_steps": [
+        "Verify retryable primary failures increment provider-level error metrics while successful fallback still records final outcome correctly.",
+        "Run gateway readiness/launch checks and confirm invalid route or missing provider config fails fast with actionable diagnostics.",
+        "Run transport-backed bounded validation for one safe gateway path and confirm metrics/exporter assumptions are evidence-backed.",
+        "Run dotnet build TelegramAssistant.sln and the touched gateway smokes/validation commands."
+      ],
+      "dependencies": [
+        "GATEWAY-007"
+      ],
+      "status": "pending",
+      "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families."
     },
     {
       "id": "ALIGN-201",

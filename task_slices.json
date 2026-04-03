@@ -1561,6 +1561,57 @@
       "notes": "Done on 2026-04-03: added bounded `SessionSummary v1` family validation path via `--llm-contract-family-validate`, generating artifacts/llm-gateway/session_summary_family_validation_report.json with parity/schema/fallback/provider-error/metrics checks and Grafana query hints. Validation outcome: all checks passed; recommendation = continue_bounded_reasoning_plus_shaping_for_next_single_family."
     },
     {
+      "id": "GATEWAY-008-A",
+      "parent_task_id": "GATEWAY-008",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Fix gateway observability correctness so retryable primary failures are counted and labeled even when a fallback ultimately succeeds.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Primary provider retryable failures are visible in provider-level error/request metrics.",
+        "Successful fallback does not erase observability of the failed primary attempt."
+      ],
+      "notes": "Close the undercount gap in bounded ops observability before claiming gateway metrics are production-grade."
+    },
+    {
+      "id": "GATEWAY-008-B",
+      "parent_task_id": "GATEWAY-008",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Harden gateway readiness and route governance so active routes, credentials, RouteOverride, and model selection cannot silently bypass bounded policy.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-008-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Readiness fails fast when active gateway routes or provider settings are incomplete.",
+        "RouteOverride and model selection remain bounded by explicit governance rules."
+      ],
+      "notes": "This slice should stay bounded: do not redesign the whole policy system, only close the known bypass/readiness gaps."
+    },
+    {
+      "id": "GATEWAY-008-C",
+      "parent_task_id": "GATEWAY-008",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Add one transport-backed bounded validation path and record whether gateway observability/governance is now strong enough for continued selective rollout.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "GATEWAY-008-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway validation is no longer only synthetic/in-memory for bounded rollout evidence.",
+        "A clear continue/hold recommendation exists for further selective family rollout after hardening."
+      ],
+      "notes": "Use one safe transport-backed path to prove the gateway beyond synthetic smoke handlers before expanding further."
+    },
+    {
       "id": "ALIGN-201-A",
       "parent_task_id": "ALIGN-201",
       "phase": "phase-e-prd-alignment-hardening",
