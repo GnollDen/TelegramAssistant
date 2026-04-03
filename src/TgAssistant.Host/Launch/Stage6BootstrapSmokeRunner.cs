@@ -288,6 +288,11 @@ public static class Stage6BootstrapSmokeRunner
             {
                 AuditRecord = auditRecord,
                 GraphInitialized = true,
+                ScopeKey = resolution.ScopeKey,
+                TrackedPerson = resolution.TrackedPerson,
+                OperatorPerson = resolution.OperatorPerson,
+                EvidenceCount = resolution.EvidenceCount,
+                LatestEvidenceAtUtc = resolution.LatestEvidenceAtUtc,
                 Nodes = [operatorNode, trackedNode],
                 Edges = [edge]
             });

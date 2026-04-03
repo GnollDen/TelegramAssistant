@@ -683,12 +683,12 @@
         "IMPLEMENT-004-C",
         "IMPLEMENT-005-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Profile versus dossier is explicit in durable storage.",
         "Evidence refs, freshness, and confidence are persisted."
       ],
-      "notes": "Clean split because dossier/profile formation is one durable object family."
+      "notes": "Clean split because dossier/profile formation is one durable object family. Added separate durable_dossiers and durable_profiles tables backed by durable_object_metadata/evidence_links, plus Stage7DossierProfileFormationService to form dossier/profile outputs from stage6 bootstrap + normalized candidates with persisted confidence, freshness, coverage, and supporting evidence refs; added --stage7-dossier-profile-smoke to verify materialization, rerun idempotency, and non-ready bootstrap failure semantics, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-006-B",

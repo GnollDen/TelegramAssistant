@@ -605,6 +605,11 @@ public class Stage6BootstrapRepository : IStage6BootstrapRepository
         {
             AuditRecord = auditRecord,
             GraphInitialized = true,
+            ScopeKey = resolution.ScopeKey,
+            TrackedPerson = resolution.TrackedPerson,
+            OperatorPerson = resolution.OperatorPerson,
+            EvidenceCount = resolution.EvidenceCount,
+            LatestEvidenceAtUtc = resolution.LatestEvidenceAtUtc,
             Nodes =
             [
                 MapNode(operatorNode),

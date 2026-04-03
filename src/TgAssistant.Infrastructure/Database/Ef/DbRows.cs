@@ -631,6 +631,36 @@ public class DbDurableObjectEvidenceLink
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbDurableDossier
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string DossierType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableProfile
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string ProfileScope { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

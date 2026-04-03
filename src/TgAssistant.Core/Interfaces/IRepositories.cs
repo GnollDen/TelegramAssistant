@@ -123,6 +123,21 @@ public interface IStage6BootstrapService
     Task<Stage6BootstrapGraphResult> RunGraphInitializationAsync(Stage6BootstrapRequest request, CancellationToken ct = default);
 }
 
+public interface IStage7DossierProfileRepository
+{
+    Task<Stage7DossierProfileFormationResult> UpsertAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        CancellationToken ct = default);
+}
+
+public interface IStage7DossierProfileService
+{
+    Task<Stage7DossierProfileFormationResult> FormAsync(
+        Stage7DossierProfileFormationRequest request,
+        CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }

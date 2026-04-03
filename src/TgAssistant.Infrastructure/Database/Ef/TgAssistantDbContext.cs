@@ -49,6 +49,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbBootstrapPoolOutput> BootstrapPoolOutputs => Set<DbBootstrapPoolOutput>();
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
+    public DbSet<DbDurableDossier> DurableDossiers => Set<DbDurableDossier>();
+    public DbSet<DbDurableProfile> DurableProfiles => Set<DbDurableProfile>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -917,6 +919,48 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.DurableObjectMetadataId, x.EvidenceItemId, x.LinkRole }).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.EvidenceItemId, x.LinkRole });
             e.HasIndex(x => new { x.ScopeKey, x.DurableObjectMetadataId });
+        });
+
+        modelBuilder.Entity<DbDurableDossier>(e =>
+        {
+            e.ToTable("durable_dossiers");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.DossierType).HasColumnName("dossier_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.DossierType }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableProfile>(e =>
+        {
+            e.ToTable("durable_profiles");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.ProfileScope).HasColumnName("profile_scope");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.ProfileScope }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

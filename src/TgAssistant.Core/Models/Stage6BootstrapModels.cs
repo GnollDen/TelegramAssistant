@@ -142,6 +142,11 @@ public class Stage6BootstrapGraphResult
 {
     public ModelPassAuditRecord AuditRecord { get; set; } = new();
     public bool GraphInitialized { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Stage6BootstrapPersonRef? TrackedPerson { get; set; }
+    public Stage6BootstrapPersonRef? OperatorPerson { get; set; }
+    public int EvidenceCount { get; set; }
+    public DateTime? LatestEvidenceAtUtc { get; set; }
     public List<Stage6BootstrapGraphNode> Nodes { get; set; } = [];
     public List<Stage6BootstrapGraphEdge> Edges { get; set; } = [];
     public List<Stage6BootstrapDiscoveryOutput> DiscoveryOutputs { get; set; } = [];
