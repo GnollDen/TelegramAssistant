@@ -1502,12 +1502,12 @@
       "dependencies": [
         "ALIGN-201-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Current Stage7/Stage8 semantics are described precisely against the PRD.",
         "Drift is explicit rather than hidden in optimistic wording."
       ],
-      "notes": "Architecture-first slice before any semantic correction or docs narrowing."
+      "notes": "Done 2026-04-03: published evidence-backed Stage7/Stage8 semantic alignment note that maps current deterministic Stage7 formation and Stage8 recompute/gating behavior to PRD expectations and narrows the follow-up for ALIGN-202-B."
     },
     {
       "id": "ALIGN-202-B",

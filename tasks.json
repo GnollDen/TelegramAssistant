@@ -975,7 +975,7 @@
         "ALIGN-201"
       ],
       "status": "pending",
-      "notes": "This is an alignment-hardening task, not a broad feature expansion."
+      "notes": "ALIGN-202-A completed on 2026-04-03 with an evidence-backed Stage7/Stage8 semantic alignment note. ALIGN-202 remains pending until ALIGN-202-B applies the bounded documentation or semantics narrowing needed to stop overclaiming current crystallizer coverage."
     },
     {
       "id": "ALIGN-203",
