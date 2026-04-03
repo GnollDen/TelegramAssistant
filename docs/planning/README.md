@@ -17,6 +17,7 @@ Top-level routing:
 
 - [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
 - [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
+- [OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md)
 
 ## Planning Doc Classification
 
@@ -24,6 +25,7 @@ Top-level routing:
 
 - Active: [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
 - Active: [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
+- Active: [OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md)
 
 ### Gateway prep docs
 
@@ -68,7 +70,7 @@ Top-level routing:
 
 ## Routing Rule
 
-Active planning authority routes through this index and the two PRDs above.
+Active planning authority routes through this index and the three PRDs above.
 Treat gateway prep and cleanup/audit notes as reference-only context.
 Treat option notes as historical/archive-only unless explicitly promoted by a newer PRD update.
 Read Stage7/Stage8 implementation claims together with the `ALIGN-202-A` semantic note and backlog notes so current scoped recompute and deterministic formation behavior is not mistaken for full specialized crystallizer coverage.
