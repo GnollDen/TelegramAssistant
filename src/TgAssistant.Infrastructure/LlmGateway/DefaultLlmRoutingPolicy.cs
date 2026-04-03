@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
@@ -57,12 +59,69 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
             TimeoutBudgetClass = string.IsNullOrWhiteSpace(route.TimeoutBudgetClass) ? "default" : route.TimeoutBudgetClass.Trim()
         };
 
-        if (!string.IsNullOrWhiteSpace(route.PrimaryModel))
+        ApplyProviderTargets(decision, route.PrimaryProvider, route.PrimaryModel, route.FallbackProviders);
+
+        ApplyExperimentOverride(request, decision);
+
+        return decision;
+    }
+
+    private void ApplyExperimentOverride(LlmGatewayRequest request, LlmRoutingDecision decision)
+    {
+        var label = request.Experiment.Label?.Trim();
+        if (string.IsNullOrWhiteSpace(label))
         {
-            decision.ProviderModelHints[decision.PrimaryProvider] = route.PrimaryModel.Trim();
+            return;
         }
 
-        foreach (var fallback in route.FallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
+        var experiment = _settings.GetExperiment(label);
+        if (experiment is null || !experiment.Enabled)
+        {
+            return;
+        }
+
+        var branches = experiment.Branches
+            .Where(branch => !string.IsNullOrWhiteSpace(branch.Branch)
+                && !string.IsNullOrWhiteSpace(branch.Provider)
+                && branch.WeightPercent > 0)
+            .ToList();
+        if (branches.Count == 0)
+        {
+            throw new LlmGatewayException($"Gateway experiment '{label}' is enabled but does not define any usable branches.")
+            {
+                Category = LlmGatewayErrorCategory.Validation,
+                Modality = request.Modality,
+                Retryable = false
+            };
+        }
+
+        var stickyRoutingKey = ResolveStickyRoutingKey(request);
+        var selectedBranch = SelectBranch(branches, stickyRoutingKey);
+
+        decision.PrimaryProvider = selectedBranch.Provider.Trim();
+        decision.FallbackProviders.Clear();
+        decision.ProviderModelHints.Clear();
+        ApplyProviderTargets(decision, selectedBranch.Provider, selectedBranch.Model, selectedBranch.FallbackProviders);
+        decision.Experiment = new LlmRoutingExperimentDecision
+        {
+            Label = label,
+            Branch = selectedBranch.Branch.Trim(),
+            StickyRoutingKey = stickyRoutingKey
+        };
+    }
+
+    private static void ApplyProviderTargets(
+        LlmRoutingDecision decision,
+        string primaryProvider,
+        string? primaryModel,
+        IEnumerable<LlmGatewayProviderTargetSettings> fallbackProviders)
+    {
+        if (!string.IsNullOrWhiteSpace(primaryModel))
+        {
+            decision.ProviderModelHints[primaryProvider.Trim()] = primaryModel.Trim();
+        }
+
+        foreach (var fallback in fallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
         {
             var providerId = fallback.Provider.Trim();
             decision.FallbackProviders.Add(providerId);
@@ -72,7 +131,56 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
                 decision.ProviderModelHints[providerId] = fallback.Model.Trim();
             }
         }
+    }
 
-        return decision;
+    private static string ResolveStickyRoutingKey(LlmGatewayRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Experiment.StickyRoutingKey))
+        {
+            return request.Experiment.StickyRoutingKey.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Trace.RequestId))
+        {
+            return request.Trace.RequestId.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Trace.PathKey))
+        {
+            return request.Trace.PathKey.Trim();
+        }
+
+        return request.TaskKey.Trim();
+    }
+
+    private static LlmGatewayExperimentBranchSettings SelectBranch(
+        IReadOnlyList<LlmGatewayExperimentBranchSettings> branches,
+        string stickyRoutingKey)
+    {
+        var totalWeight = branches.Sum(branch => branch.WeightPercent);
+        if (totalWeight <= 0)
+        {
+            return branches[0];
+        }
+
+        var selectionBucket = ComputeDeterministicBucket(stickyRoutingKey, totalWeight);
+        var runningTotal = 0;
+        foreach (var branch in branches)
+        {
+            runningTotal += branch.WeightPercent;
+            if (selectionBucket < runningTotal)
+            {
+                return branch;
+            }
+        }
+
+        return branches[^1];
+    }
+
+    private static int ComputeDeterministicBucket(string stickyRoutingKey, int totalWeight)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(stickyRoutingKey));
+        var value = BitConverter.ToUInt32(bytes, 0);
+        return (int)(value % totalWeight);
     }
 }

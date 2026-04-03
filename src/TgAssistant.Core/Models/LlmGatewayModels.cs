@@ -61,6 +61,7 @@ public class LlmGatewayRequest
     public List<string> EmbeddingInputs { get; set; } = new();
     public LlmExecutionLimits Limits { get; set; } = new();
     public LlmTraceContext Trace { get; set; } = new();
+    public LlmGatewayExperimentContext Experiment { get; set; } = new();
     public List<LlmToolDefinition> ToolDefinitions { get; set; } = new();
     public LlmResponseMode ResponseMode { get; set; }
 
@@ -136,6 +137,7 @@ public class LlmGatewayResponse
     public LlmUsageInfo Usage { get; set; } = new();
     public bool FallbackApplied { get; set; }
     public string? FallbackFromProvider { get; set; }
+    public LlmGatewayExperimentResult? Experiment { get; set; }
     public string? RawProviderPayloadJson { get; set; }
 }
 
@@ -216,6 +218,21 @@ public class LlmTraceContext
     public bool IsOptionalPath { get; set; }
 }
 
+public class LlmGatewayExperimentContext
+{
+    public string? Label { get; set; }
+    public string? StickyRoutingKey { get; set; }
+}
+
+public class LlmGatewayExperimentResult
+{
+    public string Label { get; set; } = string.Empty;
+    public string Branch { get; set; } = string.Empty;
+    public string StickyRoutingKey { get; set; } = string.Empty;
+    public string SelectedProvider { get; set; } = string.Empty;
+    public string SelectedModel { get; set; } = string.Empty;
+}
+
 public class LlmUsageInfo
 {
     public int? PromptTokens { get; set; }
@@ -252,6 +269,14 @@ public class LlmRoutingDecision
     public Dictionary<string, string> ProviderModelHints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string RetryPolicyClass { get; set; } = "default";
     public string TimeoutBudgetClass { get; set; } = "default";
+    public LlmRoutingExperimentDecision? Experiment { get; set; }
+}
+
+public class LlmRoutingExperimentDecision
+{
+    public string Label { get; set; } = string.Empty;
+    public string Branch { get; set; } = string.Empty;
+    public string StickyRoutingKey { get; set; } = string.Empty;
 }
 
 public class LlmGatewayException : Exception

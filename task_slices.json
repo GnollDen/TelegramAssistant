@@ -1366,12 +1366,12 @@
       "dependencies": [
         "GATEWAY-002-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Replay experiments can steer requests by experiment label without branching domain code.",
         "Provider/model/latency/usage/fallback metadata is captured per experiment branch."
       ],
-      "notes": "Experiment control plane for the gateway."
+      "notes": "Completed on 2026-04-03 by adding config-driven gateway experiment labels, deterministic sticky routing-key branch selection, per-branch provider/model audit metadata on responses, a disabled appsettings experiment template, and --llm-gateway-experiment-smoke verification without forking domain callers."
     },
     {
       "id": "GATEWAY-003-B",

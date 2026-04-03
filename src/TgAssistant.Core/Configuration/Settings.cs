@@ -60,6 +60,7 @@ public class LlmGatewaySettings
     public bool LogRawProviderPayloadJson { get; set; }
     public Dictionary<string, LlmGatewayRouteSettings> Routing { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, LlmGatewayProviderSettings> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, LlmGatewayExperimentSettings> Experiments { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public LlmGatewayRouteSettings? GetRoute(LlmModality modality)
     {
@@ -69,6 +70,11 @@ public class LlmGatewaySettings
     public LlmGatewayProviderSettings? GetProvider(string providerId)
     {
         return TryGetValue(Providers, providerId);
+    }
+
+    public LlmGatewayExperimentSettings? GetExperiment(string label)
+    {
+        return TryGetValue(Experiments, label);
     }
 
     public static string ToRouteKey(LlmModality modality)
@@ -124,6 +130,21 @@ public class LlmGatewayProviderSettings
     public string ChatCompletionsPath { get; set; } = "/v1/chat/completions";
     public string EmbeddingsPath { get; set; } = "/v1/embeddings";
     public int TimeoutSeconds { get; set; } = 120;
+}
+
+public class LlmGatewayExperimentSettings
+{
+    public bool Enabled { get; set; } = true;
+    public List<LlmGatewayExperimentBranchSettings> Branches { get; set; } = new();
+}
+
+public class LlmGatewayExperimentBranchSettings
+{
+    public string Branch { get; set; } = string.Empty;
+    public int WeightPercent { get; set; } = 100;
+    public string Provider { get; set; } = string.Empty;
+    public string? Model { get; set; }
+    public List<LlmGatewayProviderTargetSettings> FallbackProviders { get; set; } = new();
 }
 
 public class BatchWorkerSettings

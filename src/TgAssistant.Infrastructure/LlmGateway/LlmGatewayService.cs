@@ -59,6 +59,16 @@ public class LlmGatewayService : ILlmGateway
                     Usage = providerResult.Usage,
                     FallbackApplied = index > 0,
                     FallbackFromProvider = index > 0 ? routingDecision.PrimaryProvider : null,
+                    Experiment = routingDecision.Experiment is null
+                        ? null
+                        : new LlmGatewayExperimentResult
+                        {
+                            Label = routingDecision.Experiment.Label,
+                            Branch = routingDecision.Experiment.Branch,
+                            StickyRoutingKey = routingDecision.Experiment.StickyRoutingKey,
+                            SelectedProvider = providerResult.ProviderId,
+                            SelectedModel = providerResult.Model
+                        },
                     RawProviderPayloadJson = _settings.LogRawProviderPayloadJson ? providerResult.RawProviderPayloadJson : null
                 };
             }

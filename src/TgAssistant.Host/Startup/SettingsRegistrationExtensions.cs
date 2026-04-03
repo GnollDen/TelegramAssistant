@@ -111,6 +111,9 @@ public static partial class ServiceRegistrationExtensions
             s.Providers = new Dictionary<string, LlmGatewayProviderSettings>(
                 s.Providers ?? new Dictionary<string, LlmGatewayProviderSettings>(),
                 StringComparer.OrdinalIgnoreCase);
+            s.Experiments = new Dictionary<string, LlmGatewayExperimentSettings>(
+                s.Experiments ?? new Dictionary<string, LlmGatewayExperimentSettings>(),
+                StringComparer.OrdinalIgnoreCase);
 
             foreach (var route in s.Routing.Values)
             {
@@ -138,6 +141,24 @@ public static partial class ServiceRegistrationExtensions
                     ? "/v1/embeddings"
                     : provider.EmbeddingsPath.Trim();
                 provider.TimeoutSeconds = Math.Max(1, provider.TimeoutSeconds);
+            }
+
+            foreach (var experiment in s.Experiments.Values)
+            {
+                experiment.Branches ??= new List<LlmGatewayExperimentBranchSettings>();
+                foreach (var branch in experiment.Branches)
+                {
+                    branch.Branch = branch.Branch?.Trim() ?? string.Empty;
+                    branch.Provider = branch.Provider?.Trim() ?? string.Empty;
+                    branch.Model = string.IsNullOrWhiteSpace(branch.Model) ? null : branch.Model.Trim();
+                    branch.WeightPercent = Math.Max(0, branch.WeightPercent);
+                    branch.FallbackProviders ??= new List<LlmGatewayProviderTargetSettings>();
+                    foreach (var fallback in branch.FallbackProviders)
+                    {
+                        fallback.Provider = fallback.Provider?.Trim() ?? string.Empty;
+                        fallback.Model = string.IsNullOrWhiteSpace(fallback.Model) ? null : fallback.Model.Trim();
+                    }
+                }
             }
         });
 
