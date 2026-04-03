@@ -9,10 +9,9 @@ COPY src/TgAssistant.Infrastructure/TgAssistant.Infrastructure.csproj src/TgAssi
 COPY src/TgAssistant.Intelligence/TgAssistant.Intelligence.csproj src/TgAssistant.Intelligence/
 COPY src/TgAssistant.Processing/TgAssistant.Processing.csproj src/TgAssistant.Processing/
 COPY src/TgAssistant.Telegram/TgAssistant.Telegram.csproj src/TgAssistant.Telegram/
-COPY src/TgAssistant.Web/TgAssistant.Web.csproj src/TgAssistant.Web/
 
 RUN --mount=type=cache,id=tgassistant-nuget,target=/root/.nuget/packages \
-    dotnet restore TelegramAssistant.sln
+    dotnet restore src/TgAssistant.Host/TgAssistant.Host.csproj
 
 COPY src/ src/
 RUN --mount=type=cache,id=tgassistant-nuget,target=/root/.nuget/packages \

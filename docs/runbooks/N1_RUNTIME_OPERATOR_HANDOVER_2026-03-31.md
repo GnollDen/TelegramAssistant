@@ -1,5 +1,8 @@
 # Sprint N1 Runtime and Operator Handover
 
+> Historical baseline note (N1).
+> Legacy-only context; not active clean-slate runtime authority.
+
 ## Date
 
 2026-03-31

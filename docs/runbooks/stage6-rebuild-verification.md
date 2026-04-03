@@ -1,12 +1,18 @@
 # Stage 6 Rebuild Verification Runbook
 
-Use this runbook only when an explicit Stage 6 reset/rebuild is planned.
+> Historical/legacy runbook only.
+> Not part of the active runtime authority chain for current clean-slate operation.
 
-For current accepted normal baseline operations, use:
+Legacy-only diagnostic runbook.
 
-- `docs/planning/N1_READINESS_BASELINE_2026-03-31.md`
-- `docs/runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md`
-- `docs/runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md`
+Use this runbook only when an explicit Stage 6 reset/rebuild is planned or when you are intentionally investigating the retired Stage 6 path.
+
+For current clean-slate baseline operations, use:
+
+- `docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md`
+- `docs/planning/CLEANUP-001-B_RESET_BOUNDARY_NOTE_2026-04-02.md`
+- `docs/planning/CLEANUP-005-A_RUNTIME_ROLE_AND_SMOKE_INVENTORY_2026-04-02.md`
+- `docs/planning/README.md`
 
 ## Preconditions
 
@@ -42,7 +48,7 @@ Pass condition:
 
 - all checks exit `0`
 
-### B. Stage 6 Execution Discipline Smoke
+### B. Stage 6 Legacy Diagnostic
 
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage6 --stage6-execution-smoke`
 
@@ -51,7 +57,7 @@ Deterministic behavior note for live-dev:
 - smoke verifier is baseline-aware for optional embedding checks;
 - when rolling usage already saturates hard limit, optional path may appear as `hard_paused`;
 - when baseline is below hard limit, optional path may appear as `soft_limited`;
-- both are acceptable if smoke exits `0` and reports discipline success.
+- both are acceptable if diagnostic exits `0` and reports discipline success.
 
 ### C. Bot Operator Surface
 

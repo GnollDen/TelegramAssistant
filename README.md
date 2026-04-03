@@ -10,16 +10,15 @@
                                         /         |          \
                                 [Cheap/Expensive] |      [Summaries]
                                                    |
-                                            [Stage6 Bot/RAG]
+                             [Stage6Bootstrap -> Stage7 -> Stage8]
 ```
 
-## Current worker topology (Stage5/Stage6)
+## Current worker topology
 - Core ingestion: `TelegramListenerService` → `BatchWorkerService` → `ArchiveImportWorkerService`
 - Media enrichment: `ArchiveMediaProcessorService`, `VoiceParalinguisticsWorkerService`
 - Stage5 extraction (session-first): `AnalysisWorkerService` + `ExpensivePassResolver`
 - Stage5 summaries (slice-based): `DialogSummaryWorkerService` (+ historical retrieval embeddings)
-- Stage6 refinement: `ContinuousRefinementWorkerService` (disabled by default)
-- Stage6 chat/dossier runtime: `TelegramBotHostedService` + retrieval/embedding workers
+- Stage6Bootstrap/Stage7/Stage8 durable formation and recompute services run via command and queue flows, not legacy bot/web shells.
 
 ### Stage5 cursors (current)
 - Session analysis queue: `chat_sessions.is_analyzed=false` with idle gate `Analysis.SessionAnalysisMinIdleMinutes`.
@@ -41,21 +40,6 @@
 docker compose build app mcp
 docker compose up -d
 ```
-
-## Web role (Sprint W1)
-- Hosted operator shell runs under runtime role `web` (or `web,ops`).
-- Required settings for `web` role:
-  - `Web:Url` (default `http://127.0.0.1:5078`)
-  - `Web:OperatorAccessToken` when `Web:RequireOperatorAccessToken=true`
-- Local start example:
-  ```bash
-  Web__OperatorAccessToken=replace_me dotnet run --project src/TgAssistant.Host -- --runtime-role=web
-  ```
-- Primary entry surfaces:
-  - `/`
-  - `/queue`
-  - `/case-detail?caseId=<guid>`
-  - `/artifact-detail?artifactType=<type>`
 
 ## MCP server (stdio + SSE)
 - MCP server source lives in `src/TgAssistant.Mcp`.
@@ -99,7 +83,7 @@ When threshold is exceeded, only the first `PhotoBurstKeepCount` photos are sent
 - [x] 3: Media processing
 - [x] 4: Archive import
 - [x] 5: Dossier/Intelligence pipeline (Stage5 v10)
-- [x] 6: Telegram Bot chat mode + RAG
+- [x] 6: Stage6Bootstrap/Stage7/Stage8 durable formation baseline
 - [ ] 7: Cron notifications
 - [ ] 8: Web UI
 - [ ] 9: Inline mode

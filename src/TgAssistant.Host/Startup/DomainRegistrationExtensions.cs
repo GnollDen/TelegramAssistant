@@ -21,8 +21,6 @@ using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Archive.ExternalIngestion;
-using TgAssistant.Telegram.Bot;
-using TgAssistant.Web.Read;
 
 namespace TgAssistant.Host.Startup;
 
@@ -30,13 +28,14 @@ public static partial class ServiceRegistrationExtensions
 {
     public static IServiceCollection AddTelegramAssistantDomainServices(
         this IServiceCollection services,
-        bool includeLegacyStage6Diagnostics = false,
-        bool includeLegacyWebDiagnostics = false,
-        bool includeLegacyBotDiagnostics = false)
+        bool includeLegacyStage6Diagnostics = false)
     {
-        services
-            .AddActiveRepositoryServices()
-            .AddLegacyRepositoryServices();
+        services.AddActiveRepositoryServices();
+
+        if (includeLegacyStage6Diagnostics)
+        {
+            services.AddStage6LegacyRepositoryServices();
+        }
 
         services.AddSingleton<IChatCoordinationService, ChatCoordinationService>();
         services.AddSingleton<FoundationDomainVerificationService>();
@@ -73,22 +72,13 @@ public static partial class ServiceRegistrationExtensions
             services.AddLegacyStage6DiagnosticServices();
         }
 
-        if (includeLegacyBotDiagnostics)
-        {
-            services.AddLegacyBotDiagnosticServices();
-        }
-
-        if (includeLegacyWebDiagnostics)
-        {
-            services.AddLegacyWebDiagnosticServices();
-        }
-
         return services;
     }
 
     private static IServiceCollection AddLegacyStage6DiagnosticServices(this IServiceCollection services)
     {
         // Retained only for explicit cleanup diagnostics; this is not the active Stage 6/7/8 implementation path.
+        services.AddSingleton<IStage6ArtifactFreshnessService, Stage6ArtifactFreshnessService>();
         services.AddSingleton<IClarificationAnswerApplier, ClarificationAnswerApplier>();
         services.AddSingleton<IClarificationDependencyResolver, ClarificationDependencyResolver>();
         services.AddSingleton<IRecomputeTargetPlanner, RecomputeTargetPlanner>();
@@ -150,32 +140,6 @@ public static partial class ServiceRegistrationExtensions
         return services;
     }
 
-    private static IServiceCollection AddLegacyBotDiagnosticServices(this IServiceCollection services)
-    {
-        // Retained only for explicit cleanup diagnostics; this is not the active operator surface.
-        services.AddSingleton<IBotCommandService, BotCommandService>();
-        services.AddSingleton<BotCommandVerificationService>();
-        services.AddSingleton<IBotChatService, BotChatService>();
-        return services;
-    }
-
-    private static IServiceCollection AddLegacyWebDiagnosticServices(this IServiceCollection services)
-    {
-        // Retained only for explicit cleanup diagnostics; this is not the active operator surface.
-        services.AddSingleton<IWebReadService, WebReadService>();
-        services.AddSingleton<IWebReviewService, WebReviewService>();
-        services.AddSingleton<IWebOpsService, WebOpsService>();
-        services.AddSingleton<IWebSearchService, WebSearchService>();
-        services.AddSingleton<IWebRouteRenderer, WebRouteRenderer>();
-        services.AddSingleton<WebReadVerificationService>();
-        services.AddSingleton<WebReviewVerificationService>();
-        services.AddSingleton<WebOpsVerificationService>();
-        services.AddSingleton<WebSearchVerificationService>();
-        services.AddSingleton<INetworkGraphService, NetworkGraphService>();
-        services.AddSingleton<NetworkVerificationService>();
-        return services;
-    }
-
     private static IServiceCollection AddActiveRepositoryServices(this IServiceCollection services)
     {
         // Active baseline repository surface: retained substrate plus retained-with-refactor data stores.
@@ -223,17 +187,17 @@ public static partial class ServiceRegistrationExtensions
         return services;
     }
 
-    private static IServiceCollection AddLegacyRepositoryServices(this IServiceCollection services)
+    private static IServiceCollection AddStage6LegacyRepositoryServices(this IServiceCollection services)
     {
-        // Frozen legacy repository surface: mapped for cleanup, diagnostics, and controlled migration only.
+        // Frozen Stage6 repository surface: mapped for explicit legacy diagnostics only.
         services.AddSingleton<IPeriodRepository, PeriodRepository>();
         services.AddSingleton<IClarificationRepository, ClarificationRepository>();
         services.AddSingleton<IOfflineEventRepository, OfflineEventRepository>();
         services.AddSingleton<IStateProfileRepository, StateProfileRepository>();
-        services.AddSingleton<IStrategyDraftRepository, StrategyDraftRepository>();
         services.AddSingleton<IInboxConflictRepository, InboxConflictRepository>();
-        services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
         services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
+        services.AddSingleton<IStrategyDraftRepository, StrategyDraftRepository>();
+        services.AddSingleton<IDependencyLinkRepository, DependencyLinkRepository>();
         services.AddSingleton<IStage6ArtifactRepository, Stage6ArtifactRepository>();
         services.AddSingleton<IStage6CaseRepository, Stage6CaseRepository>();
         services.AddSingleton<IStage6UserContextRepository, Stage6UserContextRepository>();

@@ -21,7 +21,6 @@ using TgAssistant.Intelligence.Stage6.Control;
 using TgAssistant.Intelligence.Stage6.CurrentState;
 using TgAssistant.Intelligence.Stage6.DraftReview;
 using TgAssistant.Intelligence.Stage6.Drafts;
-using TgAssistant.Intelligence.Stage6.Network;
 using TgAssistant.Intelligence.Stage6.Outcome;
 using TgAssistant.Intelligence.Stage6.Periodization;
 using TgAssistant.Intelligence.Stage6.Profiles;
@@ -29,9 +28,7 @@ using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Archive.ExternalIngestion;
 using TgAssistant.Processing.Workers;
-using TgAssistant.Telegram.Bot;
 using TgAssistant.Telegram.Listener;
-using TgAssistant.Web.Read;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -81,22 +78,10 @@ try
     var runStrategySmoke = args.Any(arg => string.Equals(arg, "--strategy-smoke", StringComparison.OrdinalIgnoreCase));
     var runDraftSmoke = args.Any(arg => string.Equals(arg, "--draft-smoke", StringComparison.OrdinalIgnoreCase));
     var runReviewSmoke = args.Any(arg => string.Equals(arg, "--review-smoke", StringComparison.OrdinalIgnoreCase));
-    var runBotSmoke = args.Any(arg => string.Equals(arg, "--bot-smoke", StringComparison.OrdinalIgnoreCase));
-    var runWebSmoke = args.Any(arg => string.Equals(arg, "--web-smoke", StringComparison.OrdinalIgnoreCase));
-    var runWebReviewSmoke = args.Any(arg => string.Equals(arg, "--web-review-smoke", StringComparison.OrdinalIgnoreCase));
-    var runOpsWebSmoke = args.Any(arg => string.Equals(arg, "--ops-web-smoke", StringComparison.OrdinalIgnoreCase));
-    var runSearchSmoke = args.Any(arg => string.Equals(arg, "--search-smoke", StringComparison.OrdinalIgnoreCase));
-    var runNetworkSmoke = args.Any(arg => string.Equals(arg, "--network-smoke", StringComparison.OrdinalIgnoreCase));
     var runOutcomeSmoke = args.Any(arg => string.Equals(arg, "--outcome-smoke", StringComparison.OrdinalIgnoreCase));
     var runBudgetSmoke = args.Any(arg => string.Equals(arg, "--budget-smoke", StringComparison.OrdinalIgnoreCase));
     var runEvalSmoke = args.Any(arg => string.Equals(arg, "--eval-smoke", StringComparison.OrdinalIgnoreCase));
     var runCompetingContextSmoke = args.Any(arg => string.Equals(arg, "--competing-context-smoke", StringComparison.OrdinalIgnoreCase));
-    var includeLegacyWebDiagnostics = runWebSmoke
-        || runWebReviewSmoke
-        || runOpsWebSmoke
-        || runSearchSmoke
-        || runNetworkSmoke;
-    var includeLegacyBotDiagnostics = runBotSmoke;
     var includeLegacyStage6Diagnostics = runClarificationSmoke
         || runPeriodizationSmoke
         || runStateSmoke
@@ -107,9 +92,7 @@ try
         || runOutcomeSmoke
         || runBudgetSmoke
         || runEvalSmoke
-        || runCompetingContextSmoke
-        || includeLegacyWebDiagnostics
-        || includeLegacyBotDiagnostics;
+        || runCompetingContextSmoke;
     var runStage5Smoke = args.Any(arg => string.Equals(arg, "--stage5-smoke", StringComparison.OrdinalIgnoreCase));
     var runPassEnvelopeSmoke = args.Any(arg => string.Equals(arg, "--pass-envelope-smoke", StringComparison.OrdinalIgnoreCase));
     var runNormalizationSmoke = args.Any(arg => string.Equals(arg, "--normalization-smoke", StringComparison.OrdinalIgnoreCase));
@@ -191,13 +174,7 @@ try
         "--outcome-smoke",
         "--budget-smoke",
         "--eval-smoke",
-        "--competing-context-smoke",
-        "--bot-smoke",
-        "--web-smoke",
-        "--web-review-smoke",
-        "--ops-web-smoke",
-        "--search-smoke",
-        "--network-smoke"
+        "--competing-context-smoke"
     };
 
     if (runListSmokes)
@@ -275,9 +252,7 @@ try
             services.AddTelegramAssistantCompositionRoot(
                 config,
                 runtimeRoleSelection,
-                includeLegacyStage6Diagnostics,
-                includeLegacyWebDiagnostics,
-                includeLegacyBotDiagnostics);
+                includeLegacyStage6Diagnostics);
 
             Log.Information(
                 "Runtime role selection resolved: roles={Roles}, source={Source}, raw={RawValue}",
@@ -373,54 +348,6 @@ try
             var verificationService = scope.ServiceProvider.GetRequiredService<DraftReviewVerificationService>();
             await verificationService.RunAsync();
             Log.Information("Legacy Stage6 review diagnostic-only run requested via --review-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runBotSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<BotCommandVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy bot diagnostic-only run requested via --bot-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runWebSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<WebReadVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy web diagnostic-only run requested via --web-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runWebReviewSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<WebReviewVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy web review diagnostic-only run requested via --web-review-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runOpsWebSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<WebOpsVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy ops-web diagnostic-only run requested via --ops-web-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runSearchSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<WebSearchVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy web search diagnostic-only run requested via --search-smoke. Exiting after successful verification.");
-            return;
-        }
-
-        if (runNetworkSmoke)
-        {
-            var verificationService = scope.ServiceProvider.GetRequiredService<NetworkVerificationService>();
-            await verificationService.RunAsync();
-            Log.Information("Legacy web network diagnostic-only run requested via --network-smoke. Exiting after successful verification.");
             return;
         }
 

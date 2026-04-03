@@ -2,11 +2,12 @@
 
 Use this after deploy or when a risky runtime change must be validated in production.
 
-## Sprint 6 Boundary
+## Baseline Boundary
 
 Affected path:
 
-- service: `app` container and its Stage5/Stage6 background workloads
+- service: `app` container and its preserved Stage5/background workloads
+- legacy diagnostics: retired Stage6/web/tgbot probes, only when explicitly invoked for investigation
 - environment: production Docker Compose stack on the VPS
 - dependency path: GitHub Actions deploy -> immutable GHCR image -> PostgreSQL migrations/state -> Redis stream and reclaim loop
 
@@ -15,9 +16,9 @@ Affected path:
 1. container/process status
 2. application healthcheck
    - liveness (process viability)
-   - readiness (critical dependency admission)
+   - readiness (critical dependency admission checks)
 3. runtime wiring check
-4. role-specific wiring checks when relevant
+4. preserved baseline verification checks when relevant
 5. pipeline liveliness in logs
 6. integrity snapshot in PostgreSQL
 7. Redis PEL aging/reclaim sample when ingest path is in scope
@@ -29,9 +30,10 @@ Affected path:
 - app logs over a recent window
 - `dotnet TgAssistant.Host.dll --liveness-check`
 - `dotnet TgAssistant.Host.dll --readiness-check`
-- `dotnet TgAssistant.Host.dll --healthcheck` (Sprint 1 compatibility alias to readiness)
+- `dotnet TgAssistant.Host.dll --healthcheck` (compatibility alias to readiness)
 - `dotnet TgAssistant.Host.dll --runtime-wiring-check`
-- role-specific runtime checks
+- preserved baseline verification checks
+- legacy diagnostic entrypoints only when explicitly validating retired Stage6/web/tgbot paths
 - Redis queue/group sanity
 - Stage5/backfill/listener liveliness
 - `schema_migrations` latest rows
@@ -74,7 +76,7 @@ Affected path:
      docker compose exec -T postgres psql -U tgassistant -d tgassistant -f scripts/stage5_synthetic_smoke_cleanup.sql
      docker compose exec -T postgres psql -U tgassistant -d tgassistant -c "select count(*) as remaining_synthetic_pending from chat_sessions where chat_id >= 9000000000000 and not is_analyzed and not is_finalized;"
      ```
-   - Alternate drill for a canary or isolated maintenance window only: `docker compose exec -T app dotnet TgAssistant.Host.dll --stage6-execution-smoke`
+   - Legacy diagnostic only for isolated maintenance windows: `docker compose exec -T app dotnet TgAssistant.Host.dll --stage6-execution-smoke`
    - Pass condition: the drill exercises a known fault/recovery path, recovery completes, and only the intended bounded scope changes.
 
 ## Acceptance Lens

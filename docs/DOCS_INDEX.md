@@ -1,13 +1,13 @@
 # Docs Index
 
-## Current Dev Baseline (Authority)
+## Current Clean-Slate Authority
 
-Start here for current readiness/handover baseline:
+Start here for active planning and runtime authority:
 
 - [planning/README.md](./planning/README.md)
-- [planning/N1_READINESS_BASELINE_2026-03-31.md](./planning/N1_READINESS_BASELINE_2026-03-31.md)
-- [runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md](./runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md)
-- [runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md](./runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md)
+- [planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](./planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
+- [planning/CLEANUP-001-A_VALID_CORE_INVENTORY_2026-04-02.md](./planning/CLEANUP-001-A_VALID_CORE_INVENTORY_2026-04-02.md)
+- [planning/CLEANUP-001-B_RESET_BOUNDARY_NOTE_2026-04-02.md](./planning/CLEANUP-001-B_RESET_BOUNDARY_NOTE_2026-04-02.md)
 
 ## Runbooks
 
@@ -21,12 +21,6 @@ Rebuild-specific (use only for explicit rebuild/reset):
 
 - [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
 
-## Planning and Readiness Supporting Context
-
-- [planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md](./planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md)
-- [planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
-- [planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
-
 ## Policies and Stable References
 
 - [CLARIFICATION_LINK_CONVENTIONS.md](./CLARIFICATION_LINK_CONVENTIONS.md)
@@ -39,6 +33,13 @@ Rebuild-specific (use only for explicit rebuild/reset):
 
 Use these as historical context, not baseline authority:
 
+- [planning/N1_READINESS_BASELINE_2026-03-31.md](./planning/N1_READINESS_BASELINE_2026-03-31.md)
+- [runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md](./runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md)
+- [runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md](./runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md)
+- [runbooks/stage6-rebuild-verification.md](./runbooks/stage6-rebuild-verification.md)
+- [planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md](./planning/S6_R0_RUNTIME_REBUILD_BASELINE_2026-03-30.md)
+- [planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md](./planning/STAGE6_VERIFIED_BACKLOG_2026-03-30.md)
+- [planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md](./planning/STAGE6_REMEDIATION_SPRINT_PLAN_2026-03-26.md)
 - `docs/planning/archive/*`
 - completed `SPRINT_*_TASK_PACK.md` and `SPRINT_*_ACCEPTANCE*.md`
 - [BACKLOG_STATUS.md](./BACKLOG_STATUS.md)

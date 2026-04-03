@@ -26,11 +26,6 @@ public static class HostedServiceRegistrationExtensions
             services.AddStage5HostedServices();
         }
 
-        if (selection.Has(RuntimeWorkloadRole.Mcp))
-        {
-            services.AddMcpHostedServices();
-        }
-
         if (selection.Has(RuntimeWorkloadRole.Ops))
         {
             services.AddOpsHostedServices();
@@ -68,12 +63,6 @@ public static class HostedServiceRegistrationExtensions
         // Temporarily disabled: daily cold-path crystallization adds extra chat/embedding traffic during Stage5 runs.
         // services.AddHostedService<DailyKnowledgeCrystallizationWorkerService>();
         services.AddHostedService<Stage5MetricsWorkerService>();
-        return services;
-    }
-
-    private static IServiceCollection AddMcpHostedServices(this IServiceCollection services)
-    {
-        // MCP server is deployed as a standalone TypeScript process.
         return services;
     }
 

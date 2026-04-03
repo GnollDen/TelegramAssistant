@@ -39,7 +39,7 @@ public static class RuntimeHealthProbeRunner
 
         ValidateCoordinationAssumptions(services, selection);
 
-        if (selection.Has(RuntimeWorkloadRole.Stage5) || selection.Has(RuntimeWorkloadRole.Stage6))
+        if (selection.Has(RuntimeWorkloadRole.Stage5))
         {
             var stage5VerificationService = services.GetRequiredService<Stage5VerificationService>();
             await stage5VerificationService.RunAsync(token);

@@ -9,17 +9,13 @@ public static partial class ServiceRegistrationExtensions
         this IServiceCollection services,
         IConfiguration config,
         RuntimeRoleSelection runtimeRoleSelection,
-        bool includeLegacyStage6Diagnostics = false,
-        bool includeLegacyWebDiagnostics = false,
-        bool includeLegacyBotDiagnostics = false)
+        bool includeLegacyStage6Diagnostics = false)
     {
         services
             .AddTelegramAssistantSettings(config)
             .AddTelegramAssistantInfrastructure(config)
             .AddTelegramAssistantDomainServices(
-                includeLegacyStage6Diagnostics,
-                includeLegacyWebDiagnostics,
-                includeLegacyBotDiagnostics)
+                includeLegacyStage6Diagnostics)
             .AddTelegramAssistantHttpClients(config)
             .AddRuntimeRoleSelection(runtimeRoleSelection)
             .AddTelegramAssistantHostedServices(runtimeRoleSelection);

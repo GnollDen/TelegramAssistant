@@ -8,6 +8,9 @@
                               [VPS] ← [SSH: docker pull + restart] ←┘
 ```
 
+Default deploy path: preserved substrate/runtime shell only (`app`, `mcp`, `postgres`, `redis`, monitoring).
+Legacy web/bot/Stage6 diagnostic surfaces are not part of the accepted baseline and are not deployed by default.
+
 ## GitHub Repository Secrets
 
 Go to: Repository → Settings → Secrets and variables → Actions
@@ -49,7 +52,7 @@ cat ~/.ssh/tgassistant_deploy
    - moving tag: `latest`
 3. Deploy job SSHs to VPS
 4. VPS updates repo with `git pull --ff-only origin master`
-5. VPS pulls immutable image for this run and recreates only `app`
+5. VPS pulls immutable image for this run and recreates only the clean-slate runtime shell services that changed
 6. Liveness check verifies app is running and no immediate fatal startup
 7. Postgres and Redis are NOT restarted
 
@@ -76,6 +79,8 @@ docker compose exec postgres psql -U tgassistant
 # View Redis
 docker compose exec redis redis-cli
 ```
+
+`docker compose up -d` in the default stack does not start any legacy web, bot, or Stage6 operator service.
 
 ## Rollback
 

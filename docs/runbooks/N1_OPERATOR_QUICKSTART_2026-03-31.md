@@ -1,5 +1,8 @@
 # Sprint N1 Operator Quickstart
 
+> Historical quickstart (N1).
+> Legacy-only context; not active clean-slate runtime authority.
+
 ## First Surfaces to Use
 
 1. Bot Stage 6 triad: `/state` -> `/timeline` -> `/profile`

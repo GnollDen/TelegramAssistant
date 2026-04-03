@@ -30,13 +30,6 @@ public interface IStickerCacheRepository
     Task UpsertAsync(string contentHash, string description, string model, CancellationToken ct = default);
 }
 
-public interface IIntelligenceService
-{
-    Task<DossierDiff> UpdateDossierAsync(Guid entityId, List<Message> newMessages, CancellationToken ct = default);
-    Task<string> ChatAsync(string userMessage, Guid? contextEntityId = null, CancellationToken ct = default);
-    Task<List<string>> GenerateInlineRepliesAsync(Guid entityId, List<Message> recentMessages, CancellationToken ct = default);
-}
-
 public class RawTelegramMessage
 {
     public string StreamId { get; set; } = string.Empty;
@@ -69,13 +62,4 @@ public class StickerCacheItem
     public string ContentHash { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
-}
-
-public class DossierDiff
-{
-    public List<Entity> NewEntities { get; set; } = new();
-    public List<Relationship> NewRelationships { get; set; } = new();
-    public List<Fact> NewFacts { get; set; } = new();
-    public List<Fact> UpdatedFacts { get; set; } = new();
-    public List<Guid> SupersededFactIds { get; set; } = new();
 }

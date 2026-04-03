@@ -46,31 +46,6 @@ public static class RuntimeStartupGuard
             }
         }
 
-        if (selection.Has(RuntimeWorkloadRole.Web))
-        {
-            var webUrl = config.GetValue<string>("Web:Url")?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(webUrl))
-            {
-                throw new InvalidOperationException("Web role requires Web:Url.");
-            }
-
-            var requireAccessToken = config.GetValue<bool?>("Web:RequireOperatorAccessToken") ?? true;
-            if (requireAccessToken)
-            {
-                var accessToken = config.GetValue<string>("Web:OperatorAccessToken")?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(accessToken))
-                {
-                    throw new InvalidOperationException(
-                        "Web role requires Web:OperatorAccessToken when Web:RequireOperatorAccessToken=true.");
-                }
-
-                if (LooksLikePlaceholderSecret(accessToken))
-                {
-                    throw new InvalidOperationException(
-                        "Web:OperatorAccessToken contains placeholder or unsafe secret material.");
-                }
-            }
-        }
     }
 
     private static bool LooksLikePlaceholderSecret(string value)

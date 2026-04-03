@@ -8,12 +8,9 @@ public enum RuntimeWorkloadRole
     None = 0,
     Ingest = 1 << 0,
     Stage5 = 1 << 1,
-    Stage6 = 1 << 2,
-    Web = 1 << 3,
-    Ops = 1 << 4,
-    Maintenance = 1 << 5,
-    Mcp = 1 << 6,
-    All = Ingest | Stage5 | Stage6 | Web | Ops | Maintenance | Mcp
+    Ops = 1 << 2,
+    Maintenance = 1 << 3,
+    All = Ingest | Stage5 | Ops | Maintenance
 }
 
 public sealed record RuntimeRoleSelection(RuntimeWorkloadRole Roles, string Source, string RawValue)
@@ -62,14 +59,6 @@ public static class RuntimeRoleParser
         var rawRoles = string.IsNullOrWhiteSpace(rawArg) ? rawConfig! : rawArg!;
         var source = string.IsNullOrWhiteSpace(rawArg) ? "config" : $"arg:{argPrefix}";
         var roles = ParseRolesOrThrow(rawRoles, source);
-        if ((roles & (RuntimeWorkloadRole.Stage6 | RuntimeWorkloadRole.Web)) != RuntimeWorkloadRole.None)
-        {
-            throw new InvalidOperationException(
-                $"Runtime role combination '{rawRoles}' requests legacy-only roles. " +
-                $"Stage6/web runtime roles are not part of the active baseline. " +
-                $"Allowed active combinations: {string.Join("; ", RuntimeRoleSelection.AllowedCombinationDisplay)}.");
-        }
-
         if (!AllowedCombinations.Contains(roles))
         {
             throw new InvalidOperationException(
@@ -103,21 +92,11 @@ public static class RuntimeRoleParser
                 case "stage5":
                     roles |= RuntimeWorkloadRole.Stage5;
                     break;
-                case "stage6":
-                    roles |= RuntimeWorkloadRole.Stage6;
-                    break;
-                case "web":
-                    roles |= RuntimeWorkloadRole.Web;
-                    break;
                 case "ops":
                     roles |= RuntimeWorkloadRole.Ops;
                     break;
                 case "maintenance":
                     roles |= RuntimeWorkloadRole.Maintenance;
-                    break;
-                case "all":
-                case "mcp":
-                    unknownTokens.Add(token);
                     break;
                 default:
                     unknownTokens.Add(token);

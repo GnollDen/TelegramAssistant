@@ -4,15 +4,18 @@ Use this to decide minimum verification before commit and push.
 
 ## Current Baseline Reference
 
-Current readiness/handover baseline authority:
+Current clean-slate baseline authority:
 
-- `docs/planning/N1_READINESS_BASELINE_2026-03-31.md`
-- `docs/runbooks/N1_RUNTIME_OPERATOR_HANDOVER_2026-03-31.md`
-- `docs/runbooks/N1_OPERATOR_QUICKSTART_2026-03-31.md`
+- `docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md`
+- `docs/planning/CLEANUP-001-B_RESET_BOUNDARY_NOTE_2026-04-02.md`
+- `docs/planning/CLEANUP-005-A_RUNTIME_ROLE_AND_SMOKE_INVENTORY_2026-04-02.md`
+- `docs/planning/README.md`
+- `tasks.json`
+- `task_slices.json`
 
-Stage 6 rebuild verification runbook is now rebuild-specific:
+Legacy Stage6 rebuild verification remains available only as legacy diagnostic context:
 
-- `docs/runbooks/stage6-rebuild-verification.md` (use only for explicit rebuild/reset operations)
+- `docs/runbooks/stage6-rebuild-verification.md` (legacy-only; use only for explicit rebuild/reset operations)
 
 ## Baseline Build Rules
 
@@ -32,9 +35,9 @@ Also run targeted checks when changes touch:
 - configuration wiring
 - compose/runtime environment
 - database migrations
-- coordination, listener, backfill, Stage5, Stage6, repair flows
+- coordination, listener, backfill, Stage5, Stage6Bootstrap/Stage7/Stage8, repair flows
 
-Typical commands:
+Preserved baseline verification entrypoints:
 
 - `dotnet run --project src/TgAssistant.Host -- --liveness-check`
 - `dotnet run --project src/TgAssistant.Host -- --readiness-check`
@@ -44,7 +47,7 @@ Typical commands:
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --runtime-wiring-check`
 - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage5 --stage5-smoke`
 - `dotnet run --project src/TgAssistant.Host -- --budget-smoke`
-- `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage6 --stage6-execution-smoke`
+- `dotnet run --project src/TgAssistant.Host -- --launch-smoke`
 
 ## Integrity and Recovery Sequence (When Risky Paths Touched)
 
@@ -55,10 +58,10 @@ Use full sequence when changes touch deploy wiring, migrations, runtime startup,
    - `dotnet run --project src/TgAssistant.Host -- --liveness-check`
    - `dotnet run --project src/TgAssistant.Host -- --readiness-check`
    - `dotnet run --project src/TgAssistant.Host -- --runtime-wiring-check`
-2. Verify one failure path with bounded smoke hook.
+2. Verify one bounded verification path.
    - `dotnet run --project src/TgAssistant.Host -- --budget-smoke`
-   - `dotnet run --project src/TgAssistant.Host -- --runtime-role=stage6 --stage6-execution-smoke`
-   - Pass condition: commands exit `0` and log `Budget smoke passed` / `Stage6 execution discipline smoke passed`.
+   - `dotnet run --project src/TgAssistant.Host -- --launch-smoke`
+   - Pass condition: commands exit `0` and log preserved verification success messages.
 3. Capture integrity evidence from PostgreSQL.
    - Processed-without-apply anomaly check:
      ```sql
