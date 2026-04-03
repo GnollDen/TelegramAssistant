@@ -1,3 +1,5 @@
+using TgAssistant.Core.Models;
+
 namespace TgAssistant.Core.Configuration;
 
 public class TelegramSettings
@@ -49,6 +51,79 @@ public class ClaudeSettings
     public string ApiKey { get; set; } = string.Empty;
     public string Model { get; set; } = "anthropic/claude-3.5-sonnet";
     public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
+}
+
+public class LlmGatewaySettings
+{
+    public const string Section = "LlmGateway";
+    public bool Enabled { get; set; }
+    public bool LogRawProviderPayloadJson { get; set; }
+    public Dictionary<string, LlmGatewayRouteSettings> Routing { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, LlmGatewayProviderSettings> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public LlmGatewayRouteSettings? GetRoute(LlmModality modality)
+    {
+        return TryGetValue(Routing, ToRouteKey(modality));
+    }
+
+    public LlmGatewayProviderSettings? GetProvider(string providerId)
+    {
+        return TryGetValue(Providers, providerId);
+    }
+
+    public static string ToRouteKey(LlmModality modality)
+    {
+        return modality switch
+        {
+            LlmModality.TextChat => "text_chat",
+            LlmModality.Tools => "tools",
+            LlmModality.Embeddings => "embeddings",
+            LlmModality.Vision => "vision",
+            LlmModality.AudioTranscription => "audio_transcription",
+            LlmModality.AudioParalinguistics => "audio_paralinguistics",
+            _ => "unspecified"
+        };
+    }
+
+    private static TValue? TryGetValue<TValue>(IReadOnlyDictionary<string, TValue> values, string key)
+        where TValue : class
+    {
+        if (values.TryGetValue(key, out var exact))
+        {
+            return exact;
+        }
+
+        var match = values.FirstOrDefault(pair => string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase));
+        return string.IsNullOrWhiteSpace(match.Key) ? null : match.Value;
+    }
+}
+
+public class LlmGatewayRouteSettings
+{
+    public bool Enabled { get; set; } = true;
+    public string PrimaryProvider { get; set; } = string.Empty;
+    public string? PrimaryModel { get; set; }
+    public List<LlmGatewayProviderTargetSettings> FallbackProviders { get; set; } = new();
+    public string RetryPolicyClass { get; set; } = "default";
+    public string TimeoutBudgetClass { get; set; } = "default";
+}
+
+public class LlmGatewayProviderTargetSettings
+{
+    public string Provider { get; set; } = string.Empty;
+    public string? Model { get; set; }
+}
+
+public class LlmGatewayProviderSettings
+{
+    public bool Enabled { get; set; } = true;
+    public string BaseUrl { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+    public bool UseAuthorizationHeader { get; set; } = true;
+    public string? DefaultModel { get; set; }
+    public string ChatCompletionsPath { get; set; } = "/v1/chat/completions";
+    public string EmbeddingsPath { get; set; } = "/v1/embeddings";
+    public int TimeoutSeconds { get; set; } = 120;
 }
 
 public class BatchWorkerSettings

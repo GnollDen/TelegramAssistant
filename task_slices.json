@@ -1315,12 +1315,12 @@
       "dependencies": [
         "GATEWAY-001-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Configuration expresses per-modality provider routing and fallback policy.",
         "Initial provider adapters exist without broad caller cutover."
       ],
-      "notes": "Initial adapter and routing implementation without migrating active callers."
+      "notes": "Completed on 2026-04-03 by adding the LlmGateway config section, default routing policy, LlmGatewayService, and codex-lb/openrouter provider adapters with DI wiring in the foundation path only; active Stage5/media callers remain on existing clients."
     },
     {
       "id": "GATEWAY-002-A",

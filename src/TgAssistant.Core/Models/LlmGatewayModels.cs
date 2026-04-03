@@ -249,6 +249,7 @@ public class LlmRoutingDecision
 {
     public string PrimaryProvider { get; set; } = string.Empty;
     public List<string> FallbackProviders { get; set; } = new();
+    public Dictionary<string, string> ProviderModelHints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string RetryPolicyClass { get; set; } = "default";
     public string TimeoutBudgetClass { get; set; } = "default";
 }

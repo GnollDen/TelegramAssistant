@@ -842,8 +842,8 @@
       "dependencies": [
         "CLEANUP-104"
       ],
-      "status": "pending",
-      "notes": "Foundation only. No broad caller cutover in this task."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-001-A/B: TgAssistant.Core now exposes provider-agnostic gateway contracts and error taxonomy, and the host/runtime foundation now includes LlmGateway configuration, routing policy, provider adapters, and DI wiring without broad caller cutover."
     },
     {
       "id": "GATEWAY-002",

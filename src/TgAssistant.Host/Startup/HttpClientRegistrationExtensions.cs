@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Headers;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Infrastructure.LlmGateway;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Processing.Workers;
 
@@ -42,6 +43,12 @@ public static partial class ServiceRegistrationExtensions
         });
 
         services.AddHttpClient<Neo4jSyncWorkerService>();
+        services.AddHttpClient<CodexLbChatProviderClient>();
+        services.AddHttpClient<OpenRouterProviderClient>();
+        services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<CodexLbChatProviderClient>());
+        services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<OpenRouterProviderClient>());
+        services.AddTransient<ILlmGateway, LlmGatewayService>();
+        services.AddSingleton<ILlmRoutingPolicy, DefaultLlmRoutingPolicy>();
 
         return services;
     }

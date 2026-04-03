@@ -16,6 +16,7 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<DatabaseSettings>(config.GetSection(DatabaseSettings.Section));
         services.Configure<GeminiSettings>(config.GetSection(GeminiSettings.Section));
         services.Configure<ClaudeSettings>(config.GetSection(ClaudeSettings.Section));
+        services.Configure<LlmGatewaySettings>(config.GetSection(LlmGatewaySettings.Section));
         services.Configure<BatchWorkerSettings>(config.GetSection(BatchWorkerSettings.Section));
         services.Configure<MediaSettings>(config.GetSection(MediaSettings.Section));
         services.Configure<VoiceParalinguisticsSettings>(config.GetSection(VoiceParalinguisticsSettings.Section));
@@ -100,6 +101,44 @@ public static partial class ServiceRegistrationExtensions
             s.IntegrityWriteVolumeUnsafeThreshold = Math.Max(
                 s.IntegrityWriteVolumeWarningThreshold,
                 s.IntegrityWriteVolumeUnsafeThreshold);
+        });
+
+        services.PostConfigure<LlmGatewaySettings>(s =>
+        {
+            s.Routing = new Dictionary<string, LlmGatewayRouteSettings>(
+                s.Routing ?? new Dictionary<string, LlmGatewayRouteSettings>(),
+                StringComparer.OrdinalIgnoreCase);
+            s.Providers = new Dictionary<string, LlmGatewayProviderSettings>(
+                s.Providers ?? new Dictionary<string, LlmGatewayProviderSettings>(),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var route in s.Routing.Values)
+            {
+                route.PrimaryProvider = route.PrimaryProvider?.Trim() ?? string.Empty;
+                route.PrimaryModel = string.IsNullOrWhiteSpace(route.PrimaryModel) ? null : route.PrimaryModel.Trim();
+                route.RetryPolicyClass = string.IsNullOrWhiteSpace(route.RetryPolicyClass) ? "default" : route.RetryPolicyClass.Trim();
+                route.TimeoutBudgetClass = string.IsNullOrWhiteSpace(route.TimeoutBudgetClass) ? "default" : route.TimeoutBudgetClass.Trim();
+                route.FallbackProviders ??= new List<LlmGatewayProviderTargetSettings>();
+                foreach (var fallback in route.FallbackProviders)
+                {
+                    fallback.Provider = fallback.Provider?.Trim() ?? string.Empty;
+                    fallback.Model = string.IsNullOrWhiteSpace(fallback.Model) ? null : fallback.Model.Trim();
+                }
+            }
+
+            foreach (var provider in s.Providers.Values)
+            {
+                provider.BaseUrl = provider.BaseUrl?.Trim() ?? string.Empty;
+                provider.ApiKey = provider.ApiKey?.Trim() ?? string.Empty;
+                provider.DefaultModel = string.IsNullOrWhiteSpace(provider.DefaultModel) ? null : provider.DefaultModel.Trim();
+                provider.ChatCompletionsPath = string.IsNullOrWhiteSpace(provider.ChatCompletionsPath)
+                    ? "/v1/chat/completions"
+                    : provider.ChatCompletionsPath.Trim();
+                provider.EmbeddingsPath = string.IsNullOrWhiteSpace(provider.EmbeddingsPath)
+                    ? "/v1/embeddings"
+                    : provider.EmbeddingsPath.Trim();
+                provider.TimeoutSeconds = Math.Max(1, provider.TimeoutSeconds);
+            }
         });
 
         if (includeLegacyStage6ClusterDiagnostics)
