@@ -41,6 +41,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
         var trackedPerson = bootstrapResult.TrackedPerson;
         var scopeKey = bootstrapResult.ScopeKey;
@@ -102,9 +103,11 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             BuildProfileMetadataJson(bootstrapResult),
             now,
             ct);
+        await db.SaveChangesAsync(ct);
 
         var dossierRow = await UpsertDossierAsync(db, dossierMetadata.Id, auditRecord, bootstrapResult, dossierFieldRegistry, now, ct);
         var profileRow = await UpsertProfileAsync(db, profileMetadata.Id, auditRecord, bootstrapResult, now, ct);
+        await db.SaveChangesAsync(ct);
         var dossierRevision = await UpsertDossierRevisionAsync(
             db,
             dossierRow,
@@ -145,6 +148,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         await SyncEvidenceLinksAsync(db, profileMetadata.Id, scopeKey, evidenceItemIds, ProfileEvidenceLinkRole, now, ct);
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
             "Stage7 durable dossier/profile persisted: scope_key={ScopeKey}, tracked_person_id={TrackedPersonId}, evidence_count={EvidenceCount}",
@@ -777,6 +781,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             row.UpdatedAt = now;
             familyRows[family.FamilyKey] = row;
         }
+        await db.SaveChangesAsync(ct);
 
         var desiredAliases = desiredFamilies
             .SelectMany(family => family.Aliases.Select(alias => new DesiredDossierFieldAlias

@@ -563,6 +563,22 @@ public static class ModelPassAuditSmokeRunner
 
         public Task<List<RuntimeDefectRecord>> GetOpenAsync(int limit = 200, CancellationToken ct = default)
             => Task.FromResult(_records.Take(limit).ToList());
+
+        public Task<int> ResolveOpenByDedupeKeyAsync(string dedupeKey, Guid? runId = null, CancellationToken ct = default)
+        {
+            var affected = 0;
+            foreach (var row in _records.Where(x => string.Equals(x.DedupeKey, dedupeKey, StringComparison.Ordinal)
+                                                    && string.Equals(x.Status, RuntimeDefectStatuses.Open, StringComparison.Ordinal)))
+            {
+                row.Status = RuntimeDefectStatuses.Resolved;
+                row.ResolvedAtUtc = DateTime.UtcNow;
+                row.RunId = runId ?? row.RunId;
+                row.UpdatedAtUtc = DateTime.UtcNow;
+                affected++;
+            }
+
+            return Task.FromResult(affected);
+        }
     }
 
     private sealed class InMemoryClarificationBranchStateRepository : IClarificationBranchStateRepository

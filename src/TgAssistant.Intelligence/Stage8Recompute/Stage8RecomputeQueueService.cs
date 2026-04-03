@@ -210,6 +210,10 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             }, ct);
             await RecordOutcomeDefectsAsync(leasedItem, resultStatus, gateResult, modelPassRunId, runtimeControl.State, ct);
             await _repository.CompleteAsync(leasedItem.Id, leasedItem.LeaseToken!.Value, resultStatus, modelPassRunId, ct);
+            await _runtimeDefectRepository.ResolveOpenByDedupeKeyAsync(
+                $"{leasedItem.ScopeKey}|{leasedItem.TargetFamily}|execution_failure",
+                modelPassRunId,
+                ct);
             leasedItem.Status = Stage8RecomputeQueueStatuses.Completed;
             leasedItem.ActiveDedupeKey = null;
             leasedItem.LastError = null;

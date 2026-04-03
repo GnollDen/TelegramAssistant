@@ -255,6 +255,11 @@ public interface IRuntimeDefectRepository
     Task<List<RuntimeDefectRecord>> GetOpenAsync(
         int limit = 200,
         CancellationToken ct = default);
+
+    Task<int> ResolveOpenByDedupeKeyAsync(
+        string dedupeKey,
+        Guid? runId = null,
+        CancellationToken ct = default);
 }
 
 public interface IRuntimeControlStateRepository

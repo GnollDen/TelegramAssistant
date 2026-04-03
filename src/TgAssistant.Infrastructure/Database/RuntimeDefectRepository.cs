@@ -119,6 +119,39 @@ public class RuntimeDefectRepository : IRuntimeDefectRepository
         return rows.Select(Map).ToList();
     }
 
+    public async Task<int> ResolveOpenByDedupeKeyAsync(
+        string dedupeKey,
+        Guid? runId = null,
+        CancellationToken ct = default)
+    {
+        var normalizedDedupe = dedupeKey?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedDedupe))
+        {
+            return 0;
+        }
+
+        var now = DateTime.UtcNow;
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var rows = await db.RuntimeDefects
+            .Where(x => x.DedupeKey == normalizedDedupe && x.Status == RuntimeDefectStatuses.Open)
+            .ToListAsync(ct);
+        if (rows.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var row in rows)
+        {
+            row.Status = RuntimeDefectStatuses.Resolved;
+            row.ResolvedAtUtc = now;
+            row.RunId = runId ?? row.RunId;
+            row.UpdatedAtUtc = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
     private static RuntimeDefectRecord Map(DbRuntimeDefect row)
     {
         return new RuntimeDefectRecord

@@ -41,6 +41,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
         var trackedPerson = bootstrapResult.TrackedPerson;
         var operatorPerson = bootstrapResult.OperatorPerson;
@@ -79,6 +80,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             BuildMetadataJson(bootstrapResult),
             now,
             ct);
+        await db.SaveChangesAsync(ct);
 
         var pairRow = await UpsertPairDynamicsRowAsync(
             db,
@@ -89,6 +91,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             payloadJson,
             now,
             ct);
+        await db.SaveChangesAsync(ct);
 
         var revision = await UpsertRevisionAsync(
             db,
@@ -111,6 +114,7 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
 
         await SyncEvidenceLinksAsync(db, metadata.Id, scopeKey, evidenceItemIds, now, ct);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
             "Stage7 durable pair dynamics persisted: scope_key={ScopeKey}, operator_person_id={OperatorPersonId}, tracked_person_id={TrackedPersonId}, revision_number={RevisionNumber}",
