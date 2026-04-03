@@ -9,7 +9,12 @@ public static class ModelPassAuditSmokeRunner
     {
         var store = new InMemoryModelPassAuditStore();
         var runtimeDefectRepository = new InMemoryRuntimeDefectRepository();
-        var service = new ModelPassAuditService(new ModelOutputNormalizer(), store, runtimeDefectRepository);
+        var clarificationBranchStateRepository = new InMemoryClarificationBranchStateRepository();
+        var service = new ModelPassAuditService(
+            new ModelOutputNormalizer(),
+            store,
+            runtimeDefectRepository,
+            clarificationBranchStateRepository);
 
         var readyRecord = await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
         {
@@ -88,6 +93,12 @@ public static class ModelPassAuditSmokeRunner
         {
             throw new InvalidOperationException("Model pass audit smoke failed: clarification outcome did not persist an unknown for review.");
         }
+        var openClarificationBranches = await clarificationBranchStateRepository.GetOpenByScopeAsync("person:smoke", ct);
+        if (openClarificationBranches.Count != 1
+            || !string.Equals(openClarificationBranches[0].BranchFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Model pass audit smoke failed: clarification outcome did not persist a queryable branch-local block.");
+        }
 
         var blockedRecord = await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
         {
@@ -98,6 +109,36 @@ public static class ModelPassAuditSmokeRunner
         if (string.IsNullOrWhiteSpace(blockedRecord.Envelope.OutputSummary.BlockedReason))
         {
             throw new InvalidOperationException("Model pass audit smoke failed: blocked outcome did not persist blocked_reason.");
+        }
+        if ((await clarificationBranchStateRepository.GetOpenByScopeAsync("person:smoke", ct)).Count != 1)
+        {
+            throw new InvalidOperationException("Model pass audit smoke failed: non-clarification blocked outcome should not clear an open clarification branch.");
+        }
+
+        var resolvedRecord = await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
+        {
+            Envelope = BuildEnvelope(Guid.Parse("10000000-0000-0000-0000-000000000008")),
+            RawModelOutput =
+                """
+                {
+                  "result_status": "result_ready",
+                  "facts": [
+                    {
+                      "category": "identity",
+                      "key": "display_name",
+                      "value": "Stage5 Smoke Sender",
+                      "truth_layer": "canonical_truth",
+                      "confidence": 0.98,
+                      "evidence_refs": ["evidence:smoke-1"]
+                    }
+                  ]
+                }
+                """
+        }, ct);
+        AssertStatus(resolvedRecord, ModelPassResultStatuses.ResultReady, "clarification_resolution");
+        if ((await clarificationBranchStateRepository.GetOpenByScopeAsync("person:smoke", ct)).Count != 0)
+        {
+            throw new InvalidOperationException("Model pass audit smoke failed: ready outcome did not resolve the open clarification branch.");
         }
 
         if (await store.GetByModelPassRunIdAsync(readyRecord.ModelPassRunId, ct) == null
@@ -522,5 +563,89 @@ public static class ModelPassAuditSmokeRunner
 
         public Task<List<RuntimeDefectRecord>> GetOpenAsync(int limit = 200, CancellationToken ct = default)
             => Task.FromResult(_records.Take(limit).ToList());
+    }
+
+    private sealed class InMemoryClarificationBranchStateRepository : IClarificationBranchStateRepository
+    {
+        private readonly Dictionary<string, ClarificationBranchStateRecord> _records = [];
+
+        public Task<ClarificationBranchStateRecord?> ApplyOutcomeAsync(
+            ModelPassAuditRecord record,
+            CancellationToken ct = default)
+        {
+            var envelope = record.Envelope;
+            var branchFamily = string.Equals(envelope.Stage, "stage6_bootstrap", StringComparison.Ordinal)
+                ? Stage8RecomputeTargetFamilies.Stage6Bootstrap
+                : $"{envelope.Stage}:{envelope.PassFamily}";
+            var branchKey = $"{envelope.ScopeKey}|{branchFamily}|{envelope.Target.TargetType}|{envelope.Target.TargetRef}";
+
+            if (string.Equals(envelope.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
+            {
+                if (!_records.TryGetValue(branchKey, out var row))
+                {
+                    row = new ClarificationBranchStateRecord
+                    {
+                        Id = Guid.NewGuid(),
+                        ScopeKey = envelope.ScopeKey,
+                        BranchFamily = branchFamily,
+                        BranchKey = branchKey,
+                        FirstBlockedAtUtc = DateTime.UtcNow
+                    };
+                    _records[branchKey] = row;
+                }
+
+                row.Stage = envelope.Stage;
+                row.PassFamily = envelope.PassFamily;
+                row.TargetType = envelope.Target.TargetType;
+                row.TargetRef = envelope.Target.TargetRef;
+                row.PersonId = envelope.PersonId;
+                row.LastModelPassRunId = record.ModelPassRunId;
+                row.Status = ClarificationBranchStatuses.Open;
+                row.BlockReason = envelope.Unknowns.FirstOrDefault()?.Summary ?? envelope.OutputSummary.Summary;
+                row.RequiredAction = envelope.Unknowns.FirstOrDefault()?.RequiredAction;
+                row.DetailsJson = "{}";
+                row.LastBlockedAtUtc = DateTime.UtcNow;
+                row.ResolvedAtUtc = null;
+                return Task.FromResult<ClarificationBranchStateRecord?>(row);
+            }
+
+            if (_records.TryGetValue(branchKey, out var existing)
+                && string.Equals(existing.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal)
+                && string.Equals(envelope.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
+            {
+                existing.LastModelPassRunId = record.ModelPassRunId;
+                existing.Status = ClarificationBranchStatuses.Resolved;
+                existing.ResolvedAtUtc = DateTime.UtcNow;
+                return Task.FromResult<ClarificationBranchStateRecord?>(existing);
+            }
+
+            return Task.FromResult<ClarificationBranchStateRecord?>(null);
+        }
+
+        public Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAsync(
+            string scopeKey,
+            CancellationToken ct = default)
+        {
+            var rows = _records.Values
+                .Where(x => string.Equals(x.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal))
+                .OrderByDescending(x => x.LastBlockedAtUtc)
+                .ToList();
+            return Task.FromResult(rows);
+        }
+
+        public Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAndFamilyAsync(
+            string scopeKey,
+            string branchFamily,
+            CancellationToken ct = default)
+        {
+            var rows = _records.Values
+                .Where(x => string.Equals(x.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.BranchFamily, branchFamily, StringComparison.Ordinal)
+                    && string.Equals(x.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal))
+                .OrderByDescending(x => x.LastBlockedAtUtc)
+                .ToList();
+            return Task.FromResult(rows);
+        }
     }
 }

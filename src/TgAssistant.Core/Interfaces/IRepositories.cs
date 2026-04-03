@@ -105,6 +105,22 @@ public interface IModelPassAuditService
     Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default);
 }
 
+public interface IClarificationBranchStateRepository
+{
+    Task<ClarificationBranchStateRecord?> ApplyOutcomeAsync(
+        ModelPassAuditRecord record,
+        CancellationToken ct = default);
+
+    Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAsync(
+        string scopeKey,
+        CancellationToken ct = default);
+
+    Task<List<ClarificationBranchStateRecord>> GetOpenByScopeAndFamilyAsync(
+        string scopeKey,
+        string branchFamily,
+        CancellationToken ct = default);
+}
+
 public interface IStage6BootstrapRepository
 {
     Task<Stage6BootstrapScopeResolution> ResolveScopeAsync(Stage6BootstrapRequest request, CancellationToken ct = default);

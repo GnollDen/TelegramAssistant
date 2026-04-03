@@ -807,7 +807,7 @@
         "IMPLEMENT-006-D",
         "IMPLEMENT-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Future interface track references the clean model only.",
         "No legacy Stage6 operator pages are reused by assumption."
@@ -985,7 +985,7 @@
         "Blocked graph branches are explicit and queryable.",
         "Blocked state is scoped to affected branches only."
       ],
-      "notes": "Clean split because unresolved-branch persistence is independent from downstream continuation logic."
+      "notes": "Completed by adding clarification_branch_states persistence plus EF mappings, singleton repository wiring, and audit-path integration that opens branch-scoped clarification blocks on need_operator_clarification, keeps unrelated blocked outcomes from clearing them, resolves the branch on result_ready, and exposes query methods by scope and branch family."
     },
     {
       "id": "IMPLEMENT-012-B",

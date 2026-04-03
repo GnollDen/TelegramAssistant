@@ -10,22 +10,18 @@ public class ModelPassAuditService : IModelPassAuditService
     private readonly IModelOutputNormalizer _normalizer;
     private readonly IModelPassAuditStore _auditStore;
     private readonly IRuntimeDefectRepository? _runtimeDefectRepository;
-
-    public ModelPassAuditService(
-        IModelOutputNormalizer normalizer,
-        IModelPassAuditStore auditStore)
-        : this(normalizer, auditStore, null)
-    {
-    }
+    private readonly IClarificationBranchStateRepository? _clarificationBranchStateRepository;
 
     public ModelPassAuditService(
         IModelOutputNormalizer normalizer,
         IModelPassAuditStore auditStore,
-        IRuntimeDefectRepository? runtimeDefectRepository)
+        IRuntimeDefectRepository? runtimeDefectRepository = null,
+        IClarificationBranchStateRepository? clarificationBranchStateRepository = null)
     {
         _normalizer = normalizer;
         _auditStore = auditStore;
         _runtimeDefectRepository = runtimeDefectRepository;
+        _clarificationBranchStateRepository = clarificationBranchStateRepository;
     }
 
     public async Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default)
@@ -50,6 +46,11 @@ public class ModelPassAuditService : IModelPassAuditService
         if (loopGuardTriggered)
         {
             await PersistLoopGuardDefectAsync(record, consecutiveNeedMoreDataCount, ct);
+        }
+
+        if (_clarificationBranchStateRepository != null)
+        {
+            await _clarificationBranchStateRepository.ApplyOutcomeAsync(record, ct);
         }
 
         return record;

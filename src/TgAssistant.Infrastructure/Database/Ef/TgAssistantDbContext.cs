@@ -63,6 +63,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
     public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
     public DbSet<DbRuntimeDefect> RuntimeDefects => Set<DbRuntimeDefect>();
+    public DbSet<DbClarificationBranchState> ClarificationBranchStates => Set<DbClarificationBranchState>();
     public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
@@ -1298,6 +1299,33 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.Status, x.DefectClass, x.Severity, x.LastSeenAtUtc });
             e.HasIndex(x => new { x.ScopeKey, x.Status, x.LastSeenAtUtc });
             e.HasIndex(x => x.RunId).HasFilter("run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbClarificationBranchState>(e =>
+        {
+            e.ToTable("clarification_branch_states");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.BranchFamily).HasColumnName("branch_family");
+            e.Property(x => x.BranchKey).HasColumnName("branch_key");
+            e.Property(x => x.Stage).HasColumnName("stage");
+            e.Property(x => x.PassFamily).HasColumnName("pass_family");
+            e.Property(x => x.TargetType).HasColumnName("target_type");
+            e.Property(x => x.TargetRef).HasColumnName("target_ref");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.BlockReason).HasColumnName("block_reason");
+            e.Property(x => x.RequiredAction).HasColumnName("required_action");
+            e.Property(x => x.DetailsJson).HasColumnName("details_json").HasColumnType("jsonb");
+            e.Property(x => x.FirstBlockedAtUtc).HasColumnName("first_blocked_at_utc");
+            e.Property(x => x.LastBlockedAtUtc).HasColumnName("last_blocked_at_utc");
+            e.Property(x => x.ResolvedAtUtc).HasColumnName("resolved_at_utc");
+            e.HasIndex(x => x.BranchKey).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.LastBlockedAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.BranchFamily, x.Status, x.LastBlockedAtUtc });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
         modelBuilder.Entity<DbRuntimeControlState>(e =>
