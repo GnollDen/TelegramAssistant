@@ -1761,12 +1761,12 @@
       "dependencies": [
         "ALIGN-204-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Execution authority is explicit: operator-layer track owns P0/P1/P2 surfaces.",
         "No completed cleanup/gateway/alignment task is reopened or duplicated."
       ],
-      "notes": "Backlog governance slice; no runtime feature work."
+      "notes": "Done 2026-04-03: froze the governance cutline by classifying IMPLEMENT-008 as a historical placeholder only and routing operator-layer P0/P1/P2 execution authority to the phase-f OPINT track without reopening cleanup/gateway/alignment work."
     },
     {
       "id": "OPINT-001-B",

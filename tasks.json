@@ -559,7 +559,7 @@
         "IMPLEMENT-007"
       ],
       "status": "blocked",
-      "notes": "Moved to a separate web/tg interface PRD track after core knowledge/control implementation. Not part of the current backend-core execution path."
+      "notes": "Historical placeholder for the superseded pre-operator interface scope. Execution authority for operator-layer P0/P1/P2 surfaces now lives in phase-f OPINT tasks; keep IMPLEMENT-008 blocked for history only and do not reopen completed cleanup/gateway/alignment work under this item."
     },
     {
       "id": "IMPLEMENT-009",
@@ -1127,7 +1127,7 @@
         "ALIGN-204"
       ],
       "status": "pending",
-      "notes": "Execution authority task only; no product code changes in this step."
+      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. No product code changes in this step."
     },
     {
       "id": "OPINT-002",
