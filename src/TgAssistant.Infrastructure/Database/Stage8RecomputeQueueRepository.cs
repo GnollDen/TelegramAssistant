@@ -188,6 +188,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         var nowUtc = DateTime.UtcNow;
         var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
             update stage8_recompute_queue_items
@@ -219,6 +220,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             recoveryTelemetry: null,
             nowUtc,
             ct);
+        await tx.CommitAsync(ct);
     }
 
     public async Task RescheduleAsync(
@@ -231,6 +233,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         var nowUtc = DateTime.UtcNow;
         var resultStatus = terminalFailure
             ? Stage8RecomputeExecutionStatuses.FailedTerminally
@@ -274,6 +277,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             recoveryTelemetry,
             nowUtc,
             ct);
+        await tx.CommitAsync(ct);
     }
 
     public async Task<Stage8BackfillCheckpoint?> GetBackfillCheckpointAsync(

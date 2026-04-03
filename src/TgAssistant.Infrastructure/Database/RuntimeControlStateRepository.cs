@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -37,13 +38,16 @@ public class RuntimeControlStateRepository : IRuntimeControlStateRepository
         var now = DateTime.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct);
         var active = await db.RuntimeControlStates.FirstOrDefaultAsync(x => x.IsActive, ct);
+        DbRuntimeControlState row;
         if (active != null && string.Equals(active.State, normalizedState, StringComparison.Ordinal))
         {
             active.Reason = normalizedReason;
             active.Source = normalizedSource;
             active.DetailsJson = normalizedDetailsJson;
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             return Map(active);
         }
 
@@ -53,7 +57,7 @@ public class RuntimeControlStateRepository : IRuntimeControlStateRepository
             active.DeactivatedAtUtc = now;
         }
 
-        var row = new DbRuntimeControlState
+        row = new DbRuntimeControlState
         {
             State = normalizedState,
             Reason = normalizedReason,
@@ -63,9 +67,35 @@ public class RuntimeControlStateRepository : IRuntimeControlStateRepository
             ActivatedAtUtc = now
         };
         db.RuntimeControlStates.Add(row);
-        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            await tx.RollbackAsync(ct);
+
+            var concurrent = await db.RuntimeControlStates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IsActive, ct)
+                ?? throw new InvalidOperationException("Concurrent runtime control state activation failed and no active state row remained.");
+
+            if (string.Equals(concurrent.State, normalizedState, StringComparison.Ordinal))
+            {
+                return Map(concurrent);
+            }
+
+            throw;
+        }
+
         return Map(row);
     }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is PostgresException postgres
+           && string.Equals(postgres.SqlState, PostgresErrorCodes.UniqueViolation, StringComparison.Ordinal);
 
     private static RuntimeControlStateRecord Map(DbRuntimeControlState row)
     {
