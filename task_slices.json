@@ -1154,12 +1154,12 @@
       "dependencies": [
         "IMPLEMENT-016-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Delete list is limited to proven orphan paths and safe stale surface.",
         "Each candidate has an explicit no-active-caller justification."
       ],
-      "notes": "Inventory-first slice for the first cleanup batch."
+      "notes": "Completed inventory-first reconfirmation on 2026-04-03. Captured bounded delete candidates and explicit no-active-caller evidence in docs/planning/CLEANUP-101-A_SAFE_DELETE_INVENTORY_2026-04-03.md; deferred actual deletions to CLEANUP-101-B."
     },
     {
       "id": "CLEANUP-101-B",
