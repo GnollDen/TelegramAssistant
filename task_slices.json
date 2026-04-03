@@ -946,12 +946,12 @@
       "dependencies": [
         "IMPLEMENT-009-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Every relevant pass family has explicit loop and spend budgets.",
         "Budget envelopes are auditable by run and scope."
       ],
-      "notes": "Clean split because budgeting metadata and persistence should land before enforcement behavior."
+      "notes": "Completed by adding typed model-pass budget envelopes for Stage6 bootstrap and Stage7 durable passes, persisting them in model_pass_runs metrics/input audit payloads, and aligning audit/storage/launch smokes so run budgets remain auditable by run and scope."
     },
     {
       "id": "IMPLEMENT-011-B",

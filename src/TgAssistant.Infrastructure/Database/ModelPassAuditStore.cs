@@ -60,10 +60,10 @@ public class ModelPassAuditStore : IModelPassAuditStore
         passRow.UnknownsJson = ModelPassEnvelopeStorageCodec.SerializeUnknowns(envelope.Unknowns);
         passRow.InputSummaryJson = ModelPassEnvelopeStorageCodec.SerializeInputSummary(envelope);
         passRow.OutputSummaryJson = ModelPassEnvelopeStorageCodec.SerializeOutputSummary(envelope.OutputSummary);
+        passRow.MetricsJson = ModelPassEnvelopeStorageCodec.UpsertBudgetMetrics(passRow.MetricsJson, envelope.Budget);
         passRow.FailureJson = ModelPassEnvelopeStorageCodec.SerializeFailureSummary(envelope);
         passRow.StartedAt = envelope.StartedAtUtc == default ? now : envelope.StartedAtUtc;
         passRow.FinishedAt = envelope.FinishedAtUtc ?? now;
-        passRow.MetricsJson = string.IsNullOrWhiteSpace(passRow.MetricsJson) ? "{}" : passRow.MetricsJson;
 
         var normalizationRow = await db.NormalizationRuns.FirstOrDefaultAsync(
             x => x.ModelPassRunId == envelope.RunId,
@@ -160,6 +160,7 @@ public class ModelPassAuditStore : IModelPassAuditStore
             TruthSummary = ModelPassEnvelopeStorageCodec.DeserializeTruthSummary(row.TruthSummaryJson),
             Conflicts = ModelPassEnvelopeStorageCodec.DeserializeConflicts(row.ConflictsJson),
             Unknowns = ModelPassEnvelopeStorageCodec.DeserializeUnknowns(row.UnknownsJson),
+            Budget = ModelPassEnvelopeStorageCodec.DeserializeBudget(row.MetricsJson),
             ResultStatus = row.ResultStatus,
             OutputSummary = ModelPassEnvelopeStorageCodec.DeserializeOutputSummary(row.OutputSummaryJson),
             StartedAtUtc = row.StartedAt,
@@ -249,6 +250,20 @@ public class ModelPassAuditStore : IModelPassAuditStore
                     RequiredAction = x.RequiredAction
                 })
             ],
+            Budget = new ModelPassBudgetEnvelope
+            {
+                BudgetProfileKey = envelope.Budget.BudgetProfileKey,
+                MaxIterations = envelope.Budget.MaxIterations,
+                IterationsConsumed = envelope.Budget.IterationsConsumed,
+                MaxInputTokens = envelope.Budget.MaxInputTokens,
+                InputTokensConsumed = envelope.Budget.InputTokensConsumed,
+                MaxOutputTokens = envelope.Budget.MaxOutputTokens,
+                OutputTokensConsumed = envelope.Budget.OutputTokensConsumed,
+                MaxTotalTokens = envelope.Budget.MaxTotalTokens,
+                TotalTokensConsumed = envelope.Budget.TotalTokensConsumed,
+                MaxCostUsd = envelope.Budget.MaxCostUsd,
+                CostUsdConsumed = envelope.Budget.CostUsdConsumed
+            },
             ResultStatus = envelope.ResultStatus,
             OutputSummary = new ModelPassOutputSummary
             {

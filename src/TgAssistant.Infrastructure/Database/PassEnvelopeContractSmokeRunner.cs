@@ -86,6 +86,8 @@ public static class PassEnvelopeContractSmokeRunner
                 Summary = "Synthetic pass envelope smoke truth summary.",
                 CanonicalRefs = ["evidence:smoke-1"]
             },
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_seed")),
             Conflicts =
             [
                 new ModelPassConflict

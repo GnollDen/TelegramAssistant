@@ -347,6 +347,8 @@ public static class Stage8RecomputeQueueSmokeRunner
                             TargetRef = request.PersonId != null ? $"person:{request.PersonId:D}" : "person:unresolved"
                         },
                         PersonId = request.PersonId,
+                        Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                            ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                         ResultStatus = ModelPassResultStatuses.ResultReady,
                         OutputSummary = new ModelPassOutputSummary
                         {
@@ -481,6 +483,8 @@ public static class Stage8RecomputeQueueSmokeRunner
                     TargetType = "person",
                     TargetRef = targetRef
                 },
+                Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                    ModelPassBudgetCatalog.Create("stage8_recompute", passFamily)),
                 ResultStatus = resultStatus,
                 OutputSummary = new ModelPassOutputSummary
                 {

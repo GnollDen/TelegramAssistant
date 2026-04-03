@@ -115,6 +115,20 @@ public class ModelPassAuditService : IModelPassAuditService
                 })
             ],
             Unknowns = unknowns,
+            Budget = new ModelPassBudgetEnvelope
+            {
+                BudgetProfileKey = inputEnvelope.Budget.BudgetProfileKey,
+                MaxIterations = inputEnvelope.Budget.MaxIterations,
+                IterationsConsumed = inputEnvelope.Budget.IterationsConsumed,
+                MaxInputTokens = inputEnvelope.Budget.MaxInputTokens,
+                InputTokensConsumed = inputEnvelope.Budget.InputTokensConsumed,
+                MaxOutputTokens = inputEnvelope.Budget.MaxOutputTokens,
+                OutputTokensConsumed = inputEnvelope.Budget.OutputTokensConsumed,
+                MaxTotalTokens = inputEnvelope.Budget.MaxTotalTokens,
+                TotalTokensConsumed = inputEnvelope.Budget.TotalTokensConsumed,
+                MaxCostUsd = inputEnvelope.Budget.MaxCostUsd,
+                CostUsdConsumed = inputEnvelope.Budget.CostUsdConsumed
+            },
             ResultStatus = normalization.Status,
             OutputSummary = outputSummary,
             StartedAtUtc = inputEnvelope.StartedAtUtc == default ? DateTime.UtcNow : inputEnvelope.StartedAtUtc,

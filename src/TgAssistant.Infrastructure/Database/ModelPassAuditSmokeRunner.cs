@@ -159,6 +159,8 @@ public static class ModelPassAuditSmokeRunner
                 Summary = "Synthetic audit smoke summary.",
                 CanonicalRefs = ["evidence:smoke-1"]
             },
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_seed")),
             ResultStatus = ModelPassResultStatuses.ResultReady,
             OutputSummary = new ModelPassOutputSummary
             {
@@ -260,6 +262,20 @@ public static class ModelPassAuditSmokeRunner
                         RequiredAction = x.RequiredAction
                     })
                 ],
+                Budget = new ModelPassBudgetEnvelope
+                {
+                    BudgetProfileKey = envelope.Budget.BudgetProfileKey,
+                    MaxIterations = envelope.Budget.MaxIterations,
+                    IterationsConsumed = envelope.Budget.IterationsConsumed,
+                    MaxInputTokens = envelope.Budget.MaxInputTokens,
+                    InputTokensConsumed = envelope.Budget.InputTokensConsumed,
+                    MaxOutputTokens = envelope.Budget.MaxOutputTokens,
+                    OutputTokensConsumed = envelope.Budget.OutputTokensConsumed,
+                    MaxTotalTokens = envelope.Budget.MaxTotalTokens,
+                    TotalTokensConsumed = envelope.Budget.TotalTokensConsumed,
+                    MaxCostUsd = envelope.Budget.MaxCostUsd,
+                    CostUsdConsumed = envelope.Budget.CostUsdConsumed
+                },
                 ResultStatus = envelope.ResultStatus,
                 OutputSummary = new ModelPassOutputSummary
                 {

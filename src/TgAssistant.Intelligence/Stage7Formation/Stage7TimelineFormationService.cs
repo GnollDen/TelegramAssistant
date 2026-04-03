@@ -126,6 +126,8 @@ public class Stage7TimelineFormationService : IStage7TimelineService
                 })
             ],
             Unknowns = BuildUnknowns(resultStatus, bootstrapEnvelope),
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage7_durable_formation", "timeline_objects")),
             ResultStatus = resultStatus,
             OutputSummary = new ModelPassOutputSummary
             {

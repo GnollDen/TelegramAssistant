@@ -178,6 +178,8 @@ public static class Stage7TimelineSmokeRunner
                         Summary = "Timeline smoke bootstrap summary.",
                         CanonicalRefs = [$"evidence:{evidenceId:D}"]
                     },
+                    Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                        ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                     ResultStatus = ModelPassResultStatuses.ResultReady,
                     OutputSummary = new ModelPassOutputSummary
                     {
@@ -286,6 +288,8 @@ public static class Stage7TimelineSmokeRunner
                         TruthLayer = ModelNormalizationTruthLayers.CanonicalTruth,
                         Summary = "Timeline smoke missing-data summary."
                     },
+                    Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                        ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                     ResultStatus = ModelPassResultStatuses.NeedMoreData,
                     OutputSummary = new ModelPassOutputSummary
                     {

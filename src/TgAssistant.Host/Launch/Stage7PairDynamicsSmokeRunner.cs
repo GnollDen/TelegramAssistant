@@ -303,6 +303,8 @@ public static class Stage7PairDynamicsSmokeRunner
                             Summary = "Smoke bootstrap summary.",
                             CanonicalRefs = [$"evidence:{evidenceId:D}"]
                         },
+                        Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                            ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                         ResultStatus = ModelPassResultStatuses.ResultReady,
                         OutputSummary = new ModelPassOutputSummary
                         {
@@ -418,6 +420,8 @@ public static class Stage7PairDynamicsSmokeRunner
                             TargetRef = trackedPerson.PersonRef
                         },
                         PersonId = trackedPerson.PersonId,
+                        Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                            ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                         ResultStatus = ModelPassResultStatuses.NeedMoreData,
                         OutputSummary = new ModelPassOutputSummary
                         {

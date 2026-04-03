@@ -153,6 +153,8 @@ public static class NormalizationContractSmokeRunner
                 Summary = "Synthetic normalization smoke summary.",
                 CanonicalRefs = ["evidence:smoke-1"]
             },
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_seed")),
             Conflicts = [],
             Unknowns =
             [

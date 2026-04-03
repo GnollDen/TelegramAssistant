@@ -128,6 +128,8 @@ public class Stage7PairDynamicsFormationService : IStage7PairDynamicsService
                 })
             ],
             Unknowns = BuildUnknowns(resultStatus, bootstrapEnvelope),
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage7_durable_formation", "pair_dynamics")),
             ResultStatus = resultStatus,
             OutputSummary = new ModelPassOutputSummary
             {

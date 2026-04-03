@@ -165,6 +165,8 @@ public static class Stage7DossierProfileSmokeRunner
                         Summary = "Smoke bootstrap summary.",
                         CanonicalRefs = [$"evidence:{evidenceId:D}"]
                     },
+                    Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                        ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                     ResultStatus = ModelPassResultStatuses.ResultReady,
                     OutputSummary = new ModelPassOutputSummary
                     {
@@ -305,6 +307,8 @@ public static class Stage7DossierProfileSmokeRunner
                         TruthLayer = ModelNormalizationTruthLayers.CanonicalTruth,
                         Summary = "Smoke bootstrap missing-data summary."
                     },
+                    Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                        ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
                     ResultStatus = ModelPassResultStatuses.NeedMoreData,
                     OutputSummary = new ModelPassOutputSummary
                     {

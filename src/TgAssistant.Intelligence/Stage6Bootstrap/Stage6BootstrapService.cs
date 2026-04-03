@@ -131,6 +131,8 @@ public class Stage6BootstrapService : IStage6BootstrapService
             },
             Conflicts = [.. resolution.Conflicts],
             Unknowns = [.. resolution.Unknowns],
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
             ResultStatus = resultStatus,
             OutputSummary = outputSummary,
             StartedAtUtc = DateTime.UtcNow,

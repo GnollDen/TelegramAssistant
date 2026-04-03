@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TgAssistant.Core.Models;
 
 namespace TgAssistant.Infrastructure.Database;
@@ -45,10 +46,52 @@ public static class ModelPassEnvelopeStorageCodec
             source_refs = envelope.SourceRefs,
             truth_summary = envelope.TruthSummary,
             conflicts = envelope.Conflicts,
-            unknowns = envelope.Unknowns
+            unknowns = envelope.Unknowns,
+            budget = envelope.Budget
         };
 
         return JsonSerializer.Serialize(payload, JsonOptions);
+    }
+
+    public static string UpsertBudgetMetrics(string existingMetricsJson, ModelPassBudgetEnvelope budget)
+    {
+        JsonObject metricsObject;
+        try
+        {
+            metricsObject = string.IsNullOrWhiteSpace(existingMetricsJson)
+                ? new JsonObject()
+                : JsonNode.Parse(existingMetricsJson)?.AsObject() ?? new JsonObject();
+        }
+        catch (JsonException)
+        {
+            metricsObject = new JsonObject();
+        }
+
+        metricsObject["budget"] = JsonSerializer.SerializeToNode(budget, JsonOptions);
+        return metricsObject.ToJsonString(JsonOptions);
+    }
+
+    public static ModelPassBudgetEnvelope DeserializeBudget(string metricsJson)
+    {
+        if (string.IsNullOrWhiteSpace(metricsJson))
+        {
+            return new ModelPassBudgetEnvelope();
+        }
+
+        try
+        {
+            var root = JsonNode.Parse(metricsJson);
+            if (root is JsonObject obj && obj.TryGetPropertyValue("budget", out var budgetNode) && budgetNode != null)
+            {
+                return budgetNode.Deserialize<ModelPassBudgetEnvelope>(JsonOptions) ?? new ModelPassBudgetEnvelope();
+            }
+
+            return root?.Deserialize<ModelPassBudgetEnvelope>(JsonOptions) ?? new ModelPassBudgetEnvelope();
+        }
+        catch (JsonException)
+        {
+            return new ModelPassBudgetEnvelope();
+        }
     }
 
     public static string SerializeOutputSummary(ModelPassOutputSummary summary)

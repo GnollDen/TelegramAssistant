@@ -56,10 +56,10 @@ public class ModelPassEnvelopeRepository : IModelPassEnvelopeRepository
         row.UnknownsJson = ModelPassEnvelopeStorageCodec.SerializeUnknowns(envelope.Unknowns);
         row.InputSummaryJson = ModelPassEnvelopeStorageCodec.SerializeInputSummary(envelope);
         row.OutputSummaryJson = ModelPassEnvelopeStorageCodec.SerializeOutputSummary(envelope.OutputSummary);
+        row.MetricsJson = ModelPassEnvelopeStorageCodec.UpsertBudgetMetrics(row.MetricsJson, envelope.Budget);
         row.FailureJson = ModelPassEnvelopeStorageCodec.SerializeFailureSummary(envelope);
         row.StartedAt = envelope.StartedAtUtc == default ? now : envelope.StartedAtUtc;
         row.FinishedAt = envelope.FinishedAtUtc ?? now;
-        row.MetricsJson = string.IsNullOrWhiteSpace(row.MetricsJson) ? "{}" : row.MetricsJson;
 
         await db.SaveChangesAsync(ct);
         return Map(row);
@@ -101,6 +101,7 @@ public class ModelPassEnvelopeRepository : IModelPassEnvelopeRepository
             TruthSummary = ModelPassEnvelopeStorageCodec.DeserializeTruthSummary(row.TruthSummaryJson),
             Conflicts = ModelPassEnvelopeStorageCodec.DeserializeConflicts(row.ConflictsJson),
             Unknowns = ModelPassEnvelopeStorageCodec.DeserializeUnknowns(row.UnknownsJson),
+            Budget = ModelPassEnvelopeStorageCodec.DeserializeBudget(row.MetricsJson),
             ResultStatus = row.ResultStatus,
             OutputSummary = ModelPassEnvelopeStorageCodec.DeserializeOutputSummary(row.OutputSummaryJson),
             StartedAtUtc = row.StartedAt,

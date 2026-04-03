@@ -136,6 +136,8 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
                     RequiredAction = x.RequiredAction
                 })
             ],
+            Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                ModelPassBudgetCatalog.Create("stage7_durable_formation", "dossier_profile")),
             ResultStatus = resultStatus,
             OutputSummary = new ModelPassOutputSummary
             {

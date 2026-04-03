@@ -10,6 +10,7 @@ public static class ModelPassEnvelopeValidator
         ArgumentNullException.ThrowIfNull(envelope.Scope);
         ArgumentNullException.ThrowIfNull(envelope.Target);
         ArgumentNullException.ThrowIfNull(envelope.TruthSummary);
+        ArgumentNullException.ThrowIfNull(envelope.Budget);
         ArgumentNullException.ThrowIfNull(envelope.OutputSummary);
 
         if (envelope.SchemaVersion <= 0)
@@ -77,6 +78,8 @@ public static class ModelPassEnvelopeValidator
             throw new InvalidOperationException("Model pass envelope truth_summary requires truth_layer.");
         }
 
+        ValidateBudget(envelope.Budget);
+
         if (string.Equals(envelope.ResultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal)
             && string.IsNullOrWhiteSpace(envelope.OutputSummary.BlockedReason))
         {
@@ -94,6 +97,47 @@ public static class ModelPassEnvelopeValidator
             && !string.IsNullOrWhiteSpace(envelope.OutputSummary.BlockedReason))
         {
             throw new InvalidOperationException("result_ready envelopes cannot include blocked_reason.");
+        }
+    }
+
+    private static void ValidateBudget(ModelPassBudgetEnvelope budget)
+    {
+        if (string.IsNullOrWhiteSpace(budget.BudgetProfileKey))
+        {
+            throw new InvalidOperationException("Model pass envelope budget requires budget_profile_key.");
+        }
+
+        if (budget.MaxIterations <= 0
+            || budget.MaxInputTokens <= 0
+            || budget.MaxOutputTokens <= 0
+            || budget.MaxTotalTokens <= 0
+            || budget.MaxCostUsd <= 0)
+        {
+            throw new InvalidOperationException("Model pass envelope budget requires positive iteration, token, and cost limits.");
+        }
+
+        if (budget.MaxTotalTokens < budget.MaxInputTokens
+            || budget.MaxTotalTokens < budget.MaxOutputTokens)
+        {
+            throw new InvalidOperationException("Model pass envelope budget max_total_tokens must cover input and output token caps.");
+        }
+
+        if (budget.IterationsConsumed < 0
+            || budget.InputTokensConsumed < 0
+            || budget.OutputTokensConsumed < 0
+            || budget.TotalTokensConsumed < 0
+            || budget.CostUsdConsumed < 0)
+        {
+            throw new InvalidOperationException("Model pass envelope budget consumed counters cannot be negative.");
+        }
+
+        if (budget.IterationsConsumed > budget.MaxIterations
+            || budget.InputTokensConsumed > budget.MaxInputTokens
+            || budget.OutputTokensConsumed > budget.MaxOutputTokens
+            || budget.TotalTokensConsumed > budget.MaxTotalTokens
+            || budget.CostUsdConsumed > budget.MaxCostUsd)
+        {
+            throw new InvalidOperationException("Model pass envelope budget consumed counters cannot exceed configured limits.");
         }
     }
 }
