@@ -1256,12 +1256,12 @@
       "dependencies": [
         "CLEANUP-103-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Planning index exists and points to the real current authority documents.",
         "No active docs route through missing or stale planning files."
       ],
-      "notes": "This slice should recreate clarity after the large docs reduction."
+      "notes": "Completed on 2026-04-03 by restoring docs/planning/README.md as the active authority entrypoint and explicitly chaining PRD + backlog authority without stale/missing planning hops."
     },
     {
       "id": "CLEANUP-104-B",
