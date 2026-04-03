@@ -4,7 +4,16 @@
 
 Active authority entrypoint for planning as of 2026-04-03.
 
-## Primary Product Authority
+## Authority Chain
+
+Top-level routing:
+
+1. `README.md` (repository overview, points here for planning authority)
+2. `docs/planning/README.md` (this file, active planning index)
+3. PRD authority documents listed below
+4. Backlog authority files (`tasks.json`, `task_slices.json`)
+
+## PRD Authority
 
 - [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
 - [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
@@ -23,6 +32,8 @@ Active authority entrypoint for planning as of 2026-04-03.
 
 ## Runtime and Baseline Authority
 
+- Current runtime baseline date: `2026-04-03`
+- Default compose role set: `ingest,stage5,maintenance,ops`
 - [README.md](/home/codex/projects/TelegramAssistant/README.md)
 - [src/TgAssistant.Host/Program.cs](/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/Program.cs)
 - [src/TgAssistant.Host/appsettings.json](/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/appsettings.json)

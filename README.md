@@ -2,11 +2,17 @@
 
 Personal Telegram assistant monorepo focused on message ingestion, processing, and intelligence extraction.
 
-## Active Authority
+## Authority Chain
 
-- Product authority (PRD): `docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md`
-- Execution backlog: `tasks.json`
-- Task slicing: `task_slices.json`
+Use a single planning authority entrypoint:
+
+1. `docs/planning/README.md` (planning authority index)
+2. PRD authority from that index:
+   - `docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md`
+   - `docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md`
+3. Execution backlogs:
+   - `tasks.json` (L1 orchestration backlog)
+   - `task_slices.json` (L2 execution backlog)
 
 ## Repository Layout
 
@@ -46,8 +52,14 @@ npm run build
 
 ## Runtime
 
-Primary runtime composition is in `src/TgAssistant.Host/Program.cs`.
-Use `docker-compose.yml` for local service orchestration.
+Current runtime baseline (as of 2026-04-03):
+
+- Default compose role set: `ingest,stage5,maintenance,ops`
+- Primary runtime composition: `src/TgAssistant.Host/Program.cs`
+- Runtime settings baseline: `src/TgAssistant.Host/appsettings.json`
+- Local orchestration baseline: `docker-compose.yml`
+
+Gateway migration is an active track. Do not treat gateway-prep notes as runtime-complete implementation status.
 
 ## Notes
 

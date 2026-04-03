@@ -1332,12 +1332,12 @@
       "dependencies": [
         "GATEWAY-001-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway smoke suite covers the main configured modalities.",
         "Successful provider responses are normalized and auditable."
       ],
-      "notes": "Success-path smoke coverage should land before failure/fallback coverage."
+      "notes": "Completed on 2026-04-03 by adding standalone --llm-gateway-success-smoke coverage for codex-lb text/chat plus openrouter embeddings and audio_transcription success paths, including request-shape assertions and normalized audit-field verification without cutting over active callers."
     },
     {
       "id": "GATEWAY-002-B",
@@ -1570,12 +1570,12 @@
       "dependencies": [
         "ALIGN-203-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "README and planning index tell one coherent story.",
         "Top-level docs do not compete or conflict on current baseline authority."
       ],
-      "notes": "Authority-chain normalization slice."
+      "notes": "Done 2026-04-03: README and planning index now share one authority chain and explicitly state current runtime baseline."
     },
     {
       "id": "ALIGN-204-B",
