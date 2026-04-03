@@ -1587,12 +1587,12 @@
       "dependencies": [
         "ALIGN-204-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway prep and cleanup notes are classified honestly.",
         "Active docs reflect current drift and target-state without ambiguity."
       ],
-      "notes": "Final docs hardening slice for the alignment phase."
+      "notes": "Done 2026-04-03: planning docs were reclassified into PRD active authority vs gateway prep and cleanup reference-only vs option historical/archive-only."
     }
   ]
 }
