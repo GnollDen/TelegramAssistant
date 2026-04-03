@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Intelligence.Stage5;
+using TgAssistant.Intelligence.Stage8Recompute;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
@@ -70,6 +71,7 @@ public static class HostedServiceRegistrationExtensions
     {
         // Keep reusable operational sync in the active baseline; bot workflow is legacy-only.
         services.AddHostedService<Neo4jSyncWorkerService>();
+        services.AddHostedService<Stage8RecomputeWorkerService>();
         return services;
     }
 
