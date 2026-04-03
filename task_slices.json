@@ -1812,12 +1812,12 @@
       "dependencies": [
         "OPINT-001-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Resolution queue/detail contracts are clean-model and non-legacy.",
         "Each item exposes trust/status/evidence/updated-at fields needed by Telegram/Web cards."
       ],
-      "notes": "Backbone read-model slice for both surfaces."
+      "notes": "Completed on 2026-04-03 by adding a clean `IResolutionReadService` contract plus `ResolutionReadProjectionService` that maps active tracked-person scope data from Stage8 queue state, clarification branches, runtime defects/control state, and durable promotion/contradiction signals into the P0 resolution-item taxonomy. The queue/detail contracts stay MCP-independent and do not reintroduce legacy Stage6 bot/web flows. Verified with `jq` validation for task_slices.json and `dotnet build TelegramAssistant.sln`."
     },
     {
       "id": "OPINT-002-B",

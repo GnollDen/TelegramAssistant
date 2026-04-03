@@ -68,6 +68,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IRuntimeControlStateService, RuntimeControlStateService>();
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
+        services.AddSingleton<IResolutionReadService, ResolutionReadProjectionService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();

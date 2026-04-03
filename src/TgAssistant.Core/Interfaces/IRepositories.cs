@@ -292,6 +292,17 @@ public interface IStage8RecomputeQueueService
         CancellationToken ct = default);
 }
 
+public interface IResolutionReadService
+{
+    Task<ResolutionQueueResult> GetQueueAsync(
+        ResolutionQueueRequest request,
+        CancellationToken ct = default);
+
+    Task<ResolutionDetailResult> GetDetailAsync(
+        ResolutionDetailRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeTriggerService
 {
     Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);
