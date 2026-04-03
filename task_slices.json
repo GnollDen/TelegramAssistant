@@ -630,12 +630,12 @@
         "IMPLEMENT-003-D",
         "IMPLEMENT-004-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Bootstrap can anchor one tracked person or scope to a graph seed.",
         "Outputs remain non-durable."
       ],
-      "notes": "Clean split because graph init is the first bounded bootstrap behavior."
+      "notes": "Clean split because graph init is the first bounded bootstrap behavior. Added Stage6BootstrapService plus Stage6BootstrapRepository to resolve one tracked_person against active person_operator_links and evidence-backed substrate coverage, persist non-durable bootstrap_graph_nodes/bootstrap_graph_edges idempotently by scope natural keys, and record bootstrap audit state through model_pass_runs plus normalization_runs; added --stage6-bootstrap-smoke to validate ready and need_more_data paths and rerun identity stability, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-005-B",

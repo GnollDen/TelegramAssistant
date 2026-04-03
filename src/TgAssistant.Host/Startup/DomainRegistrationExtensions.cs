@@ -4,6 +4,7 @@ using TgAssistant.Host.Launch;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Intelligence.Stage5;
+using TgAssistant.Intelligence.Stage6Bootstrap;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
@@ -48,6 +49,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<ExternalArchiveVerificationService>();
         services.AddSingleton<Stage5SubstrateDeterminismVerificationService>();
         services.AddSingleton<IModelPassAuditService, ModelPassAuditService>();
+        services.AddSingleton<IStage6BootstrapService, Stage6BootstrapService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
@@ -175,6 +177,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IModelPassEnvelopeRepository, ModelPassEnvelopeRepository>();
         services.AddSingleton<IModelOutputNormalizer, ModelOutputNormalizer>();
         services.AddSingleton<IModelPassAuditStore, ModelPassAuditStore>();
+        services.AddSingleton<IStage6BootstrapRepository, Stage6BootstrapRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

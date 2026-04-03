@@ -43,6 +43,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbEvidenceItemPersonLink> EvidenceItemPersonLinks => Set<DbEvidenceItemPersonLink>();
     public DbSet<DbModelPassRun> ModelPassRuns => Set<DbModelPassRun>();
     public DbSet<DbNormalizationRun> NormalizationRuns => Set<DbNormalizationRun>();
+    public DbSet<DbBootstrapGraphNode> BootstrapGraphNodes => Set<DbBootstrapGraphNode>();
+    public DbSet<DbBootstrapGraphEdge> BootstrapGraphEdges => Set<DbBootstrapGraphEdge>();
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
 
@@ -772,6 +774,46 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.SourceObjectId).HasFilter("source_object_id IS NOT NULL");
             e.HasIndex(x => x.EvidenceItemId).HasFilter("evidence_item_id IS NOT NULL");
             e.HasIndex(x => new { x.ScopeKey, x.TruthLayer, x.Status });
+        });
+
+        modelBuilder.Entity<DbBootstrapGraphNode>(e =>
+        {
+            e.ToTable("bootstrap_graph_nodes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.NodeType).HasColumnName("node_type");
+            e.Property(x => x.NodeRef).HasColumnName("node_ref");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.NodeType, x.NodeRef }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.NodeType, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.NodeType })
+                .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbBootstrapGraphEdge>(e =>
+        {
+            e.ToTable("bootstrap_graph_edges");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.FromNodeRef).HasColumnName("from_node_ref");
+            e.Property(x => x.ToNodeRef).HasColumnName("to_node_ref");
+            e.Property(x => x.EdgeType).HasColumnName("edge_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.FromNodeRef, x.ToNodeRef, x.EdgeType }).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.EdgeType, x.Status });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
         modelBuilder.Entity<DbDurableObjectMetadata>(e =>

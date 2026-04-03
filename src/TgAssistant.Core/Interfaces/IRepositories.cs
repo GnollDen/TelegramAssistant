@@ -98,6 +98,21 @@ public interface IModelPassAuditService
     Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default);
 }
 
+public interface IStage6BootstrapRepository
+{
+    Task<Stage6BootstrapScopeResolution> ResolveScopeAsync(Stage6BootstrapRequest request, CancellationToken ct = default);
+
+    Task<Stage6BootstrapGraphResult> UpsertGraphInitializationAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapScopeResolution resolution,
+        CancellationToken ct = default);
+}
+
+public interface IStage6BootstrapService
+{
+    Task<Stage6BootstrapGraphResult> RunGraphInitializationAsync(Stage6BootstrapRequest request, CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }
