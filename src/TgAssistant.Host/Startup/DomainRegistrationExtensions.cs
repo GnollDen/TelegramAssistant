@@ -56,6 +56,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7PairDynamicsService, Stage7PairDynamicsFormationService>();
         services.AddSingleton<IStage7TimelineService, Stage7TimelineFormationService>();
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
+        services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();

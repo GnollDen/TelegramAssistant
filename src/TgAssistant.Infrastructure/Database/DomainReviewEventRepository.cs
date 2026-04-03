@@ -8,10 +8,14 @@ namespace TgAssistant.Infrastructure.Database;
 public class DomainReviewEventRepository : IDomainReviewEventRepository
 {
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly IStage8RecomputeTriggerService _stage8RecomputeTriggerService;
 
-    public DomainReviewEventRepository(IDbContextFactory<TgAssistantDbContext> dbFactory)
+    public DomainReviewEventRepository(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IStage8RecomputeTriggerService stage8RecomputeTriggerService)
     {
         _dbFactory = dbFactory;
+        _stage8RecomputeTriggerService = stage8RecomputeTriggerService;
     }
 
     public async Task<DomainReviewEvent> AddAsync(DomainReviewEvent evt, CancellationToken ct = default)
@@ -37,6 +41,7 @@ public class DomainReviewEventRepository : IDomainReviewEventRepository
 
         evt.Id = row.Id;
         evt.CreatedAt = row.CreatedAt;
+        await _stage8RecomputeTriggerService.HandleDomainReviewEventAsync(evt, ct);
         return evt;
     }
 

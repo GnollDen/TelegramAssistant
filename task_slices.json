@@ -772,7 +772,7 @@
       "dependencies": [
         "IMPLEMENT-007-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Each trigger class maps to a targeted rerun request.",
         "No trigger forces a global rebuild by default."
