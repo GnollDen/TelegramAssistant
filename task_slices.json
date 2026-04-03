@@ -1502,12 +1502,12 @@
       "dependencies": [
         "GATEWAY-006-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway analytics are proven end-to-end on bounded safe paths.",
         "The emitted metrics are sufficient for rollout and operational decisions in Grafana."
       ],
-      "notes": "Close the analytics follow-up with an end-to-end verification path that proves Grafana-facing gateway metrics are trustworthy."
+      "notes": "Done on 2026-04-03: added bounded `--llm-gateway-analytics-validate` end-to-end validation with JSON evidence report at artifacts/llm-gateway/analytics_validation_report.json. Validation executes primary/fallback/error and embeddings-safe scenarios, confirms Grafana-facing request/tokens/TPS/provider+e2e latency/spend metrics with required labels, and includes query hints for rollout/ops decisions."
     },
     {
       "id": "GATEWAY-007-A",

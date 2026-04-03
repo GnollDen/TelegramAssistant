@@ -954,8 +954,8 @@
       "dependencies": [
         "GATEWAY-005"
       ],
-      "status": "pending",
-      "notes": "Persistent observability follow-up after the initial gateway foundation and rollout gate: expose Grafana-ready metrics for throughput, latency, token usage, and OpenRouter spend so selective production use can be measured honestly."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-006-A/B/C. Gateway now emits Grafana-ready metrics for request throughput (RPS derivable), tokens/TPS, provider and end-to-end latency, fallback transitions, and OpenRouter spend (`provider` or `derived`) aligned with usage accounting. Bounded verification is codified through --llm-gateway-success-smoke, --llm-gateway-failure-smoke, --llm-gateway-analytics-smoke, and --llm-gateway-analytics-validate with report artifact artifacts/llm-gateway/analytics_validation_report.json."
     },
     {
       "id": "GATEWAY-007",

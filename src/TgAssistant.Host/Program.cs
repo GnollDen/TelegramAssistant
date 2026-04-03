@@ -112,6 +112,7 @@ try
     var runLlmGatewaySuccessSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-success-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayAnalyticsSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmGatewayAnalyticsValidate = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-validate", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmContractNormalizationSmoke = args.Any(arg => string.Equals(arg, "--llm-contract-normalization-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
@@ -121,6 +122,10 @@ try
     var llmGatewayReplayAbOutput = llmGatewayReplayAbOutputArg is null
         ? null
         : llmGatewayReplayAbOutputArg["--llm-gateway-replay-ab-output=".Length..];
+    var llmGatewayAnalyticsValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-gateway-analytics-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var llmGatewayAnalyticsValidateOutput = llmGatewayAnalyticsValidateOutputArg is null
+        ? null
+        : llmGatewayAnalyticsValidateOutputArg["--llm-gateway-analytics-validate-output=".Length..];
     var editDiffPilotValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--edit-diff-pilot-validate-output=", StringComparison.OrdinalIgnoreCase));
     var editDiffPilotValidateOutput = editDiffPilotValidateOutputArg is null
         ? null
@@ -185,6 +190,7 @@ try
         "--llm-gateway-success-smoke",
         "--llm-gateway-failure-smoke",
         "--llm-gateway-analytics-smoke",
+        "--llm-gateway-analytics-validate",
         "--llm-gateway-experiment-smoke",
         "--llm-contract-normalization-smoke",
         "--llm-gateway-replay-ab",
@@ -275,6 +281,17 @@ try
     {
         await LlmGatewayAnalyticsSmokeRunner.RunAsync();
         Log.Information("LLM gateway analytics smoke requested via --llm-gateway-analytics-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmGatewayAnalyticsValidate)
+    {
+        var report = await LlmGatewayAnalyticsValidationRunner.RunAsync(llmGatewayAnalyticsValidateOutput);
+        Log.Information(
+            "LLM gateway analytics validation requested via --llm-gateway-analytics-validate. output={OutputPath}, checks_passed={ChecksPassed}, recommendation={Recommendation}. Exiting after successful verification.",
+            report.OutputPath,
+            report.AllChecksPassed,
+            report.Recommendation);
         return;
     }
 
