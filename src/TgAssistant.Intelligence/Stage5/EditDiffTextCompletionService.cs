@@ -70,7 +70,7 @@ public class EditDiffTextCompletionService
         {
             Modality = LlmModality.TextChat,
             TaskKey = "edit_diff",
-            ResponseMode = LlmResponseMode.JsonObject,
+            ResponseMode = LlmResponseMode.Text,
             Limits = new LlmExecutionLimits
             {
                 MaxTokens = Math.Clamp(_analysisSettings.EditDiffMaxTokens, 128, 800),

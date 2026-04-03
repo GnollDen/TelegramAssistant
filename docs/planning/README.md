@@ -28,6 +28,7 @@ Top-level routing:
 ### Gateway prep docs
 
 - Reference-only (track-prep/audit-design note, not runtime completion authority): [LLM_GATEWAY_TRACK_PREP_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_GATEWAY_TRACK_PREP_2026-04-03.md)
+- Reference-only runtime model snapshot: [CODEX_LB_WORKING_MODELS_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CODEX_LB_WORKING_MODELS_2026-04-03.md)
 
 ### Cleanup and audit notes
 
