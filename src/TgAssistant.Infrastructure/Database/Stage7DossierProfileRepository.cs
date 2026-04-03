@@ -65,6 +65,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
                     output_type = x.OutputType,
                     relationship_edge_anchor_id = x.RelationshipEdgeAnchorId
                 }));
+        var dossierFieldRegistry = await SyncDossierFieldRegistryAsync(db, auditRecord, now, ct);
 
         var dossierMetadata = await UpsertMetadataAsync(
             db,
@@ -78,7 +79,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             freshness,
             stability,
             contradictionMarkersJson,
-            BuildMetadataJson(bootstrapResult, "dossier"),
+            BuildDossierMetadataJson(bootstrapResult, dossierFieldRegistry),
             now,
             ct);
         var profileMetadata = await UpsertMetadataAsync(
@@ -93,11 +94,11 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             freshness,
             stability,
             contradictionMarkersJson,
-            BuildMetadataJson(bootstrapResult, "profile"),
+            BuildProfileMetadataJson(bootstrapResult),
             now,
             ct);
 
-        var dossierRow = await UpsertDossierAsync(db, dossierMetadata.Id, auditRecord, bootstrapResult, now, ct);
+        var dossierRow = await UpsertDossierAsync(db, dossierMetadata.Id, auditRecord, bootstrapResult, dossierFieldRegistry, now, ct);
         var profileRow = await UpsertProfileAsync(db, profileMetadata.Id, auditRecord, bootstrapResult, now, ct);
         var dossierRevision = await UpsertDossierRevisionAsync(
             db,
@@ -213,6 +214,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         Guid durableMetadataId,
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapGraphResult bootstrapResult,
+        DossierFieldRegistrySnapshot dossierFieldRegistry,
         DateTime now,
         CancellationToken ct)
     {
@@ -238,8 +240,8 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         row.DurableObjectMetadataId = durableMetadataId;
         row.LastModelPassRunId = auditRecord.ModelPassRunId;
         row.Status = ActiveStatus;
-        row.SummaryJson = BuildDossierSummaryJson(auditRecord, bootstrapResult);
-        row.PayloadJson = BuildDossierPayloadJson(auditRecord, bootstrapResult);
+        row.SummaryJson = BuildDossierSummaryJson(auditRecord, bootstrapResult, dossierFieldRegistry);
+        row.PayloadJson = BuildDossierPayloadJson(auditRecord, bootstrapResult, dossierFieldRegistry);
         row.UpdatedAt = now;
         return row;
     }
@@ -477,11 +479,34 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         }
     }
 
-    private static string BuildMetadataJson(Stage6BootstrapGraphResult bootstrapResult, string family)
+    private static string BuildDossierMetadataJson(
+        Stage6BootstrapGraphResult bootstrapResult,
+        DossierFieldRegistrySnapshot dossierFieldRegistry)
     {
         return JsonSerializer.Serialize(new
         {
-            family,
+            family = "dossier",
+            linked_person_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.LinkedPerson, StringComparison.Ordinal)),
+            candidate_identity_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.CandidateIdentity, StringComparison.Ordinal)),
+            mention_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.Mention, StringComparison.Ordinal)),
+            ambiguity_count = bootstrapResult.AmbiguityOutputs.Count,
+            contradiction_count = bootstrapResult.ContradictionOutputs.Count,
+            evidence_count = bootstrapResult.EvidenceCount,
+            latest_evidence_at_utc = bootstrapResult.LatestEvidenceAtUtc?.ToUniversalTime().ToString("O"),
+            canonical_field_registry = new
+            {
+                approved_family_count = dossierFieldRegistry.ApprovedFamilyCount,
+                proposal_family_count = dossierFieldRegistry.ProposalFamilyCount,
+                alias_count = dossierFieldRegistry.AliasCount
+            }
+        });
+    }
+
+    private static string BuildProfileMetadataJson(Stage6BootstrapGraphResult bootstrapResult)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            family = "profile",
             linked_person_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.LinkedPerson, StringComparison.Ordinal)),
             candidate_identity_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.CandidateIdentity, StringComparison.Ordinal)),
             mention_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.Mention, StringComparison.Ordinal)),
@@ -492,7 +517,10 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         });
     }
 
-    private static string BuildDossierSummaryJson(ModelPassAuditRecord auditRecord, Stage6BootstrapGraphResult bootstrapResult)
+    private static string BuildDossierSummaryJson(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        DossierFieldRegistrySnapshot dossierFieldRegistry)
     {
         return JsonSerializer.Serialize(new
         {
@@ -500,12 +528,22 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             operator_root = bootstrapResult.OperatorPerson?.DisplayName,
             fact_count = auditRecord.Normalization.NormalizedPayload.Facts.Count,
             linked_person_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.LinkedPerson, StringComparison.Ordinal)),
-            latest_evidence_at_utc = bootstrapResult.LatestEvidenceAtUtc?.ToUniversalTime().ToString("O")
+            latest_evidence_at_utc = bootstrapResult.LatestEvidenceAtUtc?.ToUniversalTime().ToString("O"),
+            canonical_field_family_count = dossierFieldRegistry.ApprovedFamilyCount,
+            proposal_field_family_count = dossierFieldRegistry.ProposalFamilyCount
         });
     }
 
-    private static string BuildDossierPayloadJson(ModelPassAuditRecord auditRecord, Stage6BootstrapGraphResult bootstrapResult)
+    private static string BuildDossierPayloadJson(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        DossierFieldRegistrySnapshot dossierFieldRegistry)
     {
+        var fieldMappings = dossierFieldRegistry.FieldMappings.ToDictionary(
+            x => DossierFieldRegistryCatalog.ComposeAliasToken(x.ObservedCategory, x.ObservedKey),
+            x => x,
+            StringComparer.Ordinal);
+
         return JsonSerializer.Serialize(new
         {
             dossier_type = Stage7DossierTypes.PersonDossier,
@@ -515,10 +553,32 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             {
                 category = x.Category,
                 key = x.Key,
+                canonical_category = fieldMappings.GetValueOrDefault(DossierFieldRegistryCatalog.ComposeAliasToken(x.Category, x.Key))?.CanonicalCategory ?? DossierFieldRegistryCatalog.NormalizeToken(x.Category),
+                canonical_key = fieldMappings.GetValueOrDefault(DossierFieldRegistryCatalog.ComposeAliasToken(x.Category, x.Key))?.CanonicalKey ?? DossierFieldRegistryCatalog.NormalizeToken(x.Key),
+                family_key = fieldMappings.GetValueOrDefault(DossierFieldRegistryCatalog.ComposeAliasToken(x.Category, x.Key))?.FamilyKey
+                    ?? DossierFieldRegistryCatalog.ComposeAliasToken(x.Category, x.Key),
+                approval_state = fieldMappings.GetValueOrDefault(DossierFieldRegistryCatalog.ComposeAliasToken(x.Category, x.Key))?.ApprovalState
+                    ?? DossierFieldApprovalStates.ProposalOnly,
                 value = x.Value,
                 confidence = x.Confidence,
                 evidence_refs = x.EvidenceRefs
             }),
+            field_registry = new
+            {
+                approved_family_count = dossierFieldRegistry.ApprovedFamilyCount,
+                proposal_family_count = dossierFieldRegistry.ProposalFamilyCount,
+                alias_count = dossierFieldRegistry.AliasCount,
+                observed_mappings = dossierFieldRegistry.FieldMappings.Select(x => new
+                {
+                    observed_category = x.ObservedCategory,
+                    observed_key = x.ObservedKey,
+                    canonical_category = x.CanonicalCategory,
+                    canonical_key = x.CanonicalKey,
+                    family_key = x.FamilyKey,
+                    approval_state = x.ApprovalState,
+                    is_seeded = x.IsSeeded
+                })
+            },
             bootstrap_outputs = new
             {
                 linked_person_count = bootstrapResult.DiscoveryOutputs.Count(x => string.Equals(x.DiscoveryType, Stage6BootstrapDiscoveryTypes.LinkedPerson, StringComparison.Ordinal)),
@@ -613,6 +673,178 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
 
     private static string BuildProfileObjectKey(Guid personId)
         => $"person:{personId:D}:profile:{Stage7ProfileScopes.Global}";
+
+    private async Task<DossierFieldRegistrySnapshot> SyncDossierFieldRegistryAsync(
+        TgAssistantDbContext db,
+        ModelPassAuditRecord auditRecord,
+        DateTime now,
+        CancellationToken ct)
+    {
+        var observedMappings = auditRecord.Normalization.NormalizedPayload.Facts
+            .Select(x => DossierFieldRegistryCatalog.Resolve(x.Category, x.Key))
+            .Where(x => !string.IsNullOrWhiteSpace(x.ObservedCategory) && !string.IsNullOrWhiteSpace(x.ObservedKey))
+            .GroupBy(x => DossierFieldRegistryCatalog.ComposeAliasToken(x.ObservedCategory, x.ObservedKey), StringComparer.Ordinal)
+            .Select(x => x.First())
+            .ToList();
+
+        var desiredFamilies = DossierFieldRegistryCatalog.SeededEntries
+            .Select(BuildDesiredFamily)
+            .Concat(observedMappings.Where(x => !x.IsSeeded).Select(BuildDesiredFamily))
+            .GroupBy(x => x.FamilyKey, StringComparer.Ordinal)
+            .Select(x => x.First())
+            .ToList();
+
+        var existingFamilies = await db.DossierFieldFamilies
+            .Where(x => desiredFamilies.Select(f => f.FamilyKey).Contains(x.FamilyKey))
+            .ToDictionaryAsync(x => x.FamilyKey, StringComparer.Ordinal, ct);
+        var familyRows = new Dictionary<string, DbDossierFieldFamily>(StringComparer.Ordinal);
+
+        foreach (var family in desiredFamilies)
+        {
+            if (!existingFamilies.TryGetValue(family.FamilyKey, out var row))
+            {
+                row = new DbDossierFieldFamily
+                {
+                    Id = Guid.NewGuid(),
+                    FamilyKey = family.FamilyKey,
+                    CreatedAt = now
+                };
+                db.DossierFieldFamilies.Add(row);
+                existingFamilies[family.FamilyKey] = row;
+            }
+
+            row.CanonicalCategory = family.CanonicalCategory;
+            row.CanonicalKey = family.CanonicalKey;
+            row.ApprovalState = PromoteApprovalState(row.ApprovalState, family.ApprovalState);
+            row.IsSeeded = row.IsSeeded || family.IsSeeded;
+            row.MetadataJson = JsonSerializer.Serialize(new
+            {
+                source = family.IsSeeded ? "seed_catalog" : "observed_dossier_payload",
+                proposal_only = string.Equals(family.ApprovalState, DossierFieldApprovalStates.ProposalOnly, StringComparison.Ordinal)
+            });
+            row.UpdatedAt = now;
+            familyRows[family.FamilyKey] = row;
+        }
+
+        var desiredAliases = desiredFamilies
+            .SelectMany(family => family.Aliases.Select(alias => new DesiredDossierFieldAlias
+            {
+                FamilyKey = family.FamilyKey,
+                AliasCategory = alias.Category,
+                AliasKey = alias.Key,
+                AliasToken = DossierFieldRegistryCatalog.ComposeAliasToken(alias.Category, alias.Key),
+                ApprovalState = family.ApprovalState
+            }))
+            .GroupBy(x => x.AliasToken, StringComparer.Ordinal)
+            .Select(x => x.First())
+            .ToList();
+        var existingAliases = await db.DossierFieldAliases
+            .Where(x => desiredAliases.Select(alias => alias.AliasToken).Contains(x.AliasToken))
+            .ToDictionaryAsync(x => x.AliasToken, StringComparer.Ordinal, ct);
+
+        foreach (var alias in desiredAliases)
+        {
+            var familyRow = familyRows[alias.FamilyKey];
+            if (existingAliases.TryGetValue(alias.AliasToken, out var row))
+            {
+                if (row.DossierFieldFamilyId != familyRow.Id)
+                {
+                    _logger.LogWarning(
+                        "Dossier field alias conflict retained existing family binding: alias_token={AliasToken}, expected_family={ExpectedFamilyKey}",
+                        alias.AliasToken,
+                        alias.FamilyKey);
+                    continue;
+                }
+
+                row.ApprovalState = PromoteApprovalState(row.ApprovalState, alias.ApprovalState);
+                row.UpdatedAt = now;
+                continue;
+            }
+
+            row = new DbDossierFieldAlias
+            {
+                DossierFieldFamilyId = familyRow.Id,
+                AliasCategory = alias.AliasCategory,
+                AliasKey = alias.AliasKey,
+                AliasToken = alias.AliasToken,
+                ApprovalState = alias.ApprovalState,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            db.DossierFieldAliases.Add(row);
+            existingAliases[alias.AliasToken] = row;
+        }
+
+        return new DossierFieldRegistrySnapshot
+        {
+            FieldMappings = observedMappings,
+            ApprovedFamilyCount = familyRows.Values.Count(x => string.Equals(x.ApprovalState, DossierFieldApprovalStates.Approved, StringComparison.Ordinal)),
+            ProposalFamilyCount = familyRows.Values.Count(x => string.Equals(x.ApprovalState, DossierFieldApprovalStates.ProposalOnly, StringComparison.Ordinal)),
+            AliasCount = existingAliases.Count
+        };
+    }
+
+    private static DesiredDossierFieldFamily BuildDesiredFamily(DossierFieldRegistryEntry entry)
+        => new()
+        {
+            FamilyKey = entry.FamilyKey,
+            CanonicalCategory = entry.CanonicalCategory,
+            CanonicalKey = entry.CanonicalKey,
+            ApprovalState = entry.ApprovalState,
+            IsSeeded = entry.IsSeeded,
+            Aliases =
+            [
+                new DossierFieldAliasDefinition
+                {
+                    Category = entry.CanonicalCategory,
+                    Key = entry.CanonicalKey
+                },
+                .. entry.Aliases
+            ]
+        };
+
+    private static DesiredDossierFieldFamily BuildDesiredFamily(DossierFieldRegistryResolution resolution)
+        => new()
+        {
+            FamilyKey = resolution.FamilyKey,
+            CanonicalCategory = resolution.CanonicalCategory,
+            CanonicalKey = resolution.CanonicalKey,
+            ApprovalState = resolution.ApprovalState,
+            IsSeeded = resolution.IsSeeded,
+            Aliases =
+            [
+                new DossierFieldAliasDefinition
+                {
+                    Category = resolution.ObservedCategory,
+                    Key = resolution.ObservedKey
+                }
+            ]
+        };
+
+    private static string PromoteApprovalState(string current, string desired)
+        => string.Equals(current, DossierFieldApprovalStates.Approved, StringComparison.Ordinal)
+            || string.Equals(desired, DossierFieldApprovalStates.Approved, StringComparison.Ordinal)
+            ? DossierFieldApprovalStates.Approved
+            : DossierFieldApprovalStates.ProposalOnly;
+
+    private sealed class DesiredDossierFieldFamily
+    {
+        public string FamilyKey { get; init; } = string.Empty;
+        public string CanonicalCategory { get; init; } = string.Empty;
+        public string CanonicalKey { get; init; } = string.Empty;
+        public string ApprovalState { get; init; } = DossierFieldApprovalStates.Approved;
+        public bool IsSeeded { get; init; }
+        public List<DossierFieldAliasDefinition> Aliases { get; init; } = [];
+    }
+
+    private sealed class DesiredDossierFieldAlias
+    {
+        public string FamilyKey { get; init; } = string.Empty;
+        public string AliasCategory { get; init; } = string.Empty;
+        public string AliasKey { get; init; } = string.Empty;
+        public string AliasToken { get; init; } = string.Empty;
+        public string ApprovalState { get; init; } = DossierFieldApprovalStates.Approved;
+    }
 
     private static string ComputeDossierProfileRevisionHash(
         string summaryJson,

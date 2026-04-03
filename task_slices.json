@@ -1048,12 +1048,12 @@
       "dependencies": [
         "IMPLEMENT-006-D"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Canonical field families exist for durable dossier storage.",
         "Near-duplicate field keys can be mapped through aliases."
       ],
-      "notes": "Clean split because canonical registry design should land before normalizer enforcement."
+      "notes": "Clean split because canonical registry design should land before normalizer enforcement. Added dossier_field_families/dossier_field_aliases persistence, seeded canonical family catalog with alias mapping, and proposal-only fallback wiring in Stage7 dossier persistence without enforcing normalization yet."
     },
     {
       "id": "IMPLEMENT-014-B",

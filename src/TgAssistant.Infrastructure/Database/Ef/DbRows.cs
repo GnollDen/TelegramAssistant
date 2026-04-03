@@ -632,6 +632,31 @@ public class DbDurableObjectEvidenceLink
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbDossierFieldFamily
+{
+    public Guid Id { get; set; }
+    public string FamilyKey { get; set; } = string.Empty;
+    public string CanonicalCategory { get; set; } = string.Empty;
+    public string CanonicalKey { get; set; } = string.Empty;
+    public string ApprovalState { get; set; } = DossierFieldApprovalStates.Approved;
+    public bool IsSeeded { get; set; }
+    public string MetadataJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDossierFieldAlias
+{
+    public long Id { get; set; }
+    public Guid DossierFieldFamilyId { get; set; }
+    public string AliasCategory { get; set; } = string.Empty;
+    public string AliasKey { get; set; } = string.Empty;
+    public string AliasToken { get; set; } = string.Empty;
+    public string ApprovalState { get; set; } = DossierFieldApprovalStates.Approved;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbDurableDossier
 {
     public Guid Id { get; set; }

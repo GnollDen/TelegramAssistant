@@ -49,6 +49,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbBootstrapPoolOutput> BootstrapPoolOutputs => Set<DbBootstrapPoolOutput>();
     public DbSet<DbDurableObjectMetadata> DurableObjectMetadata => Set<DbDurableObjectMetadata>();
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
+    public DbSet<DbDossierFieldFamily> DossierFieldFamilies => Set<DbDossierFieldFamily>();
+    public DbSet<DbDossierFieldAlias> DossierFieldAliases => Set<DbDossierFieldAlias>();
     public DbSet<DbDurableDossier> DurableDossiers => Set<DbDurableDossier>();
     public DbSet<DbDurableDossierRevision> DurableDossierRevisions => Set<DbDurableDossierRevision>();
     public DbSet<DbDurableProfile> DurableProfiles => Set<DbDurableProfile>();
@@ -934,6 +936,40 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.DurableObjectMetadataId, x.EvidenceItemId, x.LinkRole }).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.EvidenceItemId, x.LinkRole });
             e.HasIndex(x => new { x.ScopeKey, x.DurableObjectMetadataId });
+        });
+
+        modelBuilder.Entity<DbDossierFieldFamily>(e =>
+        {
+            e.ToTable("dossier_field_families");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.FamilyKey).HasColumnName("family_key");
+            e.Property(x => x.CanonicalCategory).HasColumnName("canonical_category");
+            e.Property(x => x.CanonicalKey).HasColumnName("canonical_key");
+            e.Property(x => x.ApprovalState).HasColumnName("approval_state");
+            e.Property(x => x.IsSeeded).HasColumnName("is_seeded");
+            e.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => x.FamilyKey).IsUnique();
+            e.HasIndex(x => new { x.CanonicalCategory, x.CanonicalKey });
+            e.HasIndex(x => x.ApprovalState);
+        });
+
+        modelBuilder.Entity<DbDossierFieldAlias>(e =>
+        {
+            e.ToTable("dossier_field_aliases");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DossierFieldFamilyId).HasColumnName("dossier_field_family_id");
+            e.Property(x => x.AliasCategory).HasColumnName("alias_category");
+            e.Property(x => x.AliasKey).HasColumnName("alias_key");
+            e.Property(x => x.AliasToken).HasColumnName("alias_token");
+            e.Property(x => x.ApprovalState).HasColumnName("approval_state");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => x.AliasToken).IsUnique();
+            e.HasIndex(x => new { x.DossierFieldFamilyId, x.ApprovalState });
         });
 
         modelBuilder.Entity<DbDurableDossier>(e =>
