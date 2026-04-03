@@ -13,7 +13,7 @@ public static partial class ServiceRegistrationExtensions
         bool includeLegacyStage6ClusterDiagnostics = false)
     {
         services
-            .AddTelegramAssistantSettings(config)
+            .AddTelegramAssistantSettings(config, includeLegacyStage6ClusterDiagnostics)
             .AddTelegramAssistantInfrastructure(config)
             .AddTelegramAssistantDomainServices(
                 includeLegacyStage6Diagnostics,

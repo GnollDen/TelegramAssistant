@@ -6,7 +6,10 @@ namespace TgAssistant.Host.Startup;
 
 public static partial class ServiceRegistrationExtensions
 {
-    public static IServiceCollection AddTelegramAssistantSettings(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddTelegramAssistantSettings(
+        this IServiceCollection services,
+        IConfiguration config,
+        bool includeLegacyStage6ClusterDiagnostics = false)
     {
         services.Configure<TelegramSettings>(config.GetSection(TelegramSettings.Section));
         services.Configure<RedisSettings>(config.GetSection(RedisSettings.Section));
@@ -27,11 +30,19 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<MaintenanceSettings>(config.GetSection(MaintenanceSettings.Section));
         services.Configure<Neo4jSettings>(config.GetSection(Neo4jSettings.Section));
         services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
-        services.Configure<BotChatSettings>(config.GetSection(BotChatSettings.Section));
-        services.Configure<WebSettings>(config.GetSection(WebSettings.Section));
-        services.Configure<Stage6AutoCaseGenerationSettings>(config.GetSection(Stage6AutoCaseGenerationSettings.Section));
         services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
         services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
+
+        if (includeLegacyStage6ClusterDiagnostics)
+        {
+            var legacyDiagnosticsSection = config.GetSection("LegacyDiagnostics");
+            var botChatSection = legacyDiagnosticsSection.GetSection(BotChatSettings.Section);
+            var stage6AutoCaseSection = legacyDiagnosticsSection.GetSection(Stage6AutoCaseGenerationSettings.Section);
+
+            services.Configure<BotChatSettings>(botChatSection.Exists() ? botChatSection : config.GetSection(BotChatSettings.Section));
+            services.Configure<Stage6AutoCaseGenerationSettings>(
+                stage6AutoCaseSection.Exists() ? stage6AutoCaseSection : config.GetSection(Stage6AutoCaseGenerationSettings.Section));
+        }
 
         services.PostConfigure<TelegramSettings>(s =>
         {
@@ -91,34 +102,29 @@ public static partial class ServiceRegistrationExtensions
                 s.IntegrityWriteVolumeUnsafeThreshold);
         });
 
-        services.PostConfigure<Stage6AutoCaseGenerationSettings>(s =>
+        if (includeLegacyStage6ClusterDiagnostics)
         {
-            s.PollIntervalSeconds = Math.Max(10, s.PollIntervalSeconds);
-            s.ScopeLookbackHours = Math.Max(1, s.ScopeLookbackHours);
-            s.CaseUpdateCooldownMinutes = Math.Max(1, s.CaseUpdateCooldownMinutes);
-            s.StaleAfterNoSignalHours = Math.Max(1, s.StaleAfterNoSignalHours);
-            s.MinMessagesForStateRefresh = Math.Max(1, s.MinMessagesForStateRefresh);
-            s.MinMessagesForDossierCandidate = Math.Max(1, s.MinMessagesForDossierCandidate);
-            s.MinMessagesForDraftCandidate = Math.Max(1, s.MinMessagesForDraftCandidate);
-            s.StateRefreshMinAgeHours = Math.Max(1, s.StateRefreshMinAgeHours);
-            s.DossierCandidateMinAgeHours = Math.Max(1, s.DossierCandidateMinAgeHours);
-            s.DraftCandidatePendingHours = Math.Max(1, s.DraftCandidatePendingHours);
-            s.RiskBlockingThreshold = Math.Clamp(s.RiskBlockingThreshold, 0f, 1f);
-            s.RiskImportantThreshold = Math.Clamp(s.RiskImportantThreshold, 0f, 1f);
-            s.NeedsReviewMaxConfidenceThreshold = Math.Clamp(s.NeedsReviewMaxConfidenceThreshold, 0f, 1f);
-            s.AmbiguityClarificationThreshold = Math.Clamp(s.AmbiguityClarificationThreshold, 0f, 1f);
-            s.EvidenceConflictConfidenceThreshold = Math.Clamp(s.EvidenceConflictConfidenceThreshold, 0f, 1f);
-            s.NextStepBlockedConfidenceThreshold = Math.Clamp(s.NextStepBlockedConfidenceThreshold, 0f, 1f);
-            s.NeedsInputFallbackConfidenceThreshold = Math.Clamp(s.NeedsInputFallbackConfidenceThreshold, 0f, 1f);
-        });
-
-        services.PostConfigure<WebSettings>(s =>
-        {
-            s.Url = string.IsNullOrWhiteSpace(s.Url) ? "http://127.0.0.1:5078" : s.Url.Trim();
-            s.AccessHeaderName = string.IsNullOrWhiteSpace(s.AccessHeaderName) ? "X-Tga-Operator-Key" : s.AccessHeaderName.Trim();
-            s.AccessCookieName = string.IsNullOrWhiteSpace(s.AccessCookieName) ? "tga_operator_key" : s.AccessCookieName.Trim();
-            s.OperatorIdentity = string.IsNullOrWhiteSpace(s.OperatorIdentity) ? "web-operator" : s.OperatorIdentity.Trim();
-        });
+            services.PostConfigure<Stage6AutoCaseGenerationSettings>(s =>
+            {
+                s.PollIntervalSeconds = Math.Max(10, s.PollIntervalSeconds);
+                s.ScopeLookbackHours = Math.Max(1, s.ScopeLookbackHours);
+                s.CaseUpdateCooldownMinutes = Math.Max(1, s.CaseUpdateCooldownMinutes);
+                s.StaleAfterNoSignalHours = Math.Max(1, s.StaleAfterNoSignalHours);
+                s.MinMessagesForStateRefresh = Math.Max(1, s.MinMessagesForStateRefresh);
+                s.MinMessagesForDossierCandidate = Math.Max(1, s.MinMessagesForDossierCandidate);
+                s.MinMessagesForDraftCandidate = Math.Max(1, s.MinMessagesForDraftCandidate);
+                s.StateRefreshMinAgeHours = Math.Max(1, s.StateRefreshMinAgeHours);
+                s.DossierCandidateMinAgeHours = Math.Max(1, s.DossierCandidateMinAgeHours);
+                s.DraftCandidatePendingHours = Math.Max(1, s.DraftCandidatePendingHours);
+                s.RiskBlockingThreshold = Math.Clamp(s.RiskBlockingThreshold, 0f, 1f);
+                s.RiskImportantThreshold = Math.Clamp(s.RiskImportantThreshold, 0f, 1f);
+                s.NeedsReviewMaxConfidenceThreshold = Math.Clamp(s.NeedsReviewMaxConfidenceThreshold, 0f, 1f);
+                s.AmbiguityClarificationThreshold = Math.Clamp(s.AmbiguityClarificationThreshold, 0f, 1f);
+                s.EvidenceConflictConfidenceThreshold = Math.Clamp(s.EvidenceConflictConfidenceThreshold, 0f, 1f);
+                s.NextStepBlockedConfidenceThreshold = Math.Clamp(s.NextStepBlockedConfidenceThreshold, 0f, 1f);
+                s.NeedsInputFallbackConfidenceThreshold = Math.Clamp(s.NeedsInputFallbackConfidenceThreshold, 0f, 1f);
+            });
+        }
 
         return services;
     }

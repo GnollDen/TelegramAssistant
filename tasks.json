@@ -755,8 +755,8 @@
       "dependencies": [
         "CLEANUP-101"
       ],
-      "status": "pending",
-      "notes": "This batch is isolation-first, not broad deletion: keep risky Stage6Bootstrap/Stage7/Stage8 seams untouched while tightening obvious legacy runtime residue."
+      "status": "done",
+      "notes": "Completed via CLEANUP-102-A/B on 2026-04-03: legacy Stage6 bot/autocase/network paths were kept diagnostic-only behind explicit switches, and stale startup config/DI residue was trimmed so BotChat/Stage6AutoCaseGeneration settings bind only for legacy cluster diagnostics while Web no longer has baseline settings binding."
     },
     {
       "id": "CLEANUP-103",

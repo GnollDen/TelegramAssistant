@@ -1205,12 +1205,12 @@
       "dependencies": [
         "CLEANUP-102-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Legacy-only settings and registrations are removed or explicitly gated.",
         "Appsettings and startup composition no longer imply these are active baseline features."
       ],
-      "notes": "Configuration and DI cleanup trails the code-boundary isolation step."
+      "notes": "Completed on 2026-04-03: startup settings wiring no longer binds legacy BotChat/Web/Stage6AutoCaseGeneration by default; BotChat and Stage6AutoCaseGeneration now bind only for explicit legacy cluster diagnostics, Web moved under LegacyDiagnostics config with no baseline binding, and targeted startup/config searches plus dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "CLEANUP-103-A",
