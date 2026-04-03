@@ -1294,12 +1294,12 @@
       "dependencies": [
         "CLEANUP-104-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway contracts are provider-agnostic and modality-aware.",
         "Vendor-specific transport details do not leak into domain service contracts."
       ],
-      "notes": "Foundation contract slice only."
+      "notes": "Completed on 2026-04-03 by adding provider-agnostic gateway contracts in TgAssistant.Core: ILlmGateway, ILlmProviderClient, ILlmRoutingPolicy, modality-aware request/response envelopes, request validation, and normalized error taxonomy without runtime cutover."
     },
     {
       "id": "GATEWAY-001-B",
