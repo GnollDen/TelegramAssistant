@@ -1,0 +1,155 @@
+{
+  "GeneratedAtUtc": "2026-04-03T16:34:55.0381556Z",
+  "OutputPath": "/home/codex/projects/TelegramAssistant/artifacts/llm-gateway/transport_validation_report.json",
+  "LoopbackBaseUrl": "http://127.0.0.1:43457/",
+  "PrimarySuccess": {
+    "Scenario": "primary_success",
+    "Passed": true,
+    "Provider": "codex-lb",
+    "Model": "transport-primary-model",
+    "RequestId": "codex-transport-primary-1",
+    "FallbackApplied": false,
+    "FallbackFromProvider": null,
+    "ObservedRequestCount": 1,
+    "ObservedProviders": [
+      "codex-lb"
+    ],
+    "ObservedPaths": [
+      "/codex/v1/chat/completions"
+    ]
+  },
+  "RetryableFallback": {
+    "Scenario": "retryable_fallback",
+    "Passed": true,
+    "Provider": "openrouter",
+    "Model": "transport-fallback-model",
+    "RequestId": "openrouter-transport-fallback-1",
+    "FallbackApplied": true,
+    "FallbackFromProvider": "codex-lb",
+    "ObservedRequestCount": 2,
+    "ObservedProviders": [
+      "codex-lb",
+      "openrouter"
+    ],
+    "ObservedPaths": [
+      "/codex/v1/chat/completions",
+      "/openrouter/api/v1/chat/completions"
+    ]
+  },
+  "BoundedRouteOverride": {
+    "Scenario": "bounded_route_override",
+    "Passed": true,
+    "Provider": "openrouter",
+    "Model": "transport-override-model",
+    "RequestId": "openrouter-transport-override-1",
+    "FallbackApplied": false,
+    "FallbackFromProvider": null,
+    "ObservedRequestCount": 1,
+    "ObservedProviders": [
+      "openrouter"
+    ],
+    "ObservedPaths": [
+      "/openrouter/api/v1/chat/completions"
+    ]
+  },
+  "Governance": {
+    "BoundedRouteOverridePassed": true,
+    "OutOfBoundsRouteOverrideBlocked": true,
+    "UnexpectedNetworkCallsDuringRejectedOverride": 0,
+    "ValidationMessage": "Gateway RouteOverride primary provider \u0027spare-provider\u0027 is outside configured provider bounds for modality \u0027TextChat\u0027.",
+    "AllChecksPassed": true
+  },
+  "Readiness": {
+    "ValidConfigurationAccepted": true,
+    "InvalidConfigurationRejected": true,
+    "InvalidDiagnostics": [
+      "Gateway configuration validation failed:\n - LlmGateway:Routing:text_chat:TimeoutBudgetClass is required for enabled routes.\n - LlmGateway:Routing:text_chat:PrimaryProvider \u0027openrouter\u0027 does not resolve a model (route model and provider default model are both missing).\n - LlmGateway:Providers:openrouter:TimeoutSeconds must be greater than zero for active providers.\n - LlmGateway:Providers:openrouter:ApiKey must be configured when UseAuthorizationHeader=true.\n - LlmGateway:Providers:openrouter:ChatCompletionsPath is required for active chat/tool/audio routes."
+    ],
+    "AllChecksPassed": true
+  },
+  "Observability": {
+    "Metrics": [
+      {
+        "Name": "llm_gateway_requests_total",
+        "Emitted": true,
+        "HasRequiredTags": true,
+        "MissingTags": []
+      },
+      {
+        "Name": "llm_gateway_fallback_total",
+        "Emitted": true,
+        "HasRequiredTags": true,
+        "MissingTags": []
+      },
+      {
+        "Name": "llm_gateway_provider_latency_ms",
+        "Emitted": true,
+        "HasRequiredTags": true,
+        "MissingTags": []
+      },
+      {
+        "Name": "llm_gateway_end_to_end_latency_ms",
+        "Emitted": true,
+        "HasRequiredTags": true,
+        "MissingTags": []
+      }
+    ],
+    "RequestStatuses": [
+      "error",
+      "success"
+    ],
+    "RequestRouteKinds": [
+      "fallback",
+      "primary"
+    ],
+    "PrimaryRetryableFailureVisible": true,
+    "FallbackSuccessVisible": true,
+    "FallbackTransitionVisible": true,
+    "AllChecksPassed": true
+  },
+  "TransportRequests": [
+    {
+      "Sequence": 1,
+      "Provider": "codex-lb",
+      "Path": "/codex/v1/chat/completions",
+      "Model": "transport-primary-model",
+      "AuthorizationHeaderPresent": true,
+      "UserMessage": "Reply with deterministic primary output.",
+      "StatusCode": 200,
+      "Error": null
+    },
+    {
+      "Sequence": 2,
+      "Provider": "codex-lb",
+      "Path": "/codex/v1/chat/completions",
+      "Model": "transport-primary-model",
+      "AuthorizationHeaderPresent": true,
+      "UserMessage": "Reply with deterministic fallback output.",
+      "StatusCode": 503,
+      "Error": null
+    },
+    {
+      "Sequence": 3,
+      "Provider": "openrouter",
+      "Path": "/openrouter/api/v1/chat/completions",
+      "Model": "transport-fallback-model",
+      "AuthorizationHeaderPresent": true,
+      "UserMessage": "Reply with deterministic fallback output.",
+      "StatusCode": 200,
+      "Error": null
+    },
+    {
+      "Sequence": 4,
+      "Provider": "openrouter",
+      "Path": "/openrouter/api/v1/chat/completions",
+      "Model": "transport-override-model",
+      "AuthorizationHeaderPresent": true,
+      "UserMessage": "Reply with deterministic bounded_override output.",
+      "StatusCode": 200,
+      "Error": null
+    }
+  ],
+  "AllChecksPassed": true,
+  "Recommendation": "continue_bounded_selective_rollout_under_existing_provider_policy_boundaries",
+  "ContinueHoldRecommendationText": "Continue bounded selective rollout under the existing provider policy boundaries only; do not open broad rollout."
+}

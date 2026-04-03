@@ -114,6 +114,7 @@ try
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayAnalyticsSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayAnalyticsValidate = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-validate", StringComparison.OrdinalIgnoreCase));
+    var runLlmGatewayTransportValidate = args.Any(arg => string.Equals(arg, "--llm-gateway-transport-validate", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmContractNormalizationSmoke = args.Any(arg => string.Equals(arg, "--llm-contract-normalization-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmContractFamilyValidate = args.Any(arg => string.Equals(arg, "--llm-contract-family-validate", StringComparison.OrdinalIgnoreCase));
@@ -128,6 +129,10 @@ try
     var llmGatewayAnalyticsValidateOutput = llmGatewayAnalyticsValidateOutputArg is null
         ? null
         : llmGatewayAnalyticsValidateOutputArg["--llm-gateway-analytics-validate-output=".Length..];
+    var llmGatewayTransportValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-gateway-transport-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var llmGatewayTransportValidateOutput = llmGatewayTransportValidateOutputArg is null
+        ? null
+        : llmGatewayTransportValidateOutputArg["--llm-gateway-transport-validate-output=".Length..];
     var llmContractFamilyValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-contract-family-validate-output=", StringComparison.OrdinalIgnoreCase));
     var llmContractFamilyValidateOutput = llmContractFamilyValidateOutputArg is null
         ? null
@@ -201,6 +206,7 @@ try
         "--llm-gateway-failure-smoke",
         "--llm-gateway-analytics-smoke",
         "--llm-gateway-analytics-validate",
+        "--llm-gateway-transport-validate",
         "--llm-gateway-experiment-smoke",
         "--llm-contract-normalization-smoke",
         "--llm-contract-family-validate",
@@ -300,6 +306,17 @@ try
         var report = await LlmGatewayAnalyticsValidationRunner.RunAsync(llmGatewayAnalyticsValidateOutput);
         Log.Information(
             "LLM gateway analytics validation requested via --llm-gateway-analytics-validate. output={OutputPath}, checks_passed={ChecksPassed}, recommendation={Recommendation}. Exiting after successful verification.",
+            report.OutputPath,
+            report.AllChecksPassed,
+            report.Recommendation);
+        return;
+    }
+
+    if (runLlmGatewayTransportValidate)
+    {
+        var report = await LlmGatewayTransportValidationRunner.RunAsync(llmGatewayTransportValidateOutput);
+        Log.Information(
+            "LLM gateway transport validation requested via --llm-gateway-transport-validate. output={OutputPath}, checks_passed={ChecksPassed}, recommendation={Recommendation}. Exiting after successful verification.",
             report.OutputPath,
             report.AllChecksPassed,
             report.Recommendation);

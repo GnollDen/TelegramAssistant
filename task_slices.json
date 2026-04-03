@@ -1604,12 +1604,12 @@
       "dependencies": [
         "GATEWAY-008-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway validation is no longer only synthetic/in-memory for bounded rollout evidence.",
         "A clear continue/hold recommendation exists for further selective family rollout after hardening."
       ],
-      "notes": "Use one safe transport-backed path to prove the gateway beyond synthetic smoke handlers before expanding further."
+      "notes": "Done on 2026-04-03: added bounded `--llm-gateway-transport-validate` with loopback-only HTTP provider stubs so the gateway runs through real `HttpClient` transport instead of custom in-memory handlers. The command writes artifacts/llm-gateway/transport_validation_report.json, validates retryable-primary error visibility plus fallback success metrics, proves bounded RouteOverride behavior and no-network rejection for out-of-bounds overrides, and confirms readiness diagnostics remain actionable for incomplete gateway config. Recommendation: continue bounded selective rollout under current provider policy boundaries only; do not open broad rollout."
     },
     {
       "id": "ALIGN-201-A",

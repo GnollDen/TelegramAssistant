@@ -29,6 +29,7 @@ Top-level routing:
 
 - Reference-only track-prep/audit-design note remains on the separate gateway work track and is not baseline runtime completion authority.
 - Reference-only runtime model snapshot: [CODEX_LB_WORKING_MODELS_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CODEX_LB_WORKING_MODELS_2026-04-03.md)
+- Reference-only hardening evidence: [GATEWAY-008-C_TRANSPORT_VALIDATION_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/GATEWAY-008-C_TRANSPORT_VALIDATION_2026-04-03.md)
 
 ### Cleanup and audit notes
 
