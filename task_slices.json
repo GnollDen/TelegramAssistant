@@ -1031,7 +1031,7 @@
       "dependencies": [
         "IMPLEMENT-013-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Corrections invalidate only affected graph and durable branches by default.",
         "Global rerun remains exceptional rather than normal recovery."
