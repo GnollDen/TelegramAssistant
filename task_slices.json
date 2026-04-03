@@ -876,12 +876,12 @@
       "dependencies": [
         "IMPLEMENT-009-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Runtime states are both visible and enforceable.",
         "Control states integrate with pass execution and promotion paths."
       ],
-      "notes": "Clean split because state enforcement should follow metrics and defect persistence."
+      "notes": "Implemented and pushed: added runtime_control_states persistence (migration 0044 + repository/service), defect-driven control-state evaluation with precedence across normal/degraded/review_only/budget_protected/promotion_blocked/safe_mode, and Stage8 enforcement points that defer execution under safe_mode/budget_protected/degraded and force promotion_blocked under review_only/promotion_blocked; stage8 gate metadata now records runtime control context."
     },
     {
       "id": "IMPLEMENT-010-A",

@@ -214,6 +214,23 @@ public interface IRuntimeDefectRepository
         CancellationToken ct = default);
 }
 
+public interface IRuntimeControlStateRepository
+{
+    Task<RuntimeControlStateRecord?> GetActiveAsync(CancellationToken ct = default);
+
+    Task<RuntimeControlStateRecord> SetActiveAsync(
+        string state,
+        string reason,
+        string source,
+        string detailsJson,
+        CancellationToken ct = default);
+}
+
+public interface IRuntimeControlStateService
+{
+    Task<RuntimeControlEnforcementDecision> EvaluateAndApplyFromDefectsAsync(CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeQueueService
 {
     Task<Stage8RecomputeQueueItem> EnqueueAsync(

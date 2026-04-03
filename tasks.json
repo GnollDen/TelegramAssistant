@@ -532,8 +532,8 @@
         "IMPLEMENT-004",
         "IMPLEMENT-007"
       ],
-      "status": "pending",
-      "notes": "The PRD treats observability and governance as core runtime behavior."
+      "status": "done",
+      "notes": "Completed through IMPLEMENT-009-A/B/C: pipeline metrics/rollups, runtime defect taxonomy persistence with escalation rules, and enforceable runtime control states (normal, degraded, review_only, budget_protected, promotion_blocked, safe_mode) now govern Stage8 execution and promotion behavior."
     },
     {
       "id": "IMPLEMENT-010",

@@ -63,6 +63,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
     public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
     public DbSet<DbRuntimeDefect> RuntimeDefects => Set<DbRuntimeDefect>();
+    public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -1297,6 +1298,22 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.Status, x.DefectClass, x.Severity, x.LastSeenAtUtc });
             e.HasIndex(x => new { x.ScopeKey, x.Status, x.LastSeenAtUtc });
             e.HasIndex(x => x.RunId).HasFilter("run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbRuntimeControlState>(e =>
+        {
+            e.ToTable("runtime_control_states");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.State).HasColumnName("state");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.Source).HasColumnName("source");
+            e.Property(x => x.DetailsJson).HasColumnName("details_json").HasColumnType("jsonb");
+            e.Property(x => x.IsActive).HasColumnName("is_active");
+            e.Property(x => x.ActivatedAtUtc).HasColumnName("activated_at_utc");
+            e.Property(x => x.DeactivatedAtUtc).HasColumnName("deactivated_at_utc");
+            e.HasIndex(x => x.IsActive).IsUnique().HasFilter("is_active = true");
+            e.HasIndex(x => new { x.State, x.ActivatedAtUtc });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

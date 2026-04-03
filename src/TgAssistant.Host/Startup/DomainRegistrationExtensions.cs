@@ -55,6 +55,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7DossierProfileService, Stage7DossierProfileFormationService>();
         services.AddSingleton<IStage7PairDynamicsService, Stage7PairDynamicsFormationService>();
         services.AddSingleton<IStage7TimelineService, Stage7TimelineFormationService>();
+        services.AddSingleton<IRuntimeControlStateService, RuntimeControlStateService>();
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
 
@@ -191,6 +192,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8RecomputeQueueRepository, Stage8RecomputeQueueRepository>();
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IRuntimeDefectRepository, RuntimeDefectRepository>();
+        services.AddSingleton<IRuntimeControlStateRepository, RuntimeControlStateRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

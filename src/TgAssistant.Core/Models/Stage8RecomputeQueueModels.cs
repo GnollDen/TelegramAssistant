@@ -97,6 +97,8 @@ public class Stage8OutcomeGateRequest
     public Guid? ModelPassRunId { get; set; }
     public string? TriggerKind { get; set; }
     public string? TriggerRef { get; set; }
+    public bool ForcePromotionBlocked { get; set; }
+    public string? RuntimeControlState { get; set; }
 }
 
 public class Stage8OutcomeGateResult

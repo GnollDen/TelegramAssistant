@@ -15,6 +15,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
     private readonly IStage7DossierProfileService _stage7DossierProfileService;
     private readonly IStage7PairDynamicsService _stage7PairDynamicsService;
     private readonly IStage7TimelineService _stage7TimelineService;
+    private readonly IRuntimeControlStateService _runtimeControlStateService;
     private readonly IStage8OutcomeGateRepository _outcomeGateRepository;
     private readonly IRuntimeDefectRepository _runtimeDefectRepository;
     private readonly ILogger<Stage8RecomputeQueueService> _logger;
@@ -27,6 +28,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         IStage7DossierProfileService stage7DossierProfileService,
         IStage7PairDynamicsService stage7PairDynamicsService,
         IStage7TimelineService stage7TimelineService,
+        IRuntimeControlStateService runtimeControlStateService,
         IStage8OutcomeGateRepository outcomeGateRepository,
         IRuntimeDefectRepository runtimeDefectRepository,
         ILogger<Stage8RecomputeQueueService> logger,
@@ -38,6 +40,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         _stage7DossierProfileService = stage7DossierProfileService;
         _stage7PairDynamicsService = stage7PairDynamicsService;
         _stage7TimelineService = stage7TimelineService;
+        _runtimeControlStateService = runtimeControlStateService;
         _outcomeGateRepository = outcomeGateRepository;
         _runtimeDefectRepository = runtimeDefectRepository;
         _logger = logger;
@@ -65,6 +68,43 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 
         try
         {
+            var runtimeControl = await _runtimeControlStateService.EvaluateAndApplyFromDefectsAsync(ct);
+            if (ShouldDeferExecution(runtimeControl, leasedItem))
+            {
+                var deferReason = $"Runtime control state '{runtimeControl.State}' deferred Stage8 execution: {runtimeControl.Reason}";
+                var nextAvailableAtUtc = nowUtc.Add(ComputeRetryDelay(leasedItem.AttemptCount));
+                await _repository.RescheduleAsync(
+                    leasedItem.Id,
+                    leasedItem.LeaseToken!.Value,
+                    deferReason,
+                    nextAvailableAtUtc,
+                    terminalFailure: false,
+                    ct);
+
+                leasedItem.Status = Stage8RecomputeQueueStatuses.Pending;
+                leasedItem.LastError = deferReason;
+                leasedItem.LastResultStatus = Stage8RecomputeExecutionStatuses.Rescheduled;
+                leasedItem.LeaseToken = null;
+                leasedItem.LeasedUntilUtc = null;
+                leasedItem.AvailableAtUtc = nextAvailableAtUtc;
+                leasedItem.CompletedAtUtc = null;
+
+                _logger.LogInformation(
+                    "Stage8 recompute deferred by runtime control state: queue_item_id={QueueItemId}, target_family={TargetFamily}, state={ControlState}, reason={ControlReason}",
+                    leasedItem.Id,
+                    leasedItem.TargetFamily,
+                    runtimeControl.State,
+                    runtimeControl.Reason);
+
+                return new Stage8RecomputeExecutionResult
+                {
+                    Executed = true,
+                    QueueItem = leasedItem,
+                    ExecutionStatus = Stage8RecomputeExecutionStatuses.Rescheduled,
+                    Error = deferReason
+                };
+            }
+
             var (resultStatus, modelPassRunId) = await ExecuteScopedRecomputeAsync(leasedItem, ct);
             var gateResult = await _outcomeGateRepository.ApplyOutcomeGateAsync(new Stage8OutcomeGateRequest
             {
@@ -73,9 +113,11 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 ResultStatus = resultStatus,
                 ModelPassRunId = modelPassRunId,
                 TriggerKind = leasedItem.TriggerKind,
-                TriggerRef = leasedItem.TriggerRef
+                TriggerRef = leasedItem.TriggerRef,
+                ForcePromotionBlocked = runtimeControl.ForcePromotionBlocked,
+                RuntimeControlState = runtimeControl.State
             }, ct);
-            await RecordOutcomeDefectsAsync(leasedItem, resultStatus, gateResult, modelPassRunId, ct);
+            await RecordOutcomeDefectsAsync(leasedItem, resultStatus, gateResult, modelPassRunId, runtimeControl.State, ct);
             await _repository.CompleteAsync(leasedItem.Id, leasedItem.LeaseToken!.Value, resultStatus, modelPassRunId, ct);
             leasedItem.Status = Stage8RecomputeQueueStatuses.Completed;
             leasedItem.ActiveDedupeKey = null;
@@ -223,6 +265,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         string resultStatus,
         Stage8OutcomeGateResult gateResult,
         Guid? modelPassRunId,
+        string runtimeControlState,
         CancellationToken ct)
     {
         if (string.Equals(resultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
@@ -238,7 +281,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 ObjectRef = queueItem.TargetRef,
                 Summary = "Crystallization result requires operator clarification before promotion.",
                 DetailsJson = $$"""
-                    {"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"clarification_blocked":{{gateResult.ClarificationBlockedCount}}}
+                    {"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"clarification_blocked":{{gateResult.ClarificationBlockedCount}},"runtime_control_state":"{{runtimeControlState}}"}
                     """
             }, ct);
             return;
@@ -256,7 +299,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 ObjectType = queueItem.TargetFamily,
                 ObjectRef = queueItem.TargetRef,
                 Summary = "Crystallization execution was blocked by invalid scope input.",
-                DetailsJson = $$"""{"result_status":"{{resultStatus}}"}"""
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}","runtime_control_state":"{{runtimeControlState}}"}"""
             }, ct);
             return;
         }
@@ -273,7 +316,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 ObjectType = queueItem.TargetFamily,
                 ObjectRef = queueItem.TargetRef,
                 Summary = "Crystallization produced result_ready output but promotion was blocked by truth-layer gate.",
-                DetailsJson = $$"""{"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}}}"""
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"runtime_control_state":"{{runtimeControlState}}"}"""
             }, ct);
             return;
         }
@@ -290,7 +333,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 ObjectType = queueItem.TargetFamily,
                 ObjectRef = queueItem.TargetRef,
                 Summary = "Crystallization requires additional evidence before promotion.",
-                DetailsJson = $$"""{"result_status":"{{resultStatus}}"}"""
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}","runtime_control_state":"{{runtimeControlState}}"}"""
             }, ct);
         }
     }
@@ -317,4 +360,26 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 
     private static string EscapeJson(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static bool ShouldDeferExecution(RuntimeControlEnforcementDecision decision, Stage8RecomputeQueueItem queueItem)
+    {
+        if (decision.PauseAllExecution)
+        {
+            return true;
+        }
+
+        if (decision.RestrictToBootstrapOnly
+            && !string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (decision.DeferTimelineTargets
+            && string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.TimelineObjects, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
 }

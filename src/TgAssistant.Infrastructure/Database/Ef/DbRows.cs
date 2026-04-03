@@ -904,6 +904,18 @@ public class DbRuntimeDefect
     public DateTime? ResolvedAtUtc { get; set; }
 }
 
+public class DbRuntimeControlState
+{
+    public long Id { get; set; }
+    public string State { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public string DetailsJson { get; set; } = "{}";
+    public bool IsActive { get; set; }
+    public DateTime ActivatedAtUtc { get; set; }
+    public DateTime? DeactivatedAtUtc { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

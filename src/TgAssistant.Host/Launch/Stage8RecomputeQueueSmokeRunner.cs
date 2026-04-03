@@ -16,6 +16,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         var timelineService = new FakeStage7TimelineService();
         var gateRepository = new InMemoryStage8OutcomeGateRepository();
         var defectRepository = new InMemoryRuntimeDefectRepository();
+        var controlStateService = new InMemoryRuntimeControlStateService();
         var loggerFactory = LoggerFactory.Create(_ => { });
         var service = new Stage8RecomputeQueueService(
             repository,
@@ -23,6 +24,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             dossierProfileService,
             pairDynamicsService,
             timelineService,
+            controlStateService,
             gateRepository,
             defectRepository,
             loggerFactory.CreateLogger<Stage8RecomputeQueueService>(),
@@ -137,6 +139,29 @@ public static class Stage8RecomputeQueueSmokeRunner
         if (!string.Equals(defectRepository.LastRequest?.DefectClass, RuntimeDefectClasses.Normalization, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification-gated outcome did not persist a normalization defect.");
+        }
+
+        controlStateService.NextDecision = new RuntimeControlEnforcementDecision
+        {
+            State = RuntimeControlStates.SafeMode,
+            Reason = "safe-mode-smoke",
+            PauseAllExecution = true
+        };
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-recompute-smoke-safe-mode",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000004"),
+            TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+            TriggerKind = "safe_mode_smoke",
+            TriggerRef = "implement-009-c-safe-mode"
+        }, ct);
+
+        var safeModeExecution = await service.ExecuteNextAsync(ct);
+        if (!safeModeExecution.Executed
+            || !string.Equals(safeModeExecution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal)
+            || !string.Equals(controlStateService.LastDecision?.State, RuntimeControlStates.SafeMode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: safe-mode runtime control state did not defer execution.");
         }
     }
 
@@ -537,5 +562,22 @@ public static class Stage8RecomputeQueueSmokeRunner
 
         public Task<List<RuntimeDefectRecord>> GetOpenAsync(int limit = 200, CancellationToken ct = default)
             => Task.FromResult(_records.Take(Math.Max(1, limit)).ToList());
+    }
+
+    private sealed class InMemoryRuntimeControlStateService : IRuntimeControlStateService
+    {
+        public RuntimeControlEnforcementDecision NextDecision { get; set; } = new();
+        public RuntimeControlEnforcementDecision? LastDecision { get; private set; }
+
+        public Task<RuntimeControlEnforcementDecision> EvaluateAndApplyFromDefectsAsync(CancellationToken ct = default)
+        {
+            LastDecision = NextDecision;
+            NextDecision = new RuntimeControlEnforcementDecision
+            {
+                State = RuntimeControlStates.Normal,
+                Reason = "normal-smoke"
+            };
+            return Task.FromResult(LastDecision);
+        }
     }
 }

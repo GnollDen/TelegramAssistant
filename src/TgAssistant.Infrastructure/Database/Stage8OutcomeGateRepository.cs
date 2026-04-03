@@ -69,7 +69,7 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         foreach (var row in rows)
         {
             var hasContradictions = HasNonEmptyJsonArray(row.ContradictionMarkersJson);
-            var decision = ResolveDecision(request.ResultStatus, hasContradictions);
+            var decision = ResolveDecision(request.ResultStatus, hasContradictions, request.ForcePromotionBlocked);
             row.PromotionState = decision.PromotionState;
             row.TruthLayer = decision.TruthLayer;
             row.LastPromotionRunId = request.ModelPassRunId;
@@ -79,6 +79,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                 request.ResultStatus,
                 request.TriggerKind,
                 request.TriggerRef,
+                request.RuntimeControlState,
+                request.ForcePromotionBlocked,
                 hasContradictions,
                 now);
             row.UpdatedAt = now;
@@ -101,10 +103,18 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         return BuildResult(request, rows.Count, promotedCount, promotionBlockedCount, clarificationBlockedCount);
     }
 
-    private static (string PromotionState, string TruthLayer) ResolveDecision(string resultStatus, bool hasContradictions)
+    private static (string PromotionState, string TruthLayer) ResolveDecision(
+        string resultStatus,
+        bool hasContradictions,
+        bool forcePromotionBlocked)
     {
         if (string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
+            if (forcePromotionBlocked)
+            {
+                return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer);
+            }
+
             return hasContradictions
                 ? (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ConflictedOrObsolete)
                 : (Stage8PromotionStates.Promoted, ModelNormalizationTruthLayers.CanonicalTruth);
@@ -143,6 +153,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         string resultStatus,
         string? triggerKind,
         string? triggerRef,
+        string? runtimeControlState,
+        bool forcedByRuntimeState,
         bool hasContradictions,
         DateTime appliedAtUtc)
     {
@@ -170,6 +182,8 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
             ["result_status"] = resultStatus,
             ["trigger_kind"] = string.IsNullOrWhiteSpace(triggerKind) ? null : triggerKind,
             ["trigger_ref"] = string.IsNullOrWhiteSpace(triggerRef) ? null : triggerRef,
+            ["runtime_control_state"] = string.IsNullOrWhiteSpace(runtimeControlState) ? null : runtimeControlState,
+            ["forced_by_runtime_state"] = forcedByRuntimeState,
             ["has_contradictions"] = hasContradictions,
             ["applied_at_utc"] = appliedAtUtc.ToString("O")
         };
