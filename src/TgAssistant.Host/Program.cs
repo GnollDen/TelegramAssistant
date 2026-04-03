@@ -113,10 +113,15 @@ try
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
     var runEditDiffPilotSmoke = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-smoke", StringComparison.OrdinalIgnoreCase));
+    var runEditDiffPilotValidate = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-validate", StringComparison.OrdinalIgnoreCase));
     var llmGatewayReplayAbOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-gateway-replay-ab-output=", StringComparison.OrdinalIgnoreCase));
     var llmGatewayReplayAbOutput = llmGatewayReplayAbOutputArg is null
         ? null
         : llmGatewayReplayAbOutputArg["--llm-gateway-replay-ab-output=".Length..];
+    var editDiffPilotValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--edit-diff-pilot-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var editDiffPilotValidateOutput = editDiffPilotValidateOutputArg is null
+        ? null
+        : editDiffPilotValidateOutputArg["--edit-diff-pilot-validate-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -178,6 +183,7 @@ try
         "--llm-gateway-experiment-smoke",
         "--llm-gateway-replay-ab",
         "--edit-diff-pilot-smoke",
+        "--edit-diff-pilot-validate",
         "--stage6-bootstrap-smoke",
         "--stage7-dossier-profile-smoke",
         "--stage7-pair-dynamics-smoke",
@@ -271,6 +277,11 @@ try
     if (runEditDiffPilotSmoke)
     {
         // This smoke needs the real composition root because it verifies the runtime pilot toggle.
+    }
+
+    if (runEditDiffPilotValidate)
+    {
+        // This validation needs the real composition root because it verifies replay parity and gateway governance on the runtime pilot path.
     }
 
     if (runStage6BootstrapSmoke)
@@ -448,6 +459,19 @@ try
                 result.Gateway.Provider,
                 result.Gateway.Model,
                 result.Gateway.FallbackApplied);
+            return;
+        }
+
+        if (runEditDiffPilotValidate)
+        {
+            var report = await EditDiffPilotValidationRunner.RunAsync(scope.ServiceProvider, editDiffPilotValidateOutput, CancellationToken.None);
+            Log.Information(
+                "Edit-diff pilot validation requested via --edit-diff-pilot-validate. output={OutputPath}, parity_rate={ParityRate:0.0000}, gateway_fallback_rate={FallbackRate:0.0000}, budget_semantics_compatible={BudgetCompatibility}, recommendation={Recommendation}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Comparison.ParityRate,
+                report.GatewaySummary.FallbackRate,
+                report.BudgetCompatibility.QuotaRegistrationCompatible,
+                report.RolloutRecommendation);
             return;
         }
 

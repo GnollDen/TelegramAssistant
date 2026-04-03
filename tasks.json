@@ -908,8 +908,8 @@
       "dependencies": [
         "GATEWAY-003"
       ],
-      "status": "pending",
-      "notes": "Start with one safe pilot path only; broader migration waits for the verification gate."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-004-A/B: the Stage5 edit-diff pilot path now runs behind Analysis:EditDiffGatewayEnabled with config-only rollback, and replay/governance validation is recorded in artifacts/llm-gateway/edit_diff_pilot_validation_report.json. The pilot proved rollback safety plus budget/telemetry compatibility, but runtime evidence also showed codex-lb primary instability with 100% fallback and only 25% normalized parity versus the legacy path, so broader rollout remains deferred to the formal GATEWAY-005 gate."
     },
     {
       "id": "GATEWAY-005",

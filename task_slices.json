@@ -1417,12 +1417,12 @@
       "dependencies": [
         "GATEWAY-004-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pilot gateway path preserves acceptable domain/output behavior versus the legacy client path.",
         "Budget and telemetry semantics remain intact under gateway control."
       ],
-      "notes": "Pilot validation before the rollout gate."
+      "notes": "Completed on 2026-04-03 by adding --edit-diff-pilot-validate with an auditable report at artifacts/llm-gateway/edit_diff_pilot_validation_report.json. Replay validation confirmed budget quota-registration compatibility plus telemetry/usage visibility, but current runtime evidence also showed codex-lb primary degradation (4/4 fallback to openrouter) and low normalized parity versus legacy on the safe replay set (1/4 parity, 3/4 diverged), so the report explicitly recommends holding broader rollout pending the gateway gate."
     },
     {
       "id": "GATEWAY-005-A",
