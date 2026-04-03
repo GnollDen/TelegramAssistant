@@ -16,6 +16,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
     private readonly IStage7PairDynamicsService _stage7PairDynamicsService;
     private readonly IStage7TimelineService _stage7TimelineService;
     private readonly IStage8OutcomeGateRepository _outcomeGateRepository;
+    private readonly IRuntimeDefectRepository _runtimeDefectRepository;
     private readonly ILogger<Stage8RecomputeQueueService> _logger;
     private readonly TimeSpan _baseRetryDelay;
     private readonly TimeSpan _maxRetryDelay;
@@ -27,6 +28,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         IStage7PairDynamicsService stage7PairDynamicsService,
         IStage7TimelineService stage7TimelineService,
         IStage8OutcomeGateRepository outcomeGateRepository,
+        IRuntimeDefectRepository runtimeDefectRepository,
         ILogger<Stage8RecomputeQueueService> logger,
         TimeSpan? baseRetryDelay = null,
         TimeSpan? maxRetryDelay = null)
@@ -37,6 +39,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         _stage7PairDynamicsService = stage7PairDynamicsService;
         _stage7TimelineService = stage7TimelineService;
         _outcomeGateRepository = outcomeGateRepository;
+        _runtimeDefectRepository = runtimeDefectRepository;
         _logger = logger;
         _baseRetryDelay = baseRetryDelay ?? DefaultBaseRetryDelay;
         _maxRetryDelay = maxRetryDelay ?? DefaultMaxRetryDelay;
@@ -72,6 +75,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 TriggerKind = leasedItem.TriggerKind,
                 TriggerRef = leasedItem.TriggerRef
             }, ct);
+            await RecordOutcomeDefectsAsync(leasedItem, resultStatus, gateResult, modelPassRunId, ct);
             await _repository.CompleteAsync(leasedItem.Id, leasedItem.LeaseToken!.Value, resultStatus, modelPassRunId, ct);
             leasedItem.Status = Stage8RecomputeQueueStatuses.Completed;
             leasedItem.ActiveDedupeKey = null;
@@ -104,6 +108,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         {
             var terminalFailure = leasedItem.AttemptCount >= leasedItem.MaxAttempts;
             var nextAvailableAtUtc = nowUtc.Add(ComputeRetryDelay(leasedItem.AttemptCount));
+            await RecordExecutionFailureDefectAsync(leasedItem, ex, terminalFailure, ct);
             await _repository.RescheduleAsync(
                 leasedItem.Id,
                 leasedItem.LeaseToken!.Value,
@@ -212,4 +217,104 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         var retryDelay = TimeSpan.FromTicks(_baseRetryDelay.Ticks * (1L << exponent));
         return retryDelay <= _maxRetryDelay ? retryDelay : _maxRetryDelay;
     }
+
+    private async Task RecordOutcomeDefectsAsync(
+        Stage8RecomputeQueueItem queueItem,
+        string resultStatus,
+        Stage8OutcomeGateResult gateResult,
+        Guid? modelPassRunId,
+        CancellationToken ct)
+    {
+        if (string.Equals(resultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
+        {
+            await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+            {
+                DefectClass = RuntimeDefectClasses.Normalization,
+                Severity = RuntimeDefectSeverities.Medium,
+                ScopeKey = queueItem.ScopeKey,
+                DedupeKey = $"{queueItem.ScopeKey}|{queueItem.TargetFamily}|clarification_gate",
+                RunId = modelPassRunId,
+                ObjectType = queueItem.TargetFamily,
+                ObjectRef = queueItem.TargetRef,
+                Summary = "Crystallization result requires operator clarification before promotion.",
+                DetailsJson = $$"""
+                    {"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"clarification_blocked":{{gateResult.ClarificationBlockedCount}}}
+                    """
+            }, ct);
+            return;
+        }
+
+        if (string.Equals(resultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal))
+        {
+            await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+            {
+                DefectClass = RuntimeDefectClasses.Data,
+                Severity = RuntimeDefectSeverities.High,
+                ScopeKey = queueItem.ScopeKey,
+                DedupeKey = $"{queueItem.ScopeKey}|{queueItem.TargetFamily}|invalid_input",
+                RunId = modelPassRunId,
+                ObjectType = queueItem.TargetFamily,
+                ObjectRef = queueItem.TargetRef,
+                Summary = "Crystallization execution was blocked by invalid scope input.",
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}"}"""
+            }, ct);
+            return;
+        }
+
+        if (gateResult.PromotionBlockedCount > 0 && string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
+        {
+            await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+            {
+                DefectClass = RuntimeDefectClasses.SemanticDrift,
+                Severity = RuntimeDefectSeverities.High,
+                ScopeKey = queueItem.ScopeKey,
+                DedupeKey = $"{queueItem.ScopeKey}|{queueItem.TargetFamily}|promotion_blocked",
+                RunId = modelPassRunId,
+                ObjectType = queueItem.TargetFamily,
+                ObjectRef = queueItem.TargetRef,
+                Summary = "Crystallization produced result_ready output but promotion was blocked by truth-layer gate.",
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}}}"""
+            }, ct);
+            return;
+        }
+
+        if (string.Equals(resultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
+        {
+            await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+            {
+                DefectClass = RuntimeDefectClasses.Ingestion,
+                Severity = RuntimeDefectSeverities.Medium,
+                ScopeKey = queueItem.ScopeKey,
+                DedupeKey = $"{queueItem.ScopeKey}|{queueItem.TargetFamily}|need_more_data",
+                RunId = modelPassRunId,
+                ObjectType = queueItem.TargetFamily,
+                ObjectRef = queueItem.TargetRef,
+                Summary = "Crystallization requires additional evidence before promotion.",
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}"}"""
+            }, ct);
+        }
+    }
+
+    private Task RecordExecutionFailureDefectAsync(
+        Stage8RecomputeQueueItem queueItem,
+        Exception ex,
+        bool terminalFailure,
+        CancellationToken ct)
+    {
+        return _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+        {
+            DefectClass = RuntimeDefectClasses.ControlPlane,
+            Severity = terminalFailure ? RuntimeDefectSeverities.Critical : RuntimeDefectSeverities.High,
+            ScopeKey = queueItem.ScopeKey,
+            DedupeKey = $"{queueItem.ScopeKey}|{queueItem.TargetFamily}|execution_failure",
+            RunId = queueItem.LastModelPassRunId,
+            ObjectType = queueItem.TargetFamily,
+            ObjectRef = queueItem.TargetRef,
+            Summary = "Stage8 crystallization queue execution failed.",
+            DetailsJson = $$"""{"error":"{{EscapeJson(ex.Message)}}","terminal":{{(terminalFailure ? "true" : "false")}}}"""
+        }, ct);
+    }
+
+    private static string EscapeJson(string value)
+        => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 }

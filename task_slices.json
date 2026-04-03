@@ -859,12 +859,12 @@
       "dependencies": [
         "IMPLEMENT-009-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Defects are stored with class, severity, and scope impact.",
         "Escalation rules exist for the major failure classes."
       ],
-      "notes": "Clean split because defect taxonomy is a separate control-plane output."
+      "notes": "Implemented and pushed: added runtime_defects taxonomy persistence (migration 0043 + DbContext mapping + RuntimeDefectRepository) with explicit classes for ingestion/data/identity/model/normalization/control_plane/cost/semantic_drift and escalation policy mapping to observe/ticket/review_only/budget_protected/safe_mode; wired Stage8RecomputeQueueService to record and escalate defects for execution failures and gated outcomes, and extended --stage8-recompute-smoke assertions for defect persistence paths."
     },
     {
       "id": "IMPLEMENT-009-C",

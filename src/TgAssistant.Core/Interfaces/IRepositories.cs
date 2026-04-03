@@ -203,6 +203,17 @@ public interface IStage8OutcomeGateRepository
         CancellationToken ct = default);
 }
 
+public interface IRuntimeDefectRepository
+{
+    Task<RuntimeDefectRecord> UpsertAsync(
+        RuntimeDefectUpsertRequest request,
+        CancellationToken ct = default);
+
+    Task<List<RuntimeDefectRecord>> GetOpenAsync(
+        int limit = 200,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeQueueService
 {
     Task<Stage8RecomputeQueueItem> EnqueueAsync(

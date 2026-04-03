@@ -62,6 +62,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableStoryArc> DurableStoryArcs => Set<DbDurableStoryArc>();
     public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
     public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
+    public DbSet<DbRuntimeDefect> RuntimeDefects => Set<DbRuntimeDefect>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -1268,6 +1269,34 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.PersonId, x.TargetFamily, x.Status })
                 .HasFilter("person_id IS NOT NULL");
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbRuntimeDefect>(e =>
+        {
+            e.ToTable("runtime_defects");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DefectClass).HasColumnName("defect_class");
+            e.Property(x => x.Severity).HasColumnName("severity");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.DedupeKey).HasColumnName("dedupe_key");
+            e.Property(x => x.RunId).HasColumnName("run_id");
+            e.Property(x => x.ObjectType).HasColumnName("object_type");
+            e.Property(x => x.ObjectRef).HasColumnName("object_ref");
+            e.Property(x => x.Summary).HasColumnName("summary");
+            e.Property(x => x.DetailsJson).HasColumnName("details_json").HasColumnType("jsonb");
+            e.Property(x => x.OccurrenceCount).HasColumnName("occurrence_count");
+            e.Property(x => x.EscalationAction).HasColumnName("escalation_action");
+            e.Property(x => x.EscalationReason).HasColumnName("escalation_reason");
+            e.Property(x => x.FirstSeenAtUtc).HasColumnName("first_seen_at_utc");
+            e.Property(x => x.LastSeenAtUtc).HasColumnName("last_seen_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.ResolvedAtUtc).HasColumnName("resolved_at_utc");
+            e.HasIndex(x => new { x.Status, x.DefectClass, x.Severity, x.LastSeenAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.LastSeenAtUtc });
+            e.HasIndex(x => x.RunId).HasFilter("run_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

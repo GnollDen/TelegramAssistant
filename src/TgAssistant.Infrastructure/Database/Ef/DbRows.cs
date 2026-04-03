@@ -881,6 +881,29 @@ public class DbStage8RecomputeQueueItem
     public DateTime? CompletedAtUtc { get; set; }
 }
 
+public class DbRuntimeDefect
+{
+    public Guid Id { get; set; }
+    public string DefectClass { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public string DedupeKey { get; set; } = string.Empty;
+    public Guid? RunId { get; set; }
+    public string? ObjectType { get; set; }
+    public string? ObjectRef { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string DetailsJson { get; set; } = "{}";
+    public int OccurrenceCount { get; set; }
+    public string EscalationAction { get; set; } = string.Empty;
+    public string EscalationReason { get; set; } = string.Empty;
+    public DateTime FirstSeenAtUtc { get; set; }
+    public DateTime LastSeenAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? ResolvedAtUtc { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

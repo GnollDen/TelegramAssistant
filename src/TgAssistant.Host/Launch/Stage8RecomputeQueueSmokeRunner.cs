@@ -15,6 +15,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         var pairDynamicsService = new FakeStage7PairDynamicsService();
         var timelineService = new FakeStage7TimelineService();
         var gateRepository = new InMemoryStage8OutcomeGateRepository();
+        var defectRepository = new InMemoryRuntimeDefectRepository();
         var loggerFactory = LoggerFactory.Create(_ => { });
         var service = new Stage8RecomputeQueueService(
             repository,
@@ -23,6 +24,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             pairDynamicsService,
             timelineService,
             gateRepository,
+            defectRepository,
             loggerFactory.CreateLogger<Stage8RecomputeQueueService>(),
             baseRetryDelay: TimeSpan.FromMilliseconds(1),
             maxRetryDelay: TimeSpan.FromMilliseconds(5));
@@ -93,6 +95,12 @@ public static class Stage8RecomputeQueueSmokeRunner
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: transient failure did not reschedule the leased queue item.");
         }
 
+        if (defectRepository.CallCount == 0
+            || !string.Equals(defectRepository.LastRequest?.DefectClass, RuntimeDefectClasses.ControlPlane, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: execution failure did not persist a control-plane defect.");
+        }
+
         var retrySuccess = await service.ExecuteNextAsync(ct);
         if (!retrySuccess.Executed
             || !string.Equals(retrySuccess.ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal)
@@ -124,6 +132,11 @@ public static class Stage8RecomputeQueueSmokeRunner
             || !string.Equals(gateRepository.LastRequest?.TargetFamily, Stage8RecomputeTargetFamilies.TimelineObjects, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification gate did not receive crystallization result context.");
+        }
+
+        if (!string.Equals(defectRepository.LastRequest?.DefectClass, RuntimeDefectClasses.Normalization, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: clarification-gated outcome did not persist a normalization defect.");
         }
     }
 
@@ -484,5 +497,45 @@ public static class Stage8RecomputeQueueSmokeRunner
             };
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class InMemoryRuntimeDefectRepository : IRuntimeDefectRepository
+    {
+        private readonly List<RuntimeDefectRecord> _records = [];
+
+        public int CallCount { get; private set; }
+        public RuntimeDefectUpsertRequest? LastRequest { get; private set; }
+
+        public Task<RuntimeDefectRecord> UpsertAsync(RuntimeDefectUpsertRequest request, CancellationToken ct = default)
+        {
+            CallCount += 1;
+            LastRequest = request;
+            var now = DateTime.UtcNow;
+            var record = new RuntimeDefectRecord
+            {
+                Id = Guid.NewGuid(),
+                DefectClass = request.DefectClass,
+                Severity = request.Severity,
+                ScopeKey = request.ScopeKey,
+                DedupeKey = request.DedupeKey,
+                RunId = request.RunId,
+                ObjectType = request.ObjectType,
+                ObjectRef = request.ObjectRef,
+                Summary = request.Summary,
+                DetailsJson = request.DetailsJson,
+                OccurrenceCount = 1,
+                EscalationAction = RuntimeDefectEscalationActions.Ticket,
+                EscalationReason = "smoke",
+                FirstSeenAtUtc = now,
+                LastSeenAtUtc = now,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+            _records.Add(record);
+            return Task.FromResult(record);
+        }
+
+        public Task<List<RuntimeDefectRecord>> GetOpenAsync(int limit = 200, CancellationToken ct = default)
+            => Task.FromResult(_records.Take(Math.Max(1, limit)).ToList());
     }
 }
