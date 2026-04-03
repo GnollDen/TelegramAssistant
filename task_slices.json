@@ -1510,6 +1510,57 @@
       "notes": "Close the analytics follow-up with an end-to-end verification path that proves Grafana-facing gateway metrics are trustworthy."
     },
     {
+      "id": "GATEWAY-007-A",
+      "parent_task_id": "GATEWAY-007",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Inventory the next contract-family candidates after EditDiff v1 and rank them for bounded reasoning-plus-shaping rollout by schema risk, validation clarity, and operational value.",
+      "executor_agent": "architect-reviewer",
+      "dependencies": [
+        "GATEWAY-006-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Next contract-family candidates are ordered by rollout safety and value.",
+        "Unsuitable or high-risk families are explicitly excluded from near-term rollout."
+      ],
+      "notes": "Select the next bounded normalization targets only after gateway analytics are available, so family choice can consider real usage, cost, and latency."
+    },
+    {
+      "id": "GATEWAY-007-B",
+      "parent_task_id": "GATEWAY-007",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Implement one additional contract family with schema provider, app validator, and explicit feature gate on top of the gateway contract-normalization path.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "GATEWAY-007-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "One additional contract family is wired through reasoning plus shaping plus app validation.",
+        "Feature-gated rollout and fallback behavior exist for the new family."
+      ],
+      "notes": "Keep the rollout bounded to one family at a time; do not broaden provider migration or generalize beyond the selected family."
+    },
+    {
+      "id": "GATEWAY-007-C",
+      "parent_task_id": "GATEWAY-007",
+      "phase": "phase-d-llm-gateway",
+      "priority": "high",
+      "description": "Run bounded rollout validation for the added contract family and record whether the reasoning-plus-shaping pattern should continue to further families.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "GATEWAY-007-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Parity, schema validity, fallback behavior, and operational metrics are sufficient to judge the added family.",
+        "A clear continue/hold recommendation exists before opening another family."
+      ],
+      "notes": "Close the bounded family rollout with explicit evidence, not assumption, before expanding normalization to more contract families."
+    },
+    {
       "id": "ALIGN-201-A",
       "parent_task_id": "ALIGN-201",
       "phase": "phase-e-prd-alignment-hardening",

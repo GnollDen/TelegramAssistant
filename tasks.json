@@ -143,7 +143,8 @@
         "GATEWAY-003",
         "GATEWAY-004",
         "GATEWAY-005",
-        "GATEWAY-006"
+        "GATEWAY-006",
+        "GATEWAY-007"
       ]
     },
     {
@@ -955,6 +956,28 @@
       ],
       "status": "pending",
       "notes": "Persistent observability follow-up after the initial gateway foundation and rollout gate: expose Grafana-ready metrics for throughput, latency, token usage, and OpenRouter spend so selective production use can be measured honestly."
+    },
+    {
+      "id": "GATEWAY-007",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Run a bounded rollout for reasoning-to-shaping contract normalization across additional contract families, using app validation and explicit gates before any broader migration claims.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "A small ordered set of additional contract families is selected and evaluated for reasoning-pass plus shaping-pass adoption.",
+        "Each selected family has explicit schema, app-level validation, and bounded rollout evidence before being considered active.",
+        "Gateway-backed contract normalization remains selective and evidence-driven rather than broad by default."
+      ],
+      "test_steps": [
+        "Identify the next candidate contract families after EditDiff v1 and document why they are safe or unsafe for bounded rollout.",
+        "Implement one additional family behind an explicit gate and verify normalization, fallback, and app validation behavior.",
+        "Run dotnet build TelegramAssistant.sln and the relevant gateway normalization smokes or bounded family-specific verification commands."
+      ],
+      "dependencies": [
+        "GATEWAY-006"
+      ],
+      "status": "pending",
+      "notes": "Follow-up bounded rollout after the initial EditDiff v1 normalization path: extend reasoning-plus-shaping adoption only through explicit family-by-family evidence and validation gates."
     },
     {
       "id": "ALIGN-201",
