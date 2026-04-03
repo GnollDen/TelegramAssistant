@@ -146,6 +146,26 @@ public static class ModelPassBudgetCatalog
         };
     }
 
+    public static ModelPassBudgetEnvelope WithIterationsConsumed(ModelPassBudgetEnvelope budget, int iterationsConsumed)
+    {
+        ArgumentNullException.ThrowIfNull(budget);
+
+        return new ModelPassBudgetEnvelope
+        {
+            BudgetProfileKey = budget.BudgetProfileKey,
+            MaxIterations = budget.MaxIterations,
+            IterationsConsumed = Math.Clamp(iterationsConsumed, 0, budget.MaxIterations),
+            MaxInputTokens = budget.MaxInputTokens,
+            InputTokensConsumed = budget.InputTokensConsumed,
+            MaxOutputTokens = budget.MaxOutputTokens,
+            OutputTokensConsumed = budget.OutputTokensConsumed,
+            MaxTotalTokens = budget.MaxTotalTokens,
+            TotalTokensConsumed = budget.TotalTokensConsumed,
+            MaxCostUsd = budget.MaxCostUsd,
+            CostUsdConsumed = budget.CostUsdConsumed
+        };
+    }
+
     private static ModelPassBudgetEnvelope Build(
         string profileKey,
         int maxIterations,

@@ -585,8 +585,8 @@
         "IMPLEMENT-004",
         "IMPLEMENT-009"
       ],
-      "status": "pending",
-      "notes": "Addresses retrieval-loop and cost-burn risk for model-driven passes."
+      "status": "done",
+      "notes": "Completed by adding auditable per-pass budget envelopes plus enforcement that converts exhausted need_more_data loops into terminal operator-clarification outcomes and runtime defect signals for Stage 6/7/8 control-plane handling."
     },
     {
       "id": "IMPLEMENT-012",

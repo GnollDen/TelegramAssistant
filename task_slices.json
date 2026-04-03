@@ -963,12 +963,12 @@
       "dependencies": [
         "IMPLEMENT-011-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Runs terminate into explicit blocked or escalated outcomes instead of looping indefinitely.",
         "Loop termination integrates with defects and runtime control states."
       ],
-      "notes": "Clean split because enforcement and terminal-state behavior should be verified after budgets exist."
+      "notes": "Completed by counting consecutive need_more_data outcomes per scope/stage/pass-family in the audit store, escalating exhausted loops into auditable need_operator_clarification outcomes with persisted loop_budget_exhausted signals, emitting runtime normalization defects for control-state evaluation, and updating launch/audit smokes to cover the terminal guard path."
     },
     {
       "id": "IMPLEMENT-012-A",

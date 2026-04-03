@@ -8,7 +8,8 @@ public static class ModelPassAuditSmokeRunner
     public static async Task RunAsync(CancellationToken ct = default)
     {
         var store = new InMemoryModelPassAuditStore();
-        var service = new ModelPassAuditService(new ModelOutputNormalizer(), store);
+        var runtimeDefectRepository = new InMemoryRuntimeDefectRepository();
+        var service = new ModelPassAuditService(new ModelOutputNormalizer(), store, runtimeDefectRepository);
 
         var readyRecord = await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
         {
@@ -106,6 +107,52 @@ public static class ModelPassAuditSmokeRunner
         {
             throw new InvalidOperationException("Model pass audit smoke failed: persisted audit records could not be reloaded.");
         }
+
+        await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
+        {
+            Envelope = BuildLoopHistoryEnvelope(Guid.Parse("10000000-0000-0000-0000-000000000005")),
+            RawModelOutput =
+                """
+                {
+                  "result_status": "need_more_data",
+                  "facts": []
+                }
+                """
+        }, ct);
+        await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
+        {
+            Envelope = BuildLoopHistoryEnvelope(Guid.Parse("10000000-0000-0000-0000-000000000006")),
+            RawModelOutput =
+                """
+                {
+                  "result_status": "need_more_data",
+                  "facts": []
+                }
+                """
+        }, ct);
+
+        var exhaustedRecord = await service.NormalizeAndPersistAsync(new ModelNormalizationRequest
+        {
+            Envelope = BuildLoopHistoryEnvelope(Guid.Parse("10000000-0000-0000-0000-000000000007")),
+            RawModelOutput =
+                """
+                {
+                  "result_status": "need_more_data",
+                  "facts": []
+                }
+                """
+        }, ct);
+        AssertStatus(exhaustedRecord, ModelPassResultStatuses.NeedOperatorClarification, "loop_budget_exhausted");
+        if (!exhaustedRecord.Envelope.Unknowns.Any(x => string.Equals(x.UnknownType, "loop_budget_exhausted", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Model pass audit smoke failed: loop guard escalation did not persist loop_budget_exhausted unknown.");
+        }
+
+        var loopGuardDefects = await runtimeDefectRepository.GetOpenAsync(ct: ct);
+        if (!loopGuardDefects.Any(x => x.DedupeKey.Contains("loop_budget_exhausted", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Model pass audit smoke failed: loop guard escalation did not emit runtime defect signal.");
+        }
     }
 
     private static void AssertStatus(ModelPassAuditRecord record, string expectedStatus, string label)
@@ -169,6 +216,36 @@ public static class ModelPassAuditSmokeRunner
         };
     }
 
+    private static ModelPassEnvelope BuildLoopHistoryEnvelope(Guid runId)
+    {
+        var envelope = BuildEnvelope(runId);
+        envelope.ScopeKey = "person:loop-guard";
+        envelope.Scope = new ModelPassScope
+        {
+            ScopeType = "person_scope",
+            ScopeRef = "person:loop-guard",
+            AdditionalRefs = ["source_object:loop-guard"]
+        };
+        envelope.Target = new ModelPassTarget
+        {
+            TargetType = "person",
+            TargetRef = "person:loop-guard"
+        };
+        envelope.Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+            ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init"));
+        envelope.ResultStatus = ModelPassResultStatuses.NeedMoreData;
+        envelope.Unknowns =
+        [
+            new ModelPassUnknown
+            {
+                UnknownType = "coverage_gap",
+                Summary = "Additional source evidence is required for this scope.",
+                RequiredAction = "collect_more_evidence"
+            }
+        ];
+        return envelope;
+    }
+
     private sealed class InMemoryModelPassAuditStore : IModelPassAuditStore
     {
         private readonly Dictionary<Guid, ModelPassAuditRecord> _records = [];
@@ -199,6 +276,24 @@ public static class ModelPassAuditSmokeRunner
         {
             _records.TryGetValue(runId, out var record);
             return Task.FromResult(record);
+        }
+
+        public Task<int> GetConsecutiveNeedMoreDataCountAsync(
+            string scopeKey,
+            string stage,
+            string passFamily,
+            CancellationToken ct = default)
+        {
+            var count = _records.Values
+                .Where(x => string.Equals(x.Envelope.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.Envelope.Stage, stage, StringComparison.Ordinal)
+                    && string.Equals(x.Envelope.PassFamily, passFamily, StringComparison.Ordinal))
+                .OrderByDescending(x => x.Envelope.StartedAtUtc)
+                .ThenByDescending(x => x.Envelope.RunId)
+                .Take(32)
+                .TakeWhile(x => string.Equals(x.Envelope.ResultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
+                .Count();
+            return Task.FromResult(count);
         }
 
         private static ModelPassEnvelope CloneEnvelope(ModelPassEnvelope envelope)
@@ -374,5 +469,58 @@ public static class ModelPassAuditSmokeRunner
                 ]
             };
         }
+    }
+
+    private sealed class InMemoryRuntimeDefectRepository : IRuntimeDefectRepository
+    {
+        private readonly List<RuntimeDefectRecord> _records = [];
+
+        public Task<RuntimeDefectRecord> UpsertAsync(RuntimeDefectUpsertRequest request, CancellationToken ct = default)
+        {
+            var existing = _records.FirstOrDefault(x => string.Equals(x.DedupeKey, request.DedupeKey, StringComparison.Ordinal));
+            if (existing == null)
+            {
+                var escalation = RuntimeDefectEscalationPolicy.Resolve(request.DefectClass, request.Severity, 1);
+                existing = new RuntimeDefectRecord
+                {
+                    Id = Guid.NewGuid(),
+                    DefectClass = request.DefectClass,
+                    Severity = request.Severity,
+                    Status = RuntimeDefectStatuses.Open,
+                    ScopeKey = request.ScopeKey,
+                    DedupeKey = request.DedupeKey,
+                    RunId = request.RunId,
+                    ObjectType = request.ObjectType,
+                    ObjectRef = request.ObjectRef,
+                    Summary = request.Summary,
+                    DetailsJson = request.DetailsJson,
+                    OccurrenceCount = 1,
+                    EscalationAction = escalation.EscalationAction,
+                    EscalationReason = escalation.EscalationReason,
+                    FirstSeenAtUtc = DateTime.UtcNow,
+                    LastSeenAtUtc = DateTime.UtcNow,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                };
+                _records.Add(existing);
+            }
+            else
+            {
+                existing.OccurrenceCount += 1;
+                existing.RunId = request.RunId ?? existing.RunId;
+                existing.Summary = request.Summary;
+                existing.DetailsJson = request.DetailsJson;
+                existing.UpdatedAtUtc = DateTime.UtcNow;
+                existing.LastSeenAtUtc = DateTime.UtcNow;
+                var escalation = RuntimeDefectEscalationPolicy.Resolve(existing.DefectClass, existing.Severity, existing.OccurrenceCount);
+                existing.EscalationAction = escalation.EscalationAction;
+                existing.EscalationReason = escalation.EscalationReason;
+            }
+
+            return Task.FromResult(existing);
+        }
+
+        public Task<List<RuntimeDefectRecord>> GetOpenAsync(int limit = 200, CancellationToken ct = default)
+            => Task.FromResult(_records.Take(limit).ToList());
     }
 }

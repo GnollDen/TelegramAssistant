@@ -134,6 +134,48 @@ public class ModelPassAuditStore : IModelPassAuditStore
         };
     }
 
+    public async Task<int> GetConsecutiveNeedMoreDataCountAsync(
+        string scopeKey,
+        string stage,
+        string passFamily,
+        CancellationToken ct = default)
+    {
+        var normalizedScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? string.Empty : scopeKey.Trim();
+        var normalizedStage = string.IsNullOrWhiteSpace(stage) ? string.Empty : stage.Trim();
+        var normalizedPassFamily = string.IsNullOrWhiteSpace(passFamily) ? string.Empty : passFamily.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedScopeKey)
+            || string.IsNullOrWhiteSpace(normalizedStage)
+            || string.IsNullOrWhiteSpace(normalizedPassFamily))
+        {
+            return 0;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var resultStatuses = await db.ModelPassRuns
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == normalizedScopeKey
+                && x.Stage == normalizedStage
+                && x.PassFamily == normalizedPassFamily)
+            .OrderByDescending(x => x.StartedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => x.ResultStatus)
+            .Take(32)
+            .ToListAsync(ct);
+
+        var count = 0;
+        foreach (var resultStatus in resultStatuses)
+        {
+            if (!string.Equals(resultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            count += 1;
+        }
+
+        return count;
+    }
+
     private static ModelPassEnvelope MapEnvelope(DbModelPassRun row)
     {
         return new ModelPassEnvelope

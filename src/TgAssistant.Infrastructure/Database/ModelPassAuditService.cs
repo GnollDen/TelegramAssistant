@@ -5,30 +5,60 @@ namespace TgAssistant.Infrastructure.Database;
 
 public class ModelPassAuditService : IModelPassAuditService
 {
+    private const string LoopBudgetIssueCode = "loop_budget_exhausted";
+
     private readonly IModelOutputNormalizer _normalizer;
     private readonly IModelPassAuditStore _auditStore;
+    private readonly IRuntimeDefectRepository? _runtimeDefectRepository;
 
     public ModelPassAuditService(
         IModelOutputNormalizer normalizer,
         IModelPassAuditStore auditStore)
+        : this(normalizer, auditStore, null)
+    {
+    }
+
+    public ModelPassAuditService(
+        IModelOutputNormalizer normalizer,
+        IModelPassAuditStore auditStore,
+        IRuntimeDefectRepository? runtimeDefectRepository)
     {
         _normalizer = normalizer;
         _auditStore = auditStore;
+        _runtimeDefectRepository = runtimeDefectRepository;
     }
 
-    public Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default)
+    public async Task<ModelPassAuditRecord> NormalizeAndPersistAsync(ModelNormalizationRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Envelope);
 
+        var consecutiveNeedMoreDataCount = await _auditStore.GetConsecutiveNeedMoreDataCountAsync(
+            request.Envelope.ScopeKey,
+            request.Envelope.Stage,
+            request.Envelope.PassFamily,
+            ct);
         var normalization = _normalizer.Normalize(request);
-        var envelope = BuildAuditedEnvelope(request.Envelope, normalization);
-        return _auditStore.UpsertAsync(envelope, normalization, ct);
+        var finalizedNormalization = ApplyLoopGuard(
+            request.Envelope,
+            normalization,
+            consecutiveNeedMoreDataCount,
+            out var loopGuardTriggered);
+        var envelope = BuildAuditedEnvelope(request.Envelope, finalizedNormalization, consecutiveNeedMoreDataCount);
+        var record = await _auditStore.UpsertAsync(envelope, finalizedNormalization, ct);
+
+        if (loopGuardTriggered)
+        {
+            await PersistLoopGuardDefectAsync(record, consecutiveNeedMoreDataCount, ct);
+        }
+
+        return record;
     }
 
     private static ModelPassEnvelope BuildAuditedEnvelope(
         ModelPassEnvelope inputEnvelope,
-        ModelNormalizationResult normalization)
+        ModelNormalizationResult normalization,
+        int consecutiveNeedMoreDataCount)
     {
         var unknowns = inputEnvelope.Unknowns
             .Select(x => new ModelPassUnknown
@@ -53,6 +83,17 @@ public class ModelPassAuditService : IModelPassAuditService
                 RequiredAction = string.Equals(normalization.Status, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal)
                     ? "provide_more_evidence"
                     : "review_normalization_issues"
+            });
+        }
+
+        if (normalization.Issues.Any(x => string.Equals(x.Code, LoopBudgetIssueCode, StringComparison.Ordinal))
+            && !unknowns.Any(x => string.Equals(x.UnknownType, "loop_budget_exhausted", StringComparison.Ordinal)))
+        {
+            unknowns.Add(new ModelPassUnknown
+            {
+                UnknownType = "loop_budget_exhausted",
+                Summary = normalization.Issues.First(x => string.Equals(x.Code, LoopBudgetIssueCode, StringComparison.Ordinal)).Summary,
+                RequiredAction = "operator_review"
             });
         }
 
@@ -115,20 +156,9 @@ public class ModelPassAuditService : IModelPassAuditService
                 })
             ],
             Unknowns = unknowns,
-            Budget = new ModelPassBudgetEnvelope
-            {
-                BudgetProfileKey = inputEnvelope.Budget.BudgetProfileKey,
-                MaxIterations = inputEnvelope.Budget.MaxIterations,
-                IterationsConsumed = inputEnvelope.Budget.IterationsConsumed,
-                MaxInputTokens = inputEnvelope.Budget.MaxInputTokens,
-                InputTokensConsumed = inputEnvelope.Budget.InputTokensConsumed,
-                MaxOutputTokens = inputEnvelope.Budget.MaxOutputTokens,
-                OutputTokensConsumed = inputEnvelope.Budget.OutputTokensConsumed,
-                MaxTotalTokens = inputEnvelope.Budget.MaxTotalTokens,
-                TotalTokensConsumed = inputEnvelope.Budget.TotalTokensConsumed,
-                MaxCostUsd = inputEnvelope.Budget.MaxCostUsd,
-                CostUsdConsumed = inputEnvelope.Budget.CostUsdConsumed
-            },
+            Budget = ModelPassBudgetCatalog.WithIterationsConsumed(
+                inputEnvelope.Budget,
+                consecutiveNeedMoreDataCount + 1),
             ResultStatus = normalization.Status,
             OutputSummary = outputSummary,
             StartedAtUtc = inputEnvelope.StartedAtUtc == default ? DateTime.UtcNow : inputEnvelope.StartedAtUtc,
@@ -138,6 +168,12 @@ public class ModelPassAuditService : IModelPassAuditService
 
     private static string BuildOutputSummary(ModelPassEnvelope inputEnvelope, ModelNormalizationResult normalization)
     {
+        var loopBudgetIssue = normalization.Issues.FirstOrDefault(x => string.Equals(x.Code, LoopBudgetIssueCode, StringComparison.Ordinal));
+        if (loopBudgetIssue != null)
+        {
+            return loopBudgetIssue.Summary;
+        }
+
         if (string.Equals(normalization.Status, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal))
         {
             return normalization.BlockedReason ?? "Normalization blocked invalid input.";
@@ -157,4 +193,158 @@ public class ModelPassAuditService : IModelPassAuditService
             _ => "Normalization completed."
         };
     }
+
+    private static ModelNormalizationResult ApplyLoopGuard(
+        ModelPassEnvelope inputEnvelope,
+        ModelNormalizationResult normalization,
+        int consecutiveNeedMoreDataCount,
+        out bool loopGuardTriggered)
+    {
+        loopGuardTriggered = false;
+
+        if (!string.Equals(normalization.Status, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
+        {
+            return CloneNormalization(normalization);
+        }
+
+        var exhaustedIterations = consecutiveNeedMoreDataCount + 1 >= inputEnvelope.Budget.MaxIterations;
+        if (!exhaustedIterations)
+        {
+            return CloneNormalization(normalization);
+        }
+
+        loopGuardTriggered = true;
+        var escalated = CloneNormalization(normalization);
+        escalated.Status = ModelPassResultStatuses.NeedOperatorClarification;
+        escalated.BlockedReason = null;
+        escalated.Issues.Add(new ModelNormalizationIssue
+        {
+            Severity = RuntimeDefectSeverities.High,
+            Code = LoopBudgetIssueCode,
+            Summary = $"Loop guard exhausted pass budget '{inputEnvelope.Budget.BudgetProfileKey}' after {Math.Min(consecutiveNeedMoreDataCount + 1, inputEnvelope.Budget.MaxIterations)} iterations; operator review is required before another pass.",
+            Path = "budget.max_iterations"
+        });
+        return escalated;
+    }
+
+    private async Task PersistLoopGuardDefectAsync(
+        ModelPassAuditRecord record,
+        int consecutiveNeedMoreDataCount,
+        CancellationToken ct)
+    {
+        if (_runtimeDefectRepository == null)
+        {
+            return;
+        }
+
+        var envelope = record.Envelope;
+        var issue = record.Normalization.Issues.FirstOrDefault(x => string.Equals(x.Code, LoopBudgetIssueCode, StringComparison.Ordinal));
+        var detailsJson = $$"""
+            {"stage":"{{EscapeJson(envelope.Stage)}}","pass_family":"{{EscapeJson(envelope.PassFamily)}}","result_status":"{{EscapeJson(envelope.ResultStatus)}}","budget_profile_key":"{{EscapeJson(envelope.Budget.BudgetProfileKey)}}","iterations_consumed":{{envelope.Budget.IterationsConsumed}},"max_iterations":{{envelope.Budget.MaxIterations}},"prior_need_more_data_count":{{consecutiveNeedMoreDataCount}},"issue_code":"{{EscapeJson(issue?.Code ?? LoopBudgetIssueCode)}}"}
+            """;
+
+        await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
+        {
+            DefectClass = RuntimeDefectClasses.Normalization,
+            Severity = RuntimeDefectSeverities.High,
+            ScopeKey = envelope.ScopeKey,
+            DedupeKey = $"{envelope.ScopeKey}|{envelope.Stage}|{envelope.PassFamily}|loop_budget_exhausted",
+            RunId = record.ModelPassRunId,
+            ObjectType = envelope.Target.TargetType,
+            ObjectRef = envelope.Target.TargetRef,
+            Summary = issue?.Summary ?? "Loop guard escalated repeated need_more_data outcomes to operator clarification.",
+            DetailsJson = detailsJson
+        }, ct);
+    }
+
+    private static ModelNormalizationResult CloneNormalization(ModelNormalizationResult normalization)
+    {
+        return new ModelNormalizationResult
+        {
+            ModelPassRunId = normalization.ModelPassRunId,
+            SchemaVersion = normalization.SchemaVersion,
+            ScopeKey = normalization.ScopeKey,
+            TargetType = normalization.TargetType,
+            TargetRef = normalization.TargetRef,
+            TruthLayer = normalization.TruthLayer,
+            PersonId = normalization.PersonId,
+            SourceObjectId = normalization.SourceObjectId,
+            EvidenceItemId = normalization.EvidenceItemId,
+            Status = normalization.Status,
+            BlockedReason = normalization.BlockedReason,
+            CandidateCounts = new ModelNormalizationCandidateCounts
+            {
+                Facts = normalization.CandidateCounts.Facts,
+                Inferences = normalization.CandidateCounts.Inferences,
+                Hypotheses = normalization.CandidateCounts.Hypotheses,
+                Conflicts = normalization.CandidateCounts.Conflicts
+            },
+            NormalizedPayload = new ModelNormalizationPayload
+            {
+                Facts =
+                [
+                    .. normalization.NormalizedPayload.Facts.Select(x => new NormalizedFactCandidate
+                    {
+                        Category = x.Category,
+                        Key = x.Key,
+                        Value = x.Value,
+                        TruthLayer = x.TruthLayer,
+                        Confidence = x.Confidence,
+                        EvidenceRefs = [.. x.EvidenceRefs]
+                    })
+                ],
+                Inferences =
+                [
+                    .. normalization.NormalizedPayload.Inferences.Select(x => new NormalizedInferenceCandidate
+                    {
+                        InferenceType = x.InferenceType,
+                        SubjectType = x.SubjectType,
+                        SubjectRef = x.SubjectRef,
+                        Summary = x.Summary,
+                        TruthLayer = x.TruthLayer,
+                        Confidence = x.Confidence,
+                        EvidenceRefs = [.. x.EvidenceRefs]
+                    })
+                ],
+                Hypotheses =
+                [
+                    .. normalization.NormalizedPayload.Hypotheses.Select(x => new NormalizedHypothesisCandidate
+                    {
+                        HypothesisType = x.HypothesisType,
+                        SubjectType = x.SubjectType,
+                        SubjectRef = x.SubjectRef,
+                        Statement = x.Statement,
+                        TruthLayer = x.TruthLayer,
+                        Confidence = x.Confidence,
+                        EvidenceRefs = [.. x.EvidenceRefs]
+                    })
+                ],
+                Conflicts =
+                [
+                    .. normalization.NormalizedPayload.Conflicts.Select(x => new NormalizedConflictCandidate
+                    {
+                        ConflictType = x.ConflictType,
+                        Summary = x.Summary,
+                        TruthLayer = x.TruthLayer,
+                        RelatedObjectRef = x.RelatedObjectRef,
+                        Confidence = x.Confidence,
+                        EvidenceRefs = [.. x.EvidenceRefs]
+                    })
+                ]
+            },
+            Issues =
+            [
+                .. normalization.Issues.Select(x => new ModelNormalizationIssue
+                {
+                    Severity = x.Severity,
+                    Code = x.Code,
+                    Summary = x.Summary,
+                    Path = x.Path
+                })
+            ]
+        };
+    }
+
+    private static string EscapeJson(string value)
+        => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 }

@@ -92,6 +92,12 @@ public interface IModelPassAuditStore
         CancellationToken ct = default);
 
     Task<ModelPassAuditRecord?> GetByModelPassRunIdAsync(Guid runId, CancellationToken ct = default);
+
+    Task<int> GetConsecutiveNeedMoreDataCountAsync(
+        string scopeKey,
+        string stage,
+        string passFamily,
+        CancellationToken ct = default);
 }
 
 public interface IModelPassAuditService

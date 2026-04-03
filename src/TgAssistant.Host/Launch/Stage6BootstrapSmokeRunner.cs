@@ -504,5 +504,23 @@ public static class Stage6BootstrapSmokeRunner
             _records.TryGetValue(runId, out var record);
             return Task.FromResult(record);
         }
+
+        public Task<int> GetConsecutiveNeedMoreDataCountAsync(
+            string scopeKey,
+            string stage,
+            string passFamily,
+            CancellationToken ct = default)
+        {
+            var count = _records.Values
+                .Where(x => string.Equals(x.Envelope.ScopeKey, scopeKey, StringComparison.Ordinal)
+                    && string.Equals(x.Envelope.Stage, stage, StringComparison.Ordinal)
+                    && string.Equals(x.Envelope.PassFamily, passFamily, StringComparison.Ordinal))
+                .OrderByDescending(x => x.Envelope.StartedAtUtc)
+                .ThenByDescending(x => x.Envelope.RunId)
+                .Take(32)
+                .TakeWhile(x => string.Equals(x.Envelope.ResultStatus, ModelPassResultStatuses.NeedMoreData, StringComparison.Ordinal))
+                .Count();
+            return Task.FromResult(count);
+        }
     }
 }
