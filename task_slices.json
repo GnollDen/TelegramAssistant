@@ -1383,12 +1383,12 @@
       "dependencies": [
         "GATEWAY-003-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "A/B replay runs produce comparable structured output and telemetry.",
         "Comparison output can support a go/no-go decision for pilot cutover."
       ],
-      "notes": "Replay harness for model/provider comparison, not broader production cutover."
+      "notes": "Completed on 2026-04-03 by adding standalone --llm-gateway-replay-ab for a fixed Stage5 edit-diff replay set routed through label-based gateway experiment controls, persisting an auditable JSON report under artifacts/llm-gateway with latency, cost/usage, error-rate, schema-validity, expected-behavior match, and cross-branch parity metrics without forking domain callers."
     },
     {
       "id": "GATEWAY-004-A",

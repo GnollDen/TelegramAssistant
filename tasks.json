@@ -886,8 +886,8 @@
       "dependencies": [
         "GATEWAY-002"
       ],
-      "status": "pending",
-      "notes": "Experimentation is part of the gateway foundation, not optional polish."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via GATEWAY-003-A/B: config-driven gateway experiments now support sticky branch routing plus an auditable replay A/B harness for the safe Stage5 edit-diff text path, producing comparable latency, usage/cost, error-rate, schema-validity, and normalized-output parity evidence without domain-service forks."
     },
     {
       "id": "GATEWAY-004",

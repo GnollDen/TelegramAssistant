@@ -111,6 +111,11 @@ try
     var runLlmGatewaySuccessSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-success-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
+    var llmGatewayReplayAbOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-gateway-replay-ab-output=", StringComparison.OrdinalIgnoreCase));
+    var llmGatewayReplayAbOutput = llmGatewayReplayAbOutputArg is null
+        ? null
+        : llmGatewayReplayAbOutputArg["--llm-gateway-replay-ab-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -170,6 +175,7 @@ try
         "--llm-gateway-success-smoke",
         "--llm-gateway-failure-smoke",
         "--llm-gateway-experiment-smoke",
+        "--llm-gateway-replay-ab",
         "--stage6-bootstrap-smoke",
         "--stage7-dossier-profile-smoke",
         "--stage7-pair-dynamics-smoke",
@@ -243,6 +249,20 @@ try
     {
         await LlmGatewayExperimentSmokeRunner.RunAsync();
         Log.Information("LLM gateway experiment smoke requested via --llm-gateway-experiment-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmGatewayReplayAb)
+    {
+        var report = await LlmGatewayReplayAbRunner.RunAsync(llmGatewayReplayAbOutput);
+        var baselineSummary = report.BranchSummaries.First(summary => string.Equals(summary.Branch, "baseline", StringComparison.Ordinal));
+        var candidateSummary = report.BranchSummaries.First(summary => string.Equals(summary.Branch, "candidate", StringComparison.Ordinal));
+        Log.Information(
+            "LLM gateway replay A/B requested via --llm-gateway-replay-ab. output={OutputPath}, baseline_error_rate={BaselineErrorRate:0.0000}, candidate_error_rate={CandidateErrorRate:0.0000}, parity_rate={ParityRate:0.0000}. Exiting after successful verification.",
+            report.OutputPath,
+            baselineSummary.ErrorRate,
+            candidateSummary.ErrorRate,
+            report.Comparison.ParityRate);
         return;
     }
 
