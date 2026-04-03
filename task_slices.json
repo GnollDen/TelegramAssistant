@@ -912,7 +912,7 @@
       "dependencies": [
         "IMPLEMENT-010-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Runbooks describe clean-architecture pilot behavior, not legacy Stage6/web/tgbot flows.",
         "Commands and service names match the current codebase."
@@ -929,7 +929,7 @@
       "dependencies": [
         "IMPLEMENT-010-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pre-rollout review note exists with findings or approval.",
         "Pilot widening cannot proceed while blocking findings remain open."
@@ -1116,7 +1116,7 @@
       "dependencies": [
         "IMPLEMENT-009-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Large rebuilds cannot fan out into uncontrolled concurrent scope writes.",
         "Checkpoint state allows safe resume without duplicate durable objects."
