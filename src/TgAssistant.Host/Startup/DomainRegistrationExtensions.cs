@@ -53,6 +53,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage6BootstrapService, Stage6BootstrapService>();
         services.AddSingleton<IStage7DossierProfileService, Stage7DossierProfileFormationService>();
         services.AddSingleton<IStage7PairDynamicsService, Stage7PairDynamicsFormationService>();
+        services.AddSingleton<IStage7TimelineService, Stage7TimelineFormationService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
@@ -183,6 +184,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage6BootstrapRepository, Stage6BootstrapRepository>();
         services.AddSingleton<IStage7DossierProfileRepository, Stage7DossierProfileRepository>();
         services.AddSingleton<IStage7PairDynamicsRepository, Stage7PairDynamicsRepository>();
+        services.AddSingleton<IStage7TimelineRepository, Stage7TimelineRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

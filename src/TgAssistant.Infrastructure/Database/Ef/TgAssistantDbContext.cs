@@ -53,6 +53,9 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableProfile> DurableProfiles => Set<DbDurableProfile>();
     public DbSet<DbDurablePairDynamics> DurablePairDynamics => Set<DbDurablePairDynamics>();
     public DbSet<DbDurablePairDynamicsRevision> DurablePairDynamicsRevisions => Set<DbDurablePairDynamicsRevision>();
+    public DbSet<DbDurableEvent> DurableEvents => Set<DbDurableEvent>();
+    public DbSet<DbDurableTimelineEpisode> DurableTimelineEpisodes => Set<DbDurableTimelineEpisode>();
+    public DbSet<DbDurableStoryArc> DurableStoryArcs => Set<DbDurableStoryArc>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -1009,6 +1012,91 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.DurablePairDynamicsId, x.RevisionHash }).IsUnique();
             e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
             e.HasIndex(x => new { x.DurablePairDynamicsId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbDurableEvent>(e =>
+        {
+            e.ToTable("durable_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.RelatedPersonId).HasColumnName("related_person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.EventType).HasColumnName("event_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.EventConfidence).HasColumnName("event_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.OccurredFromUtc).HasColumnName("occurred_from_utc");
+            e.Property(x => x.OccurredToUtc).HasColumnName("occurred_to_utc");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.EventType }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.Status })
+                .HasFilter("related_person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableTimelineEpisode>(e =>
+        {
+            e.ToTable("durable_timeline_episodes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.RelatedPersonId).HasColumnName("related_person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.EpisodeType).HasColumnName("episode_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
+            e.Property(x => x.EndedAtUtc).HasColumnName("ended_at_utc");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.EpisodeType }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.Status })
+                .HasFilter("related_person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurableStoryArc>(e =>
+        {
+            e.ToTable("durable_story_arcs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.RelatedPersonId).HasColumnName("related_person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.ArcType).HasColumnName("arc_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.BoundaryConfidence).HasColumnName("boundary_confidence");
+            e.Property(x => x.ClosureState).HasColumnName("closure_state");
+            e.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc");
+            e.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.ArcType }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
+            e.HasIndex(x => new { x.ScopeKey, x.RelatedPersonId, x.Status })
+                .HasFilter("related_person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

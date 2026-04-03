@@ -719,12 +719,12 @@
         "IMPLEMENT-004-C",
         "IMPLEMENT-005-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Timeline uses episodes and story arcs as end-state objects.",
         "Boundary confidence and closure state are explicit."
       ],
-      "notes": "Clean split because timeline objects are independent from dossier and pair dynamics."
+      "notes": "Clean split because timeline objects are independent from dossier and pair dynamics. Added explicit Stage7 timeline/event/story-arc durable families with dedicated storage tables, boundary_confidence and closure_state on each object, and Stage7TimelineFormationService/Repository materializing one durable event, one timeline episode, and one story arc from ready bootstrap output via shared durable metadata/evidence links; added --stage7-timeline-smoke to verify materialization, stable rerun identity, and no durable outputs for non-ready bootstrap results."
     },
     {
       "id": "IMPLEMENT-006-D",

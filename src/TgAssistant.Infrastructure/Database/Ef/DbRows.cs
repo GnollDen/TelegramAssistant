@@ -695,6 +695,67 @@ public class DbDurablePairDynamicsRevision
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbDurableEvent
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid? RelatedPersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public float BoundaryConfidence { get; set; }
+    public float EventConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public DateTime? OccurredFromUtc { get; set; }
+    public DateTime? OccurredToUtc { get; set; }
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableTimelineEpisode
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid? RelatedPersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string EpisodeType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? EndedAtUtc { get; set; }
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurableStoryArc
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid? RelatedPersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string ArcType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public float BoundaryConfidence { get; set; }
+    public string ClosureState { get; set; } = string.Empty;
+    public DateTime? OpenedAtUtc { get; set; }
+    public DateTime? ClosedAtUtc { get; set; }
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

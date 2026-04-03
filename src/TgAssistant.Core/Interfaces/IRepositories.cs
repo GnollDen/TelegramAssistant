@@ -153,6 +153,21 @@ public interface IStage7PairDynamicsService
         CancellationToken ct = default);
 }
 
+public interface IStage7TimelineRepository
+{
+    Task<Stage7TimelineFormationResult> UpsertAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        CancellationToken ct = default);
+}
+
+public interface IStage7TimelineService
+{
+    Task<Stage7TimelineFormationResult> FormAsync(
+        Stage7TimelineFormationRequest request,
+        CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }
