@@ -112,6 +112,7 @@ try
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
+    var runEditDiffPilotSmoke = args.Any(arg => string.Equals(arg, "--edit-diff-pilot-smoke", StringComparison.OrdinalIgnoreCase));
     var llmGatewayReplayAbOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--llm-gateway-replay-ab-output=", StringComparison.OrdinalIgnoreCase));
     var llmGatewayReplayAbOutput = llmGatewayReplayAbOutputArg is null
         ? null
@@ -176,6 +177,7 @@ try
         "--llm-gateway-failure-smoke",
         "--llm-gateway-experiment-smoke",
         "--llm-gateway-replay-ab",
+        "--edit-diff-pilot-smoke",
         "--stage6-bootstrap-smoke",
         "--stage7-dossier-profile-smoke",
         "--stage7-pair-dynamics-smoke",
@@ -264,6 +266,11 @@ try
             candidateSummary.ErrorRate,
             report.Comparison.ParityRate);
         return;
+    }
+
+    if (runEditDiffPilotSmoke)
+    {
+        // This smoke needs the real composition root because it verifies the runtime pilot toggle.
     }
 
     if (runStage6BootstrapSmoke)
@@ -428,6 +435,19 @@ try
             var substrateVerificationService = scope.ServiceProvider.GetRequiredService<Stage5SubstrateDeterminismVerificationService>();
             await substrateVerificationService.RunAsync();
             Log.Information("Stage5 verification run requested via --stage5-smoke. Exiting after successful verification.");
+            return;
+        }
+
+        if (runEditDiffPilotSmoke)
+        {
+            var result = await EditDiffPilotSmokeRunner.RunAsync(scope.ServiceProvider, CancellationToken.None);
+            Log.Information(
+                "Edit-diff pilot smoke requested via --edit-diff-pilot-smoke. legacy_provider={LegacyProvider}, legacy_model={LegacyModel}, gateway_provider={GatewayProvider}, gateway_model={GatewayModel}, gateway_fallback_applied={GatewayFallbackApplied}. Exiting after successful verification.",
+                result.Legacy.Provider,
+                result.Legacy.Model,
+                result.Gateway.Provider,
+                result.Gateway.Model,
+                result.Gateway.FallbackApplied);
             return;
         }
 

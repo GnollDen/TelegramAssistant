@@ -1400,12 +1400,12 @@
       "dependencies": [
         "GATEWAY-003-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pilot cutover is bounded to one safe text path.",
         "Feature-flag rollback exists without code rollback."
       ],
-      "notes": "Pilot migration only; start with the designated safe text path."
+      "notes": "Completed on 2026-04-03 by routing only Stage5 edit-diff through a dedicated EditDiffTextCompletionService behind Analysis:EditDiffGatewayEnabled, preserving legacy OpenRouter rollback when the flag or LlmGateway:Enabled is off, and adding --edit-diff-pilot-smoke to prove the same pilot path runs with feature flag OFF and ON without broad caller migration."
     },
     {
       "id": "GATEWAY-004-B",

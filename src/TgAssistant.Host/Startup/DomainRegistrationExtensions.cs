@@ -65,6 +65,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<MessageContentBuilder>();
         services.AddSingleton<AnalysisContextBuilder>();
         services.AddSingleton<SummaryHistoricalRetrievalService>();
+        services.AddSingleton<EditDiffTextCompletionService>();
         services.AddSingleton<Stage5VerificationService>();
         services.AddSingleton<ExtractionApplier>();
         services.AddSingleton<ExpensivePassResolver>();

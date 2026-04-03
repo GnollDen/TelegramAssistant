@@ -12,7 +12,7 @@ public class EditDiffAnalysisWorkerService : BackgroundService
 {
     private readonly AnalysisSettings _settings;
     private readonly IMessageRepository _messageRepository;
-    private readonly OpenRouterAnalysisService _analysisService;
+    private readonly EditDiffTextCompletionService _completionService;
     private readonly IBudgetGuardrailService _budgetGuardrailService;
     private readonly IExtractionErrorRepository _errorRepository;
     private readonly ILogger<EditDiffAnalysisWorkerService> _logger;
@@ -20,14 +20,14 @@ public class EditDiffAnalysisWorkerService : BackgroundService
     public EditDiffAnalysisWorkerService(
         IOptions<AnalysisSettings> settings,
         IMessageRepository messageRepository,
-        OpenRouterAnalysisService analysisService,
+        EditDiffTextCompletionService completionService,
         IBudgetGuardrailService budgetGuardrailService,
         IExtractionErrorRepository errorRepository,
         ILogger<EditDiffAnalysisWorkerService> logger)
     {
         _settings = settings.Value;
         _messageRepository = messageRepository;
-        _analysisService = analysisService;
+        _completionService = completionService;
         _budgetGuardrailService = budgetGuardrailService;
         _errorRepository = errorRepository;
         _logger = logger;
@@ -45,10 +45,11 @@ public class EditDiffAnalysisWorkerService : BackgroundService
         }
 
         _logger.LogInformation(
-            "Edit-diff worker started. batch_size={BatchSize}, poll_s={PollSeconds}, model={Model}",
+            "Edit-diff worker started. batch_size={BatchSize}, poll_s={PollSeconds}, model={Model}, gateway_pilot_enabled={GatewayPilotEnabled}",
             Math.Max(1, _settings.EditDiffBatchSize),
             Math.Max(1, _settings.EditDiffPollIntervalSeconds),
-            ResolveModel());
+            ResolveModel(),
+            _completionService.UsesGatewayPilot);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -118,42 +119,9 @@ public class EditDiffAnalysisWorkerService : BackgroundService
 
     private async Task<EditDiffAnalysis> AnalyzeAsync(EditDiffCandidate candidate, CancellationToken ct)
     {
-        var systemPrompt = """
-You analyze Telegram message edits for memory impact.
-Return ONLY JSON with fields:
-- classification: typo | formatting | minor_rephrase | meaning_changed | important_added | important_removed | message_deleted | unknown
-- summary: concise Russian summary of what changed (max 220 chars)
-- should_affect_memory: boolean
-- added_important: boolean
-- removed_important: boolean
-- confidence: number 0..1
-Rules:
-- Pure typo/punctuation/casing fixes => should_affect_memory=false
-- If meaningful facts/time/place/person/commitments changed => should_affect_memory=true
-- If deletion removed meaningful content => removed_important=true, should_affect_memory=true
-""";
+        var completion = await _completionService.CompleteAsync(candidate, ResolveModel(), ct);
 
-        var userPrompt = $"""
-chat_id: {candidate.ChatId}
-message_id: {candidate.MessageId}
-edited_at_utc: {candidate.EditedAtUtc:O}
-
-BEFORE:
-{candidate.BeforeText}
-
-AFTER:
-{candidate.AfterText}
-""";
-
-        var raw = await _analysisService.CompleteTextAsync(
-            ResolveModel(),
-            systemPrompt,
-            userPrompt,
-            Math.Clamp(_settings.EditDiffMaxTokens, 128, 800),
-            "edit_diff",
-            ct);
-
-        return ParseAnalysis(raw, candidate);
+        return ParseAnalysis(completion.RawText, candidate);
     }
 
     private static EditDiffAnalysis ParseAnalysis(string raw, EditDiffCandidate candidate)
@@ -258,14 +226,7 @@ AFTER:
 
     private string ResolveModel()
     {
-        if (!string.IsNullOrWhiteSpace(_settings.CheapModel))
-        {
-            return _settings.CheapModel.Trim();
-        }
-
-        return !string.IsNullOrWhiteSpace(_settings.CheapBaselineModel)
-            ? _settings.CheapBaselineModel.Trim()
-            : "openai/gpt-4o-mini";
+        return EditDiffPromptBuilder.ResolveLegacyModel(_settings);
     }
 
     private sealed record EditDiffAnalysis(
