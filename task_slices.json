@@ -1434,12 +1434,12 @@
       "dependencies": [
         "GATEWAY-004-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Go/no-go decision is evidence-backed.",
         "Broader rollout risks and deferred modalities/providers are explicit."
       ],
-      "notes": "Formal rollout gate based on collected smoke/A-B/pilot evidence."
+      "notes": "Completed on 2026-04-03 with rollout gate note at docs/planning/GATEWAY-005-A_ROLLOUT_GATE_2026-04-03.md. Decision: NO-GO for broader rollout. Success/failure smokes remained green and budget/telemetry compatibility held, but replay A/B plus pilot validation showed low normalized parity (1/4) and fallback-only runtime behavior from codex-lb to openrouter, so broader migration stays deferred pending provider remediation and revalidation."
     },
     {
       "id": "GATEWAY-005-B",
