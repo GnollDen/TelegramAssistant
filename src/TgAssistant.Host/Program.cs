@@ -87,6 +87,7 @@ try
     var runLegacyBotSmoke = args.Any(arg => string.Equals(arg, "--legacy-bot-smoke", StringComparison.OrdinalIgnoreCase));
     var runLegacyAutoCaseSmoke = args.Any(arg => string.Equals(arg, "--legacy-auto-case-smoke", StringComparison.OrdinalIgnoreCase));
     var runLegacyNetworkSmoke = args.Any(arg => string.Equals(arg, "--legacy-network-smoke", StringComparison.OrdinalIgnoreCase));
+    var allowLegacyStage8Bridge = args.Any(arg => string.Equals(arg, "--allow-legacy-stage8-bridge", StringComparison.OrdinalIgnoreCase));
     var includeLegacyStage6Diagnostics = runClarificationSmoke
         || runPeriodizationSmoke
         || runStateSmoke
@@ -212,10 +213,22 @@ try
         "--legacy-network-smoke"
     };
 
+    var requestedLegacyDiagnosticEntrypoints = args
+        .Where(arg => legacyDiagnosticEntrypoints.Contains(arg, StringComparer.OrdinalIgnoreCase))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    if (requestedLegacyDiagnosticEntrypoints.Length > 0 && !allowLegacyStage8Bridge)
+    {
+        throw new InvalidOperationException(
+            $"Legacy Stage6 diagnostic entrypoints keep a retained domain-review to active Stage8 bridge and now require explicit admission via --allow-legacy-stage8-bridge: {string.Join(", ", requestedLegacyDiagnosticEntrypoints)}.");
+    }
+
     if (runListSmokes)
     {
         Log.Information("Available preserved verification entrypoints: {VerificationEntrypoints}", string.Join(", ", preservedVerificationEntrypoints));
         Log.Information("Legacy diagnostic-only entrypoints: {DiagnosticEntrypoints}", string.Join(", ", legacyDiagnosticEntrypoints));
+        Log.Information(
+            "Legacy diagnostic-only entrypoints also require --allow-legacy-stage8-bridge because they retain the explicit legacy-to-active Stage8 bridge for bounded diagnostics.");
         return;
     }
 

@@ -996,8 +996,8 @@
       "dependencies": [
         "ALIGN-202"
       ],
-      "status": "pending",
-      "notes": "ALIGN-203-A completed on 2026-04-03: legacy Stage6 domain-review to Stage8 trigger bridging was confirmed to be explicit-diagnostics-only, and ambient default-DI registration of the identity-merge correction store was removed. ALIGN-203-B remains to decide whether the retained legacy bridge needs narrower gating or an explicit correction/operator path."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via ALIGN-203-A/B. Ambient default-DI registration of the identity-merge correction store was removed, and the remaining legacy Stage6 domain-review to active Stage8 bridge now requires explicit CLI admission via --allow-legacy-stage8-bridge before any legacy diagnostic path can run."
     },
     {
       "id": "ALIGN-204",

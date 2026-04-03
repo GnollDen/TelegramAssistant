@@ -1553,12 +1553,12 @@
       "dependencies": [
         "ALIGN-203-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Default runtime no longer exposes avoidable legacy or correction-only seams.",
         "Remaining bridges are clearly documented and intentionally gated."
       ],
-      "notes": "Boundary hardening after the focused audit."
+      "notes": "Done 2026-04-03: added explicit CLI admission gate --allow-legacy-stage8-bridge for retained legacy Stage6 diagnostic smokes, documented the bridge boundary, and kept correction-only seams out of the default runtime."
     },
     {
       "id": "ALIGN-204-A",
