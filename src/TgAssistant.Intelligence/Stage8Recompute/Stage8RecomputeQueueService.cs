@@ -7,6 +7,7 @@ namespace TgAssistant.Intelligence.Stage8Recompute;
 public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 {
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DefaultBackfillLeaseDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan DefaultBaseRetryDelay = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan DefaultMaxRetryDelay = TimeSpan.FromMinutes(15);
 
@@ -69,6 +70,82 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             };
         }
 
+        return await ExecuteLeasedItemAsync(leasedItem, nowUtc, ct);
+    }
+
+    public async Task<Stage8BackfillExecutionResult> ExecuteBackfillBatchAsync(
+        Stage8BackfillExecutionRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var maxConcurrentScopes = Math.Clamp(request.MaxConcurrentScopes, 1, 64);
+        var maxItems = Math.Clamp(request.MaxItems, 1, 256);
+        var workerId = string.IsNullOrWhiteSpace(request.WorkerId)
+            ? $"stage8_backfill:{Environment.ProcessId}"
+            : request.WorkerId.Trim();
+        var leaseDuration = request.LeaseDuration ?? DefaultBackfillLeaseDuration;
+
+        var result = new Stage8BackfillExecutionResult
+        {
+            MaxConcurrentScopes = maxConcurrentScopes,
+            MaxItems = maxItems,
+            WorkerId = workerId
+        };
+
+        for (var index = 0; index < maxItems && !ct.IsCancellationRequested; index += 1)
+        {
+            var nowUtc = DateTime.UtcNow;
+            var leasedItem = await _repository.LeaseNextBackfillAsync(
+                nowUtc,
+                leaseDuration,
+                maxConcurrentScopes,
+                workerId,
+                ct);
+            if (leasedItem == null)
+            {
+                break;
+            }
+
+            var execution = await ExecuteLeasedItemAsync(leasedItem, nowUtc, ct);
+            result.ExecutedCount += execution.Executed ? 1 : 0;
+            if (string.Equals(execution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Completed, StringComparison.Ordinal))
+            {
+                result.CompletedCount += 1;
+            }
+            else if (string.Equals(execution.ExecutionStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
+            {
+                result.RescheduledCount += 1;
+            }
+            else if (string.Equals(execution.ExecutionStatus, Stage8RecomputeExecutionStatuses.FailedTerminally, StringComparison.Ordinal))
+            {
+                result.FailedCount += 1;
+            }
+
+            result.Items.Add(execution);
+            var checkpoint = await _repository.GetBackfillCheckpointAsync(leasedItem.ScopeKey, ct);
+            if (checkpoint != null)
+            {
+                var existing = result.Checkpoints.FindIndex(x => string.Equals(x.ScopeKey, checkpoint.ScopeKey, StringComparison.Ordinal));
+                if (existing >= 0)
+                {
+                    result.Checkpoints[existing] = checkpoint;
+                }
+                else
+                {
+                    result.Checkpoints.Add(checkpoint);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<Stage8RecomputeExecutionResult> ExecuteLeasedItemAsync(
+        Stage8RecomputeQueueItem leasedItem,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
         try
         {
             var runtimeControl = await _runtimeControlStateService.EvaluateAndApplyFromDefectsAsync(ct);

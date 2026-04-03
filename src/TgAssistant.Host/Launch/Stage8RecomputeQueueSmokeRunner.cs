@@ -191,6 +191,137 @@ public static class Stage8RecomputeQueueSmokeRunner
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: blocked timeline branch did not keep clarification gate state explicit.");
         }
 
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-backfill-smoke-a",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000010"),
+            TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+            TriggerKind = "backfill_smoke",
+            TriggerRef = "implement-016-a-scope-a-1"
+        }, ct);
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-backfill-smoke-a",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000010"),
+            TargetFamily = Stage8RecomputeTargetFamilies.PairDynamics,
+            TriggerKind = "backfill_smoke",
+            TriggerRef = "implement-016-a-scope-a-2"
+        }, ct);
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-backfill-smoke-b",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000011"),
+            TargetFamily = Stage8RecomputeTargetFamilies.TimelineObjects,
+            TriggerKind = "backfill_smoke",
+            TriggerRef = "implement-016-a-scope-b-1"
+        }, ct);
+
+        var firstBackfillLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow,
+            TimeSpan.FromMinutes(5),
+            maxConcurrentScopes: 2,
+            workerId: "backfill-smoke-worker-a",
+            ct);
+        var secondBackfillLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow,
+            TimeSpan.FromMinutes(5),
+            maxConcurrentScopes: 2,
+            workerId: "backfill-smoke-worker-b",
+            ct);
+        var thirdBackfillLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow,
+            TimeSpan.FromMinutes(5),
+            maxConcurrentScopes: 2,
+            workerId: "backfill-smoke-worker-c",
+            ct);
+        if (firstBackfillLease == null
+            || secondBackfillLease == null
+            || thirdBackfillLease != null
+            || string.Equals(firstBackfillLease.ScopeKey, secondBackfillLease.ScopeKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: bounded backfill leasing did not respect scope locks and concurrency ceiling.");
+        }
+
+        await repository.RescheduleAsync(
+            firstBackfillLease.Id,
+            firstBackfillLease.LeaseToken!.Value,
+            "synthetic backfill retry",
+            DateTime.UtcNow,
+            terminalFailure: false,
+            ct);
+        var resumedBackfillLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow,
+            TimeSpan.FromMinutes(5),
+            maxConcurrentScopes: 2,
+            workerId: "backfill-smoke-worker-a",
+            ct);
+        if (resumedBackfillLease == null
+            || !string.Equals(resumedBackfillLease.ScopeKey, firstBackfillLease.ScopeKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: released backfill scope did not resume from checkpoint state.");
+        }
+
+        var readyCheckpoint = await repository.GetBackfillCheckpointAsync(resumedBackfillLease.ScopeKey, ct);
+        if (readyCheckpoint == null
+            || !string.Equals(readyCheckpoint.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal)
+            || !string.Equals(readyCheckpoint.ActiveLeaseOwner, "backfill-smoke-worker-a", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: backfill checkpoint was not updated on resumed scope lease.");
+        }
+
+        await repository.CompleteAsync(
+            resumedBackfillLease.Id,
+            resumedBackfillLease.LeaseToken!.Value,
+            ModelPassResultStatuses.ResultReady,
+            FakeStage7DossierProfileService.ReadyRunId,
+            ct);
+        await repository.CompleteAsync(
+            secondBackfillLease.Id,
+            secondBackfillLease.LeaseToken!.Value,
+            ModelPassResultStatuses.ResultReady,
+            Guid.Parse("86000000-0000-0000-0000-000000000001"),
+            ct);
+
+        await service.EnqueueAsync(new Stage8RecomputeQueueRequest
+        {
+            ScopeKey = "chat:stage8-backfill-recovery",
+            PersonId = Guid.Parse("81000000-0000-0000-0000-000000000012"),
+            TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+            TriggerKind = "backfill_smoke",
+            TriggerRef = "implement-016-a-recovery"
+        }, ct);
+        var staleLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow,
+            TimeSpan.FromMilliseconds(1),
+            maxConcurrentScopes: 1,
+            workerId: "backfill-smoke-recovery-a",
+            ct);
+        if (staleLease == null)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: recovery scope could not be leased for stale-lease test.");
+        }
+
+        var recoveredLease = await repository.LeaseNextBackfillAsync(
+            DateTime.UtcNow.AddMinutes(1),
+            TimeSpan.FromMinutes(5),
+            maxConcurrentScopes: 1,
+            workerId: "backfill-smoke-recovery-b",
+            ct);
+        if (recoveredLease == null
+            || recoveredLease.Id != staleLease.Id
+            || recoveredLease.AttemptCount < 2)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: stale backfill lease did not resume the previously checkpointed queue item.");
+        }
+
+        var recoveredCheckpoint = await repository.GetBackfillCheckpointAsync(recoveredLease.ScopeKey, ct);
+        if (recoveredCheckpoint == null
+            || recoveredCheckpoint.ResumeCount < 1
+            || !string.Equals(recoveredCheckpoint.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: stale lease recovery did not leave an auditable checkpoint resume trail.");
+        }
+
         controlStateService.NextDecision = new RuntimeControlEnforcementDecision
         {
             State = RuntimeControlStates.SafeMode,
@@ -218,6 +349,7 @@ public static class Stage8RecomputeQueueSmokeRunner
     private sealed class InMemoryStage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
     {
         private readonly List<Stage8RecomputeQueueItem> _items = [];
+        private readonly Dictionary<string, Stage8BackfillCheckpoint> _checkpoints = new(StringComparer.Ordinal);
 
         public int ActiveCount => _items.Count(x => !string.IsNullOrWhiteSpace(x.ActiveDedupeKey));
 
@@ -288,6 +420,102 @@ public static class Stage8RecomputeQueueSmokeRunner
             return Task.FromResult<Stage8RecomputeQueueItem?>(Clone(item));
         }
 
+        public Task<Stage8RecomputeQueueItem?> LeaseNextBackfillAsync(
+            DateTime nowUtc,
+            TimeSpan leaseDuration,
+            int maxConcurrentScopes,
+            string workerId,
+            CancellationToken ct = default)
+        {
+            foreach (var expiredItem in _items.Where(x =>
+                         string.Equals(x.Status, Stage8RecomputeQueueStatuses.Leased, StringComparison.Ordinal)
+                         && x.LeasedUntilUtc != null
+                         && x.LeasedUntilUtc <= nowUtc))
+            {
+                expiredItem.Status = Stage8RecomputeQueueStatuses.Pending;
+                expiredItem.LeaseToken = null;
+                expiredItem.LeasedUntilUtc = null;
+                expiredItem.LastError ??= "lease_expired_resume";
+                expiredItem.LastResultStatus = Stage8RecomputeExecutionStatuses.Rescheduled;
+                expiredItem.UpdatedAtUtc = nowUtc;
+            }
+
+            foreach (var expiredCheckpoint in _checkpoints.Values.Where(x =>
+                         string.Equals(x.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal)
+                         && x.LeaseExpiresAtUtc != null
+                         && x.LeaseExpiresAtUtc <= nowUtc))
+            {
+                expiredCheckpoint.Status = Stage8BackfillCheckpointStatuses.Ready;
+                expiredCheckpoint.ActiveQueueItemId = null;
+                expiredCheckpoint.ActiveTargetFamily = null;
+                expiredCheckpoint.ActiveLeaseToken = null;
+                expiredCheckpoint.ActiveLeaseOwner = null;
+                expiredCheckpoint.LeaseExpiresAtUtc = null;
+                expiredCheckpoint.LastError ??= "lease_expired_resume";
+                expiredCheckpoint.ResumeCount += 1;
+                expiredCheckpoint.LastCheckpointAtUtc = nowUtc;
+                expiredCheckpoint.UpdatedAtUtc = nowUtc;
+            }
+
+            var activeScopeCount = _checkpoints.Values.Count(x =>
+                string.Equals(x.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal)
+                && x.LeaseExpiresAtUtc != null
+                && x.LeaseExpiresAtUtc > nowUtc);
+            if (activeScopeCount >= maxConcurrentScopes)
+            {
+                return Task.FromResult<Stage8RecomputeQueueItem?>(null);
+            }
+
+            var activeScopes = _checkpoints.Values
+                .Where(x => string.Equals(x.Status, Stage8BackfillCheckpointStatuses.InProgress, StringComparison.Ordinal)
+                            && x.LeaseExpiresAtUtc != null
+                            && x.LeaseExpiresAtUtc > nowUtc)
+                .Select(x => x.ScopeKey)
+                .ToHashSet(StringComparer.Ordinal);
+
+            var item = _items
+                .Where(x => string.Equals(x.Status, Stage8RecomputeQueueStatuses.Pending, StringComparison.Ordinal)
+                            && x.AvailableAtUtc <= nowUtc
+                            && !activeScopes.Contains(x.ScopeKey))
+                .OrderBy(x => x.Priority)
+                .ThenBy(x => x.AvailableAtUtc)
+                .ThenBy(x => x.CreatedAtUtc)
+                .FirstOrDefault();
+            if (item == null)
+            {
+                return Task.FromResult<Stage8RecomputeQueueItem?>(null);
+            }
+
+            item.Status = Stage8RecomputeQueueStatuses.Leased;
+            item.AttemptCount += 1;
+            item.LeaseToken = Guid.NewGuid();
+            item.LeasedUntilUtc = nowUtc.Add(leaseDuration);
+            item.UpdatedAtUtc = nowUtc;
+
+            if (!_checkpoints.TryGetValue(item.ScopeKey, out var checkpoint))
+            {
+                checkpoint = new Stage8BackfillCheckpoint
+                {
+                    ScopeKey = item.ScopeKey,
+                    FirstStartedAtUtc = nowUtc,
+                    UpdatedAtUtc = nowUtc
+                };
+                _checkpoints[item.ScopeKey] = checkpoint;
+            }
+
+            checkpoint.Status = Stage8BackfillCheckpointStatuses.InProgress;
+            checkpoint.ActiveQueueItemId = item.Id;
+            checkpoint.ActiveTargetFamily = item.TargetFamily;
+            checkpoint.ActiveLeaseToken = item.LeaseToken;
+            checkpoint.ActiveLeaseOwner = workerId;
+            checkpoint.LeaseExpiresAtUtc = item.LeasedUntilUtc;
+            checkpoint.LastQueueItemId = item.Id;
+            checkpoint.LastTargetFamily = item.TargetFamily;
+            checkpoint.LastCheckpointAtUtc = nowUtc;
+            checkpoint.UpdatedAtUtc = nowUtc;
+            return Task.FromResult<Stage8RecomputeQueueItem?>(Clone(item));
+        }
+
         public Task CompleteAsync(Guid queueItemId, Guid leaseToken, string resultStatus, Guid? modelPassRunId, CancellationToken ct = default)
         {
             var item = GetLeased(queueItemId, leaseToken);
@@ -300,6 +528,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             item.LastModelPassRunId = modelPassRunId;
             item.CompletedAtUtc = DateTime.UtcNow;
             item.UpdatedAtUtc = item.CompletedAtUtc.Value;
+            ReleaseCheckpoint(item, resultStatus, modelPassRunId, terminalFailure: false, error: null, item.CompletedAtUtc.Value);
             return Task.CompletedTask;
         }
 
@@ -317,7 +546,14 @@ public static class Stage8RecomputeQueueSmokeRunner
             item.AvailableAtUtc = nextAvailableAtUtc;
             item.CompletedAtUtc = terminalFailure ? DateTime.UtcNow : null;
             item.UpdatedAtUtc = DateTime.UtcNow;
+            ReleaseCheckpoint(item, item.LastResultStatus, modelPassRunId: null, terminalFailure, error, item.UpdatedAtUtc);
             return Task.CompletedTask;
+        }
+
+        public Task<Stage8BackfillCheckpoint?> GetBackfillCheckpointAsync(string scopeKey, CancellationToken ct = default)
+        {
+            _checkpoints.TryGetValue(scopeKey, out var checkpoint);
+            return Task.FromResult(checkpoint == null ? null : Clone(checkpoint));
         }
 
         private Stage8RecomputeQueueItem GetLeased(Guid queueItemId, Guid leaseToken)
@@ -359,6 +595,82 @@ public static class Stage8RecomputeQueueSmokeRunner
                 CreatedAtUtc = item.CreatedAtUtc,
                 UpdatedAtUtc = item.UpdatedAtUtc,
                 CompletedAtUtc = item.CompletedAtUtc
+            };
+        }
+
+        private void ReleaseCheckpoint(
+            Stage8RecomputeQueueItem item,
+            string resultStatus,
+            Guid? modelPassRunId,
+            bool terminalFailure,
+            string? error,
+            DateTime nowUtc)
+        {
+            if (!_checkpoints.TryGetValue(item.ScopeKey, out var checkpoint))
+            {
+                return;
+            }
+
+            var hasRemaining = _items.Any(x =>
+                string.Equals(x.ScopeKey, item.ScopeKey, StringComparison.Ordinal)
+                && (string.Equals(x.Status, Stage8RecomputeQueueStatuses.Pending, StringComparison.Ordinal)
+                    || string.Equals(x.Status, Stage8RecomputeQueueStatuses.Leased, StringComparison.Ordinal)));
+            checkpoint.Status = hasRemaining
+                ? Stage8BackfillCheckpointStatuses.Ready
+                : terminalFailure
+                    ? Stage8BackfillCheckpointStatuses.Failed
+                    : Stage8BackfillCheckpointStatuses.Completed;
+            checkpoint.ActiveQueueItemId = null;
+            checkpoint.ActiveTargetFamily = null;
+            checkpoint.ActiveLeaseToken = null;
+            checkpoint.ActiveLeaseOwner = null;
+            checkpoint.LeaseExpiresAtUtc = null;
+            checkpoint.LastQueueItemId = item.Id;
+            checkpoint.LastTargetFamily = item.TargetFamily;
+            checkpoint.LastResultStatus = resultStatus;
+            checkpoint.LastModelPassRunId = modelPassIdOrExisting(modelPassRunId, checkpoint.LastModelPassRunId);
+            checkpoint.LastError = error;
+            checkpoint.LastCheckpointAtUtc = nowUtc;
+            checkpoint.UpdatedAtUtc = nowUtc;
+            checkpoint.LastCompletedAtUtc = string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal)
+                ? null
+                : nowUtc;
+            if (terminalFailure)
+            {
+                checkpoint.FailedItemCount += 1;
+            }
+            else if (!string.Equals(resultStatus, Stage8RecomputeExecutionStatuses.Rescheduled, StringComparison.Ordinal))
+            {
+                checkpoint.CompletedItemCount += 1;
+            }
+        }
+
+        private static Guid? modelPassIdOrExisting(Guid? modelPassRunId, Guid? existing)
+            => modelPassRunId ?? existing;
+
+        private static Stage8BackfillCheckpoint Clone(Stage8BackfillCheckpoint checkpoint)
+        {
+            return new Stage8BackfillCheckpoint
+            {
+                ScopeKey = checkpoint.ScopeKey,
+                Status = checkpoint.Status,
+                ActiveQueueItemId = checkpoint.ActiveQueueItemId,
+                ActiveTargetFamily = checkpoint.ActiveTargetFamily,
+                ActiveLeaseToken = checkpoint.ActiveLeaseToken,
+                ActiveLeaseOwner = checkpoint.ActiveLeaseOwner,
+                LeaseExpiresAtUtc = checkpoint.LeaseExpiresAtUtc,
+                LastQueueItemId = checkpoint.LastQueueItemId,
+                LastTargetFamily = checkpoint.LastTargetFamily,
+                LastResultStatus = checkpoint.LastResultStatus,
+                LastModelPassRunId = checkpoint.LastModelPassRunId,
+                LastError = checkpoint.LastError,
+                CompletedItemCount = checkpoint.CompletedItemCount,
+                FailedItemCount = checkpoint.FailedItemCount,
+                ResumeCount = checkpoint.ResumeCount,
+                FirstStartedAtUtc = checkpoint.FirstStartedAtUtc,
+                LastCheckpointAtUtc = checkpoint.LastCheckpointAtUtc,
+                LastCompletedAtUtc = checkpoint.LastCompletedAtUtc,
+                UpdatedAtUtc = checkpoint.UpdatedAtUtc
             };
         }
     }

@@ -909,6 +909,29 @@ public class DbStage8RecomputeQueueItem
     public DateTime? CompletedAtUtc { get; set; }
 }
 
+public class DbStage8BackfillScopeCheckpoint
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public Guid? ActiveQueueItemId { get; set; }
+    public string? ActiveTargetFamily { get; set; }
+    public Guid? ActiveLeaseToken { get; set; }
+    public string? ActiveLeaseOwner { get; set; }
+    public DateTime? LeaseExpiresAtUtc { get; set; }
+    public Guid? LastQueueItemId { get; set; }
+    public string? LastTargetFamily { get; set; }
+    public string? LastResultStatus { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string? LastError { get; set; }
+    public int CompletedItemCount { get; set; }
+    public int FailedItemCount { get; set; }
+    public int ResumeCount { get; set; }
+    public DateTime FirstStartedAtUtc { get; set; }
+    public DateTime? LastCheckpointAtUtc { get; set; }
+    public DateTime? LastCompletedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 public class DbRuntimeDefect
 {
     public Guid Id { get; set; }

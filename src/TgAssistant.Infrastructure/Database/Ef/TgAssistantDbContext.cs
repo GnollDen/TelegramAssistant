@@ -64,6 +64,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableStoryArc> DurableStoryArcs => Set<DbDurableStoryArc>();
     public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
     public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
+    public DbSet<DbStage8BackfillScopeCheckpoint> Stage8BackfillScopeCheckpoints => Set<DbStage8BackfillScopeCheckpoint>();
     public DbSet<DbRuntimeDefect> RuntimeDefects => Set<DbRuntimeDefect>();
     public DbSet<DbClarificationBranchState> ClarificationBranchStates => Set<DbClarificationBranchState>();
     public DbSet<DbIdentityMergeHistory> IdentityMergeHistories => Set<DbIdentityMergeHistory>();
@@ -1310,6 +1311,33 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.TargetFamily, x.Status, x.AvailableAtUtc });
             e.HasIndex(x => new { x.PersonId, x.TargetFamily, x.Status })
                 .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbStage8BackfillScopeCheckpoint>(e =>
+        {
+            e.ToTable("stage8_backfill_scope_checkpoints");
+            e.HasKey(x => x.ScopeKey);
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.ActiveQueueItemId).HasColumnName("active_queue_item_id");
+            e.Property(x => x.ActiveTargetFamily).HasColumnName("active_target_family");
+            e.Property(x => x.ActiveLeaseToken).HasColumnName("active_lease_token");
+            e.Property(x => x.ActiveLeaseOwner).HasColumnName("active_lease_owner");
+            e.Property(x => x.LeaseExpiresAtUtc).HasColumnName("lease_expires_at_utc");
+            e.Property(x => x.LastQueueItemId).HasColumnName("last_queue_item_id");
+            e.Property(x => x.LastTargetFamily).HasColumnName("last_target_family");
+            e.Property(x => x.LastResultStatus).HasColumnName("last_result_status");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.LastError).HasColumnName("last_error");
+            e.Property(x => x.CompletedItemCount).HasColumnName("completed_item_count");
+            e.Property(x => x.FailedItemCount).HasColumnName("failed_item_count");
+            e.Property(x => x.ResumeCount).HasColumnName("resume_count");
+            e.Property(x => x.FirstStartedAtUtc).HasColumnName("first_started_at_utc");
+            e.Property(x => x.LastCheckpointAtUtc).HasColumnName("last_checkpoint_at_utc");
+            e.Property(x => x.LastCompletedAtUtc).HasColumnName("last_completed_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.Status, x.LeaseExpiresAtUtc, x.UpdatedAtUtc });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 

@@ -55,7 +55,7 @@
       "description": "Produce a code-backed valid-core inventory note covering src/, deploy/, runtime entrypoints, and planning authority surfaces.",
       "executor_agent": "architect-reviewer",
       "dependencies": [],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Inventory clearly separates keep, keep_with_refactor, quarantine_disable, and delete_rewrite.",
         "Every retained area is justified against the PRD and current code."
@@ -1121,7 +1121,7 @@
         "Large rebuilds cannot fan out into uncontrolled concurrent scope writes.",
         "Checkpoint state allows safe resume without duplicate durable objects."
       ],
-      "notes": "Clean split because concurrency and checkpointing form the base safety layer for backfill."
+      "notes": "Added durable stage8_backfill_scope_checkpoints plus bounded backfill leasing with a global coordination lock, per-scope checkpoint state, stale-lease resume, and ExecuteBackfillBatchAsync orchestration; verified with dotnet build TelegramAssistant.sln and --stage8-recompute-smoke."
     },
     {
       "id": "IMPLEMENT-016-B",

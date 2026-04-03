@@ -217,6 +217,13 @@ public interface IStage8RecomputeQueueRepository
         TimeSpan leaseDuration,
         CancellationToken ct = default);
 
+    Task<Stage8RecomputeQueueItem?> LeaseNextBackfillAsync(
+        DateTime nowUtc,
+        TimeSpan leaseDuration,
+        int maxConcurrentScopes,
+        string workerId,
+        CancellationToken ct = default);
+
     Task CompleteAsync(
         Guid queueItemId,
         Guid leaseToken,
@@ -230,6 +237,10 @@ public interface IStage8RecomputeQueueRepository
         string error,
         DateTime nextAvailableAtUtc,
         bool terminalFailure,
+        CancellationToken ct = default);
+
+    Task<Stage8BackfillCheckpoint?> GetBackfillCheckpointAsync(
+        string scopeKey,
         CancellationToken ct = default);
 }
 
@@ -275,6 +286,10 @@ public interface IStage8RecomputeQueueService
         CancellationToken ct = default);
 
     Task<Stage8RecomputeExecutionResult> ExecuteNextAsync(CancellationToken ct = default);
+
+    Task<Stage8BackfillExecutionResult> ExecuteBackfillBatchAsync(
+        Stage8BackfillExecutionRequest request,
+        CancellationToken ct = default);
 }
 
 public interface IStage8RecomputeTriggerService

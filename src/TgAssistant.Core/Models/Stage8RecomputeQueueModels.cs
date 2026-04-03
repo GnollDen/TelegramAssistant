@@ -33,6 +33,14 @@ public static class Stage8RecomputeExecutionStatuses
     public const string BlockedInvalidInput = ModelPassResultStatuses.BlockedInvalidInput;
 }
 
+public static class Stage8BackfillCheckpointStatuses
+{
+    public const string Ready = "ready";
+    public const string InProgress = "in_progress";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+}
+
 public static class Stage8PromotionStates
 {
     public const string Pending = "pending";
@@ -87,6 +95,50 @@ public class Stage8RecomputeExecutionResult
     public string? ResultStatus { get; set; }
     public Guid? ModelPassRunId { get; set; }
     public string? Error { get; set; }
+}
+
+public class Stage8BackfillExecutionRequest
+{
+    public int MaxConcurrentScopes { get; set; } = 2;
+    public int MaxItems { get; set; } = 16;
+    public string WorkerId { get; set; } = string.Empty;
+    public TimeSpan? LeaseDuration { get; set; }
+}
+
+public class Stage8BackfillExecutionResult
+{
+    public int MaxConcurrentScopes { get; set; }
+    public int MaxItems { get; set; }
+    public string WorkerId { get; set; } = string.Empty;
+    public int ExecutedCount { get; set; }
+    public int CompletedCount { get; set; }
+    public int RescheduledCount { get; set; }
+    public int FailedCount { get; set; }
+    public List<Stage8RecomputeExecutionResult> Items { get; set; } = [];
+    public List<Stage8BackfillCheckpoint> Checkpoints { get; set; } = [];
+}
+
+public class Stage8BackfillCheckpoint
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Status { get; set; } = Stage8BackfillCheckpointStatuses.Ready;
+    public Guid? ActiveQueueItemId { get; set; }
+    public string? ActiveTargetFamily { get; set; }
+    public Guid? ActiveLeaseToken { get; set; }
+    public string? ActiveLeaseOwner { get; set; }
+    public DateTime? LeaseExpiresAtUtc { get; set; }
+    public Guid? LastQueueItemId { get; set; }
+    public string? LastTargetFamily { get; set; }
+    public string? LastResultStatus { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string? LastError { get; set; }
+    public int CompletedItemCount { get; set; }
+    public int FailedItemCount { get; set; }
+    public int ResumeCount { get; set; }
+    public DateTime FirstStartedAtUtc { get; set; }
+    public DateTime? LastCheckpointAtUtc { get; set; }
+    public DateTime? LastCompletedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
 }
 
 public class Stage8OutcomeGateRequest
