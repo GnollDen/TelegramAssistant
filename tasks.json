@@ -1,9 +1,9 @@
 {
   "project": {
     "name": "Person Intelligence System",
-    "version": "clean-slate-v1",
+    "version": "execution-backlog-v2-operator-layer",
     "created_at": "2026-04-02",
-    "prd_source": "docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md",
+    "prd_source": "docs/planning/README.md",
     "baseline_ref": "origin/master",
     "baseline_commit": "31e4e26b34baf43e01560cd249a4cd11a393163f",
     "repository_root": "C:/Users/thrg0/Downloads/TelegramAssistant/repo_inspect"
@@ -156,6 +156,21 @@
         "ALIGN-202",
         "ALIGN-203",
         "ALIGN-204"
+      ]
+    },
+    {
+      "id": "phase-f-operator-interaction-layer",
+      "title": "Phase F. Operator Interaction Layer Execution Backlog",
+      "task_ids": [
+        "OPINT-001",
+        "OPINT-002",
+        "OPINT-003",
+        "OPINT-004",
+        "OPINT-005",
+        "OPINT-006",
+        "OPINT-007",
+        "OPINT-008",
+        "OPINT-009"
       ]
     }
   ],
@@ -1091,6 +1106,208 @@
       ],
       "status": "done",
       "notes": "Final alignment/docs pass after runtime and semantic hardening."
+    },
+    {
+      "id": "OPINT-001",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "P0 resolution-system foundation: freeze operator-layer authority cutline, resolution taxonomy, and bounded action/session contracts so execution can proceed without reopening legacy Stage6/web/tgbot flows.",
+      "executor_agent": "architect-reviewer",
+      "acceptance_criteria": [
+        "Backlog explicitly supersedes remaining blocked IMPLEMENT-008 interface scope with operator-layer tasks while preserving done history.",
+        "Resolution item taxonomy and action set are fixed for P0 (clarification, review, contradiction, missing_data, blocked_branch + approve/reject/defer/clarify/evidence/open-web).",
+        "Default decisions needed for execution are recorded: explanation required for reject/defer/clarify, summarized evidence drilldown in MVP, fixed tracked-person selector for bounded pilot."
+      ],
+      "test_steps": [
+        "Verify tasks.json and task_slices.json contain a dedicated phase-f operator track with P0/P1/P2 sequencing and no reopened cleanup/gateway/alignment tasks.",
+        "Verify IMPLEMENT-008 remains historical/blocked and is not used as execution authority for new work.",
+        "Run jq validation for tasks.json and task_slices.json after edits."
+      ],
+      "dependencies": [
+        "ALIGN-204"
+      ],
+      "status": "pending",
+      "notes": "Execution authority task only; no product code changes in this step."
+    },
+    {
+      "id": "OPINT-002",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "P0 bounded operator actions and persistence: implement clean resolution read/write contracts over current Stage8/clarification/runtime stores, with auditable operator decisions and bounded scope/session handling.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Resolution queue/detail read models are available from active (non-legacy) application contracts and include trust/status/evidence counters.",
+        "Operator actions (approve/reject/defer/clarify) persist decision + explanation + structured clarification payload with explicit operator identity/audit fields.",
+        "Action processing remains bounded to affected scope/person and does not require MCP or legacy Stage6 bot services."
+      ],
+      "test_steps": [
+        "Run integration tests/smokes proving resolution reads and writes against bounded seeded scope data.",
+        "Verify persisted records include operator identity, action type, explanation requirement handling, and deterministic scope keys.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "OPINT-001"
+      ],
+      "status": "pending",
+      "notes": "This is the backend prerequisite for all operator surfaces."
+    },
+    {
+      "id": "OPINT-003",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "P0 recompute-after-resolution loop: wire post-action bounded recompute, related-conflict reevaluation, status transitions, and result persistence so resolution produces visible state convergence.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Each accepted operator action triggers bounded recompute for affected families/scope using active Stage8 queue semantics.",
+        "Related conflicts are reevaluated and automatically closed/updated when no longer relevant, while unresolved/new conflicts remain explicit.",
+        "Result lifecycle states (running/done/failed/clarification_blocked) are persisted and queryable for UI feedback."
+      ],
+      "test_steps": [
+        "Run bounded seeded-scope flow: action -> recompute enqueue -> completion and verify status transitions plus related-conflict updates.",
+        "Inject failure/degraded path and verify result persistence reflects failure without silent state loss.",
+        "Run dotnet build TelegramAssistant.sln and touched Stage8 integration checks."
+      ],
+      "dependencies": [
+        "OPINT-002"
+      ],
+      "status": "pending",
+      "notes": "Completes P0 backend loop before Telegram/Web surface rollout."
+    },
+    {
+      "id": "OPINT-004",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "P0 Telegram resolution surface: deliver compact mode-based operator flow for resolution cards/actions over active tracked-person context with bounded action handling and recompute feedback.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Telegram starts from mode selection and supports active tracked-person context for resolution mode.",
+        "Resolution cards expose required fields (type/summary/why/trust/status/evidence/updated-at) and actions (approve/reject/defer/clarify/evidence/open-web).",
+        "After action submission, Telegram displays recompute state and updated unresolved/auto-resolved outcomes for the same bounded scope."
+      ],
+      "test_steps": [
+        "Run Telegram bounded pilot flow end-to-end on seeded scope and capture logs/screens proving card/action behavior.",
+        "Verify action authorization/allowlist and operator identity checks block unauthorized requests.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "OPINT-003"
+      ],
+      "status": "pending",
+      "notes": "P0 operator surface #1."
+    },
+    {
+      "id": "OPINT-005",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "P0 Web resolution surface: deliver deep-analysis resolution queue/detail/evidence/clarification workflow and bounded operator actions with recompute feedback.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Web Resolution section supports priority sorting, filtering, queue counts, and item detail with evidence panel.",
+        "Clarification side panel supports follow-up flow and bounded actions without leaving item context.",
+        "UI reflects recompute running/done state and related-conflict updates from persisted backend status transitions."
+      ],
+      "test_steps": [
+        "Run web bounded pilot flow queue -> detail -> evidence -> clarify/approve/reject/defer -> recompute feedback.",
+        "Verify web uses clean operator contracts and not legacy Stage6 web/queue/case pages.",
+        "Run dotnet build TelegramAssistant.sln and any web build checks used by the repo."
+      ],
+      "dependencies": [
+        "OPINT-004"
+      ],
+      "status": "pending",
+      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority."
+    },
+    {
+      "id": "OPINT-006",
+      "category": "implementation",
+      "priority": "high",
+      "description": "P1 operator assistant mode: implement Telegram assistant responses over active tracked-person context with explicit truth labeling, trust factor display, and bounded retrieval/read-model usage.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Assistant responses follow required structure: Short Answer, What Is Known, What It Means, Recommendation, Trust NN%.",
+        "Output explicitly labels Fact/Inference/Hypothesis/Recommendation and uses active tracked-person scope only.",
+        "Assistant can hand off to web deep analysis via Open in Web without bypassing bounded scope controls."
+      ],
+      "test_steps": [
+        "Run assistant prompts on bounded person scope and verify truth labels/trust values are always present.",
+        "Verify retrieval/context assembly is scope-bounded and does not depend on MCP services.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "OPINT-004",
+        "OPINT-005"
+      ],
+      "status": "pending",
+      "notes": "Lower than P0 resolution-system work by design."
+    },
+    {
+      "id": "OPINT-007",
+      "category": "implementation",
+      "priority": "high",
+      "description": "P1 offline event capture: implement Telegram offline-event flow with optional audio attachment, prioritized clarification questions, stopping rule, and structured persistence for later web refinement.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Telegram flow supports summary input plus optional recording reference and stores structured offline-event input.",
+        "Clarification loop prioritizes high-gain questions and stops on low-gain/repetition/unknown patterns per PRD stopping rule.",
+        "Saved offline events are queryable in operator read models with affected scope/person and timeline-linkage metadata."
+      ],
+      "test_steps": [
+        "Run bounded offline-event capture scenario including optional audio reference and verify structured persistence.",
+        "Verify clarification loop termination rule triggers correctly on repeated/no-new-information responses.",
+        "Run dotnet build TelegramAssistant.sln and touched persistence/read-model tests."
+      ],
+      "dependencies": [
+        "OPINT-002",
+        "OPINT-004"
+      ],
+      "status": "pending",
+      "notes": "Uses clean operator-layer path; does not revive legacy Stage6 offline command flow."
+    },
+    {
+      "id": "OPINT-008",
+      "category": "implementation",
+      "priority": "high",
+      "description": "P1 web person workspace: implement persons list and person workspace (summary, dossier, profile, pair dynamics, timeline, evidence, revisions, resolution drilldown) on top of durable read models.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Web persons list supports search, unresolved badges, and recent updates for tracked persons.",
+        "Person workspace includes required sections: Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, Revisions, Resolution.",
+        "Views expose trust/uncertainty/provenance and support evidence/revision drilldown from durable objects."
+      ],
+      "test_steps": [
+        "Run web navigation flow persons list -> workspace tabs -> evidence/revision drilldown on bounded seeded scope.",
+        "Verify workspace reads are served from durable/read-model contracts and remain operator-auth bounded.",
+        "Run dotnet build TelegramAssistant.sln and any web build checks used by the repo."
+      ],
+      "dependencies": [
+        "OPINT-005"
+      ],
+      "status": "pending",
+      "notes": "P1 deep-analysis expansion after P0 resolution surfaces."
+    },
+    {
+      "id": "OPINT-009",
+      "category": "implementation",
+      "priority": "medium",
+      "description": "P2 alerts and richer control surfaces: implement workflow-critical alert delivery and richer web review/analytics/control views without opening broad unsafe operator actions.",
+      "executor_agent": "frontend-developer",
+      "acceptance_criteria": [
+        "Telegram pushes only workflow-critical alerts by default and supports operator acknowledgement/entry into resolution context.",
+        "Web alerts provide grouped/filterable critical context linked to related resolution/person objects.",
+        "Richer control/analytics surfaces remain bounded, auditable, and do not expose raw admin/debug consoles as product UI."
+      ],
+      "test_steps": [
+        "Trigger critical runtime/resolution conditions and verify Telegram/Web alert behavior and links.",
+        "Verify alert policy does not spam non-critical transitions by default.",
+        "Run dotnet build TelegramAssistant.sln and touched alert surface checks."
+      ],
+      "dependencies": [
+        "OPINT-006",
+        "OPINT-007",
+        "OPINT-008"
+      ],
+      "status": "pending",
+      "notes": "P2 track by product priority; execute after P0/P1 stabilization."
     }
   ]
 }
