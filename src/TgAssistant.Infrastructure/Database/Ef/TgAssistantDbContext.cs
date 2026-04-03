@@ -8,7 +8,7 @@ public class TgAssistantDbContext : DbContext
     {
     }
 
-    // Active baseline tables: reusable substrate plus retained-with-refactor data stores.
+    // Active baseline tables: reusable substrate, active operational state, and retained-with-refactor data stores.
     public DbSet<DbMessage> Messages => Set<DbMessage>();
     public DbSet<DbArchiveImportRun> ArchiveImportRuns => Set<DbArchiveImportRun>();
     public DbSet<DbEntity> Entities => Set<DbEntity>();
@@ -69,8 +69,15 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbClarificationBranchState> ClarificationBranchStates => Set<DbClarificationBranchState>();
     public DbSet<DbIdentityMergeHistory> IdentityMergeHistories => Set<DbIdentityMergeHistory>();
     public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
+    public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
+    public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
+    public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
+    public DbSet<DbBackupEvidenceRecord> BackupEvidenceRecords => Set<DbBackupEvidenceRecord>();
+    public DbSet<DbExternalArchiveImportBatch> ExternalArchiveImportBatches => Set<DbExternalArchiveImportBatch>();
+    public DbSet<DbExternalArchiveImportRecord> ExternalArchiveImportRecords => Set<DbExternalArchiveImportRecord>();
+    public DbSet<DbExternalArchiveLinkageArtifact> ExternalArchiveLinkageArtifacts => Set<DbExternalArchiveLinkageArtifact>();
 
-    // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
+    // Frozen legacy domain/Stage6 tables: mapped for explicit legacy diagnostics, reads, and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
     public DbSet<DbPeriodTransition> PeriodTransitions => Set<DbPeriodTransition>();
     public DbSet<DbHypothesis> Hypotheses => Set<DbHypothesis>();
@@ -97,15 +104,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbStage6UserContextEntry> Stage6UserContextEntries => Set<DbStage6UserContextEntry>();
     public DbSet<DbStage6FeedbackEntry> Stage6FeedbackEntries => Set<DbStage6FeedbackEntry>();
     public DbSet<DbStage6CaseOutcome> Stage6CaseOutcomes => Set<DbStage6CaseOutcome>();
-    public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
-    public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
-    public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
-    public DbSet<DbBackupEvidenceRecord> BackupEvidenceRecords => Set<DbBackupEvidenceRecord>();
     public DbSet<DbEvalRun> EvalRuns => Set<DbEvalRun>();
     public DbSet<DbEvalScenarioResult> EvalScenarioResults => Set<DbEvalScenarioResult>();
-    public DbSet<DbExternalArchiveImportBatch> ExternalArchiveImportBatches => Set<DbExternalArchiveImportBatch>();
-    public DbSet<DbExternalArchiveImportRecord> ExternalArchiveImportRecords => Set<DbExternalArchiveImportRecord>();
-    public DbSet<DbExternalArchiveLinkageArtifact> ExternalArchiveLinkageArtifacts => Set<DbExternalArchiveLinkageArtifact>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

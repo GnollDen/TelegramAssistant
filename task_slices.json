@@ -1222,12 +1222,12 @@
       "dependencies": [
         "CLEANUP-102-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Active/frozen boundary is explicit and code-backed.",
         "Each stale repository candidate lands in keep, isolate, or delete with justification."
       ],
-      "notes": "High-risk discovery slice before any DB-facing mutation."
+      "notes": "Completed on 2026-04-03 by re-auditing DbContext/DI repository boundaries, moving legacy-only eval/review repositories out of the active registration block, regrouping active operational DbSet mappings, and recording keep/isolate/delete evidence in docs/planning/CLEANUP-103-A_DB_BOUNDARY_AUDIT_2026-04-03.md. Delete/isolate execution remains deferred to CLEANUP-103-B."
     },
     {
       "id": "CLEANUP-103-B",

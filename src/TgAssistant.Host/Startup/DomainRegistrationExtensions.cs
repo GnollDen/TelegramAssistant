@@ -161,7 +161,8 @@ public static partial class ServiceRegistrationExtensions
 
     private static IServiceCollection AddActiveRepositoryServices(this IServiceCollection services)
     {
-        // Active baseline repository surface: retained substrate plus retained-with-refactor data stores.
+        // Active baseline repository surface: retained substrate, active operational stores, and
+        // retained-with-refactor data stores still used by the default runtime composition.
         services.AddSingleton<IMessageRepository, MessageRepository>();
         services.AddSingleton<IRealtimeMessageSubstrateRepository, RealtimeMessageSubstrateRepository>();
         services.AddSingleton<IArchiveMessageSubstrateRepository, ArchiveMessageSubstrateRepository>();
@@ -176,6 +177,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IRuntimeDefectRepository, RuntimeDefectRepository>();
         services.AddSingleton<IClarificationBranchStateRepository, ClarificationBranchStateRepository>();
+        // Retained active correction store even though no default caller resolves it yet.
         services.AddSingleton<IIdentityMergeRepository, IdentityMergeRepository>();
         services.AddSingleton<IRuntimeControlStateRepository, RuntimeControlStateRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
@@ -201,9 +203,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IChatDialogSummaryRepository, ChatDialogSummaryRepository>();
         services.AddSingleton<IChatSessionRepository, ChatSessionRepository>();
         services.AddSingleton<IBudgetOpsRepository, BudgetOpsRepository>();
-        services.AddSingleton<IEvalRepository, EvalRepository>();
         services.AddSingleton<IExternalArchiveIngestionRepository, ExternalArchiveIngestionRepository>();
-        services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
         return services;
     }
 
@@ -222,6 +222,8 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage6UserContextRepository, Stage6UserContextRepository>();
         services.AddSingleton<IStage6FeedbackRepository, Stage6FeedbackRepository>();
         services.AddSingleton<IStage6CaseOutcomeRepository, Stage6CaseOutcomeRepository>();
+        services.AddSingleton<IEvalRepository, EvalRepository>();
+        services.AddSingleton<IDomainReviewEventRepository, DomainReviewEventRepository>();
         return services;
     }
 }
