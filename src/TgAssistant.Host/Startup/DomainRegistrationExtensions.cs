@@ -30,14 +30,19 @@ public static partial class ServiceRegistrationExtensions
     public static IServiceCollection AddTelegramAssistantDomainServices(
         this IServiceCollection services,
         bool includeLegacyStage6Diagnostics = false,
-        bool includeLegacyStage6ClusterDiagnostics = false)
+        bool includeLegacyStage6ClusterDiagnostics = false,
+        bool includeCorrectionRepositoryServices = false)
     {
         services.AddActiveRepositoryServices();
-        services.AddCorrectionRepositoryServices();
 
         if (includeLegacyStage6Diagnostics || includeLegacyStage6ClusterDiagnostics)
         {
             services.AddStage6LegacyRepositoryServices();
+        }
+
+        if (includeCorrectionRepositoryServices)
+        {
+            services.AddCorrectionRepositoryServices();
         }
 
         services.AddSingleton<IChatCoordinationService, ChatCoordinationService>();
@@ -207,9 +212,9 @@ public static partial class ServiceRegistrationExtensions
 
     private static IServiceCollection AddCorrectionRepositoryServices(this IServiceCollection services)
     {
-        // Active-table correction store retained outside the baseline repository block until it gains
-        // an explicit operator/API entrypoint. This keeps default-runtime baseline wiring distinct
-        // from dormant correction tooling without deleting the reversible merge path.
+        // Correction-store wiring is intentionally explicit-only. The reversible merge path remains
+        // in code, but it is not part of the default runtime composition until an operator/API
+        // entrypoint is promoted and bounded follow-up hardening is complete.
         services.AddSingleton<IIdentityMergeRepository, IdentityMergeRepository>();
         return services;
     }

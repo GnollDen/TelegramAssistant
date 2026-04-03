@@ -1536,12 +1536,12 @@
       "dependencies": [
         "ALIGN-202-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Legacy-to-active bridges are explicit and justified.",
         "Correction-only storage is not ambient in default runtime composition."
       ],
-      "notes": "Discovery and boundary-tightening slice."
+      "notes": "Done 2026-04-03: audited legacy diagnostic trigger bridge versus active Stage8 recompute path, removed ambient default-DI registration of the identity-merge correction store, and published a bounded follow-up note for ALIGN-203-B."
     },
     {
       "id": "ALIGN-203-B",

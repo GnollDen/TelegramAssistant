@@ -34,6 +34,7 @@ Top-level routing:
 
 - Reference-only baseline evidence: [CLEANUP-101-A_SAFE_DELETE_INVENTORY_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CLEANUP-101-A_SAFE_DELETE_INVENTORY_2026-04-03.md)
 - Reference-only boundary audit: [CLEANUP-103-A_DB_BOUNDARY_AUDIT_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CLEANUP-103-A_DB_BOUNDARY_AUDIT_2026-04-03.md)
+- Reference-only ALIGN boundary audit: [ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md)
 - Reference-only Stage7/Stage8 semantic drift evidence: [ALIGN-202-A_STAGE7_STAGE8_SEMANTIC_ALIGNMENT_NOTE_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-202-A_STAGE7_STAGE8_SEMANTIC_ALIGNMENT_NOTE_2026-04-03.md)
 
 ### Option docs
@@ -59,6 +60,7 @@ Top-level routing:
 
 - [CLEANUP-101-A_SAFE_DELETE_INVENTORY_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CLEANUP-101-A_SAFE_DELETE_INVENTORY_2026-04-03.md)
 - [CLEANUP-103-A_DB_BOUNDARY_AUDIT_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/CLEANUP-103-A_DB_BOUNDARY_AUDIT_2026-04-03.md)
+- [ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/ALIGN-203-A_LEGACY_BRIDGE_AND_CORRECTION_STORE_AUDIT_2026-04-03.md)
 
 ## Routing Rule
 
