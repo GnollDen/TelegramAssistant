@@ -478,7 +478,7 @@
       "id": "IMPLEMENT-006",
       "category": "implementation",
       "priority": "critical",
-      "description": "Build PRD Stage 7 durable formation for dossiers, profiles, pair dynamics, events, timeline episodes, story arcs, and reviewable durable knowledge objects from normalized candidates and bootstrap outputs.",
+      "description": "Build the implemented Stage 7 durable-formation baseline for dossiers, profiles, pair dynamics, events, timeline episodes, and story arcs from normalized candidates and bootstrap outputs.",
       "executor_agent": "backend-developer",
       "acceptance_criteria": [
         "Durable object families exist with evidence refs, freshness, stability, confidence, coverage, contradiction markers, and promotion state.",
@@ -496,13 +496,13 @@
         "IMPLEMENT-005"
       ],
       "status": "done",
-      "notes": "This is the first real product-grade knowledge layer required by the PRD. IMPLEMENT-006-A/B/C now materialize dossier/profile, pair-dynamics, and timeline/event/story-arc durable families with shared metadata and evidence links, and IMPLEMENT-006-D adds consistent revision and idempotent rerun behavior across those families so identical reruns reuse stable durable identities while changed reruns append family-specific revisions instead of duplicating rows."
+      "notes": "This parent is complete as the current Stage7 baseline, not as the full semantic depth implied by the PRD's broader second-intelligence-pass wording. IMPLEMENT-006-A/B/C materialize dossier/profile, pair-dynamics, and timeline/event/story-arc durable families with shared metadata and evidence links using audited deterministic synthesis from Stage6 bootstrap outputs, and IMPLEMENT-006-D adds consistent revision and idempotent rerun behavior so identical reruns reuse stable durable identities while changed reruns append family-specific revisions instead of duplicating rows."
     },
     {
       "id": "IMPLEMENT-007",
       "category": "implementation",
       "priority": "high",
-      "description": "Build PRD Stage 8 crystallization and scoped recompute: trigger queue, dependency model, targeted reruns after new data, edits, deletes, and operator answers, plus promotion and clarification governance.",
+      "description": "Build the implemented Stage 8 triggered scoped-recompute and outcome-gating baseline: trigger queue, dependency model, targeted reruns after new data, edits, deletes, and operator answers, plus promotion and clarification governance.",
       "executor_agent": "backend-developer",
       "acceptance_criteria": [
         "A persistent recompute queue exists with dedupe, retry, and smallest-sufficient-scope execution.",
@@ -518,7 +518,7 @@
         "IMPLEMENT-006"
       ],
       "status": "done",
-      "notes": "Completed via IMPLEMENT-007-A/B/C: Stage8 now has a persistent deduping recompute queue with retry and smallest-sufficient-scope execution, trigger ingestion for clarification answers/edits/deletes/high-signal updates, and truth-layer promotion + clarification gates that update durable_object_metadata promotion_state/truth_layer outcomes with auditable gate metadata."
+      "notes": "Completed as the current Stage8 baseline, not as full PRD-specialized crystallizer coverage. IMPLEMENT-007-A/B/C added a persistent deduping recompute queue with retry and smallest-sufficient-scope execution, trigger ingestion for clarification answers/edits/deletes/high-signal updates, and truth-layer promotion + clarification gates that update durable_object_metadata promotion_state/truth_layer outcomes with auditable gate metadata."
     },
     {
       "id": "IMPLEMENT-008",
@@ -959,7 +959,7 @@
       "id": "ALIGN-202",
       "category": "cleanup/reset",
       "priority": "critical",
-      "description": "Tighten Stage 7 and Stage 8 semantics against the PRD so durable formation and crystallization are represented as intended rather than as a simplified durable-write plus recompute queue model.",
+      "description": "Tighten Stage 7 and Stage 8 semantics against the PRD so active docs and backlog describe the implemented durable-formation and triggered scoped-recompute behavior without overstating current crystallizer coverage.",
       "executor_agent": "architect-reviewer",
       "acceptance_criteria": [
         "The code and planning notes explain what currently counts as Stage 7 durable formation and Stage 8 crystallization.",
@@ -974,8 +974,8 @@
       "dependencies": [
         "ALIGN-201"
       ],
-      "status": "pending",
-      "notes": "ALIGN-202-A completed on 2026-04-03 with an evidence-backed Stage7/Stage8 semantic alignment note. ALIGN-202 remains pending until ALIGN-202-B applies the bounded documentation or semantics narrowing needed to stop overclaiming current crystallizer coverage."
+      "status": "done",
+      "notes": "Completed on 2026-04-03 via ALIGN-202-A/B. Active docs and backlog now describe current Stage7 as audited deterministic durable formation from Stage6 bootstrap outputs and current Stage8 as triggered scoped recompute plus outcome gating, while explicitly leaving broader PRD specialized crystallizer coverage as future scope."
     },
     {
       "id": "ALIGN-203",

@@ -772,7 +772,7 @@
         "Scoped recompute can run independently of global rebuilds.",
         "Queue behavior is idempotent and retry-safe."
       ],
-      "notes": "Clean split because queue infrastructure is foundational to crystallization. Added persistent stage8_recompute_queue_items storage plus Stage8RecomputeQueueRepository/Service for deduped enqueue, lease, complete, and retry-safe reschedule behavior, with smallest-sufficient-scope execution that runs stage6_bootstrap directly or the requested stage7 family through bootstrap as upstream context; --stage8-recompute-smoke validates dedupe, scoped dossier/profile execution, and transient-failure retry/reschedule, and dotnet build TelegramAssistant.sln passed."
+      "notes": "Clean split because queue infrastructure is foundational to the implemented Stage8 scoped-recompute baseline. Added persistent stage8_recompute_queue_items storage plus Stage8RecomputeQueueRepository/Service for deduped enqueue, lease, complete, and retry-safe reschedule behavior, with smallest-sufficient-scope execution that runs stage6_bootstrap directly or the requested stage7 family through bootstrap as upstream context; --stage8-recompute-smoke validates dedupe, scoped dossier/profile execution, and transient-failure retry/reschedule, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-007-B",
@@ -796,7 +796,7 @@
       "parent_task_id": "IMPLEMENT-007",
       "phase": "phase-b-implementation",
       "priority": "high",
-      "description": "Implement promotion and clarification gates on the new truth-layer model for crystallization outcomes.",
+      "description": "Implement promotion and clarification gates on the new truth-layer model for Stage8 scoped-recompute outcomes.",
       "executor_agent": "backend-developer",
       "dependencies": [
         "IMPLEMENT-007-B"
@@ -806,7 +806,7 @@
         "Promotion outcomes are explicit and auditable.",
         "Clarification-gated scopes do not over-promote durable knowledge."
       ],
-      "notes": "Implemented and pushed: added Stage8 truth-layer outcome gating via Stage8OutcomeGateRepository and wired it into Stage8RecomputeQueueService so crystallization outcomes now mark durable_object_metadata promotion_state/truth_layer as promoted, promotion_blocked, or clarification_blocked with auditable stage8_gate metadata; extended --stage8-recompute-smoke coverage for clarification-gated outcomes and verified with dotnet build TelegramAssistant.sln."
+      "notes": "Implemented and pushed: added Stage8 truth-layer outcome gating via Stage8OutcomeGateRepository and wired it into Stage8RecomputeQueueService so scoped recompute outcomes now mark durable_object_metadata promotion_state/truth_layer as promoted, promotion_blocked, or clarification_blocked with auditable stage8_gate metadata; extended --stage8-recompute-smoke coverage for clarification-gated outcomes and verified with dotnet build TelegramAssistant.sln."
     },
     {
       "id": "IMPLEMENT-008-A",
@@ -1519,12 +1519,12 @@
       "dependencies": [
         "ALIGN-202-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Stage7/Stage8 claims are no longer overstated relative to the code.",
         "Any remaining drift is documented with a bounded follow-up path."
       ],
-      "notes": "Bounded correction/narrowing slice, not a full feature rebuild."
+      "notes": "Done 2026-04-03: narrowed active backlog and planning surfaces so current Stage7 is described as audited deterministic durable formation from Stage6 bootstrap outputs and current Stage8 is described as triggered scoped recompute plus outcome gating rather than completed specialized crystallizer coverage."
     },
     {
       "id": "ALIGN-203-A",
