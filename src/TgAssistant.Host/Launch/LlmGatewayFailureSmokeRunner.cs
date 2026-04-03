@@ -166,7 +166,8 @@ public static class LlmGatewayFailureSmokeRunner
             ],
             routingPolicy: new DefaultLlmRoutingPolicy(options),
             settings: options,
-            logger: loggerFactory.CreateLogger<LlmGatewayService>());
+            logger: loggerFactory.CreateLogger<LlmGatewayService>(),
+            metrics: new LlmGatewayMetrics());
     }
 
     private static LlmGatewaySettings BuildSettings()

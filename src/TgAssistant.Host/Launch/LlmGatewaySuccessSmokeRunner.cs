@@ -28,7 +28,8 @@ public static class LlmGatewaySuccessSmokeRunner
             ],
             routingPolicy: new DefaultLlmRoutingPolicy(options),
             settings: options,
-            logger: loggerFactory.CreateLogger<LlmGatewayService>());
+            logger: loggerFactory.CreateLogger<LlmGatewayService>(),
+            metrics: new LlmGatewayMetrics());
 
         var textResponse = await gateway.ExecuteAsync(BuildTextRequest(), ct);
         AssertTextResponse(textResponse);

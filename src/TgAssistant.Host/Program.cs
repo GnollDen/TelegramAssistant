@@ -111,6 +111,7 @@ try
     var runModelPassAuditSmoke = args.Any(arg => string.Equals(arg, "--model-pass-audit-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewaySuccessSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-success-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayFailureSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-failure-smoke", StringComparison.OrdinalIgnoreCase));
+    var runLlmGatewayAnalyticsSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-analytics-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayExperimentSmoke = args.Any(arg => string.Equals(arg, "--llm-gateway-experiment-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmContractNormalizationSmoke = args.Any(arg => string.Equals(arg, "--llm-contract-normalization-smoke", StringComparison.OrdinalIgnoreCase));
     var runLlmGatewayReplayAb = args.Any(arg => string.Equals(arg, "--llm-gateway-replay-ab", StringComparison.OrdinalIgnoreCase));
@@ -183,6 +184,7 @@ try
         "--model-pass-audit-smoke",
         "--llm-gateway-success-smoke",
         "--llm-gateway-failure-smoke",
+        "--llm-gateway-analytics-smoke",
         "--llm-gateway-experiment-smoke",
         "--llm-contract-normalization-smoke",
         "--llm-gateway-replay-ab",
@@ -266,6 +268,13 @@ try
     {
         await LlmGatewayFailureSmokeRunner.RunAsync();
         Log.Information("LLM gateway failure smoke requested via --llm-gateway-failure-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runLlmGatewayAnalyticsSmoke)
+    {
+        await LlmGatewayAnalyticsSmokeRunner.RunAsync();
+        Log.Information("LLM gateway analytics smoke requested via --llm-gateway-analytics-smoke. Exiting after successful verification.");
         return;
     }
 

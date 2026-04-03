@@ -29,7 +29,8 @@ public static class LlmGatewayExperimentSmokeRunner
             ],
             routingPolicy,
             options,
-            loggerFactory.CreateLogger<LlmGatewayService>());
+            loggerFactory.CreateLogger<LlmGatewayService>(),
+            new LlmGatewayMetrics());
 
         var baselineKey = FindStickyKeyForBranch(routingPolicy, "baseline");
         var candidateKey = FindStickyKeyForBranch(routingPolicy, "candidate");

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using System.Diagnostics;
 
 namespace TgAssistant.Infrastructure.LlmGateway;
 
@@ -12,21 +13,25 @@ public class LlmGatewayService : ILlmGateway
     private readonly ILlmRoutingPolicy _routingPolicy;
     private readonly LlmGatewaySettings _settings;
     private readonly ILogger<LlmGatewayService> _logger;
+    private readonly LlmGatewayMetrics _metrics;
 
     public LlmGatewayService(
         IEnumerable<ILlmProviderClient> providers,
         ILlmRoutingPolicy routingPolicy,
         IOptions<LlmGatewaySettings> settings,
-        ILogger<LlmGatewayService> logger)
+        ILogger<LlmGatewayService> logger,
+        LlmGatewayMetrics metrics)
     {
         _providers = providers.ToDictionary(provider => provider.ProviderId, StringComparer.OrdinalIgnoreCase);
         _routingPolicy = routingPolicy;
         _settings = settings.Value;
         _logger = logger;
+        _metrics = metrics;
     }
 
     public async Task<LlmGatewayResponse> ExecuteAsync(LlmGatewayRequest request, CancellationToken ct = default)
     {
+        var startedAt = Stopwatch.StartNew();
         request.Validate();
         var routingDecision = _routingPolicy.Resolve(request);
         var providerOrder = new List<string> { routingDecision.PrimaryProvider };
@@ -49,7 +54,7 @@ public class LlmGatewayService : ILlmGateway
             try
             {
                 var providerResult = await providerClient.ExecuteAsync(providerRequest, ct);
-                return new LlmGatewayResponse
+                var response = new LlmGatewayResponse
                 {
                     Provider = providerResult.ProviderId,
                     Model = providerResult.Model,
@@ -71,14 +76,40 @@ public class LlmGatewayService : ILlmGateway
                         },
                     RawProviderPayloadJson = _settings.LogRawProviderPayloadJson ? providerResult.RawProviderPayloadJson : null
                 };
+
+                _metrics.RecordSuccess(
+                    request,
+                    response.Provider,
+                    response.Model,
+                    response.FallbackApplied,
+                    response.FallbackFromProvider,
+                    providerResult.LatencyMs,
+                    Math.Max(0, (int)startedAt.ElapsedMilliseconds),
+                    response.Usage);
+
+                return response;
             }
             catch (LlmGatewayException ex)
             {
                 lastFailure = ex;
                 if (!ex.Retryable || index == providerOrder.Count - 1)
                 {
+                    _metrics.RecordFailure(
+                        request,
+                        providerId,
+                        providerRequest.Model,
+                        index > 0,
+                        index > 0 ? routingDecision.PrimaryProvider : null,
+                        ex.Category.ToString(),
+                        Math.Max(0, (int)startedAt.ElapsedMilliseconds));
                     throw;
                 }
+
+                _metrics.RecordFallback(
+                    request,
+                    providerId,
+                    providerOrder[index + 1],
+                    ex.Category.ToString());
 
                 _logger.LogWarning(
                     ex,
@@ -91,12 +122,23 @@ public class LlmGatewayService : ILlmGateway
             }
         }
 
-        throw lastFailure ?? new LlmGatewayException("Gateway routing exhausted without producing a provider result.")
+        var exhausted = lastFailure ?? new LlmGatewayException("Gateway routing exhausted without producing a provider result.")
         {
             Category = LlmGatewayErrorCategory.Unknown,
             Modality = request.Modality,
             Retryable = false
         };
+
+        _metrics.RecordFailure(
+            request,
+            exhausted.Provider ?? "unknown",
+            request.ModelHint ?? "unknown",
+            fallbackApplied: providerOrder.Count > 1,
+            fallbackFromProvider: routingDecision.PrimaryProvider,
+            errorCategory: exhausted.Category.ToString(),
+            endToEndLatencyMs: Math.Max(0, (int)startedAt.ElapsedMilliseconds));
+
+        throw exhausted;
     }
 
     private ILlmProviderClient ResolveProvider(string providerId, LlmModality modality)

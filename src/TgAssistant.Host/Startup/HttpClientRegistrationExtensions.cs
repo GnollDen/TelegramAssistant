@@ -47,6 +47,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddHttpClient<OpenRouterProviderClient>();
         services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<CodexLbChatProviderClient>());
         services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<OpenRouterProviderClient>());
+        services.AddSingleton<LlmGatewayMetrics>();
         services.AddTransient<ILlmGateway, LlmGatewayService>();
         services.AddSingleton<ILlmRoutingPolicy, DefaultLlmRoutingPolicy>();
 

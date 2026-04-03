@@ -32,7 +32,8 @@ public static class LlmGatewayReplayAbRunner
             ],
             routingPolicy,
             options,
-            loggerFactory.CreateLogger<LlmGatewayService>());
+            loggerFactory.CreateLogger<LlmGatewayService>(),
+            new LlmGatewayMetrics());
 
         var caseComparisons = new List<LlmGatewayReplayCaseComparison>(replayCases.Count);
         foreach (var replayCase in replayCases)

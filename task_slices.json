@@ -1468,12 +1468,12 @@
       "dependencies": [
         "GATEWAY-005-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Gateway metrics are emitted per provider, model, modality, and status.",
         "Grafana-ready analytics exist for RPS, token usage, provider latency, end-to-end latency, and TPS."
       ],
-      "notes": "Add the baseline observability surface for the gateway so selective production and pilot paths can be monitored without replay-only reports."
+      "notes": "Done on 2026-04-03: added System.Diagnostics.Metrics instrumentation in LlmGatewayService with Grafana-ready counters/histograms for requests (RPS derivable), token usage, provider latency, end-to-end latency, TPS, and fallback transitions, all labeled by provider/model/modality/status plus route/fallback dimensions. Added --llm-gateway-analytics-smoke to prove bounded metric emission and label coverage; dotnet build TelegramAssistant.sln plus llm-gateway success/failure/analytics smokes passed."
     },
     {
       "id": "GATEWAY-006-B",
