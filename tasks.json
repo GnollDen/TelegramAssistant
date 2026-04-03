@@ -123,6 +123,16 @@
         "IMPLEMENT-016",
         "IMPLEMENT-010"
       ]
+    },
+    {
+      "id": "phase-c-post-cleanup",
+      "title": "Phase C. Post-Implementation Cleanup and Authority Hardening",
+      "task_ids": [
+        "CLEANUP-101",
+        "CLEANUP-102",
+        "CLEANUP-103",
+        "CLEANUP-104"
+      ]
     }
   ],
   "tasks": [
@@ -703,6 +713,94 @@
       ],
       "status": "done",
       "notes": "Completed through IMPLEMENT-016-A/B: bounded per-scope backfill leasing with durable checkpoints now includes deadlock/transient conflict classification, bounded retry backoff, and persisted recovery telemetry (retry/deadlock/transient counters plus recovery timestamps) with smoke coverage for retry and recovery behavior."
+    },
+    {
+      "id": "CLEANUP-101",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Execute the safe-deletion batch after runtime-critical remediation: remove orphan directories, orphan TgAssistant.Web residue, clearly unused placeholders, and safe-to-delete stale repository surface already proven to have no active consumers.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Orphan filesystem residue is removed from the repo without touching active runtime seams.",
+        "The orphan TgAssistant.Web tree and other empty placeholder files no longer remain in the mainline source tree.",
+        "Safe-to-delete stale repository surface is removed only where caller analysis already proved no active usage."
+      ],
+      "test_steps": [
+        "Verify the target paths no longer exist or are removed from the solution/runtime composition.",
+        "Search the codebase for remaining references to the deleted placeholder and stale repository contracts.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-016"
+      ],
+      "status": "pending",
+      "notes": "First post-remediation cleanup batch: only delete candidates already classified as safe after the runtime-critical remediation run."
+    },
+    {
+      "id": "CLEANUP-102",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Isolate the remaining legacy Stage6 bot/autocase/network cluster and trim stale config or DI residue so legacy diagnostics remain explicit and cannot drift back into the active baseline by ambient wiring.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Legacy Stage6 bot/autocase/network code is moved behind a tighter legacy boundary or clearly marked as non-baseline diagnostics only.",
+        "Legacy config bindings and DI registrations for BotChat, Web, and Stage6AutoCaseGeneration are removed or gated by explicit legacy-only switches.",
+        "No active startup path or config default suggests those clusters are normal runtime behavior."
+      ],
+      "test_steps": [
+        "Search Host startup and settings registration for BotChat, Web, and Stage6AutoCaseGeneration and confirm only explicit legacy diagnostics remain.",
+        "Inspect the isolated Stage6 bot/autocase/network surface and verify it no longer leaks into active composition by default.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "CLEANUP-101"
+      ],
+      "status": "pending",
+      "notes": "This batch is isolation-first, not broad deletion: keep risky Stage6Bootstrap/Stage7/Stage8 seams untouched while tightening obvious legacy runtime residue."
+    },
+    {
+      "id": "CLEANUP-103",
+      "category": "cleanup/reset",
+      "priority": "critical",
+      "description": "Reclassify the DB boundary after remediation: separate truly active mappings and repositories from frozen legacy ones, then cut or retire the stale repo surface that no longer belongs in the active baseline.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "The active versus frozen DB boundary is explicit in DbContext and repository registrations.",
+        "Stale repositories are either removed, isolated, or justified with clear active callers and storage purpose.",
+        "No schema reduction is attempted until active-path versus frozen-path ownership is fully documented."
+      ],
+      "test_steps": [
+        "Trace callers for candidate stale repositories and confirm the chosen keep/isolate/delete treatment is code-backed.",
+        "Inspect TgAssistantDbContext and related registrations to verify active and frozen mappings are no longer ambiguous.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "CLEANUP-102"
+      ],
+      "status": "pending",
+      "notes": "High-risk cleanup batch. Focus on boundary truth and stale repository surface first; only then consider any future schema reduction."
+    },
+    {
+      "id": "CLEANUP-104",
+      "category": "cleanup/reset",
+      "priority": "high",
+      "description": "Rebuild the docs authority chain after cleanup: restore an explicit planning index, merge or archive pre-PRD option notes, and ensure active markdown reflects the current baseline and gateway-extension positioning.",
+      "executor_agent": "technical-writer",
+      "acceptance_criteria": [
+        "Active docs authority is explicit and points to the current PRD, gateway PRD, and current backlog rather than stale or missing indices.",
+        "Pre-PRD option notes and residual planning docs are archived, merged, or clearly downgraded out of the active authority chain.",
+        "README and planning surfaces describe the current runtime and cleanup state without legacy Stage6/web/bot baseline claims."
+      ],
+      "test_steps": [
+        "Open the active docs authority entrypoints and verify they point to the current baseline documents only.",
+        "Search for references to missing or deprecated planning docs and confirm active markdown no longer depends on them.",
+        "Run any repo markdown or link validation used for docs changes, if available."
+      ],
+      "dependencies": [
+        "CLEANUP-103"
+      ],
+      "status": "pending",
+      "notes": "Final post-cleanup docs pass. This should happen after code and DB-boundary cleanup so the authority chain reflects the real project state."
     }
   ]
 }

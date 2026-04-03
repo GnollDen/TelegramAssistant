@@ -44,6 +44,10 @@
     {
       "id": "phase-b-implementation",
       "title": "Phase B. PRD Implementation on Clean Baseline"
+    },
+    {
+      "id": "phase-c-post-cleanup",
+      "title": "Phase C. Post-Implementation Cleanup and Authority Hardening"
     }
   ],
   "slices": [
@@ -1139,6 +1143,142 @@
         "Retry and recovery behavior is observable for pilot validation."
       ],
       "notes": "Completed by extending stage8_backfill_scope_checkpoints with retry/deadlock/transient counters plus last recovery/backoff telemetry, classifying Postgres deadlock/serialization/lock conflicts in Stage8RecomputeQueueService into bounded retries, persisting recovery telemetry through repository reschedules, and expanding --stage8-recompute-smoke to verify deadlock retry checkpoint metrics and successful recovery on a subsequent attempt."
+    },
+    {
+      "id": "CLEANUP-101-A",
+      "parent_task_id": "CLEANUP-101",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Reconfirm the safe-deletion set after runtime remediation and capture the exact delete list with caller checks.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-016-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Delete list is limited to proven orphan paths and safe stale surface.",
+        "Each candidate has an explicit no-active-caller justification."
+      ],
+      "notes": "Inventory-first slice for the first cleanup batch."
+    },
+    {
+      "id": "CLEANUP-101-B",
+      "parent_task_id": "CLEANUP-101",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Apply the safe deletions: orphan directories, orphan TgAssistant.Web residue, placeholder files, and safe stale repository surface.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-101-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Obvious orphan residue is removed cleanly.",
+        "Build still passes after the deletions."
+      ],
+      "notes": "Write scope should stay limited to proven delete-now candidates only."
+    },
+    {
+      "id": "CLEANUP-102-A",
+      "parent_task_id": "CLEANUP-102",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Tighten the legacy Stage6 boundary around bot, autocase, and network clusters so they are explicit diagnostics-only code paths.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-101-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Legacy Stage6 bot/autocase/network code is explicitly isolated from active baseline paths.",
+        "No active runtime path reaches those clusters by default."
+      ],
+      "notes": "Isolation-before-deletion to avoid accidental active-path breakage."
+    },
+    {
+      "id": "CLEANUP-102-B",
+      "parent_task_id": "CLEANUP-102",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Trim stale legacy config bindings and DI registrations for BotChat, Web, and Stage6AutoCaseGeneration after code-path confirmation.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "CLEANUP-102-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Legacy-only settings and registrations are removed or explicitly gated.",
+        "Appsettings and startup composition no longer imply these are active baseline features."
+      ],
+      "notes": "Configuration and DI cleanup trails the code-boundary isolation step."
+    },
+    {
+      "id": "CLEANUP-103-A",
+      "parent_task_id": "CLEANUP-103",
+      "phase": "phase-c-post-cleanup",
+      "priority": "critical",
+      "description": "Re-audit active versus frozen mappings in DbContext and repository registrations, and classify stale repository surface by active callers and storage role.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "CLEANUP-102-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Active/frozen boundary is explicit and code-backed.",
+        "Each stale repository candidate lands in keep, isolate, or delete with justification."
+      ],
+      "notes": "High-risk discovery slice before any DB-facing mutation."
+    },
+    {
+      "id": "CLEANUP-103-B",
+      "parent_task_id": "CLEANUP-103",
+      "phase": "phase-c-post-cleanup",
+      "priority": "critical",
+      "description": "Apply the approved DB-boundary cleanup: retire stale repositories and tighten active versus frozen registrations without reducing schema blindly.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "CLEANUP-103-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Retired repositories are gone or isolated cleanly.",
+        "DbContext and registrations reflect the intended active/frozen boundary without schema drift."
+      ],
+      "notes": "No broad table drops here; repository and mapping cleanup only."
+    },
+    {
+      "id": "CLEANUP-104-A",
+      "parent_task_id": "CLEANUP-104",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Restore the active planning index and docs authority chain so current PRDs and backlog are the explicit source of truth.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "CLEANUP-103-B"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Planning index exists and points to the real current authority documents.",
+        "No active docs route through missing or stale planning files."
+      ],
+      "notes": "This slice should recreate clarity after the large docs reduction."
+    },
+    {
+      "id": "CLEANUP-104-B",
+      "parent_task_id": "CLEANUP-104",
+      "phase": "phase-c-post-cleanup",
+      "priority": "high",
+      "description": "Merge or archive pre-PRD option notes and remaining docs residue, then verify the final authority chain against the cleaned baseline.",
+      "executor_agent": "technical-writer",
+      "dependencies": [
+        "CLEANUP-104-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Gateway option notes and residual planning docs are classified into active, archive-only, or merged.",
+        "README and planning docs describe the current cleaned baseline consistently."
+      ],
+      "notes": "Final docs hardening slice after the planning index is back in place."
     }
   ]
 }
