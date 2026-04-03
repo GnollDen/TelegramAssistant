@@ -1116,18 +1116,20 @@
       "acceptance_criteria": [
         "Backlog explicitly supersedes remaining blocked IMPLEMENT-008 interface scope with operator-layer tasks while preserving done history.",
         "Resolution item taxonomy and action set are fixed for P0 (clarification, review, contradiction, missing_data, blocked_branch + approve/reject/defer/clarify/evidence/open-web).",
-        "Default decisions needed for execution are recorded: explanation required for reject/defer/clarify, summarized evidence drilldown in MVP, fixed tracked-person selector for bounded pilot."
+        "Default decisions needed for execution are recorded: explanation required for reject/defer/clarify, summarized evidence drilldown in MVP, fixed tracked-person selector for bounded pilot.",
+        "Operator auth/session policy is recorded for Telegram/Web reuse: actions are authenticated and auditable, scoped to active tracked person/item, session state includes active mode and unfinished step, and the contract remains MCP-independent and non-legacy."
       ],
       "test_steps": [
         "Verify tasks.json and task_slices.json contain a dedicated phase-f operator track with P0/P1/P2 sequencing and no reopened cleanup/gateway/alignment tasks.",
         "Verify IMPLEMENT-008 remains historical/blocked and is not used as execution authority for new work.",
+        "Open docs/planning/OPINT-001-C_AUTH_SESSION_BOUNDARY_CONTRACT_2026-04-03.md and verify the shared operator identity, session, bounded action, handoff, and audit rules are explicit for Telegram and Web.",
         "Run jq validation for tasks.json and task_slices.json after edits."
       ],
       "dependencies": [
         "ALIGN-204"
       ],
-      "status": "pending",
-      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. OPINT-001-A/B are complete, including defaults-for-now recorded in docs/planning/OPINT-001-B_EXECUTION_DEFAULTS_2026-04-03.md for explanation policy, evidence depth, and bounded tracked-person pilot scope. Parent stays pending until OPINT-001-C defines the auth/session policy contract. No product code changes in this step."
+      "status": "done",
+      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. Done 2026-04-03: OPINT-001-A/B/C are complete, including defaults-for-now in docs/planning/OPINT-001-B_EXECUTION_DEFAULTS_2026-04-03.md and the shared auth/session bounded-action policy in docs/planning/OPINT-001-C_AUTH_SESSION_BOUNDARY_CONTRACT_2026-04-03.md. Parent moved to done because all child slices are done and the authority criteria are now satisfied. No product code changes in this step."
     },
     {
       "id": "OPINT-002",

@@ -1795,12 +1795,12 @@
       "dependencies": [
         "OPINT-001-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
-        "Operator actions are authenticated, auditable, and bounded by scope/person.",
-        "Session model is explicit and reusable across Telegram/Web flows."
+        "Operator actions are authenticated, auditable, bounded by active tracked person/item, and deny-safe on scope/auth mismatch.",
+        "Session model is explicit and reusable across Telegram/Web flows, including active mode, unfinished step, and cross-surface handoff rules."
       ],
-      "notes": "Policy contract slice; implementation wiring occurs in OPINT-002 and later surfaces."
+      "notes": "Done 2026-04-03: recorded the reusable policy contract in docs/planning/OPINT-001-C_AUTH_SESSION_BOUNDARY_CONTRACT_2026-04-03.md. The note defines canonical operator identity, shared Telegram/Web session envelope, bounded action admission, handoff re-auth rules, required audit fields, deny-safe behavior, and explicitly stays MCP-independent while not reopening legacy Stage6/web/tgbot flows. Implementation wiring remains in OPINT-002 and later surfaces."
     },
     {
       "id": "OPINT-002-A",
