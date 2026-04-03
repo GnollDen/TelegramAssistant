@@ -1018,7 +1018,7 @@
       "dependencies": [
         "ALIGN-203"
       ],
-      "status": "pending",
+      "status": "done",
       "notes": "Final alignment/docs pass after runtime and semantic hardening."
     }
   ]
