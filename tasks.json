@@ -115,6 +115,12 @@
         "IMPLEMENT-007",
         "IMPLEMENT-008",
         "IMPLEMENT-009",
+        "IMPLEMENT-011",
+        "IMPLEMENT-012",
+        "IMPLEMENT-013",
+        "IMPLEMENT-014",
+        "IMPLEMENT-015",
+        "IMPLEMENT-016",
         "IMPLEMENT-010"
       ]
     }
@@ -548,10 +554,155 @@
       "dependencies": [
         "IMPLEMENT-005",
         "IMPLEMENT-006",
-        "IMPLEMENT-009"
+        "IMPLEMENT-009",
+        "IMPLEMENT-011",
+        "IMPLEMENT-012",
+        "IMPLEMENT-013",
+        "IMPLEMENT-014",
+        "IMPLEMENT-015",
+        "IMPLEMENT-016"
       ],
       "status": "pending",
       "notes": "This final task bundles pilot migration, release-readiness docs, and the go/no-go gate because all three depend on the same implementation evidence."
+    },
+    {
+      "id": "IMPLEMENT-011",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Add retrieval-loop and pass-budget guardrails so Stage 6/7/8 runs cannot enter unbounded need_more_data cycles or silently burn cost on one scope.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Each pass family has explicit iteration, token, and cost budgets per scope or run.",
+        "Excessive need_more_data loops terminate into explicit blocked or escalated outcomes instead of continuing indefinitely.",
+        "Loop guard events are persisted and visible to runtime control-state and defect handling."
+      ],
+      "test_steps": [
+        "Simulate repeated need_more_data responses and verify the run is terminated at configured limits with an auditable terminal status.",
+        "Verify normal successful runs stay below the same guardrails without false positives.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-004",
+        "IMPLEMENT-009"
+      ],
+      "status": "pending",
+      "notes": "Addresses retrieval-loop and cost-burn risk for model-driven passes."
+    },
+    {
+      "id": "IMPLEMENT-012",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Implement partial-graph continuation under unresolved clarifications so blocked identity or context branches do not freeze unrelated Stage 7/8 progress.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Clarification-blocked branches are stored explicitly and scoped to affected graph segments.",
+        "Unrelated dossier, pair-dynamics, and timeline branches can continue on partial graph state where safe.",
+        "Blocked branches surface their dependency clearly without stalling unaffected work."
+      ],
+      "test_steps": [
+        "Create a clarification-blocked identity branch and verify unaffected branches continue durable formation and crystallization.",
+        "Verify affected branches remain blocked and auditable until clarification arrives.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-006",
+        "IMPLEMENT-007"
+      ],
+      "status": "pending",
+      "notes": "Prevents operator silence from degrading the entire knowledge graph into a stalled state."
+    },
+    {
+      "id": "IMPLEMENT-013",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Implement identity-resolution safety controls: reversible merge history, merge confidence tiers, and bounded invalidation or recompute after merge or split corrections.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Identity merges and splits are reversible with preserved before and after state.",
+        "Weak or ambiguous merges cannot silently promote poisoned durable knowledge.",
+        "Corrections trigger bounded invalidation or recompute on affected graph branches instead of forcing global reruns by default."
+      ],
+      "test_steps": [
+        "Approve and then reverse a merge and verify affected graph and durable knowledge return to a consistent state.",
+        "Inject a weak merge candidate and verify promotion is blocked or explicitly review-gated.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-005",
+        "IMPLEMENT-006",
+        "IMPLEMENT-007"
+      ],
+      "status": "pending",
+      "notes": "Addresses poisoned-graph risk from identity resolution errors on large archives."
+    },
+    {
+      "id": "IMPLEMENT-014",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Implement a canonical dossier-field registry and field-key normalization policy so extensible dossier output cannot drift into hundreds of duplicate semantic keys.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Durable dossier fields use canonical field families with alias mapping for near-duplicate keys.",
+        "New field families remain proposal-only until normalized and approved.",
+        "Normalization prevents semantically duplicate keys from fragmenting durable reads."
+      ],
+      "test_steps": [
+        "Submit overlapping field keys such as favorite_food and gastronomic_preferences and verify canonical mapping or blocked proposal behavior.",
+        "Verify durable reads aggregate through canonical keys rather than raw model labels.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-004",
+        "IMPLEMENT-006"
+      ],
+      "status": "pending",
+      "notes": "Addresses dossier schema drift caused by open-ended LLM field generation."
+    },
+    {
+      "id": "IMPLEMENT-015",
+      "category": "implementation",
+      "priority": "high",
+      "description": "Implement freshness and decay policy for durable knowledge so local episodes, situational states, and recency-sensitive behavior do not stay wrongly authoritative forever.",
+      "executor_agent": "backend-developer",
+      "acceptance_criteria": [
+        "Stable traits, situational states, and local episodes have distinct freshness and decay semantics.",
+        "Read models can down-rank or obsolete stale durable conclusions when newer contradictory evidence arrives.",
+        "Stage 8 refresh logic uses recency-aware weighting instead of blindly preferring old durable knowledge."
+      ],
+      "test_steps": [
+        "Create an old situational state and newer contradictory evidence and verify the stale state is downgraded or expired appropriately.",
+        "Verify durable stable traits remain more persistent than local episodes under the same decay logic.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-006",
+        "IMPLEMENT-007"
+      ],
+      "status": "pending",
+      "notes": "Addresses stale guidance risk from outdated durable knowledge in Stage 8."
+    },
+    {
+      "id": "IMPLEMENT-016",
+      "category": "implementation",
+      "priority": "critical",
+      "description": "Implement backfill resource-safety controls: per-scope locking, bounded concurrency, deadlock-aware retries, and resumable checkpointing for large archive rebuilds.",
+      "executor_agent": "database-administrator",
+      "acceptance_criteria": [
+        "Large rebuilds use bounded concurrency and per-scope locking to avoid cross-scope write contention.",
+        "Database deadlocks and transient write conflicts are retried with bounded backoff and durable checkpoints.",
+        "Partial multi-hour runs can resume safely without duplicating or corrupting durable objects."
+      ],
+      "test_steps": [
+        "Run a concurrent backfill scenario over multiple scopes and verify bounded worker concurrency with stable checkpoint progress.",
+        "Inject a deadlock or transient conflict and verify retry, backoff, and recovery behavior without data loss.",
+        "Run dotnet build TelegramAssistant.sln."
+      ],
+      "dependencies": [
+        "IMPLEMENT-007",
+        "IMPLEMENT-009"
+      ],
+      "status": "pending",
+      "notes": "Addresses resource starvation and transactional instability during large pilot rebuilds and backfills."
     }
   ]
 }

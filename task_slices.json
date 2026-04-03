@@ -935,6 +935,210 @@
         "Pilot widening cannot proceed while blocking findings remain open."
       ],
       "notes": "Clean split because review gate should stay independent from implementation changes."
+    },
+    {
+      "id": "IMPLEMENT-011-A",
+      "parent_task_id": "IMPLEMENT-011",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Add per-pass iteration, token, and cost budgets for Stage 6/7/8 runs and persist the budget envelope in run audit state.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-009-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Every relevant pass family has explicit loop and spend budgets.",
+        "Budget envelopes are auditable by run and scope."
+      ],
+      "notes": "Clean split because budgeting metadata and persistence should land before enforcement behavior."
+    },
+    {
+      "id": "IMPLEMENT-011-B",
+      "parent_task_id": "IMPLEMENT-011",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Enforce retrieval-loop termination and escalation when repeated need_more_data responses exceed configured pass budgets.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-011-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Runs terminate into explicit blocked or escalated outcomes instead of looping indefinitely.",
+        "Loop termination integrates with defects and runtime control states."
+      ],
+      "notes": "Clean split because enforcement and terminal-state behavior should be verified after budgets exist."
+    },
+    {
+      "id": "IMPLEMENT-012-A",
+      "parent_task_id": "IMPLEMENT-012",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Persist unresolved clarification branches with branch-local blocking semantics instead of whole-graph blocking.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Blocked graph branches are explicit and queryable.",
+        "Blocked state is scoped to affected branches only."
+      ],
+      "notes": "Clean split because unresolved-branch persistence is independent from downstream continuation logic."
+    },
+    {
+      "id": "IMPLEMENT-012-B",
+      "parent_task_id": "IMPLEMENT-012",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Allow Stage 7 and Stage 8 to continue on unaffected graph branches while blocked branches remain unresolved.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-012-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Unaffected dossier, pair, and timeline branches continue progressing safely.",
+        "Affected branches remain blocked and auditable until clarification arrives."
+      ],
+      "notes": "Clean split because continuation behavior should be tested separately from blocked-branch storage."
+    },
+    {
+      "id": "IMPLEMENT-013-A",
+      "parent_task_id": "IMPLEMENT-013",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement reversible identity-merge history with merge confidence tiers and preserved before/after state.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Merges and splits can be reversed without losing prior state.",
+        "Weak merges are clearly tiered and review-gated."
+      ],
+      "notes": "Clean split because merge history and confidence policy are foundational before recompute behavior."
+    },
+    {
+      "id": "IMPLEMENT-013-B",
+      "parent_task_id": "IMPLEMENT-013",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement bounded invalidation and recompute after merge or split corrections so identity mistakes do not require global reruns by default.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-013-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Corrections invalidate only affected graph and durable branches by default.",
+        "Global rerun remains exceptional rather than normal recovery."
+      ],
+      "notes": "Clean split because invalidation/recompute behavior should be verified after reversible merge state exists."
+    },
+    {
+      "id": "IMPLEMENT-014-A",
+      "parent_task_id": "IMPLEMENT-014",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Create the canonical dossier-field registry and alias map for durable field families.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-006-D"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Canonical field families exist for durable dossier storage.",
+        "Near-duplicate field keys can be mapped through aliases."
+      ],
+      "notes": "Clean split because canonical registry design should land before normalizer enforcement."
+    },
+    {
+      "id": "IMPLEMENT-014-B",
+      "parent_task_id": "IMPLEMENT-014",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Gate new dossier-field families through the normalizer so duplicate or unapproved semantic keys stay proposal-only.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-014-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Duplicate semantic keys are normalized or blocked before durable write.",
+        "Unapproved field families remain proposal-only."
+      ],
+      "notes": "Clean split because enforcement behavior should be verified after the registry exists."
+    },
+    {
+      "id": "IMPLEMENT-015-A",
+      "parent_task_id": "IMPLEMENT-015",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Define and persist distinct decay semantics for stable traits, situational states, and local episodes.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-007-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Durable object families have distinct freshness and decay classes.",
+        "Local episodes no longer inherit the same persistence behavior as stable traits."
+      ],
+      "notes": "Clean split because temporal decay policy should be explicit before read-model behavior is changed."
+    },
+    {
+      "id": "IMPLEMENT-015-B",
+      "parent_task_id": "IMPLEMENT-015",
+      "phase": "phase-b-implementation",
+      "priority": "high",
+      "description": "Apply recency-aware read and refresh behavior so stale durable conclusions can be downgraded by newer contradictory evidence.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "IMPLEMENT-015-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Reads and refreshes can down-rank stale situational conclusions.",
+        "Stable traits remain more persistent than local episodes under the same policy."
+      ],
+      "notes": "Clean split because recency-aware read behavior should follow explicit decay semantics."
+    },
+    {
+      "id": "IMPLEMENT-016-A",
+      "parent_task_id": "IMPLEMENT-016",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement bounded backfill concurrency, per-scope locking, and durable checkpoints for large rebuilds.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-009-C"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Large rebuilds cannot fan out into uncontrolled concurrent scope writes.",
+        "Checkpoint state allows safe resume without duplicate durable objects."
+      ],
+      "notes": "Clean split because concurrency and checkpointing form the base safety layer for backfill."
+    },
+    {
+      "id": "IMPLEMENT-016-B",
+      "parent_task_id": "IMPLEMENT-016",
+      "phase": "phase-b-implementation",
+      "priority": "critical",
+      "description": "Implement deadlock-aware retry, bounded backoff, and recovery metrics for backfill and rebuild write conflicts.",
+      "executor_agent": "database-administrator",
+      "dependencies": [
+        "IMPLEMENT-016-A"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Deadlocks and transient conflicts recover without corrupting progress.",
+        "Retry and recovery behavior is observable for pilot validation."
+      ],
+      "notes": "Clean split because deadlock recovery should be validated after bounded concurrency and checkpoints exist."
     }
   ]
 }
