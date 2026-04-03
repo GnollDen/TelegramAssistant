@@ -118,6 +118,7 @@ try
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7TimelineSmoke = args.Any(arg => string.Equals(arg, "--stage7-timeline-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage8RecomputeSmoke = args.Any(arg => string.Equals(arg, "--stage8-recompute-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -173,6 +174,7 @@ try
         "--stage7-dossier-profile-smoke",
         "--stage7-pair-dynamics-smoke",
         "--stage7-timeline-smoke",
+        "--stage8-recompute-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -251,6 +253,13 @@ try
     {
         await Stage7TimelineSmokeRunner.RunAsync();
         Log.Information("Stage7 timeline smoke requested via --stage7-timeline-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runStage8RecomputeSmoke)
+    {
+        await Stage8RecomputeQueueSmokeRunner.RunAsync();
+        Log.Information("Stage8 recompute smoke requested via --stage8-recompute-smoke. Exiting after successful verification.");
         return;
     }
 

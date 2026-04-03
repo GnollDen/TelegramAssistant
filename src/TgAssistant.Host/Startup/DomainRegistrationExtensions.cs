@@ -6,6 +6,7 @@ using TgAssistant.Infrastructure.Database;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Intelligence.Stage6Bootstrap;
 using TgAssistant.Intelligence.Stage7Formation;
+using TgAssistant.Intelligence.Stage8Recompute;
 using TgAssistant.Intelligence.Stage6;
 using TgAssistant.Intelligence.Stage6.Clarification;
 using TgAssistant.Intelligence.Stage6.CompetingContext;
@@ -54,6 +55,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7DossierProfileService, Stage7DossierProfileFormationService>();
         services.AddSingleton<IStage7PairDynamicsService, Stage7PairDynamicsFormationService>();
         services.AddSingleton<IStage7TimelineService, Stage7TimelineFormationService>();
+        services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();
@@ -185,6 +187,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7DossierProfileRepository, Stage7DossierProfileRepository>();
         services.AddSingleton<IStage7PairDynamicsRepository, Stage7PairDynamicsRepository>();
         services.AddSingleton<IStage7TimelineRepository, Stage7TimelineRepository>();
+        services.AddSingleton<IStage8RecomputeQueueRepository, Stage8RecomputeQueueRepository>();
         services.AddSingleton<IArchiveImportRepository, ArchiveImportRepository>();
         services.AddSingleton<IStickerCacheRepository, StickerCacheRepository>();
         services.AddSingleton<IPromptTemplateRepository, PromptTemplateRepository>();

@@ -855,6 +855,32 @@ public class DbDurableStoryArcRevision
     public DateTime CreatedAt { get; set; }
 }
 
+public class DbStage8RecomputeQueueItem
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid? PersonId { get; set; }
+    public string TargetFamily { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public string DedupeKey { get; set; } = string.Empty;
+    public string? ActiveDedupeKey { get; set; }
+    public string TriggerKind { get; set; } = string.Empty;
+    public string? TriggerRef { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int Priority { get; set; }
+    public int AttemptCount { get; set; }
+    public int MaxAttempts { get; set; }
+    public DateTime AvailableAtUtc { get; set; }
+    public DateTime? LeasedUntilUtc { get; set; }
+    public Guid? LeaseToken { get; set; }
+    public string? LastError { get; set; }
+    public string? LastResultStatus { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

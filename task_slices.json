@@ -755,12 +755,12 @@
       "dependencies": [
         "IMPLEMENT-006-D"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Scoped recompute can run independently of global rebuilds.",
         "Queue behavior is idempotent and retry-safe."
       ],
-      "notes": "Clean split because queue infrastructure is foundational to crystallization."
+      "notes": "Clean split because queue infrastructure is foundational to crystallization. Added persistent stage8_recompute_queue_items storage plus Stage8RecomputeQueueRepository/Service for deduped enqueue, lease, complete, and retry-safe reschedule behavior, with smallest-sufficient-scope execution that runs stage6_bootstrap directly or the requested stage7 family through bootstrap as upstream context; --stage8-recompute-smoke validates dedupe, scoped dossier/profile execution, and transient-failure retry/reschedule, and dotnet build TelegramAssistant.sln passed."
     },
     {
       "id": "IMPLEMENT-007-B",

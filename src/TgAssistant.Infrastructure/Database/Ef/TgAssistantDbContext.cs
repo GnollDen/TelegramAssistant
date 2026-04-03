@@ -61,6 +61,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableTimelineEpisodeRevision> DurableTimelineEpisodeRevisions => Set<DbDurableTimelineEpisodeRevision>();
     public DbSet<DbDurableStoryArc> DurableStoryArcs => Set<DbDurableStoryArc>();
     public DbSet<DbDurableStoryArcRevision> DurableStoryArcRevisions => Set<DbDurableStoryArcRevision>();
+    public DbSet<DbStage8RecomputeQueueItem> Stage8RecomputeQueueItems => Set<DbStage8RecomputeQueueItem>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -1231,6 +1232,42 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.DurableStoryArcId, x.RevisionHash }).IsUnique();
             e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
             e.HasIndex(x => new { x.DurableStoryArcId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<DbStage8RecomputeQueueItem>(e =>
+        {
+            e.ToTable("stage8_recompute_queue_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.PersonId).HasColumnName("person_id");
+            e.Property(x => x.TargetFamily).HasColumnName("target_family");
+            e.Property(x => x.TargetRef).HasColumnName("target_ref");
+            e.Property(x => x.DedupeKey).HasColumnName("dedupe_key");
+            e.Property(x => x.ActiveDedupeKey).HasColumnName("active_dedupe_key");
+            e.Property(x => x.TriggerKind).HasColumnName("trigger_kind");
+            e.Property(x => x.TriggerRef).HasColumnName("trigger_ref");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.Priority).HasColumnName("priority");
+            e.Property(x => x.AttemptCount).HasColumnName("attempt_count");
+            e.Property(x => x.MaxAttempts).HasColumnName("max_attempts");
+            e.Property(x => x.AvailableAtUtc).HasColumnName("available_at_utc");
+            e.Property(x => x.LeasedUntilUtc).HasColumnName("leased_until_utc");
+            e.Property(x => x.LeaseToken).HasColumnName("lease_token");
+            e.Property(x => x.LastError).HasColumnName("last_error");
+            e.Property(x => x.LastResultStatus).HasColumnName("last_result_status");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+            e.HasIndex(x => x.ActiveDedupeKey)
+                .IsUnique()
+                .HasFilter("active_dedupe_key IS NOT NULL");
+            e.HasIndex(x => new { x.Status, x.AvailableAtUtc, x.Priority, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.TargetFamily, x.Status, x.AvailableAtUtc });
+            e.HasIndex(x => new { x.PersonId, x.TargetFamily, x.Status })
+                .HasFilter("person_id IS NOT NULL");
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

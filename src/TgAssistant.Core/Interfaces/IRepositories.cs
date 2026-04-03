@@ -168,6 +168,42 @@ public interface IStage7TimelineService
         CancellationToken ct = default);
 }
 
+public interface IStage8RecomputeQueueRepository
+{
+    Task<Stage8RecomputeQueueItem> EnqueueAsync(
+        Stage8RecomputeQueueRequest request,
+        CancellationToken ct = default);
+
+    Task<Stage8RecomputeQueueItem?> LeaseNextAsync(
+        DateTime nowUtc,
+        TimeSpan leaseDuration,
+        CancellationToken ct = default);
+
+    Task CompleteAsync(
+        Guid queueItemId,
+        Guid leaseToken,
+        string resultStatus,
+        Guid? modelPassRunId,
+        CancellationToken ct = default);
+
+    Task RescheduleAsync(
+        Guid queueItemId,
+        Guid leaseToken,
+        string error,
+        DateTime nextAvailableAtUtc,
+        bool terminalFailure,
+        CancellationToken ct = default);
+}
+
+public interface IStage8RecomputeQueueService
+{
+    Task<Stage8RecomputeQueueItem> EnqueueAsync(
+        Stage8RecomputeQueueRequest request,
+        CancellationToken ct = default);
+
+    Task<Stage8RecomputeExecutionResult> ExecuteNextAsync(CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }
