@@ -116,6 +116,7 @@ try
     var runModelPassAuditSmoke = args.Any(arg => string.Equals(arg, "--model-pass-audit-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -169,6 +170,7 @@ try
         "--model-pass-audit-smoke",
         "--stage6-bootstrap-smoke",
         "--stage7-dossier-profile-smoke",
+        "--stage7-pair-dynamics-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -233,6 +235,13 @@ try
     {
         await Stage7DossierProfileSmokeRunner.RunAsync();
         Log.Information("Stage7 dossier/profile smoke requested via --stage7-dossier-profile-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runStage7PairDynamicsSmoke)
+    {
+        await Stage7PairDynamicsSmokeRunner.RunAsync();
+        Log.Information("Stage7 pair-dynamics smoke requested via --stage7-pair-dynamics-smoke. Exiting after successful verification.");
         return;
     }
 

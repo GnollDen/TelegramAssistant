@@ -51,6 +51,8 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbDurableObjectEvidenceLink> DurableObjectEvidenceLinks => Set<DbDurableObjectEvidenceLink>();
     public DbSet<DbDurableDossier> DurableDossiers => Set<DbDurableDossier>();
     public DbSet<DbDurableProfile> DurableProfiles => Set<DbDurableProfile>();
+    public DbSet<DbDurablePairDynamics> DurablePairDynamics => Set<DbDurablePairDynamics>();
+    public DbSet<DbDurablePairDynamicsRevision> DurablePairDynamicsRevisions => Set<DbDurablePairDynamicsRevision>();
 
     // Frozen legacy domain/Stage6 tables: mapped for legacy reads and cleanup only.
     public DbSet<DbPeriod> Periods => Set<DbPeriod>();
@@ -961,6 +963,52 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.PersonId, x.Status });
             e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurablePairDynamics>(e =>
+        {
+            e.ToTable("durable_pair_dynamics");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.LeftPersonId).HasColumnName("left_person_id");
+            e.Property(x => x.RightPersonId).HasColumnName("right_person_id");
+            e.Property(x => x.DurableObjectMetadataId).HasColumnName("durable_object_metadata_id");
+            e.Property(x => x.LastModelPassRunId).HasColumnName("last_model_pass_run_id");
+            e.Property(x => x.PairDynamicsType).HasColumnName("pair_dynamics_type");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CurrentRevisionNumber).HasColumnName("current_revision_number");
+            e.Property(x => x.CurrentRevisionHash).HasColumnName("current_revision_hash");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ScopeKey, x.LeftPersonId, x.RightPersonId, x.PairDynamicsType }).IsUnique();
+            e.HasIndex(x => x.DurableObjectMetadataId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.LeftPersonId, x.RightPersonId, x.Status });
+            e.HasIndex(x => x.LastModelPassRunId).HasFilter("last_model_pass_run_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbDurablePairDynamicsRevision>(e =>
+        {
+            e.ToTable("durable_pair_dynamics_revisions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.DurablePairDynamicsId).HasColumnName("durable_pair_dynamics_id");
+            e.Property(x => x.RevisionNumber).HasColumnName("revision_number");
+            e.Property(x => x.RevisionHash).HasColumnName("revision_hash");
+            e.Property(x => x.ModelPassRunId).HasColumnName("model_pass_run_id");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Freshness).HasColumnName("freshness");
+            e.Property(x => x.Stability).HasColumnName("stability");
+            e.Property(x => x.ContradictionMarkersJson).HasColumnName("contradiction_markers_json").HasColumnType("jsonb");
+            e.Property(x => x.SummaryJson).HasColumnName("summary_json").HasColumnType("jsonb");
+            e.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.HasIndex(x => new { x.DurablePairDynamicsId, x.RevisionNumber }).IsUnique();
+            e.HasIndex(x => new { x.DurablePairDynamicsId, x.RevisionHash }).IsUnique();
+            e.HasIndex(x => x.ModelPassRunId).HasFilter("model_pass_run_id IS NOT NULL");
+            e.HasIndex(x => new { x.DurablePairDynamicsId, x.CreatedAt });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

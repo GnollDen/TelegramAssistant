@@ -661,6 +661,40 @@ public class DbDurableProfile
     public DateTime UpdatedAt { get; set; }
 }
 
+public class DbDurablePairDynamics
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid LeftPersonId { get; set; }
+    public Guid RightPersonId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string PairDynamicsType { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public int CurrentRevisionNumber { get; set; }
+    public string CurrentRevisionHash { get; set; } = string.Empty;
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DbDurablePairDynamicsRevision
+{
+    public Guid Id { get; set; }
+    public Guid DurablePairDynamicsId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public string ContradictionMarkersJson { get; set; } = "[]";
+    public string SummaryJson { get; set; } = "{}";
+    public string PayloadJson { get; set; } = "{}";
+    public DateTime CreatedAt { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

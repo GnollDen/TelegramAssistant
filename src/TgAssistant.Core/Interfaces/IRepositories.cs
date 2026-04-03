@@ -138,6 +138,21 @@ public interface IStage7DossierProfileService
         CancellationToken ct = default);
 }
 
+public interface IStage7PairDynamicsRepository
+{
+    Task<Stage7PairDynamicsFormationResult> UpsertAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        CancellationToken ct = default);
+}
+
+public interface IStage7PairDynamicsService
+{
+    Task<Stage7PairDynamicsFormationResult> FormAsync(
+        Stage7PairDynamicsFormationRequest request,
+        CancellationToken ct = default);
+}
+
 public class EditDiffCandidate
 {
     public long MessageId { get; set; }

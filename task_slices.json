@@ -701,12 +701,12 @@
         "IMPLEMENT-004-C",
         "IMPLEMENT-005-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pair dynamics are not embedded as summary strings.",
         "Revision behavior preserves confidence and freshness history."
       ],
-      "notes": "Clean split because pair dynamics has its own storage and rules."
+      "notes": "Clean split because pair dynamics has its own storage and rules. Added durable_pair_dynamics plus durable_pair_dynamics_revisions as a first-class Stage 7 family backed by shared durable_object_metadata/evidence_links, with Stage7PairDynamicsFormationService/Repository materializing structured pair dimensions, contradiction markers, and family-local revision history keyed by revision hash; added --stage7-pair-dynamics-smoke to verify materialization, stable identity on identical rerun, new revision creation on changed pair pressure, and no durable output for non-ready bootstrap results."
     },
     {
       "id": "IMPLEMENT-006-C",

@@ -4,6 +4,7 @@ public static class Stage7DurableObjectFamilies
 {
     public const string Dossier = "dossier";
     public const string Profile = "profile";
+    public const string PairDynamics = "pair_dynamics";
 }
 
 public static class Stage7DossierTypes
