@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Infrastructure.Database.Ef;
+using TgAssistant.Infrastructure.LlmGateway;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 
@@ -25,6 +26,8 @@ public static class RuntimeHealthProbeRunner
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(20));
         var token = timeoutCts.Token;
+
+        ValidateLlmGatewayReadiness(services);
 
         var dbFactory = services.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
         await using (var db = await dbFactory.CreateDbContextAsync(token))
@@ -97,6 +100,19 @@ public static class RuntimeHealthProbeRunner
         {
             throw new InvalidOperationException(
                 "Readiness failed: ChatCoordination:PhaseGuardsEnabled must be true for ingest/stage5 roles.");
+        }
+    }
+
+    private static void ValidateLlmGatewayReadiness(IServiceProvider services)
+    {
+        var gatewaySettings = services.GetRequiredService<IOptions<LlmGatewaySettings>>().Value;
+        try
+        {
+            LlmGatewaySettingsValidator.ValidateOrThrow(gatewaySettings);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentNullException)
+        {
+            throw new InvalidOperationException($"Readiness failed: gateway configuration invalid. {ex.Message}", ex);
         }
     }
 }

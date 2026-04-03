@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Configuration;
+using TgAssistant.Core.Configuration;
+using TgAssistant.Infrastructure.LlmGateway;
 
 namespace TgAssistant.Host.Startup;
 
@@ -7,6 +9,7 @@ public static class RuntimeStartupGuard
     public static void Validate(IConfiguration config, RuntimeRoleSelection selection)
     {
         ValidateRequiredConnectionStrings(config);
+        ValidateLlmGatewayStartupConfig(config);
         ValidateRoleSpecificConfig(config, selection);
     }
 
@@ -46,6 +49,21 @@ public static class RuntimeStartupGuard
             }
         }
 
+    }
+
+    private static void ValidateLlmGatewayStartupConfig(IConfiguration config)
+    {
+        var gatewaySettings = new LlmGatewaySettings();
+        config.GetSection(LlmGatewaySettings.Section).Bind(gatewaySettings);
+
+        try
+        {
+            LlmGatewaySettingsValidator.ValidateOrThrow(gatewaySettings);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentNullException)
+        {
+            throw new InvalidOperationException($"Runtime startup validation failed for LlmGateway: {ex.Message}", ex);
+        }
     }
 
     private static bool LooksLikePlaceholderSecret(string value)

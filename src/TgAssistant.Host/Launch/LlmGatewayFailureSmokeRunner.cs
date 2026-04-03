@@ -17,6 +17,9 @@ public static class LlmGatewayFailureSmokeRunner
         await RunRetryableFallbackScenarioAsync(ct);
         await RunAuthFailFastScenarioAsync(ct);
         await RunSchemaMismatchScenarioAsync(ct);
+        await RunRouteOverrideBoundedScenarioAsync(ct);
+        await RunModelHintBoundedScenarioAsync(ct);
+        RunGatewayConfigValidationScenario();
     }
 
     private static async Task RunRetryableFallbackScenarioAsync(CancellationToken ct)
@@ -208,9 +211,134 @@ public static class LlmGatewayFailureSmokeRunner
                     DefaultModel = "openrouter-default-failure",
                     ChatCompletionsPath = "/chat/completions",
                     EmbeddingsPath = "/embeddings"
+                },
+                ["spare-provider"] = new()
+                {
+                    BaseUrl = "http://spare-provider.local",
+                    ApiKey = "spare-provider-key",
+                    DefaultModel = "spare-default",
+                    ChatCompletionsPath = "/v1/chat/completions"
                 }
             }
         };
+    }
+
+    private static async Task RunRouteOverrideBoundedScenarioAsync(CancellationToken ct)
+    {
+        var loggerFactory = LoggerFactory.Create(_ => { });
+        var settings = BuildSettings();
+        var options = Options.Create(settings);
+        var codexHandler = new RecordingHttpMessageHandler((_, _) =>
+            throw new InvalidOperationException("LLM gateway failure smoke failed: route override bounds should fail before provider invocation."));
+        var openRouterHandler = new RecordingHttpMessageHandler((_, _) =>
+            throw new InvalidOperationException("LLM gateway failure smoke failed: route override bounds should fail before provider invocation."));
+
+        var gateway = BuildGateway(options, loggerFactory, codexHandler, openRouterHandler);
+        var request = BuildTextRequest("route_override_out_of_bounds");
+        request.RouteOverride = new LlmGatewayRouteOverride
+        {
+            PrimaryProvider = "spare-provider"
+        };
+
+        try
+        {
+            await gateway.ExecuteAsync(request, ct);
+            throw new InvalidOperationException("LLM gateway failure smoke failed: out-of-bounds route override did not fail validation.");
+        }
+        catch (LlmGatewayException ex)
+        {
+            if (ex.Category != LlmGatewayErrorCategory.Validation
+                || !ex.Message.Contains("outside configured provider bounds", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"LLM gateway failure smoke failed: unexpected route override boundary error: {ex.Message}");
+            }
+        }
+
+        if (codexHandler.RequestCount != 0 || openRouterHandler.RequestCount != 0)
+        {
+            throw new InvalidOperationException($"LLM gateway failure smoke failed: route override boundary should not hit providers, saw codex={codexHandler.RequestCount}, openrouter={openRouterHandler.RequestCount}.");
+        }
+    }
+
+    private static async Task RunModelHintBoundedScenarioAsync(CancellationToken ct)
+    {
+        var loggerFactory = LoggerFactory.Create(_ => { });
+        var settings = BuildSettings();
+        var options = Options.Create(settings);
+        var codexHandler = new RecordingHttpMessageHandler((_, _) =>
+            throw new InvalidOperationException("LLM gateway failure smoke failed: model hint bounds should fail before provider invocation."));
+        var openRouterHandler = new RecordingHttpMessageHandler((_, _) =>
+            throw new InvalidOperationException("LLM gateway failure smoke failed: model hint bounds should fail before provider invocation."));
+
+        var gateway = BuildGateway(options, loggerFactory, codexHandler, openRouterHandler);
+        var request = BuildTextRequest("model_hint_out_of_bounds");
+        request.ModelHint = "not-allowed-unbounded-model";
+
+        try
+        {
+            await gateway.ExecuteAsync(request, ct);
+            throw new InvalidOperationException("LLM gateway failure smoke failed: model hint without route override did not fail validation.");
+        }
+        catch (LlmGatewayException ex)
+        {
+            if (ex.Category != LlmGatewayErrorCategory.Validation
+                || !ex.Message.Contains("cannot set ModelHint without RouteOverride", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"LLM gateway failure smoke failed: unexpected model hint boundary error: {ex.Message}");
+            }
+        }
+
+        if (codexHandler.RequestCount != 0 || openRouterHandler.RequestCount != 0)
+        {
+            throw new InvalidOperationException($"LLM gateway failure smoke failed: model hint boundary should not hit providers, saw codex={codexHandler.RequestCount}, openrouter={openRouterHandler.RequestCount}.");
+        }
+    }
+
+    private static void RunGatewayConfigValidationScenario()
+    {
+        var invalid = new LlmGatewaySettings
+        {
+            Enabled = true,
+            Routing = new Dictionary<string, LlmGatewayRouteSettings>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["text_chat"] = new()
+                {
+                    Enabled = true,
+                    PrimaryProvider = "openrouter",
+                    PrimaryModel = null,
+                    RetryPolicyClass = "text_default",
+                    TimeoutBudgetClass = string.Empty
+                }
+            },
+            Providers = new Dictionary<string, LlmGatewayProviderSettings>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["openrouter"] = new()
+                {
+                    Enabled = true,
+                    BaseUrl = "https://openrouter.local",
+                    ApiKey = string.Empty,
+                    UseAuthorizationHeader = true,
+                    DefaultModel = null,
+                    ChatCompletionsPath = string.Empty,
+                    TimeoutSeconds = 0
+                }
+            }
+        };
+
+        try
+        {
+            LlmGatewaySettingsValidator.ValidateOrThrow(invalid);
+            throw new InvalidOperationException("LLM gateway failure smoke failed: invalid gateway settings passed validation.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            if (!ex.Message.Contains("TimeoutBudgetClass", StringComparison.Ordinal)
+                || !ex.Message.Contains("ApiKey", StringComparison.Ordinal)
+                || !ex.Message.Contains("TimeoutSeconds", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"LLM gateway failure smoke failed: validation diagnostics missing expected details. message={ex.Message}");
+            }
+        }
     }
 
     private static LlmGatewayRequest BuildTextRequest(string scenario)

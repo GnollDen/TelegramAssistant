@@ -25,6 +25,7 @@ public class LlmGatewayService : ILlmGateway
         _providers = providers.ToDictionary(provider => provider.ProviderId, StringComparer.OrdinalIgnoreCase);
         _routingPolicy = routingPolicy;
         _settings = settings.Value;
+        LlmGatewaySettingsValidator.ValidateOrThrow(_settings);
         _logger = logger;
         _metrics = metrics;
     }
@@ -193,9 +194,10 @@ public class LlmGatewayService : ILlmGateway
         var requestedModel = string.IsNullOrWhiteSpace(request.ModelHint) ? null : request.ModelHint.Trim();
         routingDecision.ProviderModelHints.TryGetValue(providerId, out var routedModel);
 
+        var allowRequestModelHint = isPrimaryAttempt && request.RouteOverride is not null;
         var resolved = isPrimaryAttempt
-            ? requestedModel ?? routedModel ?? providerSettings?.DefaultModel
-            : routedModel ?? requestedModel ?? providerSettings?.DefaultModel;
+            ? routedModel ?? (allowRequestModelHint ? requestedModel : null) ?? providerSettings?.DefaultModel
+            : routedModel ?? providerSettings?.DefaultModel;
 
         if (!string.IsNullOrWhiteSpace(resolved))
         {

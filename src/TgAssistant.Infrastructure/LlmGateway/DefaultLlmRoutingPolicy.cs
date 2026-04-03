@@ -18,11 +18,127 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
 
     public LlmRoutingDecision Resolve(LlmGatewayRequest request)
     {
-        if (request.RouteOverride is not null && !string.IsNullOrWhiteSpace(request.RouteOverride.PrimaryProvider))
+        var route = ResolveConfiguredRoute(request);
+
+        if (request.RouteOverride is null && !string.IsNullOrWhiteSpace(request.ModelHint))
         {
-            return ResolveRouteOverride(request);
+            throw new LlmGatewayException(
+                $"Gateway request for modality '{LlmGatewaySettings.ToRouteKey(request.Modality)}' cannot set ModelHint without RouteOverride.")
+            {
+                Category = LlmGatewayErrorCategory.Validation,
+                Modality = request.Modality,
+                Retryable = false
+            };
         }
 
+        var decision = new LlmRoutingDecision
+        {
+            PrimaryProvider = route.PrimaryProvider.Trim(),
+            RetryPolicyClass = string.IsNullOrWhiteSpace(route.RetryPolicyClass) ? "default" : route.RetryPolicyClass.Trim(),
+            TimeoutBudgetClass = string.IsNullOrWhiteSpace(route.TimeoutBudgetClass) ? "default" : route.TimeoutBudgetClass.Trim()
+        };
+
+        ApplyProviderTargets(decision, route.PrimaryProvider, route.PrimaryModel, route.FallbackProviders);
+
+        if (request.RouteOverride is not null && !string.IsNullOrWhiteSpace(request.RouteOverride.PrimaryProvider))
+        {
+            ApplyBoundedRouteOverride(request, decision);
+        }
+        else
+        {
+            ApplyExperimentOverride(request, decision);
+        }
+
+        return decision;
+    }
+
+    private static void ApplyBoundedRouteOverride(LlmGatewayRequest request, LlmRoutingDecision decision)
+    {
+        var routeOverride = request.RouteOverride!;
+        var primaryProvider = routeOverride.PrimaryProvider.Trim();
+        var allowedProviders = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { decision.PrimaryProvider };
+        foreach (var fallbackProvider in decision.FallbackProviders)
+        {
+            allowedProviders.Add(fallbackProvider);
+        }
+
+        if (!allowedProviders.Contains(primaryProvider))
+        {
+            throw new LlmGatewayException(
+                $"Gateway RouteOverride primary provider '{primaryProvider}' is outside configured provider bounds for modality '{request.Modality}'.")
+            {
+                Category = LlmGatewayErrorCategory.Validation,
+                Modality = request.Modality,
+                Retryable = false
+            };
+        }
+
+        var boundedFallbackProviders = new List<string>();
+        foreach (var fallback in routeOverride.FallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
+        {
+            var providerId = fallback.Provider.Trim();
+            if (!allowedProviders.Contains(providerId))
+            {
+                throw new LlmGatewayException(
+                    $"Gateway RouteOverride fallback provider '{providerId}' is outside configured provider bounds for modality '{request.Modality}'.")
+                {
+                    Category = LlmGatewayErrorCategory.Validation,
+                    Modality = request.Modality,
+                    Retryable = false
+                };
+            }
+
+            if (string.Equals(providerId, primaryProvider, StringComparison.OrdinalIgnoreCase)
+                || boundedFallbackProviders.Contains(providerId, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            boundedFallbackProviders.Add(providerId);
+        }
+
+        decision.PrimaryProvider = primaryProvider;
+        decision.FallbackProviders = boundedFallbackProviders;
+        decision.ProviderModelHints.Clear();
+
+        foreach (var hint in routeOverride.ProviderModelHints)
+        {
+            if (string.IsNullOrWhiteSpace(hint.Key) || string.IsNullOrWhiteSpace(hint.Value))
+            {
+                continue;
+            }
+
+            var providerId = hint.Key.Trim();
+            if (!string.Equals(providerId, decision.PrimaryProvider, StringComparison.OrdinalIgnoreCase)
+                && !decision.FallbackProviders.Contains(providerId, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new LlmGatewayException(
+                    $"Gateway RouteOverride model hint provider '{providerId}' is outside configured provider bounds for modality '{request.Modality}'.")
+                {
+                    Category = LlmGatewayErrorCategory.Validation,
+                    Modality = request.Modality,
+                    Retryable = false
+                };
+            }
+
+            decision.ProviderModelHints[providerId] = hint.Value.Trim();
+        }
+
+        foreach (var fallback in routeOverride.FallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
+        {
+            var providerId = fallback.Provider.Trim();
+            if (!decision.FallbackProviders.Contains(providerId, StringComparer.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(fallback.Model))
+            {
+                continue;
+            }
+
+            decision.ProviderModelHints[providerId] = fallback.Model.Trim();
+        }
+    }
+
+    private LlmGatewayRouteSettings ResolveConfiguredRoute(LlmGatewayRequest request)
+    {
         var route = _settings.GetRoute(request.Modality);
         if (route is null)
         {
@@ -57,49 +173,7 @@ public class DefaultLlmRoutingPolicy : ILlmRoutingPolicy
             };
         }
 
-        var decision = new LlmRoutingDecision
-        {
-            PrimaryProvider = route.PrimaryProvider.Trim(),
-            RetryPolicyClass = string.IsNullOrWhiteSpace(route.RetryPolicyClass) ? "default" : route.RetryPolicyClass.Trim(),
-            TimeoutBudgetClass = string.IsNullOrWhiteSpace(route.TimeoutBudgetClass) ? "default" : route.TimeoutBudgetClass.Trim()
-        };
-
-        ApplyProviderTargets(decision, route.PrimaryProvider, route.PrimaryModel, route.FallbackProviders);
-
-        ApplyExperimentOverride(request, decision);
-
-        return decision;
-    }
-
-    private static LlmRoutingDecision ResolveRouteOverride(LlmGatewayRequest request)
-    {
-        var routeOverride = request.RouteOverride!;
-        var decision = new LlmRoutingDecision
-        {
-            PrimaryProvider = routeOverride.PrimaryProvider.Trim(),
-            RetryPolicyClass = "default",
-            TimeoutBudgetClass = "default"
-        };
-
-        foreach (var hint in routeOverride.ProviderModelHints)
-        {
-            if (!string.IsNullOrWhiteSpace(hint.Key) && !string.IsNullOrWhiteSpace(hint.Value))
-            {
-                decision.ProviderModelHints[hint.Key.Trim()] = hint.Value.Trim();
-            }
-        }
-
-        foreach (var fallback in routeOverride.FallbackProviders.Where(target => !string.IsNullOrWhiteSpace(target.Provider)))
-        {
-            var providerId = fallback.Provider.Trim();
-            decision.FallbackProviders.Add(providerId);
-            if (!string.IsNullOrWhiteSpace(fallback.Model))
-            {
-                decision.ProviderModelHints[providerId] = fallback.Model.Trim();
-            }
-        }
-
-        return decision;
+        return route;
     }
 
     private void ApplyExperimentOverride(LlmGatewayRequest request, LlmRoutingDecision decision)
