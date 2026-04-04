@@ -50,6 +50,7 @@ public static class LlmGatewayAnalyticsSmokeRunner
 
         var samples = collector.GetSamples();
         AssertMetric(samples, "llm_gateway_requests_total", "provider", "model", "modality", "status");
+        AssertMetric(samples, "llm_gateway_failures_total", "provider", "model", "modality", "status", "error_category");
         AssertMetric(samples, "llm_gateway_tokens_total", "provider", "model", "modality", "status");
         AssertMetric(samples, "llm_gateway_provider_latency_ms", "provider", "model", "modality", "status");
         AssertMetric(samples, "llm_gateway_end_to_end_latency_ms", "provider", "model", "modality", "status");
@@ -67,6 +68,11 @@ public static class LlmGatewayAnalyticsSmokeRunner
         if (!HasRequestSample(samples, CodexLbChatProviderClient.ProviderIdValue, "error", "primary"))
         {
             throw new InvalidOperationException("LLM gateway analytics smoke failed: retryable primary provider failure was not recorded in request error metrics.");
+        }
+
+        if (!HasFailureSample(samples, CodexLbChatProviderClient.ProviderIdValue, "primary"))
+        {
+            throw new InvalidOperationException("LLM gateway analytics smoke failed: retryable primary provider failure was not recorded in provider failure metrics.");
         }
 
         if (!HasRequestSample(samples, OpenRouterProviderClient.ProviderIdValue, "success", "fallback"))
@@ -121,6 +127,21 @@ public static class LlmGatewayAnalyticsSmokeRunner
             && string.Equals(taggedStatus, status, StringComparison.Ordinal)
             && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
             && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal));
+    }
+
+    private static bool HasFailureSample(
+        IReadOnlyList<MetricSample> samples,
+        string provider,
+        string routeKind)
+    {
+        return samples.Any(sample =>
+            string.Equals(sample.Name, "llm_gateway_failures_total", StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("provider", out var taggedProvider)
+            && string.Equals(taggedProvider, provider, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
+            && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("status", out var taggedStatus)
+            && string.Equals(taggedStatus, "error", StringComparison.Ordinal));
     }
 
     private static LlmGatewaySettings BuildSettings()

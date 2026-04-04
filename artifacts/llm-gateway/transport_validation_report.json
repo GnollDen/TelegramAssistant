@@ -1,7 +1,7 @@
 {
-  "GeneratedAtUtc": "2026-04-03T16:34:55.0381556Z",
+  "GeneratedAtUtc": "2026-04-04T08:06:53.7453852Z",
   "OutputPath": "/home/codex/projects/TelegramAssistant/artifacts/llm-gateway/transport_validation_report.json",
-  "LoopbackBaseUrl": "http://127.0.0.1:43457/",
+  "LoopbackBaseUrl": "http://127.0.0.1:42457/",
   "PrimarySuccess": {
     "Scenario": "primary_success",
     "Passed": true,
@@ -76,6 +76,12 @@
         "MissingTags": []
       },
       {
+        "Name": "llm_gateway_failures_total",
+        "Emitted": true,
+        "HasRequiredTags": true,
+        "MissingTags": []
+      },
+      {
         "Name": "llm_gateway_fallback_total",
         "Emitted": true,
         "HasRequiredTags": true,
@@ -103,6 +109,7 @@
       "primary"
     ],
     "PrimaryRetryableFailureVisible": true,
+    "PrimaryRetryableFailureCounterVisible": true,
     "FallbackSuccessVisible": true,
     "FallbackTransitionVisible": true,
     "AllChecksPassed": true

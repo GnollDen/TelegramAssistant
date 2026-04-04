@@ -340,6 +340,10 @@ public static class LlmGatewayTransportValidationRunner
                 provider: CodexLbChatProviderClient.ProviderIdValue,
                 status: "error",
                 routeKind: "primary"),
+            PrimaryRetryableFailureCounterVisible = HasFailureSample(
+                samples,
+                provider: CodexLbChatProviderClient.ProviderIdValue,
+                routeKind: "primary"),
             FallbackSuccessVisible = HasRequestSample(
                 samples,
                 provider: OpenRouterProviderClient.ProviderIdValue,
@@ -358,6 +362,7 @@ public static class LlmGatewayTransportValidationRunner
             && result.RequestRouteKinds.Contains("primary", StringComparer.Ordinal)
             && result.RequestRouteKinds.Contains("fallback", StringComparer.Ordinal)
             && result.PrimaryRetryableFailureVisible
+            && result.PrimaryRetryableFailureCounterVisible
             && result.FallbackSuccessVisible
             && result.FallbackTransitionVisible;
         return result;
@@ -368,6 +373,7 @@ public static class LlmGatewayTransportValidationRunner
         var requirements = new[]
         {
             new MetricRequirement("llm_gateway_requests_total", "provider", "model", "modality", "status", "route_kind"),
+            new MetricRequirement("llm_gateway_failures_total", "provider", "model", "modality", "status", "route_kind", "error_category"),
             new MetricRequirement("llm_gateway_fallback_total", "from_provider", "to_provider", "reason", "modality"),
             new MetricRequirement("llm_gateway_provider_latency_ms", "provider", "model", "modality", "status"),
             new MetricRequirement("llm_gateway_end_to_end_latency_ms", "provider", "model", "modality", "status")
@@ -426,6 +432,21 @@ public static class LlmGatewayTransportValidationRunner
             && string.Equals(taggedToProvider, toProvider, StringComparison.Ordinal)
             && sample.Tags.TryGetValue("reason", out var taggedReason)
             && string.Equals(taggedReason, reason, StringComparison.Ordinal));
+    }
+
+    private static bool HasFailureSample(
+        IReadOnlyList<MetricSample> samples,
+        string provider,
+        string routeKind)
+    {
+        return samples.Any(sample =>
+            string.Equals(sample.Name, "llm_gateway_failures_total", StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("provider", out var taggedProvider)
+            && string.Equals(taggedProvider, provider, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("status", out var taggedStatus)
+            && string.Equals(taggedStatus, "error", StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
+            && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal));
     }
 
     private static LlmGatewayRequest BuildTextRequest(string scenario)
@@ -1115,6 +1136,7 @@ public sealed class LlmGatewayTransportObservabilityResult
     public List<string> RequestStatuses { get; set; } = new();
     public List<string> RequestRouteKinds { get; set; } = new();
     public bool PrimaryRetryableFailureVisible { get; set; }
+    public bool PrimaryRetryableFailureCounterVisible { get; set; }
     public bool FallbackSuccessVisible { get; set; }
     public bool FallbackTransitionVisible { get; set; }
     public bool AllChecksPassed { get; set; }

@@ -11,6 +11,7 @@ public sealed class LlmGatewayMetrics
     private static readonly Meter Meter = new(MeterName, "1.0.0");
 
     private readonly Counter<long> _requestsTotal = Meter.CreateCounter<long>("llm_gateway_requests_total");
+    private readonly Counter<long> _failuresTotal = Meter.CreateCounter<long>("llm_gateway_failures_total");
     private readonly Counter<long> _tokensTotal = Meter.CreateCounter<long>("llm_gateway_tokens_total");
     private readonly Counter<long> _promptTokensTotal = Meter.CreateCounter<long>("llm_gateway_prompt_tokens_total");
     private readonly Counter<long> _completionTokensTotal = Meter.CreateCounter<long>("llm_gateway_completion_tokens_total");
@@ -50,6 +51,7 @@ public sealed class LlmGatewayMetrics
     {
         var tags = BuildCommonTags(request, provider, model, "error", fallbackApplied, fallbackFromProvider, errorCategory);
         _requestsTotal.Add(1, tags);
+        _failuresTotal.Add(1, tags);
         _endToEndLatencyMs.Record(endToEndLatencyMs, tags);
     }
 

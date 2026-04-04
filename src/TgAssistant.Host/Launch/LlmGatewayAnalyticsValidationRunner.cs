@@ -103,6 +103,10 @@ public static class LlmGatewayAnalyticsValidationRunner
             provider: CodexLbChatProviderClient.ProviderIdValue,
             status: "error",
             routeKind: "primary");
+        var hasPrimaryRetryableFailureCounter = HasFailureSample(
+            samples,
+            provider: CodexLbChatProviderClient.ProviderIdValue,
+            routeKind: "primary");
         var hasFallbackSuccessAccounting = HasRequestSample(
             samples,
             provider: OpenRouterProviderClient.ProviderIdValue,
@@ -117,6 +121,7 @@ public static class LlmGatewayAnalyticsValidationRunner
             && statuses.Contains("success", StringComparer.Ordinal)
             && statuses.Contains("error", StringComparer.Ordinal)
             && hasPrimaryRetryableFailureAccounting
+            && hasPrimaryRetryableFailureCounter
             && hasFallbackSuccessAccounting;
         report.Recommendation = report.AllChecksPassed
             ? "analytics_ready_for_rollout_ops_decisions"
@@ -145,6 +150,21 @@ public static class LlmGatewayAnalyticsValidationRunner
             && string.Equals(taggedProvider, provider, StringComparison.Ordinal)
             && sample.Tags.TryGetValue("status", out var taggedStatus)
             && string.Equals(taggedStatus, status, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
+            && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal));
+    }
+
+    private static bool HasFailureSample(
+        IReadOnlyList<MetricSample> samples,
+        string provider,
+        string routeKind)
+    {
+        return samples.Any(sample =>
+            string.Equals(sample.Name, "llm_gateway_failures_total", StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("provider", out var taggedProvider)
+            && string.Equals(taggedProvider, provider, StringComparison.Ordinal)
+            && sample.Tags.TryGetValue("status", out var taggedStatus)
+            && string.Equals(taggedStatus, "error", StringComparison.Ordinal)
             && sample.Tags.TryGetValue("route_kind", out var taggedRouteKind)
             && string.Equals(taggedRouteKind, routeKind, StringComparison.Ordinal));
     }
@@ -214,6 +234,7 @@ public static class LlmGatewayAnalyticsValidationRunner
         var requirements = new[]
         {
             new MetricRequirement("llm_gateway_requests_total", "provider", "model", "modality", "status", "route_kind"),
+            new MetricRequirement("llm_gateway_failures_total", "provider", "model", "modality", "status", "route_kind", "error_category"),
             new MetricRequirement("llm_gateway_tokens_total", "provider", "model", "modality", "status"),
             new MetricRequirement("llm_gateway_prompt_tokens_total", "provider", "model", "modality", "status"),
             new MetricRequirement("llm_gateway_completion_tokens_total", "provider", "model", "modality", "status"),
