@@ -1309,7 +1309,7 @@
         "OPINT-008"
       ],
       "status": "pending",
-      "notes": "P2 track by product priority; execute after P0/P1 stabilization."
+      "notes": "P2 track by product priority; execute after P0/P1 stabilization. Progress 2026-04-04: OPINT-009-A completed by introducing explicit workflow-critical alert taxonomy plus suppression/escalation boundaries (suppressed/web-only/telegram+ack), adding shared policy contracts and evaluator, wiring Telegram Alerts mode to policy summary, and validating with --opint-009-a-smoke. Remaining slices OPINT-009-B/C1/C2/D are pending."
     }
   ]
 }

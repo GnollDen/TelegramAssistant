@@ -24,6 +24,12 @@ public interface ITextEmbeddingGenerator
     Task<float[]> GenerateAsync(string model, string input, CancellationToken ct = default);
 }
 
+public interface IOperatorAlertPolicyService
+{
+    OperatorAlertPolicyDecision Evaluate(OperatorAlertPolicyInput input);
+    IReadOnlyList<OperatorAlertPolicyRuleDefinition> GetRules();
+}
+
 public interface IStickerCacheRepository
 {
     Task<StickerCacheItem?> GetByHashAsync(string contentHash, CancellationToken ct = default);

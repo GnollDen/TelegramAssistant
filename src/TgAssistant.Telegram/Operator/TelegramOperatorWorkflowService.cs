@@ -43,6 +43,7 @@ public sealed class TelegramOperatorWorkflowService
     private readonly WebSettings _webSettings;
     private readonly TelegramOperatorSessionStore _sessionStore;
     private readonly IOperatorResolutionApplicationService _operatorResolutionService;
+    private readonly IOperatorAlertPolicyService _operatorAlertPolicyService;
     private readonly IOperatorAssistantResponseGenerationService _assistantResponseGenerationService;
     private readonly IOperatorAssistantContextAssemblyService _assistantContextAssemblyService;
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
@@ -55,6 +56,7 @@ public sealed class TelegramOperatorWorkflowService
         IOptions<WebSettings> webSettings,
         TelegramOperatorSessionStore sessionStore,
         IOperatorResolutionApplicationService operatorResolutionService,
+        IOperatorAlertPolicyService operatorAlertPolicyService,
         IOperatorAssistantResponseGenerationService assistantResponseGenerationService,
         IOperatorAssistantContextAssemblyService assistantContextAssemblyService,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
@@ -66,6 +68,7 @@ public sealed class TelegramOperatorWorkflowService
         _webSettings = webSettings.Value;
         _sessionStore = sessionStore;
         _operatorResolutionService = operatorResolutionService;
+        _operatorAlertPolicyService = operatorAlertPolicyService;
         _assistantResponseGenerationService = assistantResponseGenerationService;
         _assistantContextAssemblyService = assistantContextAssemblyService;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
@@ -271,10 +274,7 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(callbackData, "mode:alerts", StringComparison.Ordinal))
         {
-            return CreateModeCard(
-                state,
-                "Alerts stay deferred in this slice.",
-                callbackNotice: "Not in this slice");
+            return CreateAlertsPolicyCard(state, callbackNotice: "Policy loaded");
         }
 
         if (string.Equals(callbackData, "resolution:switch-person", StringComparison.Ordinal))
@@ -2050,7 +2050,7 @@ public sealed class TelegramOperatorWorkflowService
         state.Session.ActiveScopeItemKey = binding.ScopeItemKey;
         state.Session.UnfinishedStep = null;
 
-        var handoffToken = BuildOpenWebHandoffToken(state.Session, item);
+        var handoffToken = BuildOpenWebHandoffToken(state.Session, item, nowUtc);
         var lines = new List<string>
         {
             "Open Web Handoff",
@@ -2529,17 +2529,21 @@ public sealed class TelegramOperatorWorkflowService
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string BuildOpenWebHandoffToken(OperatorSessionContext session, ResolutionItemDetail item)
+    private string BuildOpenWebHandoffToken(OperatorSessionContext session, ResolutionItemDetail item, DateTime nowUtc)
     {
-        var payload = string.Join(
-            "|",
-            "opint",
-            "resolution_detail",
-            session.ActiveTrackedPersonId.ToString("D"),
+        var signingSecret = OperatorHandoffTokenCodec.ResolveSigningSecret(_webSettings);
+        if (string.IsNullOrWhiteSpace(signingSecret))
+        {
+            return string.Empty;
+        }
+
+        return OperatorHandoffTokenCodec.CreateToken(
+            OperatorHandoffTokenCodec.TelegramResolutionContext,
+            session.ActiveTrackedPersonId,
             item.ScopeItemKey.Trim(),
-            session.OperatorSessionId.Trim());
-        var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
-        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            session.OperatorSessionId.Trim(),
+            signingSecret,
+            nowUtc);
     }
 
     private string? BuildAssistantOpenWebUrl(OperatorAssistantResponseEnvelope response)
@@ -2912,6 +2916,51 @@ public sealed class TelegramOperatorWorkflowService
                         [
                             new TelegramOperatorButton { Text = "Offline Event", CallbackData = "mode:offline_event" },
                             new TelegramOperatorButton { Text = "Alerts", CallbackData = "mode:alerts" }
+                        ]
+                    ]
+                }
+            ]
+        };
+    }
+
+    private TelegramOperatorResponse CreateAlertsPolicyCard(
+        TelegramOperatorConversationState? state,
+        string? callbackNotice = null)
+    {
+        var rules = _operatorAlertPolicyService.GetRules();
+        var pushRuleCount = rules.Count(rule =>
+            string.Equals(rule.EscalationBoundary, OperatorAlertEscalationBoundaries.TelegramPushAcknowledge, StringComparison.Ordinal));
+        var webOnlyRuleCount = rules.Count(rule =>
+            string.Equals(rule.EscalationBoundary, OperatorAlertEscalationBoundaries.WebOnly, StringComparison.Ordinal));
+        var suppressedRuleCount = rules.Count(rule =>
+            string.Equals(rule.EscalationBoundary, OperatorAlertEscalationBoundaries.Suppressed, StringComparison.Ordinal));
+
+        var lines = new List<string>
+        {
+            "Alerts Policy (OPINT-009-A)",
+            $"Active tracked person: {state?.ActiveTrackedPersonDisplayName ?? "none"}",
+            string.Empty,
+            $"Telegram push + acknowledgement: {pushRuleCount} critical rules",
+            $"Web-only critical context: {webOnlyRuleCount} rule",
+            $"Suppressed-by-default churn/non-critical: {suppressedRuleCount} rules",
+            string.Empty,
+            "Default policy suppresses non-critical transitions.",
+            "Telegram push remains workflow-critical only."
+        };
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = callbackNotice,
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton { Text = "Resolution", CallbackData = "mode:resolution" },
+                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
                         ]
                     ]
                 }

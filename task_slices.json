@@ -2549,12 +2549,12 @@
         "OPINT-007-C2",
         "OPINT-008-E"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Default alert policy is workflow-critical only and explicitly suppresses non-critical state churn.",
         "Alert source classes, suppression rules, and escalation boundaries are explicit and testable."
       ],
-      "notes": "P2 policy foundation before delivery surfaces."
+      "notes": "Completed 2026-04-04: established explicit critical-alert taxonomy and suppression/escalation policy with shared contracts (`OperatorAlertPolicyModels`), runtime policy evaluator (`OperatorAlertPolicyService`), bounded smoke validation (`--opint-009-a-smoke`), and planning artifact `docs/planning/OPINT-009-A_CRITICAL_ALERT_POLICY_2026-04-04.md`."
     },
     {
       "id": "OPINT-009-B",
