@@ -2274,12 +2274,12 @@
         "OPINT-002-D",
         "OPINT-004-D"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Offline-event data contract is scoped to operator-layer requirements.",
         "Persistence boundary avoids reopening legacy Stage6 command path semantics."
       ],
-      "notes": "Backend-only storage boundary checkpoint, independent from web P0 completion."
+      "notes": "Completed 2026-04-04: added active operator-layer offline-event persistence boundary with new `operator_offline_events` schema, EF row/mapping, and `IOperatorOfflineEventRepository` implementation/DI wiring; explicitly separate from legacy Stage6 offline-event command path."
     },
     {
       "id": "OPINT-007-A2",

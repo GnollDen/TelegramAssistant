@@ -71,6 +71,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
     public DbSet<DbOperatorResolutionAction> OperatorResolutionActions => Set<DbOperatorResolutionAction>();
     public DbSet<DbOperatorAuditEvent> OperatorAuditEvents => Set<DbOperatorAuditEvent>();
+    public DbSet<DbOperatorOfflineEvent> OperatorOfflineEvents => Set<DbOperatorOfflineEvent>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -1526,6 +1527,43 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.EventTimeUtc });
             e.HasIndex(x => new { x.RequestId, x.EventTimeUtc });
             e.HasIndex(x => new { x.OperatorSessionId, x.EventTimeUtc });
+        });
+
+        modelBuilder.Entity<DbOperatorOfflineEvent>(e =>
+        {
+            e.ToTable("operator_offline_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.SummaryText).HasColumnName("summary_text");
+            e.Property(x => x.RecordingReference).HasColumnName("recording_reference");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.CapturePayloadJson).HasColumnName("capture_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.ClarificationStateJson).HasColumnName("clarification_state_json").HasColumnType("jsonb");
+            e.Property(x => x.TimelineLinkageJson).HasColumnName("timeline_linkage_json").HasColumnType("jsonb");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.OperatorId).HasColumnName("operator_id");
+            e.Property(x => x.OperatorDisplay).HasColumnName("operator_display");
+            e.Property(x => x.OperatorSessionId).HasColumnName("operator_session_id");
+            e.Property(x => x.Surface).HasColumnName("surface");
+            e.Property(x => x.SurfaceSubject).HasColumnName("surface_subject");
+            e.Property(x => x.AuthSource).HasColumnName("auth_source");
+            e.Property(x => x.AuthTimeUtc).HasColumnName("auth_time_utc");
+            e.Property(x => x.SessionAuthenticatedAtUtc).HasColumnName("session_authenticated_at_utc");
+            e.Property(x => x.SessionLastSeenAtUtc).HasColumnName("session_last_seen_at_utc");
+            e.Property(x => x.SessionExpiresAtUtc).HasColumnName("session_expires_at_utc");
+            e.Property(x => x.ActiveMode).HasColumnName("active_mode");
+            e.Property(x => x.UnfinishedStepKind).HasColumnName("unfinished_step_kind");
+            e.Property(x => x.UnfinishedStepState).HasColumnName("unfinished_step_state");
+            e.Property(x => x.UnfinishedStepStartedAtUtc).HasColumnName("unfinished_step_started_at_utc");
+            e.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc");
+            e.Property(x => x.SavedAtUtc).HasColumnName("saved_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.UpdatedAtUtc });
+            e.HasIndex(x => new { x.OperatorSessionId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.Status, x.CreatedAtUtc });
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

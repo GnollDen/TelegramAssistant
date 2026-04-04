@@ -366,6 +366,17 @@ public interface IOperatorSessionAuditService
         CancellationToken ct = default);
 }
 
+public interface IOperatorOfflineEventRepository
+{
+    Task<OperatorOfflineEventRecord> CreateAsync(
+        OperatorOfflineEventCreateRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventRecord?> GetByIdAsync(
+        Guid offlineEventId,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeTriggerService
 {
     Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);
