@@ -2119,12 +2119,12 @@
       "dependencies": [
         "OPINT-005-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Evidence drawer shows bounded summarized evidence with provenance and confidence cues for the selected item.",
         "Evidence open/close/navigation keeps operator in the same resolution context without route reset."
       ],
-      "notes": "Evidence read path separated from action-write paths."
+      "notes": "Evidence read path separated from action-write paths. Completed 2026-04-04: /operator/resolution now provides an in-context evidence drawer with bounded summarized evidence, provenance/confidence cues, and open/close/navigation behavior that preserves selected queue/detail context without route reset."
     },
     {
       "id": "OPINT-005-D1",

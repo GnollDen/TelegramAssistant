@@ -395,6 +395,110 @@ public static class OperatorWebEndpointExtensions
       margin: 6px 0;
       font-size: 14px;
     }
+    .evidence-inline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .evidence-inline .chip {
+      background: #e8f0ff;
+      color: #1f3f72;
+    }
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 28, 48, 0.32);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.18s ease;
+      z-index: 20;
+    }
+    .drawer-backdrop.open {
+      opacity: 1;
+      visibility: visible;
+    }
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(560px, 96vw);
+      height: 100vh;
+      background: #f8fbff;
+      border-left: 1px solid var(--line);
+      box-shadow: -14px 0 28px rgba(20, 36, 60, 0.16);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 10px;
+      padding: 14px;
+      transform: translateX(100%);
+      transition: transform 0.2s ease;
+      z-index: 21;
+    }
+    .drawer.open {
+      transform: translateX(0);
+    }
+    .drawer-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-head h3 {
+      margin: 0;
+    }
+    .drawer-tools {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(110px, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    .drawer-list {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px;
+      overflow: auto;
+      max-height: 34vh;
+      display: grid;
+      gap: 8px;
+    }
+    .evidence-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      cursor: pointer;
+      background: #fcfeff;
+    }
+    .evidence-card.active {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+      background: #f1f8ff;
+    }
+    .evidence-card p {
+      margin: 4px 0;
+      font-size: 13px;
+    }
+    .evidence-focus {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .evidence-focus p {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+    .drawer-footer {
+      display: flex;
+      gap: 8px;
+    }
+    .drawer-footer button {
+      flex: 1 1 0;
+    }
     @media (max-width: 920px) {
       main {
         grid-template-columns: 1fr;
@@ -483,6 +587,45 @@ public static class OperatorWebEndpointExtensions
     </section>
   </main>
 
+  <div id="evidence-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="evidence-drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <h3>Evidence Panel</h3>
+      <button id="evidence-close" type="button">Close</button>
+    </div>
+    <div class="drawer-tools">
+      <label>
+        Sort
+        <select id="evidence-sort-by">
+          <option value="observed_at">Observed at</option>
+          <option value="trust_factor">Trust factor</option>
+        </select>
+      </label>
+      <label>
+        Direction
+        <select id="evidence-sort-direction">
+          <option value="desc">Descending</option>
+          <option value="asc">Ascending</option>
+        </select>
+      </label>
+      <label>
+        Limit
+        <select id="evidence-limit">
+          <option value="5">5</option>
+          <option value="8" selected>8</option>
+          <option value="12">12</option>
+        </select>
+      </label>
+    </div>
+    <div id="evidence-state" class="state empty">Open evidence from a selected detail item.</div>
+    <div id="evidence-list" class="drawer-list"></div>
+    <section id="evidence-focus" class="evidence-focus"></section>
+    <div class="drawer-footer">
+      <button id="evidence-prev" type="button">Previous</button>
+      <button id="evidence-next" type="button">Next</button>
+    </div>
+  </aside>
+
   <script>
     const stateNode = document.getElementById("state");
     const queueNode = document.getElementById("queue-list");
@@ -496,6 +639,17 @@ public static class OperatorWebEndpointExtensions
     const refreshQueueButton = document.getElementById("refresh-queue");
     const sortBySelect = document.getElementById("sort-by");
     const sortDirectionSelect = document.getElementById("sort-direction");
+    const evidenceBackdropNode = document.getElementById("evidence-backdrop");
+    const evidenceDrawerNode = document.getElementById("evidence-drawer");
+    const evidenceCloseButton = document.getElementById("evidence-close");
+    const evidenceStateNode = document.getElementById("evidence-state");
+    const evidenceListNode = document.getElementById("evidence-list");
+    const evidenceFocusNode = document.getElementById("evidence-focus");
+    const evidencePrevButton = document.getElementById("evidence-prev");
+    const evidenceNextButton = document.getElementById("evidence-next");
+    const evidenceSortBySelect = document.getElementById("evidence-sort-by");
+    const evidenceSortDirectionSelect = document.getElementById("evidence-sort-direction");
+    const evidenceLimitSelect = document.getElementById("evidence-limit");
 
     const priorityValues = ["critical", "high", "medium", "low"];
     const statusValues = ["open", "blocked", "queued", "running", "attention_required", "degraded"];
@@ -505,7 +659,10 @@ public static class OperatorWebEndpointExtensions
       trackedPersons: [],
       activeTrackedPersonId: null,
       queue: null,
-      selectedScopeItemKey: null
+      selectedScopeItemKey: null,
+      selectedDetailItem: null,
+      evidenceIndex: -1,
+      evidenceDrawerOpen: false
     };
 
     function setState(kind, message) {
@@ -767,7 +924,9 @@ public static class OperatorWebEndpointExtensions
 
     function clearDetail(message) {
       state.selectedScopeItemKey = null;
+      state.selectedDetailItem = null;
       detailContentNode.innerHTML = "";
+      resetEvidenceState();
       setDetailState("empty", message || "Select a queue item to inspect detail.");
       updateQueueSelectionUi();
     }
@@ -785,9 +944,12 @@ public static class OperatorWebEndpointExtensions
       detailContentNode.innerHTML = "";
       const item = detail && detail.item ? detail.item : null;
       if (!item) {
+        state.selectedDetailItem = null;
+        resetEvidenceState();
         setDetailState("empty", "Detail payload is unavailable for this item.");
         return;
       }
+      state.selectedDetailItem = item;
 
       const summaryBlock = document.createElement("section");
       summaryBlock.className = "detail-block";
@@ -821,6 +983,26 @@ public static class OperatorWebEndpointExtensions
       statusBlock.appendChild(statusMetaNode);
       detailContentNode.appendChild(statusBlock);
 
+      const evidenceBlock = document.createElement("section");
+      evidenceBlock.className = "detail-block";
+      evidenceBlock.innerHTML = "<h4>Evidence</h4>";
+      const evidenceInline = document.createElement("div");
+      evidenceInline.className = "evidence-inline";
+
+      const evidenceChip = document.createElement("span");
+      evidenceChip.className = "chip";
+      evidenceChip.textContent = "Bounded summaries: " + ((Array.isArray(item.evidence) ? item.evidence.length : 0) || 0);
+      evidenceInline.appendChild(evidenceChip);
+
+      const evidenceButton = document.createElement("button");
+      evidenceButton.type = "button";
+      evidenceButton.textContent = "Open evidence panel";
+      evidenceButton.addEventListener("click", openEvidenceDrawer);
+      evidenceInline.appendChild(evidenceButton);
+
+      evidenceBlock.appendChild(evidenceInline);
+      detailContentNode.appendChild(evidenceBlock);
+
       const provenanceBlock = document.createElement("section");
       provenanceBlock.className = "detail-block";
       provenanceBlock.innerHTML =
@@ -848,6 +1030,12 @@ public static class OperatorWebEndpointExtensions
         notesBlock.appendChild(notesHeader);
         notesBlock.appendChild(notesList);
         detailContentNode.appendChild(notesBlock);
+      }
+
+      if (state.evidenceDrawerOpen) {
+        renderEvidencePanelFromSelectedDetail();
+      } else {
+        resetEvidenceState();
       }
 
       setDetailState("loading", "Detail loaded for selected queue item.");
@@ -905,7 +1093,9 @@ public static class OperatorWebEndpointExtensions
         const result = await operatorPostJson("/api/operator/resolution/detail/query", {
           trackedPersonId: trackedPersonId,
           scopeItemKey: scopeItemKey,
-          evidenceLimit: 5
+          evidenceLimit: Number(evidenceLimitSelect.value || 8),
+          evidenceSortBy: evidenceSortBySelect.value || "observed_at",
+          evidenceSortDirection: evidenceSortDirectionSelect.value || "desc"
         });
 
         if (!result.accepted) {
@@ -1042,6 +1232,147 @@ public static class OperatorWebEndpointExtensions
       }
     }
 
+    function setEvidenceState(kind, message) {
+      evidenceStateNode.className = "state " + kind;
+      evidenceStateNode.textContent = message;
+    }
+
+    function resetEvidenceState() {
+      state.evidenceIndex = -1;
+      evidenceListNode.innerHTML = "";
+      evidenceFocusNode.innerHTML = "<p class='muted'>Select an evidence entry to inspect provenance and confidence cues.</p>";
+      setEvidenceState("empty", "Open evidence from a selected detail item.");
+      evidencePrevButton.disabled = true;
+      evidenceNextButton.disabled = true;
+    }
+
+    function evidenceEntries() {
+      if (!state.selectedDetailItem || !Array.isArray(state.selectedDetailItem.evidence)) {
+        return [];
+      }
+
+      return state.selectedDetailItem.evidence;
+    }
+
+    function renderEvidenceFocus(index) {
+      const entries = evidenceEntries();
+      const entry = entries[index];
+      if (!entry) {
+        evidenceFocusNode.innerHTML = "<p class='muted'>No evidence entry selected.</p>";
+        evidencePrevButton.disabled = true;
+        evidenceNextButton.disabled = true;
+        return;
+      }
+
+      evidenceFocusNode.innerHTML = "";
+      const summary = document.createElement("p");
+      summary.innerHTML = "<strong>Summary:</strong> " + (entry.summary || "No summary.");
+      evidenceFocusNode.appendChild(summary);
+
+      const trust = document.createElement("p");
+      trust.innerHTML = "<strong>Confidence cue:</strong> " + formatPercent(entry.trustFactor);
+      evidenceFocusNode.appendChild(trust);
+
+      const observed = document.createElement("p");
+      observed.innerHTML = "<strong>Observed:</strong> " + formatUtc(entry.observedAtUtc);
+      evidenceFocusNode.appendChild(observed);
+
+      const source = document.createElement("p");
+      source.innerHTML = "<strong>Provenance:</strong> " + (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
+      evidenceFocusNode.appendChild(source);
+
+      const evidenceId = document.createElement("p");
+      evidenceId.innerHTML = "<strong>Evidence ID:</strong> " + (entry.evidenceItemId || "n/a");
+      evidenceFocusNode.appendChild(evidenceId);
+
+      evidencePrevButton.disabled = index <= 0;
+      evidenceNextButton.disabled = index >= entries.length - 1;
+    }
+
+    function selectEvidence(index) {
+      const entries = evidenceEntries();
+      if (!entries[index]) {
+        return;
+      }
+
+      state.evidenceIndex = index;
+      document.querySelectorAll("#evidence-list .evidence-card").forEach(function(cardNode, cardIndex) {
+        cardNode.classList.toggle("active", cardIndex === index);
+      });
+      renderEvidenceFocus(index);
+    }
+
+    function renderEvidencePanelFromSelectedDetail() {
+      const item = state.selectedDetailItem;
+      if (!item) {
+        resetEvidenceState();
+        setEvidenceState("empty", "Select a queue item detail before opening evidence.");
+        return;
+      }
+
+      const entries = evidenceEntries();
+      evidenceListNode.innerHTML = "";
+      if (entries.length === 0) {
+        state.evidenceIndex = -1;
+        evidenceFocusNode.innerHTML = "<p class='muted'>No bounded evidence summaries were returned for this item.</p>";
+        setEvidenceState("empty", "No evidence summaries available for the selected item.");
+        evidencePrevButton.disabled = true;
+        evidenceNextButton.disabled = true;
+        return;
+      }
+
+      entries.forEach(function(entry, index) {
+        const card = document.createElement("article");
+        card.className = "evidence-card";
+        const summary = document.createElement("p");
+        summary.textContent = entry.summary || "No summary.";
+        const meta = document.createElement("p");
+        meta.className = "muted";
+        meta.textContent = "Trust " + formatPercent(entry.trustFactor) + " | " + formatUtc(entry.observedAtUtc);
+        const prov = document.createElement("p");
+        prov.className = "muted";
+        prov.textContent = (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
+        card.appendChild(summary);
+        card.appendChild(meta);
+        card.appendChild(prov);
+        card.addEventListener("click", function() {
+          selectEvidence(index);
+        });
+        evidenceListNode.appendChild(card);
+      });
+
+      setEvidenceState("loading", "Evidence panel loaded for " + (item.scopeItemKey || "selected item") + ".");
+      selectEvidence(0);
+    }
+
+    function openEvidenceDrawer() {
+      state.evidenceDrawerOpen = true;
+      evidenceBackdropNode.classList.add("open");
+      evidenceDrawerNode.classList.add("open");
+      evidenceBackdropNode.setAttribute("aria-hidden", "false");
+      evidenceDrawerNode.setAttribute("aria-hidden", "false");
+      renderEvidencePanelFromSelectedDetail();
+    }
+
+    function closeEvidenceDrawer() {
+      state.evidenceDrawerOpen = false;
+      evidenceBackdropNode.classList.remove("open");
+      evidenceDrawerNode.classList.remove("open");
+      evidenceBackdropNode.setAttribute("aria-hidden", "true");
+      evidenceDrawerNode.setAttribute("aria-hidden", "true");
+    }
+
+    async function refreshEvidenceFromDetailContext() {
+      if (!state.selectedScopeItemKey || !state.activeTrackedPersonId) {
+        return;
+      }
+
+      await loadDetail(state.selectedScopeItemKey);
+      if (state.evidenceDrawerOpen) {
+        renderEvidencePanelFromSelectedDetail();
+      }
+    }
+
     tokenInput.value = readAccessToken();
     createChecklist("priority-filters", "Priority", priorityValues);
     createChecklist("status-filters", "Status", statusValues);
@@ -1052,6 +1383,22 @@ public static class OperatorWebEndpointExtensions
     refreshQueueButton.addEventListener("click", loadQueue);
     sortBySelect.addEventListener("change", loadQueue);
     sortDirectionSelect.addEventListener("change", loadQueue);
+    evidenceCloseButton.addEventListener("click", closeEvidenceDrawer);
+    evidenceBackdropNode.addEventListener("click", closeEvidenceDrawer);
+    evidencePrevButton.addEventListener("click", function() {
+      selectEvidence(state.evidenceIndex - 1);
+    });
+    evidenceNextButton.addEventListener("click", function() {
+      selectEvidence(state.evidenceIndex + 1);
+    });
+    evidenceSortBySelect.addEventListener("change", refreshEvidenceFromDetailContext);
+    evidenceSortDirectionSelect.addEventListener("change", refreshEvidenceFromDetailContext);
+    evidenceLimitSelect.addEventListener("change", refreshEvidenceFromDetailContext);
+    window.addEventListener("keydown", function(event) {
+      if (event.key === "Escape" && state.evidenceDrawerOpen) {
+        closeEvidenceDrawer();
+      }
+    });
 
     document.querySelectorAll("#priority-filters input, #status-filters input, #type-filters input")
       .forEach(function(node) {
