@@ -18,6 +18,8 @@ public static class OperatorWebEndpointExtensions
 
         endpoints.MapGet("/", () => Results.Redirect("/operator"));
         endpoints.MapGet("/operator", () => Results.Content(OperatorHomeHtml, "text/html; charset=utf-8"));
+        endpoints.MapGet("/operator/persons", () => Results.Content(OperatorPersonsHtml, "text/html; charset=utf-8"));
+        endpoints.MapGet("/operator/person-workspace", () => Results.Content(OperatorPersonWorkspaceShellHtml, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/resolution", () => Results.Content(OperatorResolutionHtml, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/offline-events", () => Results.Content(OperatorOfflineEventsHtml, "text/html; charset=utf-8"));
 
@@ -136,10 +138,10 @@ public static class OperatorWebEndpointExtensions
           <strong>Offline Events <span class="badge">P1</span></strong>
           <small>Inspect and refine captured offline events with trust and clarification history.</small>
         </a>
-        <span class="nav-item" aria-disabled="true">
-          <strong>Persons</strong>
-          <small>Planned in later OPINT slices.</small>
-        </span>
+        <a class="nav-item" href="/operator/persons">
+          <strong>Persons <span class="badge">P1</span></strong>
+          <small>Browse tracked persons with unresolved and recency signals.</small>
+        </a>
         <span class="nav-item" aria-disabled="true">
           <strong>Alerts</strong>
           <small>Planned in later OPINT slices.</small>
@@ -152,6 +154,477 @@ public static class OperatorWebEndpointExtensions
       <p class="critical">Critical unresolved items: resolution queue connected; detail/evidence/action slices remain.</p>
     </section>
   </main>
+</body>
+</html>
+""";
+
+    private const string OperatorPersonsHtml = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operator Persons</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --ink: #14243c;
+      --muted: #5e6e89;
+      --line: #d9e1ef;
+      --accent: #0d4a7f;
+      --warn: #9a1a1a;
+      --ok: #0d6635;
+      --chip: #eef2fb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #e7eefb, var(--bg) 220px);
+    }
+    main {
+      max-width: 1080px;
+      margin: 28px auto;
+      padding: 0 16px 40px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 10px 22px rgba(20, 36, 60, 0.08);
+      margin-bottom: 14px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .row > * {
+      flex: 1 1 170px;
+    }
+    input, button, a {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      font: inherit;
+      color: inherit;
+      background: #fff;
+      text-decoration: none;
+    }
+    button { cursor: pointer; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .state {
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    .state.loading { background: #eef5ff; color: #1d3f70; }
+    .state.empty { background: #f5f7fb; color: var(--muted); }
+    .state.error { background: #ffefef; color: var(--warn); }
+    .counts {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .counts span {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--chip);
+      padding: 3px 9px;
+    }
+    #persons-list {
+      display: grid;
+      gap: 10px;
+    }
+    .person-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .person-card h3 {
+      margin: 0;
+      font-size: 17px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .meta span {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8faff;
+      padding: 2px 8px;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .badge.unresolved {
+      color: #6a1111;
+      background: #ffeaea;
+      border-color: #f2b4b4;
+    }
+    .badge.resolved {
+      color: var(--ok);
+      background: #ecf9f1;
+      border-color: #b6e3c7;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .actions > * {
+      flex: 1 1 200px;
+      text-align: center;
+    }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>Persons List</h1>
+      <p class="muted">Tracked-person navigation for P1 workspace expansion. Search, unresolved badges, and recent update cues are shown from operator read contracts.</p>
+      <div class="row">
+        <label>
+          Operator access token
+          <input id="access-token" type="password" autocomplete="off" placeholder="X-Tga-Operator-Key">
+        </label>
+        <label>
+          Search
+          <input id="search-input" type="search" autocomplete="off" placeholder="Name or scope key">
+        </label>
+        <button class="primary" id="refresh-button" type="button">Refresh Persons</button>
+        <a href="/operator">Back To Home</a>
+      </div>
+      <div id="state" class="state empty">Ready to load tracked persons.</div>
+      <div id="counts" class="counts"></div>
+    </section>
+    <section class="panel">
+      <h2>Tracked Persons</h2>
+      <div id="persons-list">
+        <p class="muted">No data loaded yet.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const tokenInput = document.getElementById("access-token");
+    const searchInput = document.getElementById("search-input");
+    const refreshButton = document.getElementById("refresh-button");
+    const stateNode = document.getElementById("state");
+    const countsNode = document.getElementById("counts");
+    const personsListNode = document.getElementById("persons-list");
+
+    function setState(kind, message) {
+      stateNode.className = "state " + kind;
+      stateNode.textContent = message;
+    }
+
+    function formatUtc(value) {
+      if (!value) {
+        return "n/a";
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return "n/a";
+      }
+      return date.toISOString().replace("T", " ").replace(".000Z", "Z");
+    }
+
+    function readAccessToken() {
+      return window.localStorage.getItem("operator_web_access_token") || "";
+    }
+
+    function writeAccessToken(token) {
+      window.localStorage.setItem("operator_web_access_token", token);
+      document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
+    }
+
+    async function operatorPostJson(path, body) {
+      const token = readAccessToken();
+      const headers = {
+        "Content-Type": "application/json"
+      };
+      if (token) {
+        headers["X-Tga-Operator-Key"] = token;
+      }
+      const response = await fetch(path, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(body || {}),
+        credentials: "include"
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const reason = payload && payload.failureReason ? payload.failureReason : "http_" + response.status;
+        throw new Error(reason);
+      }
+
+      return payload || {};
+    }
+
+    function renderCounts(payload) {
+      countsNode.innerHTML = "";
+      const total = payload.totalCount || 0;
+      const filtered = payload.filteredCount || 0;
+      const unresolved = (payload.persons || []).filter(function(person) {
+        return person.hasUnresolved;
+      }).length;
+
+      [
+        "Total tracked: " + total,
+        "Matched search: " + filtered,
+        "With unresolved: " + unresolved
+      ].forEach(function(text) {
+        const tag = document.createElement("span");
+        tag.textContent = text;
+        countsNode.appendChild(tag);
+      });
+    }
+
+    function buildWorkspaceLink(person) {
+      const params = new URLSearchParams();
+      params.set("trackedPersonId", person.trackedPersonId || "");
+      params.set("displayName", person.displayName || "");
+      params.set("scopeKey", person.scopeKey || "");
+      return "/operator/person-workspace?" + params.toString();
+    }
+
+    async function applyTrackedPersonSelection(trackedPersonId) {
+      const result = await operatorPostJson("/api/operator/tracked-persons/select", {
+        trackedPersonId: trackedPersonId,
+        requestedAtUtc: new Date().toISOString()
+      });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "tracked_person_select_rejected");
+      }
+    }
+
+    function renderPersons(payload) {
+      const persons = Array.isArray(payload.persons) ? payload.persons : [];
+      personsListNode.innerHTML = "";
+      if (persons.length === 0) {
+        personsListNode.innerHTML = "<p class='muted'>No tracked persons match this search.</p>";
+        return;
+      }
+
+      persons.forEach(function(person) {
+        const card = document.createElement("article");
+        card.className = "person-card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = person.displayName || person.trackedPersonId || "Unknown tracked person";
+        card.appendChild(heading);
+
+        const unresolved = Number(person.unresolvedCount || 0);
+        const badge = document.createElement("span");
+        badge.className = "badge " + (unresolved > 0 ? "unresolved" : "resolved");
+        badge.textContent = unresolved > 0
+          ? unresolved + " unresolved"
+          : "no unresolved";
+        card.appendChild(badge);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        [
+          "Scope " + (person.scopeKey || "n/a"),
+          "Evidence " + Number(person.evidenceCount || 0),
+          "Recent update " + formatUtc(person.recentUpdateAtUtc || person.updatedAtUtc),
+          "Last unresolved " + formatUtc(person.lastUnresolvedAtUtc)
+        ].forEach(function(text) {
+          const tag = document.createElement("span");
+          tag.textContent = text;
+          meta.appendChild(tag);
+        });
+        card.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const selectButton = document.createElement("button");
+        selectButton.type = "button";
+        selectButton.className = "primary";
+        selectButton.textContent = "Set Active Scope";
+        selectButton.addEventListener("click", async function() {
+          selectButton.disabled = true;
+          try {
+            await applyTrackedPersonSelection(person.trackedPersonId);
+            setState("loading", "Active tracked person updated to " + (person.displayName || person.trackedPersonId) + ".");
+          } catch (error) {
+            setState("error", "Failed to update active scope: " + (error && error.message ? error.message : "unknown_error"));
+          } finally {
+            selectButton.disabled = false;
+          }
+        });
+        actions.appendChild(selectButton);
+
+        const workspaceLink = document.createElement("a");
+        workspaceLink.href = buildWorkspaceLink(person);
+        workspaceLink.textContent = "Open Person Workspace";
+        workspaceLink.addEventListener("click", async function(event) {
+          event.preventDefault();
+          try {
+            await applyTrackedPersonSelection(person.trackedPersonId);
+            window.location.href = workspaceLink.href;
+          } catch (error) {
+            setState("error", "Workspace handoff failed: " + (error && error.message ? error.message : "unknown_error"));
+          }
+        });
+        actions.appendChild(workspaceLink);
+
+        card.appendChild(actions);
+        personsListNode.appendChild(card);
+      });
+    }
+
+    async function refreshPersons() {
+      try {
+        const token = tokenInput.value.trim();
+        if (token) {
+          writeAccessToken(token);
+        }
+        setState("loading", "Loading tracked persons...");
+        const result = await operatorPostJson("/api/operator/persons/query", {
+          search: searchInput.value.trim() || null,
+          limit: 100
+        });
+        if (!result.accepted) {
+          throw new Error(result.failureReason || "persons_query_rejected");
+        }
+
+        renderCounts(result);
+        renderPersons(result);
+        setState("loading", "Persons list loaded.");
+      } catch (error) {
+        setState("error", "Persons list load failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    tokenInput.value = readAccessToken();
+    refreshButton.addEventListener("click", refreshPersons);
+    searchInput.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        refreshPersons();
+      }
+    });
+
+    refreshPersons();
+  </script>
+</body>
+</html>
+""";
+
+    private const string OperatorPersonWorkspaceShellHtml = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Person Workspace</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --ink: #14243c;
+      --muted: #5e6e89;
+      --line: #d9e1ef;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      background: linear-gradient(180deg, #e7eefb, var(--bg) 220px);
+      color: var(--ink);
+    }
+    main {
+      max-width: 980px;
+      margin: 30px auto;
+      padding: 0 16px 28px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 10px 22px rgba(20, 36, 60, 0.08);
+      margin-bottom: 14px;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .tab {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #f7faff;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>Person Workspace</h1>
+      <p id="person-line">Tracked person context is required.</p>
+      <p><a href="/operator/persons">Back to persons list</a></p>
+    </section>
+    <section class="panel">
+      <h2>Sections</h2>
+      <p>Workspace shell entry is available. Section implementation continues in OPINT-008-B1 and later slices.</p>
+      <div class="tabs">
+        <div class="tab">Summary</div>
+        <div class="tab">Dossier</div>
+        <div class="tab">Profile</div>
+        <div class="tab">Pair Dynamics</div>
+        <div class="tab">Timeline</div>
+        <div class="tab">Evidence</div>
+        <div class="tab">Revisions</div>
+        <div class="tab">Resolution</div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const trackedPersonId = params.get("trackedPersonId") || "n/a";
+    const displayName = params.get("displayName") || "n/a";
+    const scopeKey = params.get("scopeKey") || "n/a";
+    document.getElementById("person-line").textContent =
+      "Active tracked person: " + displayName + " (" + trackedPersonId + ") | scope " + scopeKey + ".";
+  </script>
 </body>
 </html>
 """;

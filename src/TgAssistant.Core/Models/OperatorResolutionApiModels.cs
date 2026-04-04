@@ -102,6 +102,10 @@ public class OperatorTrackedPersonScopeSummary
     public string ScopeKey { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public int EvidenceCount { get; set; }
+    public int UnresolvedCount { get; set; }
+    public bool HasUnresolved { get; set; }
+    public DateTime RecentUpdateAtUtc { get; set; }
+    public DateTime? LastUnresolvedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 }
 
@@ -125,6 +129,23 @@ public class OperatorTrackedPersonSelectionResult
     public Guid? AuditEventId { get; set; }
     public OperatorTrackedPersonScopeSummary? ActiveTrackedPerson { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceListQueryRequest : OperatorContractRequestBase
+{
+    public string? Search { get; set; }
+    public int Limit { get; set; } = 50;
+}
+
+public class OperatorPersonWorkspaceListQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public Guid? ActiveTrackedPersonId { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int FilteredCount { get; set; }
+    public List<OperatorTrackedPersonScopeSummary> Persons { get; set; } = [];
 }
 
 public class OperatorResolutionQueueQueryRequest : OperatorContractRequestBase

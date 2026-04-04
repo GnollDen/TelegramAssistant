@@ -215,6 +215,74 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceListQueryResult> QueryPersonWorkspaceListAsync(
+        OperatorPersonWorkspaceListQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+
+        var response = new OperatorPersonWorkspaceListQueryResult
+        {
+            Accepted = validationFailure == null,
+            FailureReason = validationFailure,
+            Session = CloneSession(request.Session, nowUtc)
+        };
+        if (validationFailure != null)
+        {
+            return response;
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPersons = await LoadTrackedPersonsAsync(db, 200, ct);
+        await PopulateResolutionSignalsAsync(trackedPersons, ct);
+
+        var normalizedSearch = NormalizeOptional(request.Search);
+        IEnumerable<OperatorTrackedPersonScopeSummary> filtered = trackedPersons;
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+        {
+            filtered = trackedPersons.Where(x =>
+                x.DisplayName.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)
+                || x.ScopeKey.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var boundedLimit = Math.Clamp(request.Limit, 1, 100);
+        var ordered = filtered
+            .OrderByDescending(x => x.HasUnresolved)
+            .ThenByDescending(x => x.RecentUpdateAtUtc)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Take(boundedLimit)
+            .ToList();
+
+        var session = CloneSession(request.Session, nowUtc);
+        if (string.IsNullOrWhiteSpace(session.ActiveMode))
+        {
+            session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        }
+
+        response.Accepted = true;
+        response.FailureReason = null;
+        response.Session = session;
+        response.ActiveTrackedPersonId = session.ActiveTrackedPersonId == Guid.Empty
+            ? null
+            : session.ActiveTrackedPersonId;
+        response.TotalCount = trackedPersons.Count;
+        response.FilteredCount = filtered.Count();
+        response.Persons = ordered;
+        return response;
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -762,9 +830,49 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 ScopeKey = x.ScopeKey,
                 DisplayName = string.IsNullOrWhiteSpace(x.DisplayName) ? x.CanonicalName : x.DisplayName,
                 EvidenceCount = evidenceLookup.GetValueOrDefault(x.Id),
+                UnresolvedCount = 0,
+                HasUnresolved = false,
+                RecentUpdateAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc),
+                LastUnresolvedAtUtc = null,
                 UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
             })
             .ToList();
+    }
+
+    private async Task PopulateResolutionSignalsAsync(
+        List<OperatorTrackedPersonScopeSummary> trackedPersons,
+        CancellationToken ct)
+    {
+        foreach (var trackedPerson in trackedPersons)
+        {
+            var queue = await _resolutionReadService.GetQueueAsync(
+                new ResolutionQueueRequest
+                {
+                    TrackedPersonId = trackedPerson.TrackedPersonId,
+                    SortBy = ResolutionQueueSortFields.UpdatedAt,
+                    SortDirection = ResolutionSortDirections.Desc,
+                    Limit = 1
+                },
+                ct);
+
+            if (!queue.ScopeBound)
+            {
+                trackedPerson.UnresolvedCount = 0;
+                trackedPerson.HasUnresolved = false;
+                trackedPerson.LastUnresolvedAtUtc = null;
+                trackedPerson.RecentUpdateAtUtc = trackedPerson.UpdatedAtUtc;
+                continue;
+            }
+
+            trackedPerson.UnresolvedCount = Math.Max(0, queue.TotalOpenCount);
+            trackedPerson.HasUnresolved = trackedPerson.UnresolvedCount > 0;
+            trackedPerson.LastUnresolvedAtUtc = queue.Items.FirstOrDefault()?.UpdatedAtUtc;
+            trackedPerson.RecentUpdateAtUtc = trackedPerson.LastUnresolvedAtUtc.HasValue
+                ? trackedPerson.LastUnresolvedAtUtc.Value > trackedPerson.UpdatedAtUtc
+                    ? trackedPerson.LastUnresolvedAtUtc.Value
+                    : trackedPerson.UpdatedAtUtc
+                : trackedPerson.UpdatedAtUtc;
+        }
     }
 
     private async Task<Guid> PersistTrackedPersonSelectionAuditAsync(

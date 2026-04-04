@@ -2394,12 +2394,12 @@
       "dependencies": [
         "OPINT-005-A2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Persons list supports entry into active person workspace.",
         "List badges/signals reflect current resolution/unresolved state."
       ],
-      "notes": "Start of P1 workspace expansion."
+      "notes": "Completed 2026-04-04: added auth-bounded web persons list surface (`/operator/persons`) with server-backed search, unresolved badges/signals, recent-update indicators, and tracked-person selection plus workspace handoff entry (`/operator/person-workspace`) over clean operator contracts (`/api/operator/persons/query`)."
     },
     {
       "id": "OPINT-008-B1",
