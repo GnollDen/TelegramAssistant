@@ -24,6 +24,7 @@ using TgAssistant.Intelligence.Stage6.Profiles;
 using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Archive.ExternalIngestion;
+using TgAssistant.Telegram.Operator;
 
 namespace TgAssistant.Host.Startup;
 
@@ -71,6 +72,9 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IResolutionReadService, ResolutionReadProjectionService>();
         services.AddSingleton<IResolutionActionService, ResolutionActionCommandService>();
         services.AddSingleton<IOperatorResolutionApplicationService, OperatorResolutionApplicationService>();
+        services.AddSingleton<IOperatorSessionAuditService, OperatorSessionAuditService>();
+        services.AddSingleton<TelegramOperatorSessionStore>();
+        services.AddSingleton<TelegramOperatorWorkflowService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();

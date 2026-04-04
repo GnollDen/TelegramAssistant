@@ -340,6 +340,13 @@ public interface IOperatorResolutionApplicationService
         CancellationToken ct = default);
 }
 
+public interface IOperatorSessionAuditService
+{
+    Task<Guid> RecordSessionEventAsync(
+        OperatorSessionAuditRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeTriggerService
 {
     Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);

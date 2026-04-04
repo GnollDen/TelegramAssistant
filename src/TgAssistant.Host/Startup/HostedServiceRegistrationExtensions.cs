@@ -4,6 +4,7 @@ using TgAssistant.Intelligence.Stage8Recompute;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Workers;
 using TgAssistant.Telegram.Listener;
+using TgAssistant.Telegram.Operator;
 
 namespace TgAssistant.Host.Startup;
 
@@ -72,6 +73,7 @@ public static class HostedServiceRegistrationExtensions
         // Keep reusable operational sync in the active baseline; bot workflow is legacy-only.
         services.AddHostedService<Neo4jSyncWorkerService>();
         services.AddHostedService<Stage8RecomputeWorkerService>();
+        services.AddHostedService<TelegramOperatorBotHostedService>();
         return services;
     }
 

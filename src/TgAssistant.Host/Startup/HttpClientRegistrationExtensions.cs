@@ -4,6 +4,7 @@ using TgAssistant.Core.Interfaces;
 using TgAssistant.Infrastructure.LlmGateway;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Processing.Workers;
+using TgAssistant.Telegram.Operator;
 
 namespace TgAssistant.Host.Startup;
 
@@ -19,6 +20,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddHttpClient<Neo4jSyncWorkerService>();
         services.AddHttpClient<CodexLbChatProviderClient>();
         services.AddHttpClient<OpenRouterProviderClient>();
+        services.AddHttpClient<TelegramBotApiClient>();
         services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<CodexLbChatProviderClient>());
         services.AddTransient<ILlmProviderClient>(sp => sp.GetRequiredService<OpenRouterProviderClient>());
         services.AddSingleton<LlmGatewayMetrics>();

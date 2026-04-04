@@ -1945,14 +1945,14 @@
       "priority": "critical",
       "description": "Implement Telegram mode selection card and active tracked-person context state for resolution mode.",
       "executor_agent": "frontend-developer",
-      "dependencies": [
-        "OPINT-003-D"
-      ],
-      "status": "pending",
-      "acceptance_focus": [
-        "Telegram no longer defaults to free chat and requires mode/context selection.",
-        "Active tracked-person state is explicit and switchable."
-      ],
+    "dependencies": [
+      "OPINT-003-D"
+    ],
+    "status": "done",
+    "acceptance_focus": [
+      "Telegram no longer defaults to free chat and requires mode/context selection.",
+      "Active tracked-person state is explicit and switchable."
+    ],
       "notes": "Foundation for compact operator cockpit behavior."
     },
     {
