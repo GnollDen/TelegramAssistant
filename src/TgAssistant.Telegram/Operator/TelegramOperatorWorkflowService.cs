@@ -18,6 +18,7 @@ public sealed class TelegramOperatorWorkflowService
     private const string PendingActionInputStepKind = "resolution_action_input";
     private const int MaxResolutionCards = 3;
     private const int MaxExplanationLength = 1000;
+    private const int EvidencePreviewLimit = 3;
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
     private readonly TelegramSettings _settings;
@@ -408,8 +409,22 @@ public sealed class TelegramOperatorWorkflowService
             return await StartPendingResolutionInputAsync(state, interaction, binding, actionType, nowUtc, ct);
         }
 
-        var deferredNote = $"{FormatActionLabel(actionType)} stays deferred to a later Telegram slice.";
-        return await RenderResolutionContextAsync(state, interaction, nowUtc, deferredNote, ct);
+        if (string.Equals(actionType, ResolutionActionTypes.Evidence, StringComparison.Ordinal))
+        {
+            return await RenderEvidencePreviewAsync(state, interaction, binding, nowUtc, ct);
+        }
+
+        if (string.Equals(actionType, ResolutionActionTypes.OpenWeb, StringComparison.Ordinal))
+        {
+            return await RenderOpenWebHandoffAsync(state, interaction, binding, nowUtc, ct);
+        }
+
+        return await RenderResolutionContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"{FormatActionLabel(actionType)} is not currently available in Telegram resolution mode.",
+            ct);
     }
 
     private async Task<TelegramOperatorResponse> StartPendingResolutionInputAsync(
@@ -499,6 +514,7 @@ public sealed class TelegramOperatorWorkflowService
 
         var explanation = messageText.Trim();
         var operatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc);
+        var baselineQueueSnapshot = await TryCaptureQueueDeltaSnapshotAsync(state, interaction, nowUtc, ct);
         var actionRequest = new ResolutionActionRequest
         {
             RequestId = BuildActionRequestId(interaction.ChatId, pending.ActionType),
@@ -523,7 +539,20 @@ public sealed class TelegramOperatorWorkflowService
                 ? $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}. Bounded recompute was enqueued."
                 : $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}."
             : $"{FormatActionLabel(pending.ActionType)} failed for {pending.ItemTitle}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
-        return await RenderResolutionContextAsync(state, interaction, nowUtc, note, ct);
+        return await RenderResolutionContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note,
+            ct,
+            new ResolutionActionFeedbackContext
+            {
+                ActionType = pending.ActionType,
+                ItemTitle = pending.ItemTitle,
+                Accepted = action.Accepted,
+                Recompute = action.Action.Recompute,
+                BaselineQueueSnapshot = baselineQueueSnapshot
+            });
     }
 
     private async Task<TelegramOperatorResponse> CancelPendingResolutionInputAsync(
@@ -672,6 +701,7 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
+        var baselineQueueSnapshot = await TryCaptureQueueDeltaSnapshotAsync(state, interaction, nowUtc, ct);
         var action = await _operatorResolutionService.SubmitResolutionActionAsync(
             new ResolutionActionRequest
             {
@@ -693,7 +723,192 @@ public sealed class TelegramOperatorWorkflowService
                 ? $"Approve accepted for {binding.Title}. Bounded recompute was enqueued."
                 : $"Approve accepted for {binding.Title}."
             : $"Approve failed for {binding.Title}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
-        return await RenderResolutionContextAsync(state, interaction, nowUtc, note, ct);
+        return await RenderResolutionContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note,
+            ct,
+            new ResolutionActionFeedbackContext
+            {
+                ActionType = ResolutionActionTypes.Approve,
+                ItemTitle = binding.Title,
+                Accepted = action.Accepted,
+                Recompute = action.Action.Recompute,
+                BaselineQueueSnapshot = baselineQueueSnapshot
+            });
+    }
+
+    private async Task<TelegramOperatorResponse> RenderEvidencePreviewAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        TelegramResolutionCardBinding binding,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var detail = await _operatorResolutionService.GetResolutionDetailAsync(
+            new OperatorResolutionDetailQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                EvidenceLimit = EvidencePreviewLimit,
+                EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
+                EvidenceSortDirection = ResolutionSortDirections.Desc
+            },
+            ct);
+
+        state.Session = detail.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+        if (!detail.Accepted || detail.Detail.Item == null)
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Evidence preview unavailable for {binding.Title}: {detail.FailureReason ?? "resolution item unavailable"}.",
+                ct);
+        }
+
+        var item = detail.Detail.Item;
+        state.Session.ActiveMode = OperatorModeTypes.Evidence;
+        state.Session.ActiveScopeItemKey = binding.ScopeItemKey;
+        state.Session.UnfinishedStep = null;
+
+        var lines = new List<string>
+        {
+            "Evidence Preview",
+            $"Item: {item.Title}",
+            $"Type: {item.ItemType}",
+            $"Scope: {item.ScopeItemKey}",
+            $"Status: {item.Status}",
+            $"Trust: {FormatTrust(item.TrustFactor)}",
+            $"Showing top evidence: {Math.Min(item.Evidence.Count, EvidencePreviewLimit)} of {item.EvidenceCount}"
+        };
+        foreach (var (evidence, index) in item.Evidence.Take(EvidencePreviewLimit).Select((value, index) => (value, index)))
+        {
+            var evidenceLine = $"{index + 1}. {TrimForInline(evidence.Summary, 160)}";
+            var observedAt = evidence.ObservedAtUtc.HasValue
+                ? FormatUtc(evidence.ObservedAtUtc.Value)
+                : "unknown";
+            var sourceLabel = string.IsNullOrWhiteSpace(evidence.SourceLabel)
+                ? "unknown source"
+                : evidence.SourceLabel;
+            lines.Add(evidenceLine);
+            lines.Add($"   Trust {FormatTrust(evidence.TrustFactor)} | Observed {observedAt} | Source {sourceLabel}");
+        }
+
+        if (item.Evidence.Count == 0)
+        {
+            lines.Add("No bounded evidence summaries are currently projected for this item.");
+        }
+
+        lines.Add("Use Open Web for deep analysis.");
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = "Evidence",
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton
+                            {
+                                Text = "Open Web",
+                                CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.OpenWeb}:{binding.Token}"
+                            }
+                        ],
+                        [
+                            new TelegramOperatorButton { Text = "Back to Queue", CallbackData = "resolution:refresh" },
+                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                        ]
+                    ]
+                }
+            ]
+        };
+    }
+
+    private async Task<TelegramOperatorResponse> RenderOpenWebHandoffAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        TelegramResolutionCardBinding binding,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var detail = await _operatorResolutionService.GetResolutionDetailAsync(
+            new OperatorResolutionDetailQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                EvidenceLimit = 1,
+                EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
+                EvidenceSortDirection = ResolutionSortDirections.Desc
+            },
+            ct);
+
+        state.Session = detail.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+        if (!detail.Accepted || detail.Detail.Item == null)
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Open Web handoff unavailable for {binding.Title}: {detail.FailureReason ?? "resolution item unavailable"}.",
+                ct);
+        }
+
+        var item = detail.Detail.Item;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionDetail;
+        state.Session.ActiveScopeItemKey = binding.ScopeItemKey;
+        state.Session.UnfinishedStep = null;
+
+        var handoffToken = BuildOpenWebHandoffToken(state.Session, item);
+        var lines = new List<string>
+        {
+            "Open Web Handoff",
+            "Use this bounded context in the web operator surface.",
+            $"tracked_person_id={state.Session.ActiveTrackedPersonId:D}",
+            $"scope_item_key={item.ScopeItemKey}",
+            $"operator_session_id={state.Session.OperatorSessionId}",
+            $"active_mode={OperatorModeTypes.ResolutionDetail}",
+            "target_api=/api/operator/resolution/detail/query",
+            $"handoff_token={handoffToken}",
+            "Legacy web routes are not used for this handoff."
+        };
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = "Open Web",
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton
+                            {
+                                Text = "Evidence",
+                                CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
+                            }
+                        ],
+                        [
+                            new TelegramOperatorButton { Text = "Back to Queue", CallbackData = "resolution:refresh" },
+                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                        ]
+                    ]
+                }
+            ]
+        };
     }
 
     private async Task<TelegramOperatorResponse> RenderTrackedPersonPickerAsync(
@@ -737,7 +952,8 @@ public sealed class TelegramOperatorWorkflowService
         TelegramOperatorInteraction interaction,
         DateTime nowUtc,
         string? note,
-        CancellationToken ct)
+        CancellationToken ct,
+        ResolutionActionFeedbackContext? actionFeedback = null)
     {
         if (state.Session.ActiveTrackedPersonId == Guid.Empty)
         {
@@ -804,6 +1020,8 @@ public sealed class TelegramOperatorWorkflowService
             lines.Add($"Runtime: {queue.Queue.RuntimeState.State}");
         }
 
+        AddResolutionActionFeedbackLines(lines, actionFeedback, queue.Queue);
+
         if (queue.Queue.Items.Count == 0)
         {
             lines.Add("No open resolution items are currently projected for this bounded scope.");
@@ -837,6 +1055,99 @@ public sealed class TelegramOperatorWorkflowService
             CallbackNotificationText = interaction.CallbackData == null ? null : "Resolution",
             Messages = messages
         };
+    }
+
+    private async Task<ResolutionQueueDeltaSnapshot?> TryCaptureQueueDeltaSnapshotAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var baseline = await _operatorResolutionService.GetResolutionQueueAsync(
+            new OperatorResolutionQueueQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                SortBy = ResolutionQueueSortFields.Priority,
+                SortDirection = ResolutionSortDirections.Desc,
+                Limit = 50
+            },
+            ct);
+
+        return baseline.Accepted
+            ? CaptureQueueDeltaSnapshot(baseline.Queue)
+            : null;
+    }
+
+    private static void AddResolutionActionFeedbackLines(
+        List<string> lines,
+        ResolutionActionFeedbackContext? actionFeedback,
+        ResolutionQueueResult queue)
+    {
+        if (actionFeedback == null)
+        {
+            return;
+        }
+
+        lines.Add(string.Empty);
+        lines.Add($"Post-action feedback: {FormatActionLabel(actionFeedback.ActionType)} on {actionFeedback.ItemTitle}");
+        if (!actionFeedback.Accepted)
+        {
+            lines.Add("Recompute lifecycle: not started (action was not accepted).");
+            return;
+        }
+
+        var recompute = actionFeedback.Recompute;
+        if (recompute == null)
+        {
+            lines.Add("Recompute lifecycle: unavailable.");
+            return;
+        }
+
+        lines.Add(
+            $"Recompute lifecycle: {FormatRecomputeLifecycleLabel(recompute.LifecycleStatus)}"
+            + (recompute.LifecycleUpdatedAtUtc.HasValue
+                ? $" (updated {FormatUtc(recompute.LifecycleUpdatedAtUtc.Value)})"
+                : string.Empty));
+        if (recompute.CompletedAtUtc.HasValue)
+        {
+            lines.Add($"Recompute completed: {FormatUtc(recompute.CompletedAtUtc.Value)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(recompute.LastResultStatus))
+        {
+            lines.Add($"Recompute result: {recompute.LastResultStatus}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(recompute.FailureReason))
+        {
+            lines.Add($"Recompute failure: {recompute.FailureReason}");
+        }
+
+        if (actionFeedback.BaselineQueueSnapshot == null)
+        {
+            lines.Add("Related-conflict delta: unavailable.");
+            return;
+        }
+
+        var postSnapshot = CaptureQueueDeltaSnapshot(queue);
+        var unresolved = postSnapshot.RelatedConflictKeys.Count;
+        var autoResolved = actionFeedback.BaselineQueueSnapshot.RelatedConflictKeys
+            .Except(postSnapshot.RelatedConflictKeys, StringComparer.Ordinal)
+            .Count();
+        var newlyEmerged = postSnapshot.RelatedConflictKeys
+            .Except(actionFeedback.BaselineQueueSnapshot.RelatedConflictKeys, StringComparer.Ordinal)
+            .Count();
+
+        lines.Add($"Related conflicts: unresolved {unresolved}");
+        lines.Add($"Auto-resolved since action: {autoResolved}");
+        lines.Add($"Newly-emerged since action: {newlyEmerged}");
     }
 
     private List<TelegramOperatorMessage> BuildResolutionCardMessages(
@@ -937,6 +1248,31 @@ public sealed class TelegramOperatorWorkflowService
         };
     }
 
+    private static string FormatRecomputeLifecycleLabel(string? lifecycleStatus)
+    {
+        return lifecycleStatus switch
+        {
+            ResolutionRecomputeLifecycleStatuses.Running => "running",
+            ResolutionRecomputeLifecycleStatuses.Done => "done",
+            ResolutionRecomputeLifecycleStatuses.Failed => "failed",
+            ResolutionRecomputeLifecycleStatuses.ClarificationBlocked => "clarification_blocked",
+            _ => string.IsNullOrWhiteSpace(lifecycleStatus) ? "unknown" : lifecycleStatus.Trim()
+        };
+    }
+
+    private static ResolutionQueueDeltaSnapshot CaptureQueueDeltaSnapshot(ResolutionQueueResult queue)
+    {
+        var relatedConflictKeys = queue.Items
+            .Where(item => string.Equals(item.ItemType, ResolutionItemTypes.Contradiction, StringComparison.Ordinal))
+            .Select(item => item.ScopeItemKey)
+            .Where(scopeItemKey => !string.IsNullOrWhiteSpace(scopeItemKey))
+            .ToHashSet(StringComparer.Ordinal);
+        return new ResolutionQueueDeltaSnapshot
+        {
+            RelatedConflictKeys = relatedConflictKeys
+        };
+    }
+
     private static string FormatTrust(float trustFactor)
     {
         var percent = Math.Clamp((int)Math.Round(trustFactor * 100f, MidpointRounding.AwayFromZero), 0, 100);
@@ -948,6 +1284,32 @@ public sealed class TelegramOperatorWorkflowService
 
     private static string BuildActionRequestId(long chatId, string actionType)
         => $"telegram:{chatId}:{ResolutionActionTypes.Normalize(actionType)}:{Guid.NewGuid():N}";
+
+    private static string TrimForInline(string? value, int maxLength)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value)
+            ? "no summary"
+            : value.Trim().ReplaceLineEndings(" ");
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return $"{normalized[..(maxLength - 3)]}...";
+    }
+
+    private static string BuildOpenWebHandoffToken(OperatorSessionContext session, ResolutionItemDetail item)
+    {
+        var payload = string.Join(
+            "|",
+            "opint",
+            "resolution_detail",
+            session.ActiveTrackedPersonId.ToString("D"),
+            item.ScopeItemKey.Trim(),
+            session.OperatorSessionId.Trim());
+        var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
 
     private TelegramOperatorResponse BuildTrackedPersonPickerResponse(
         TelegramOperatorConversationState state,
@@ -1269,4 +1631,18 @@ public sealed class TelegramOperatorWorkflowService
 
     private static TelegramOperatorMessage CreateMessage(string text)
         => new() { Text = text };
+
+    private sealed class ResolutionActionFeedbackContext
+    {
+        public string ActionType { get; init; } = string.Empty;
+        public string ItemTitle { get; init; } = string.Empty;
+        public bool Accepted { get; init; }
+        public ResolutionRecomputeContract? Recompute { get; init; }
+        public ResolutionQueueDeltaSnapshot? BaselineQueueSnapshot { get; init; }
+    }
+
+    private sealed class ResolutionQueueDeltaSnapshot
+    {
+        public HashSet<string> RelatedConflictKeys { get; init; } = new(StringComparer.Ordinal);
+    }
 }
