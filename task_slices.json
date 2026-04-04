@@ -1897,12 +1897,12 @@
       "dependencies": [
         "OPINT-003-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "No-longer-relevant conflicts are closed automatically with traceable reason.",
         "Remaining/new conflicts stay visible and linked to updated items."
       ],
-      "notes": "Ensures resolution loop affects real queue state."
+      "notes": "Done on 2026-04-04: added active Stage8 related-conflict reevaluation after successful recompute gating via Stage8RelatedConflictRepository, which reconciles target-family durable contradiction markers into `domain_conflict_records`, auto-resolves no-longer-relevant records with explicit `auto_closed_after_recompute_no_remaining_contradictions` reason plus audit events, and keeps remaining/new conflicts linked to refreshed durable metadata/object keys without pulling OPINT-003-C/D UI lifecycle work into scope. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage8-related-conflict-smoke`."
     },
     {
       "id": "OPINT-003-C",

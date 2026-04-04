@@ -190,6 +190,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7TimelineRepository, Stage7TimelineRepository>();
         services.AddSingleton<IStage8RecomputeQueueRepository, Stage8RecomputeQueueRepository>();
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
+        services.AddSingleton<IStage8RelatedConflictRepository, Stage8RelatedConflictRepository>();
         services.AddSingleton<IRuntimeDefectRepository, RuntimeDefectRepository>();
         services.AddSingleton<IClarificationBranchStateRepository, ClarificationBranchStateRepository>();
         services.AddSingleton<IRuntimeControlStateRepository, RuntimeControlStateRepository>();

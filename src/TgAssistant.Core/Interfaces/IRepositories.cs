@@ -246,6 +246,13 @@ public interface IStage8OutcomeGateRepository
         CancellationToken ct = default);
 }
 
+public interface IStage8RelatedConflictRepository
+{
+    Task<Stage8RelatedConflictReevaluationResult> ReevaluateAsync(
+        Stage8RelatedConflictReevaluationRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IRuntimeDefectRepository
 {
     Task<RuntimeDefectRecord> UpsertAsync(

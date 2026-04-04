@@ -20,6 +20,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
     private readonly IStage7TimelineService _stage7TimelineService;
     private readonly IRuntimeControlStateService _runtimeControlStateService;
     private readonly IStage8OutcomeGateRepository _outcomeGateRepository;
+    private readonly IStage8RelatedConflictRepository _relatedConflictRepository;
     private readonly IRuntimeDefectRepository _runtimeDefectRepository;
     private readonly IClarificationBranchStateRepository _clarificationBranchStateRepository;
     private readonly ILogger<Stage8RecomputeQueueService> _logger;
@@ -34,6 +35,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         IStage7TimelineService stage7TimelineService,
         IRuntimeControlStateService runtimeControlStateService,
         IStage8OutcomeGateRepository outcomeGateRepository,
+        IStage8RelatedConflictRepository relatedConflictRepository,
         IRuntimeDefectRepository runtimeDefectRepository,
         IClarificationBranchStateRepository clarificationBranchStateRepository,
         ILogger<Stage8RecomputeQueueService> logger,
@@ -47,6 +49,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
         _stage7TimelineService = stage7TimelineService;
         _runtimeControlStateService = runtimeControlStateService;
         _outcomeGateRepository = outcomeGateRepository;
+        _relatedConflictRepository = relatedConflictRepository;
         _runtimeDefectRepository = runtimeDefectRepository;
         _clarificationBranchStateRepository = clarificationBranchStateRepository;
         _logger = logger;
@@ -209,6 +212,18 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 RuntimeControlState = runtimeControl.State
             }, ct);
             await RecordOutcomeDefectsAsync(leasedItem, resultStatus, gateResult, modelPassRunId, runtimeControl.State, ct);
+            var relatedConflictResult = await _relatedConflictRepository.ReevaluateAsync(new Stage8RelatedConflictReevaluationRequest
+            {
+                QueueItemId = leasedItem.Id,
+                ScopeKey = leasedItem.ScopeKey,
+                PersonId = leasedItem.PersonId,
+                TargetFamily = leasedItem.TargetFamily,
+                TargetRef = leasedItem.TargetRef,
+                ResultStatus = resultStatus,
+                TriggerKind = leasedItem.TriggerKind,
+                TriggerRef = leasedItem.TriggerRef,
+                ModelPassRunId = modelPassRunId
+            }, ct);
             await _repository.CompleteAsync(leasedItem.Id, leasedItem.LeaseToken!.Value, resultStatus, modelPassRunId, ct);
             await _runtimeDefectRepository.ResolveOpenByDedupeKeyAsync(
                 $"{leasedItem.ScopeKey}|{leasedItem.TargetFamily}|execution_failure",
@@ -222,7 +237,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             leasedItem.CompletedAtUtc = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}, gate_affected={GateAffected}, gate_promoted={GatePromoted}, gate_promotion_blocked={GatePromotionBlocked}, gate_clarification_blocked={GateClarificationBlocked}",
+                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}, gate_affected={GateAffected}, gate_promoted={GatePromoted}, gate_promotion_blocked={GatePromotionBlocked}, gate_clarification_blocked={GateClarificationBlocked}, related_conflicts_applied={RelatedConflictsApplied}, related_conflicts_created={RelatedConflictCreated}, related_conflicts_refreshed={RelatedConflictRefreshed}, related_conflicts_resolved={RelatedConflictResolved}, related_conflicts_unchanged={RelatedConflictUnchanged}, related_conflicts_skip_reason={RelatedConflictSkipReason}",
                 leasedItem.Id,
                 leasedItem.TargetFamily,
                 leasedItem.TargetRef,
@@ -230,7 +245,13 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 gateResult.AffectedCount,
                 gateResult.PromotedCount,
                 gateResult.PromotionBlockedCount,
-                gateResult.ClarificationBlockedCount);
+                gateResult.ClarificationBlockedCount,
+                relatedConflictResult.Applied,
+                relatedConflictResult.CreatedCount,
+                relatedConflictResult.RefreshedCount,
+                relatedConflictResult.ResolvedCount,
+                relatedConflictResult.UnchangedCount,
+                relatedConflictResult.SkipReason);
 
             return new Stage8RecomputeExecutionResult
             {

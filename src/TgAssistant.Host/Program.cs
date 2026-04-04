@@ -150,6 +150,7 @@ try
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7TimelineSmoke = args.Any(arg => string.Equals(arg, "--stage7-timeline-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionRecomputeContractSmoke = args.Any(arg => string.Equals(arg, "--resolution-recompute-contract-smoke", StringComparison.OrdinalIgnoreCase));
+    var runStage8RelatedConflictSmoke = args.Any(arg => string.Equals(arg, "--stage8-related-conflict-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage8RecomputeSmoke = args.Any(arg => string.Equals(arg, "--stage8-recompute-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
@@ -224,6 +225,7 @@ try
         "--stage7-pair-dynamics-smoke",
         "--stage7-timeline-smoke",
         "--resolution-recompute-contract-smoke",
+        "--stage8-related-conflict-smoke",
         "--stage8-recompute-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
@@ -419,6 +421,13 @@ try
     {
         ResolutionRecomputeContractSmokeRunner.Run();
         Log.Information("Resolution recompute contract smoke requested via --resolution-recompute-contract-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runStage8RelatedConflictSmoke)
+    {
+        Stage8RelatedConflictSmokeRunner.Run();
+        Log.Information("Stage8 related conflict smoke requested via --stage8-related-conflict-smoke. Exiting after successful verification.");
         return;
     }
 

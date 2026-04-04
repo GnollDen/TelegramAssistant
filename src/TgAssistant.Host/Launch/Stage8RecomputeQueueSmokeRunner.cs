@@ -15,6 +15,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         var pairDynamicsService = new FakeStage7PairDynamicsService();
         var timelineService = new FakeStage7TimelineService();
         var gateRepository = new InMemoryStage8OutcomeGateRepository();
+        var relatedConflictRepository = new InMemoryStage8RelatedConflictRepository();
         var defectRepository = new InMemoryRuntimeDefectRepository();
         var controlStateService = new InMemoryRuntimeControlStateService();
         var clarificationBranchStateRepository = new InMemoryClarificationBranchStateRepository();
@@ -27,6 +28,7 @@ public static class Stage8RecomputeQueueSmokeRunner
             timelineService,
             controlStateService,
             gateRepository,
+            relatedConflictRepository,
             defectRepository,
             clarificationBranchStateRepository,
             loggerFactory.CreateLogger<Stage8RecomputeQueueService>(),
@@ -992,6 +994,19 @@ public static class Stage8RecomputeQueueSmokeRunner
                 ClarificationBlockedCount = string.Equals(request.ResultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal) ? 1 : 0
             };
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class InMemoryStage8RelatedConflictRepository : IStage8RelatedConflictRepository
+    {
+        public Task<Stage8RelatedConflictReevaluationResult> ReevaluateAsync(
+            Stage8RelatedConflictReevaluationRequest request,
+            CancellationToken ct = default)
+        {
+            return Task.FromResult(new Stage8RelatedConflictReevaluationResult
+            {
+                Applied = true
+            });
         }
     }
 
