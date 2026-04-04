@@ -1194,8 +1194,8 @@
       "dependencies": [
         "OPINT-003"
       ],
-      "status": "pending",
-      "notes": "P0 operator surface #1."
+      "status": "done",
+      "notes": "Done 2026-04-04: OPINT-004-A/B/C1/C2/C3 delivered mode selection + tracked-person context, compact Telegram resolution cards/actions, clarification/evidence/open-web behavior, and recompute lifecycle feedback; OPINT-004-D bounded pilot validation confirmed authorize -> action -> persistence -> recompute feedback with unauthorized-deny auditing on seeded scope `chat:885574984` (see docs/planning/OPINT-004-D_VALIDATION_2026-04-04.md)."
     },
     {
       "id": "OPINT-005",

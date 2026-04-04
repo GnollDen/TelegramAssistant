@@ -1999,12 +1999,12 @@
       "dependencies": [
         "OPINT-004-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Evidence action shows compact bounded evidence summary without expanding Telegram into deep-analysis workspace.",
         "Open in Web handoff includes stable bounded context (person/item/session) and avoids legacy web routes."
       ],
-      "notes": "Separates navigation/handoff outcomes from mutation/recompute outcomes."
+      "notes": "2026-04-04: Telegram resolution `evidence` now renders compact bounded evidence preview (item/status/trust + top summarized evidence entries) and `open-web` now returns bounded handoff context (`tracked_person_id`, `scope_item_key`, `operator_session_id`, `active_mode`, API target, stable handoff token) without legacy web routes. Verified with `dotnet build TelegramAssistant.sln`; runtime smoke command remains environment-blocked by placeholder `Database:ConnectionString`."
     },
     {
       "id": "OPINT-004-C3",
@@ -2016,12 +2016,12 @@
       "dependencies": [
         "OPINT-004-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Telegram displays running/done/failed/clarification-blocked recompute states for the acted item.",
         "Post-action feedback shows unresolved/auto-resolved/newly-emerged related-conflict deltas for the same bounded scope."
       ],
-      "notes": "Dedicated verification path for action->recompute feedback loop."
+      "notes": "2026-04-04: Telegram resolution post-action output now includes recompute lifecycle feedback (`running`/`done`/`failed`/`clarification_blocked` + lifecycle/result/failure detail) and same-scope related-conflict deltas (`unresolved`/`auto-resolved`/`newly-emerged`) for approve/reject/defer/clarify submissions. Verified with `dotnet build TelegramAssistant.sln`; runtime smoke `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-004-a-smoke --runtime-role=ops` remains environment-blocked by placeholder `Database:ConnectionString`."
     },
     {
       "id": "OPINT-004-D",
@@ -2034,12 +2034,12 @@
         "OPINT-004-C2",
         "OPINT-004-C3"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "A reproducible bounded Telegram smoke path validates authorize -> action -> persistence -> recompute feedback.",
         "Unauthorized operator attempts are denied, audited, and visible in validation output."
       ],
-      "notes": "P0 surface validation checkpoint #1."
+      "notes": "2026-04-04: Completed bounded Telegram resolution pilot validation by combining OPINT Telegram mode/authorization smoke (`--opint-004-a-smoke`), bounded action persistence authorization validation (`scripts/opint-002-resolution-contract-validate.sh`), and bounded recompute lifecycle validation (`--opint-003-d-validate`) with concrete artifacts in logs/opint-004-d-smoke-report.json and logs/opint-004-d-recompute-report.json; unauthorized attempts were denied/audited and authorize -> action -> persistence -> recompute feedback path is reproducible on scope `chat:885574984`."
     },
     {
       "id": "OPINT-005-A1",
