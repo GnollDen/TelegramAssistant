@@ -357,10 +357,11 @@ render_prompt() {
   local retry_count="$3"
   local prompt_out="$4"
 
-  local parent_task_json slices_json prd_paths
+  local parent_task_json slices_json prd_paths worktree_baseline
   parent_task_json="$(extract_parent_task_json "${parent_id}")"
   slices_json="$(extract_parent_slices_json "${parent_id}")"
   prd_paths="$(extract_prd_paths)"
+  worktree_baseline="$(git_status_snapshot)"
 
   sed \
     -e "s|{{REPO_ROOT}}|${REPO_ROOT}|g" \
@@ -393,6 +394,16 @@ render_prompt() {
     echo "## Current Task Backlog Snapshot"
     echo '```json'
     jq -c '.tasks' "${TASKS_FILE}"
+    echo '```'
+    echo
+    echo "## Worktree Baseline At Iteration Start"
+    echo "Treat this baseline as expected context for this bounded iteration."
+    echo '```'
+    if [[ -n "${worktree_baseline}" ]]; then
+      echo "${worktree_baseline}"
+    else
+      echo "(clean)"
+    fi
     echo '```'
   } >> "${prompt_out}"
 }

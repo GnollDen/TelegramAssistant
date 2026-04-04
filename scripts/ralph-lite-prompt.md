@@ -39,6 +39,9 @@ You are running one bounded Codex CLI iteration for one parent task.
 - Do not switch to unrelated tasks.
 - Do not use destructive git operations.
 - Preserve unrelated local changes.
+- If git worktree already has pre-existing changes at iteration start, treat that baseline as expected context for this parent task and continue.
+- Do not emit `BLOCKER` only because the worktree is dirty at start; emit `BLOCKER` only for real execution blockers.
+- Never revert or discard pre-existing unrelated changes.
 
 ## Data for This Iteration
 The following sections are appended by the loop script:
@@ -46,3 +49,4 @@ The following sections are appended by the loop script:
 - Parent Slices JSON
 - PRD Planning Docs
 - Current Task Backlog Snapshot
+- Worktree Baseline At Iteration Start
