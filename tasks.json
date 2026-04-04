@@ -1240,7 +1240,7 @@
         "OPINT-005"
       ],
       "status": "pending",
-      "notes": "Lower than P0 resolution-system work by design."
+      "notes": "Lower than P0 resolution-system work by design. Progress 2026-04-04: OPINT-006-A completed with contract-first authority in docs/planning/OPINT-006-A_ASSISTANT_RESPONSE_CONTRACT_2026-04-04.md, defining deterministic assistant response sections/truth-label/trust formatting plus bounded scope and Open in Web handoff rules. Remaining slices OPINT-006-B1+ are pending."
     },
     {
       "id": "OPINT-007",

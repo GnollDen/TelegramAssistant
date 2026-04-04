@@ -2205,12 +2205,12 @@
         "OPINT-004-D",
         "OPINT-005-A2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Assistant output contract is deterministic, machine-checkable, and reviewable with bounded examples.",
         "Truth-label and trust display requirements are explicit for implementation/testing across Telegram assistant mode."
       ],
-      "notes": "Contract-first artifact without waiting for full web P0 validation."
+      "notes": "Done 2026-04-04: published deterministic assistant response schema/rendering contract in docs/planning/OPINT-006-A_ASSISTANT_RESPONSE_CONTRACT_2026-04-04.md covering required sections, truth-label rules, trust rendering, bounded scope guardrails, and Open in Web handoff constraints for OPINT-006-B1/B2/C implementation and testing."
     },
     {
       "id": "OPINT-006-B1",
