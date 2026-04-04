@@ -730,7 +730,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary and Dossier are live and remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, and Pair Dynamics are live while remaining sections stay explicitly pending.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -740,6 +740,14 @@ public static class OperatorWebEndpointExtensions
     <section id="tab-dossier" class="panel tab-panel">
       <h2>Dossier</h2>
       <div id="dossier-content" class="state empty">Dossier is waiting for workspace data.</div>
+    </section>
+    <section id="tab-profile" class="panel tab-panel">
+      <h2>Profile</h2>
+      <div id="profile-content" class="state empty">Profile is waiting for workspace data.</div>
+    </section>
+    <section id="tab-pair-dynamics" class="panel tab-panel">
+      <h2>Pair Dynamics</h2>
+      <div id="pair-dynamics-content" class="state empty">Pair Dynamics is waiting for workspace data.</div>
     </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
@@ -755,8 +763,12 @@ public static class OperatorWebEndpointExtensions
     const tabsNode = document.getElementById("tabs");
     const summaryContentNode = document.getElementById("summary-content");
     const dossierContentNode = document.getElementById("dossier-content");
+    const profileContentNode = document.getElementById("profile-content");
+    const pairDynamicsContentNode = document.getElementById("pair-dynamics-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
+    const profilePanel = document.getElementById("tab-profile");
+    const pairDynamicsPanel = document.getElementById("tab-pair-dynamics");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -767,6 +779,8 @@ public static class OperatorWebEndpointExtensions
       trackedPersonId: query.get("trackedPersonId") || "",
       workspace: null,
       dossier: null,
+      profile: null,
+      pairDynamics: null,
       activeSection: "summary"
     };
 
@@ -1094,6 +1108,186 @@ public static class OperatorWebEndpointExtensions
       dossierContentNode.appendChild(updatedNote);
     }
 
+    function renderProfileSection() {
+      const profile = state.profile;
+      if (!profile) {
+        profileContentNode.className = "state empty";
+        profileContentNode.textContent = "Profile data is unavailable.";
+        return;
+      }
+
+      const signals = Array.isArray(profile.signals) ? profile.signals : [];
+      const provenance = Array.isArray(profile.provenance) ? profile.provenance : [];
+
+      profileContentNode.className = "";
+      profileContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(profile.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(profile.overallUncertainty) },
+        { label: "Durable Profiles", value: String(profile.durableProfileCount || 0) },
+        { label: "Inferences", value: String(profile.inferenceCount || 0) },
+        { label: "Hypotheses", value: String(profile.hypothesisCount || 0) },
+        { label: "Ambiguity", value: String(profile.ambiguityCount || 0) },
+        { label: "Contradictions", value: String(profile.contradictionCount || 0) },
+        { label: "Evidence Links", value: String(profile.totalEvidenceLinkCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      profileContentNode.appendChild(metrics);
+
+      const signalGrid = document.createElement("div");
+      signalGrid.className = "card-grid";
+      signals.forEach(function(signal) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize(signal.signalType || "signal") + " / " + titleize(signal.signalKey || "unknown") + "</h3>" +
+          "<p><strong>Summary:</strong> " + (signal.summary || "n/a") + "</p>" +
+          "<p><strong>Confidence:</strong> " + formatPercent(signal.confidence) + " | <strong>Profile scope:</strong> " + titleize(signal.profileScope || "unknown") + "</p>" +
+          "<p><strong>Truth:</strong> " + titleize(signal.truthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(signal.promotionState || "unknown") + "</p>" +
+          "<p><strong>Evidence refs:</strong> " + (signal.evidenceRefCount || 0) + " | <strong>Revision:</strong> " + (signal.revisionNumber || 0) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (signal.durableObjectMetadataId || "n/a") + ", profile " + (signal.durableProfileId || "n/a") + ", model pass " + (signal.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(signal.updatedAtUtc) + "</p>";
+        signalGrid.appendChild(node);
+      });
+      if (!signalGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No profile signals are available for this person scope yet.";
+        signalGrid.appendChild(empty);
+      }
+      profileContentNode.appendChild(signalGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Profile Provenance Seeds";
+      profileContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No profile provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      profileContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(profile.generatedAtUtc) + " from bounded operator profile read models.";
+      profileContentNode.appendChild(updatedNote);
+    }
+
+    function renderPairDynamicsSection() {
+      const pairDynamics = state.pairDynamics;
+      if (!pairDynamics) {
+        pairDynamicsContentNode.className = "state empty";
+        pairDynamicsContentNode.textContent = "Pair dynamics data is unavailable.";
+        return;
+      }
+
+      const signals = Array.isArray(pairDynamics.signals) ? pairDynamics.signals : [];
+      const provenance = Array.isArray(pairDynamics.provenance) ? pairDynamics.provenance : [];
+
+      pairDynamicsContentNode.className = "";
+      pairDynamicsContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(pairDynamics.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(pairDynamics.overallUncertainty) },
+        { label: "Direction of Change", value: titleize(pairDynamics.directionOfChange || "steady") },
+        { label: "Durable Pairs", value: String(pairDynamics.durablePairCount || 0) },
+        { label: "Dimensions", value: String(pairDynamics.dimensionCount || 0) },
+        { label: "Inferences", value: String(pairDynamics.inferenceCount || 0) },
+        { label: "Hypotheses", value: String(pairDynamics.hypothesisCount || 0) },
+        { label: "Conflicts", value: String(pairDynamics.conflictCount || 0) },
+        { label: "Ambiguity", value: String(pairDynamics.ambiguityCount || 0) },
+        { label: "Contradictions", value: String(pairDynamics.contradictionCount || 0) },
+        { label: "Evidence Links", value: String(pairDynamics.totalEvidenceLinkCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      pairDynamicsContentNode.appendChild(metrics);
+
+      const signalGrid = document.createElement("div");
+      signalGrid.className = "card-grid";
+      signals.forEach(function(signal) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize(signal.signalType || "signal") + " / " + titleize(signal.signalKey || "unknown") + "</h3>" +
+          "<p><strong>Summary:</strong> " + (signal.summary || "n/a") + "</p>" +
+          "<p><strong>Value:</strong> " + (signal.signalValue || "n/a") + " | <strong>Direction:</strong> " + titleize(signal.directionOfChange || "steady") + "</p>" +
+          "<p><strong>Confidence:</strong> " + formatPercent(signal.confidence) + " | <strong>Pair type:</strong> " + titleize(signal.pairDynamicsType || "unknown") + "</p>" +
+          "<p><strong>Truth:</strong> " + titleize(signal.truthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(signal.promotionState || "unknown") + "</p>" +
+          "<p><strong>Evidence refs:</strong> " + (signal.evidenceRefCount || 0) + " | <strong>Revision:</strong> " + (signal.revisionNumber || 0) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (signal.durableObjectMetadataId || "n/a") + ", pair " + (signal.durablePairDynamicsId || "n/a") + ", model pass " + (signal.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(signal.updatedAtUtc) + "</p>";
+        signalGrid.appendChild(node);
+      });
+      if (!signalGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No pair-dynamics signals are available for this person scope yet.";
+        signalGrid.appendChild(empty);
+      }
+      pairDynamicsContentNode.appendChild(signalGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Pair Dynamics Provenance Seeds";
+      pairDynamicsContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No pair-dynamics provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      pairDynamicsContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(pairDynamics.generatedAtUtc) + " from bounded operator pair-dynamics read models.";
+      pairDynamicsContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1135,18 +1329,66 @@ public static class OperatorWebEndpointExtensions
       renderDossierSection();
     }
 
+    async function ensureProfileLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.profile) {
+        return;
+      }
+
+      profileContentNode.className = "state loading";
+      profileContentNode.textContent = "Loading bounded profile view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/profile/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.profile = result.profile || null;
+      renderProfileSection();
+    }
+
+    async function ensurePairDynamicsLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.pairDynamics) {
+        return;
+      }
+
+      pairDynamicsContentNode.className = "state loading";
+      pairDynamicsContentNode.textContent = "Loading bounded pair dynamics view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/pair-dynamics/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.pairDynamics = result.pairDynamics || null;
+      renderPairDynamicsSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
+      const showProfile = state.activeSection === "profile";
+      const showPairDynamics = state.activeSection === "pair_dynamics";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier);
+      profilePanel.classList.toggle("active", showProfile);
+      pairDynamicsPanel.classList.toggle("active", showPairDynamics);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
         ensureDossierLoaded(false).catch(function(error) {
           dossierContentNode.className = "state error";
           dossierContentNode.textContent = "Dossier load failed: " + (error.message || "unknown_error");
+        });
+      } else if (showProfile) {
+        ensureProfileLoaded(false).catch(function(error) {
+          profileContentNode.className = "state error";
+          profileContentNode.textContent = "Profile load failed: " + (error.message || "unknown_error");
+        });
+      } else if (showPairDynamics) {
+        ensurePairDynamicsLoaded(false).catch(function(error) {
+          pairDynamicsContentNode.className = "state error";
+          pairDynamicsContentNode.textContent = "Pair dynamics load failed: " + (error.message || "unknown_error");
         });
       } else {
         renderPlaceholderSection();
@@ -1165,6 +1407,8 @@ public static class OperatorWebEndpointExtensions
       });
       state.workspace = result.workspace || null;
       state.dossier = null;
+      state.profile = null;
+      state.pairDynamics = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();

@@ -616,6 +616,315 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceProfileQueryResult> QueryPersonWorkspaceProfileAsync(
+        OperatorPersonWorkspaceProfileQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceProfileQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceProfileQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceProfileQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var profiles = await db.DurableProfiles
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.PersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var metadataIds = profiles
+            .Select(x => x.DurableObjectMetadataId)
+            .Distinct()
+            .ToList();
+        var metadataById = metadataIds.Count == 0
+            ? new Dictionary<Guid, DbDurableObjectMetadata>()
+            : await db.DurableObjectMetadata
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.Id)
+                    && x.ScopeKey == trackedPerson.ScopeKey
+                    && x.OwnerPersonId == trackedPerson.TrackedPersonId
+                    && x.ObjectFamily == Stage7DurableObjectFamilies.Profile
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var metadataIdList = metadataById.Keys.ToList();
+        var evidenceCounts = metadataById.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIdList.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var signals = profiles
+            .SelectMany(profile =>
+            {
+                metadataById.TryGetValue(profile.DurableObjectMetadataId, out var metadata);
+                return BuildProfileSignals(profile, metadata, evidenceCounts.GetValueOrDefault(profile.DurableObjectMetadataId));
+            })
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.UpdatedAtUtc)
+            .ThenBy(x => x.SignalType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SignalKey, StringComparer.OrdinalIgnoreCase)
+            .Take(200)
+            .ToList();
+
+        var provenance = profiles
+            .Take(24)
+            .Select(profile =>
+            {
+                metadataById.TryGetValue(profile.DurableObjectMetadataId, out var metadata);
+                var updatedAtUtc = DateTime.SpecifyKind(profile.UpdatedAt, DateTimeKind.Utc);
+                return new OperatorWorkspaceProvenanceItem
+                {
+                    Family = Stage7DurableObjectFamilies.Profile,
+                    ObjectKey = metadata?.ObjectKey ?? profile.Id.ToString("D"),
+                    DurableObjectMetadataId = profile.DurableObjectMetadataId,
+                    LastModelPassRunId = profile.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                    EvidenceLinkCount = evidenceCounts.GetValueOrDefault(profile.DurableObjectMetadataId),
+                    UpdatedAtUtc = updatedAtUtc,
+                    Summary = BuildSummarySnippet(profile.SummaryJson)
+                };
+            })
+            .ToList();
+
+        var confidenceValues = metadataById.Values.Select(x => Clamp01(x.Confidence)).ToList();
+        var overallTrust = confidenceValues.Count == 0 ? 0f : confidenceValues.Average();
+        var inferenceCount = signals.Count(x => string.Equals(x.SignalType, "inference", StringComparison.Ordinal));
+        var hypothesisCount = signals.Count(x => string.Equals(x.SignalType, "hypothesis", StringComparison.Ordinal));
+        var ambiguityCount = SumProfilePressure(profiles, "ambiguity_count");
+        var contradictionCount = SumProfilePressure(profiles, "contradiction_count");
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceProfileQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Profile = new OperatorPersonWorkspaceProfileSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurableProfileCount = profiles.Count,
+                InferenceCount = inferenceCount,
+                HypothesisCount = hypothesisCount,
+                AmbiguityCount = ambiguityCount,
+                ContradictionCount = contradictionCount,
+                OverallTrust = overallTrust,
+                OverallUncertainty = Clamp01(1f - overallTrust),
+                TotalEvidenceLinkCount = evidenceCounts.Values.Sum(),
+                Signals = signals,
+                Provenance = provenance
+            }
+        };
+    }
+
+    public async Task<OperatorPersonWorkspacePairDynamicsQueryResult> QueryPersonWorkspacePairDynamicsAsync(
+        OperatorPersonWorkspacePairDynamicsQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspacePairDynamicsQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspacePairDynamicsQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspacePairDynamicsQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var pairs = await db.DurablePairDynamics
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && (x.RightPersonId == trackedPerson.TrackedPersonId || x.LeftPersonId == trackedPerson.TrackedPersonId))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var metadataIds = pairs
+            .Select(x => x.DurableObjectMetadataId)
+            .Distinct()
+            .ToList();
+        var metadataById = metadataIds.Count == 0
+            ? new Dictionary<Guid, DbDurableObjectMetadata>()
+            : await db.DurableObjectMetadata
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.Id)
+                    && x.ScopeKey == trackedPerson.ScopeKey
+                    && x.ObjectFamily == Stage7DurableObjectFamilies.PairDynamics
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var metadataIdList = metadataById.Keys.ToList();
+        var evidenceCounts = metadataById.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIdList.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var signals = pairs
+            .SelectMany(pair =>
+            {
+                metadataById.TryGetValue(pair.DurableObjectMetadataId, out var metadata);
+                return BuildPairDynamicsSignals(pair, metadata, evidenceCounts.GetValueOrDefault(pair.DurableObjectMetadataId));
+            })
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.UpdatedAtUtc)
+            .ThenBy(x => x.SignalType, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SignalKey, StringComparer.OrdinalIgnoreCase)
+            .Take(240)
+            .ToList();
+
+        var provenance = pairs
+            .Take(24)
+            .Select(pair =>
+            {
+                metadataById.TryGetValue(pair.DurableObjectMetadataId, out var metadata);
+                var updatedAtUtc = DateTime.SpecifyKind(pair.UpdatedAt, DateTimeKind.Utc);
+                return new OperatorWorkspaceProvenanceItem
+                {
+                    Family = Stage7DurableObjectFamilies.PairDynamics,
+                    ObjectKey = metadata?.ObjectKey ?? pair.Id.ToString("D"),
+                    DurableObjectMetadataId = pair.DurableObjectMetadataId,
+                    LastModelPassRunId = pair.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                    EvidenceLinkCount = evidenceCounts.GetValueOrDefault(pair.DurableObjectMetadataId),
+                    UpdatedAtUtc = updatedAtUtc,
+                    Summary = BuildSummarySnippet(pair.SummaryJson)
+                };
+            })
+            .ToList();
+
+        var confidenceValues = metadataById.Values.Select(x => Clamp01(x.Confidence)).ToList();
+        var overallTrust = confidenceValues.Count == 0 ? 0f : confidenceValues.Average();
+        var dimensionCount = signals.Count(x => string.Equals(x.SignalType, "dimension", StringComparison.Ordinal));
+        var inferenceCount = signals.Count(x => string.Equals(x.SignalType, "inference", StringComparison.Ordinal));
+        var hypothesisCount = signals.Count(x => string.Equals(x.SignalType, "hypothesis", StringComparison.Ordinal));
+        var conflictCount = signals.Count(x => string.Equals(x.SignalType, "conflict", StringComparison.Ordinal));
+        var ambiguityCount = SumPairDynamicsPressure(pairs, "ambiguity_count");
+        var contradictionCount = SumPairDynamicsPressure(pairs, "contradiction_count");
+        var directionOfChange = ResolvePairDynamicsDirection(signals, ambiguityCount, contradictionCount);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspacePairDynamicsQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            PairDynamics = new OperatorPersonWorkspacePairDynamicsSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurablePairCount = pairs.Count,
+                DimensionCount = dimensionCount,
+                InferenceCount = inferenceCount,
+                HypothesisCount = hypothesisCount,
+                ConflictCount = conflictCount,
+                AmbiguityCount = ambiguityCount,
+                ContradictionCount = contradictionCount,
+                OverallTrust = overallTrust,
+                OverallUncertainty = Clamp01(1f - overallTrust),
+                DirectionOfChange = directionOfChange,
+                TotalEvidenceLinkCount = evidenceCounts.Values.Sum(),
+                Signals = signals,
+                Provenance = provenance
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -1826,8 +2135,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         [
             new OperatorWorkspaceSectionState { SectionKey = "summary", Label = "Summary", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "dossier", Label = "Dossier", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "pending", Available = false },
-            new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "ready", Available = true },
+            new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "pending", Available = false },
@@ -2036,6 +2345,312 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             facts);
 
         return facts;
+    }
+
+    private static List<OperatorWorkspaceProfileSignalView> BuildProfileSignals(
+        DbDurableProfile profile,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount)
+    {
+        var signals = new List<OperatorWorkspaceProfileSignalView>();
+        if (!TryParseJsonObject(profile.PayloadJson, out var payloadRoot))
+        {
+            return signals;
+        }
+
+        AddProfileSignals(
+            payloadRoot,
+            propertyName: "inferences",
+            signalType: "inference",
+            keyPropertyName: "inference_type",
+            summaryPropertyName: "summary",
+            profile,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        AddProfileSignals(
+            payloadRoot,
+            propertyName: "hypotheses",
+            signalType: "hypothesis",
+            keyPropertyName: "hypothesis_type",
+            summaryPropertyName: "statement",
+            profile,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        return signals;
+    }
+
+    private static void AddProfileSignals(
+        JsonElement payloadRoot,
+        string propertyName,
+        string signalType,
+        string keyPropertyName,
+        string summaryPropertyName,
+        DbDurableProfile profile,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount,
+        List<OperatorWorkspaceProfileSignalView> target)
+    {
+        if (!payloadRoot.TryGetProperty(propertyName, out var signalsArray)
+            || signalsArray.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var signalElement in signalsArray.EnumerateArray())
+        {
+            if (signalElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var signalKey = NormalizeOptional(GetString(signalElement, keyPropertyName)) ?? "unknown";
+            var summary = NormalizeOptional(GetString(signalElement, summaryPropertyName)) ?? "n/a";
+            var confidence = Clamp01(GetSingle(signalElement, "confidence") ?? metadata?.Confidence ?? 0f);
+            var evidenceRefCount = GetArrayLength(signalElement, "evidence_refs");
+            if (evidenceRefCount == 0)
+            {
+                evidenceRefCount = evidenceLinkCount;
+            }
+
+            target.Add(new OperatorWorkspaceProfileSignalView
+            {
+                DurableProfileId = profile.Id,
+                DurableObjectMetadataId = profile.DurableObjectMetadataId,
+                LastModelPassRunId = profile.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                RevisionNumber = profile.CurrentRevisionNumber,
+                ProfileScope = NormalizeOptional(profile.ProfileScope) ?? "unknown",
+                SignalType = signalType,
+                SignalKey = signalKey,
+                Summary = summary,
+                Confidence = confidence,
+                EvidenceRefCount = evidenceRefCount,
+                TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                UpdatedAtUtc = DateTime.SpecifyKind(profile.UpdatedAt, DateTimeKind.Utc)
+            });
+        }
+    }
+
+    private static int SumProfilePressure(IEnumerable<DbDurableProfile> profiles, string pressureKey)
+    {
+        var total = 0;
+        foreach (var profile in profiles)
+        {
+            if (!TryParseJsonObject(profile.PayloadJson, out var payloadRoot)
+                || !payloadRoot.TryGetProperty("bootstrap_pressure", out var pressure)
+                || pressure.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            total += GetInt32(pressure, pressureKey) ?? 0;
+        }
+
+        return Math.Max(0, total);
+    }
+
+    private static List<OperatorWorkspacePairDynamicsSignalView> BuildPairDynamicsSignals(
+        DbDurablePairDynamics pairDynamics,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount)
+    {
+        var signals = new List<OperatorWorkspacePairDynamicsSignalView>();
+        if (!TryParseJsonObject(pairDynamics.PayloadJson, out var payloadRoot))
+        {
+            return signals;
+        }
+
+        AddPairDynamicsSignals(
+            payloadRoot,
+            propertyName: "dimensions",
+            signalType: "dimension",
+            keyPropertyName: "key",
+            summaryPropertyName: "value",
+            valuePropertyName: "value",
+            pairDynamics,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        AddPairDynamicsSignals(
+            payloadRoot,
+            propertyName: "inferences",
+            signalType: "inference",
+            keyPropertyName: "inference_type",
+            summaryPropertyName: "summary",
+            valuePropertyName: null,
+            pairDynamics,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        AddPairDynamicsSignals(
+            payloadRoot,
+            propertyName: "hypotheses",
+            signalType: "hypothesis",
+            keyPropertyName: "hypothesis_type",
+            summaryPropertyName: "statement",
+            valuePropertyName: null,
+            pairDynamics,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        AddPairDynamicsSignals(
+            payloadRoot,
+            propertyName: "conflicts",
+            signalType: "conflict",
+            keyPropertyName: "conflict_type",
+            summaryPropertyName: "summary",
+            valuePropertyName: null,
+            pairDynamics,
+            metadata,
+            evidenceLinkCount,
+            signals);
+
+        return signals;
+    }
+
+    private static void AddPairDynamicsSignals(
+        JsonElement payloadRoot,
+        string propertyName,
+        string signalType,
+        string keyPropertyName,
+        string summaryPropertyName,
+        string? valuePropertyName,
+        DbDurablePairDynamics pairDynamics,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount,
+        List<OperatorWorkspacePairDynamicsSignalView> target)
+    {
+        if (!payloadRoot.TryGetProperty(propertyName, out var signalsArray)
+            || signalsArray.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var signalElement in signalsArray.EnumerateArray())
+        {
+            if (signalElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var signalKey = NormalizeOptional(GetString(signalElement, keyPropertyName)) ?? "unknown";
+            var summary = NormalizeOptional(GetString(signalElement, summaryPropertyName)) ?? "n/a";
+            var signalValue = valuePropertyName == null
+                ? null
+                : NormalizeOptional(RenderJsonValue(signalElement, valuePropertyName));
+            var confidence = Clamp01(GetSingle(signalElement, "confidence") ?? metadata?.Confidence ?? 0f);
+            var evidenceRefCount = GetArrayLength(signalElement, "evidence_refs");
+            if (evidenceRefCount == 0)
+            {
+                evidenceRefCount = evidenceLinkCount;
+            }
+
+            target.Add(new OperatorWorkspacePairDynamicsSignalView
+            {
+                DurablePairDynamicsId = pairDynamics.Id,
+                DurableObjectMetadataId = pairDynamics.DurableObjectMetadataId,
+                LastModelPassRunId = pairDynamics.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                RevisionNumber = pairDynamics.CurrentRevisionNumber,
+                PairDynamicsType = NormalizeOptional(pairDynamics.PairDynamicsType) ?? "unknown",
+                SignalType = signalType,
+                SignalKey = signalKey,
+                Summary = summary,
+                SignalValue = signalValue,
+                DirectionOfChange = ResolveSignalDirection(signalKey, signalValue, summary),
+                Confidence = confidence,
+                EvidenceRefCount = evidenceRefCount,
+                TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                UpdatedAtUtc = DateTime.SpecifyKind(pairDynamics.UpdatedAt, DateTimeKind.Utc)
+            });
+        }
+    }
+
+    private static int SumPairDynamicsPressure(IEnumerable<DbDurablePairDynamics> pairs, string pressureKey)
+    {
+        var total = 0;
+        foreach (var pair in pairs)
+        {
+            if (!TryParseJsonObject(pair.PayloadJson, out var payloadRoot)
+                || !payloadRoot.TryGetProperty("bootstrap_pressure", out var pressure)
+                || pressure.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            total += GetInt32(pressure, pressureKey) ?? 0;
+        }
+
+        return Math.Max(0, total);
+    }
+
+    private static string ResolvePairDynamicsDirection(
+        IEnumerable<OperatorWorkspacePairDynamicsSignalView> signals,
+        int ambiguityCount,
+        int contradictionCount)
+    {
+        var grouped = signals
+            .GroupBy(x => NormalizeOptional(x.DirectionOfChange) ?? "steady", StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
+        var improving = grouped.GetValueOrDefault("improving");
+        var concerning = grouped.GetValueOrDefault("concerning");
+
+        if (concerning > improving || contradictionCount > 0)
+        {
+            return "concerning";
+        }
+
+        if (improving > concerning && ambiguityCount == 0)
+        {
+            return "improving";
+        }
+
+        return "steady";
+    }
+
+    private static string ResolveSignalDirection(string signalKey, string? signalValue, string summary)
+    {
+        var text = $"{signalKey} {signalValue} {summary}".ToLowerInvariant();
+        var positiveSignals = new[]
+        {
+            "stable",
+            "improving",
+            "repair_pressure_low",
+            "cautiously_safe",
+            "evidence_backed_exchange"
+        };
+        var negativeSignals = new[]
+        {
+            "concerning",
+            "declining",
+            "contradiction",
+            "ambiguity",
+            "repair_pressure_present",
+            "needs_review",
+            "low_signal_exchange",
+            "open_response"
+        };
+
+        var positiveScore = positiveSignals.Count(text.Contains);
+        var negativeScore = negativeSignals.Count(text.Contains);
+        if (negativeScore > positiveScore)
+        {
+            return "concerning";
+        }
+
+        if (positiveScore > negativeScore)
+        {
+            return "improving";
+        }
+
+        return "steady";
     }
 
     private static void AddDossierFacts(

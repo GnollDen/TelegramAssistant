@@ -2445,12 +2445,12 @@
       "dependencies": [
         "OPINT-008-B2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Profile section is grounded in durable read models for the selected tracked person.",
         "Confidence/uncertainty signals are explicit and navigable to supporting context."
       ],
-      "notes": "Profile isolated from Pair/Timeline/Evidence/Revisions scopes."
+      "notes": "Completed 2026-04-04: implemented live Profile tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/profile/query` backed by durable profile/read-model data, exposing explicit confidence/uncertainty metrics, inference versus hypothesis signals, bootstrap ambiguity/contradiction pressure indicators, and provenance drilldown seeds (durable metadata + model pass identifiers) within person-scoped operator auth/session bounds."
     },
     {
       "id": "OPINT-008-C1",
@@ -2462,12 +2462,12 @@
       "dependencies": [
         "OPINT-008-B3"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Pair Dynamics view exposes current pair state and direction-of-change signals for the tracked person scope.",
         "Pair-level drilldown links route to bounded evidence context."
       ],
-      "notes": "Separates Pair Dynamics from Timeline rendering complexity."
+      "notes": "Completed 2026-04-04: implemented live Pair Dynamics tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/pair-dynamics/query` backed by durable pair-dynamics/read-model data, exposing current pair state, explicit direction-of-change signals, trust/uncertainty and ambiguity/contradiction pressure cues, plus bounded evidence/provenance drilldown seeds (durable metadata + model pass identifiers) within person-scoped operator auth/session bounds."
     },
     {
       "id": "OPINT-008-C2",

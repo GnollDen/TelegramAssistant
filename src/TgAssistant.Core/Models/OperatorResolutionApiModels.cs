@@ -158,6 +158,16 @@ public class OperatorPersonWorkspaceDossierQueryRequest : OperatorContractReques
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceProfileQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
+public class OperatorPersonWorkspacePairDynamicsQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -172,6 +182,22 @@ public class OperatorPersonWorkspaceDossierQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceDossierSectionView Dossier { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceProfileQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceProfileSectionView Profile { get; set; } = new();
+}
+
+public class OperatorPersonWorkspacePairDynamicsQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspacePairDynamicsSectionView PairDynamics { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -215,6 +241,39 @@ public class OperatorPersonWorkspaceDossierSectionView
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
 }
 
+public class OperatorPersonWorkspaceProfileSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableProfileCount { get; set; }
+    public int InferenceCount { get; set; }
+    public int HypothesisCount { get; set; }
+    public int AmbiguityCount { get; set; }
+    public int ContradictionCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public int TotalEvidenceLinkCount { get; set; }
+    public List<OperatorWorkspaceProfileSignalView> Signals { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorPersonWorkspacePairDynamicsSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurablePairCount { get; set; }
+    public int DimensionCount { get; set; }
+    public int InferenceCount { get; set; }
+    public int HypothesisCount { get; set; }
+    public int ConflictCount { get; set; }
+    public int AmbiguityCount { get; set; }
+    public int ContradictionCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public string DirectionOfChange { get; set; } = string.Empty;
+    public int TotalEvidenceLinkCount { get; set; }
+    public List<OperatorWorkspacePairDynamicsSignalView> Signals { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
 public class OperatorWorkspaceDossierFactView
 {
     public Guid DurableDossierId { get; set; }
@@ -226,6 +285,42 @@ public class OperatorWorkspaceDossierFactView
     public string Key { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
     public string ApprovalState { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public int EvidenceRefCount { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class OperatorWorkspaceProfileSignalView
+{
+    public Guid DurableProfileId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string ProfileScope { get; set; } = string.Empty;
+    public string SignalType { get; set; } = string.Empty;
+    public string SignalKey { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public int EvidenceRefCount { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class OperatorWorkspacePairDynamicsSignalView
+{
+    public Guid DurablePairDynamicsId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string PairDynamicsType { get; set; } = string.Empty;
+    public string SignalType { get; set; } = string.Empty;
+    public string SignalKey { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? SignalValue { get; set; }
+    public string DirectionOfChange { get; set; } = string.Empty;
     public float Confidence { get; set; }
     public int EvidenceRefCount { get; set; }
     public string TruthLayer { get; set; } = string.Empty;
