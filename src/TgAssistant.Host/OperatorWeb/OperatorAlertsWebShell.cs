@@ -359,21 +359,24 @@ public static class OperatorAlertsWebShell
     function syncTrackedPersonFilter(result) {
       const groups = Array.isArray(result.groups) ? result.groups : [];
       const selected = personFilter.value || pendingTrackedPersonFilter;
-      const options = [
-        "<option value=\"\">All tracked persons</option>"
-      ];
+      personFilter.innerHTML = "";
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "All tracked persons";
+      personFilter.appendChild(defaultOption);
+
       groups.forEach(function(group) {
         const person = group.trackedPerson || {};
         if (!person.trackedPersonId) {
           return;
         }
 
-        options.push(
-          "<option value=\"" + person.trackedPersonId + "\">"
-          + (person.displayName || person.trackedPersonId)
-          + "</option>");
+        const option = document.createElement("option");
+        option.value = person.trackedPersonId;
+        option.textContent = person.displayName || person.trackedPersonId;
+        personFilter.appendChild(option);
       });
-      personFilter.innerHTML = options.join("");
+
       if (selected && Array.from(personFilter.options).some(function(option) { return option.value === selected; })) {
         personFilter.value = selected;
         pendingTrackedPersonFilter = "";
@@ -400,6 +403,19 @@ public static class OperatorAlertsWebShell
       return String(value || "")
         .replaceAll("_", " ")
         .replace(/\b\w/g, function(char) { return char.toUpperCase(); });
+    }
+
+    function safeHref(value, fallback) {
+      const candidate = String(value || "").trim();
+      if (!candidate) {
+        return fallback;
+      }
+
+      if (candidate.startsWith("/")) {
+        return candidate;
+      }
+
+      return fallback;
     }
 
     function buildWidgetCard(title, metric, description) {
@@ -432,7 +448,7 @@ public static class OperatorAlertsWebShell
         }
 
         const anchor = document.createElement("a");
-        anchor.href = link.href;
+        anchor.href = safeHref(link.href, "/operator/alerts");
         anchor.textContent = link.label;
         row.appendChild(anchor);
       });
@@ -456,7 +472,7 @@ public static class OperatorAlertsWebShell
 
       facets.forEach(function(facet) {
         const anchor = document.createElement("a");
-        anchor.href = facet.alertsUrl || "/operator/alerts";
+        anchor.href = safeHref(facet.alertsUrl, "/operator/alerts");
         anchor.className = "chip";
         anchor.textContent = (facet.label || facet.key || "Unknown") + " (" + Number(facet.count || 0) + ")";
         row.appendChild(anchor);
@@ -576,28 +592,44 @@ public static class OperatorAlertsWebShell
 
         const header = document.createElement("div");
         header.className = "group-header";
-        header.innerHTML =
-          "<div>"
-          + "<h3>" + (person.displayName || person.trackedPersonId || "Tracked person") + "</h3>"
-          + "<div class='meta-row'>"
-          + "<span>Scope " + (person.scopeKey || "n/a") + "</span>"
-          + "<span>Alerts " + Number(group.alertCount || 0) + "</span>"
-          + "<span>Telegram-bound " + Number(group.telegramPushCount || 0) + "</span>"
-          + "<span>Web-only " + Number(group.webOnlyCount || 0) + "</span>"
-          + "<span>Ack-required " + ackRequiredCount + "</span>"
-          + "<span>Enter resolution " + enterResolutionCount + "</span>"
-          + "</div>"
-          + "</div>";
+        const headerCopy = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = person.displayName || person.trackedPersonId || "Tracked person";
+        headerCopy.appendChild(title);
+
+        const metaRow = document.createElement("div");
+        metaRow.className = "meta-row";
+        [
+          "Scope " + (person.scopeKey || "n/a"),
+          "Alerts " + Number(group.alertCount || 0),
+          "Telegram-bound " + Number(group.telegramPushCount || 0),
+          "Web-only " + Number(group.webOnlyCount || 0),
+          "Ack-required " + ackRequiredCount,
+          "Enter resolution " + enterResolutionCount
+        ].forEach(function(text) {
+          const chip = document.createElement("span");
+          chip.textContent = text;
+          metaRow.appendChild(chip);
+        });
+        headerCopy.appendChild(metaRow);
+        header.appendChild(headerCopy);
 
         const actions = document.createElement("div");
         actions.className = "group-actions";
-        actions.innerHTML =
-          (focusAlert && focusAlert.resolutionUrl
-            ? "<a href=\"" + focusAlert.resolutionUrl + "\">Open Focus Alert</a>"
-            : "")
-          +
-          "<a href=\"" + (group.personWorkspaceUrl || personWorkspaceBasePath) + "\">Open Person Workspace</a>"
-          + "<a href=\"" + (group.resolutionQueueUrl || resolutionBasePath) + "\">Open Resolution Queue</a>";
+        if (focusAlert && focusAlert.resolutionUrl) {
+          const focusAnchor = document.createElement("a");
+          focusAnchor.href = safeHref(focusAlert.resolutionUrl, resolutionBasePath);
+          focusAnchor.textContent = "Open Focus Alert";
+          actions.appendChild(focusAnchor);
+        }
+        const personAnchor = document.createElement("a");
+        personAnchor.href = safeHref(group.personWorkspaceUrl, personWorkspaceBasePath);
+        personAnchor.textContent = "Open Person Workspace";
+        actions.appendChild(personAnchor);
+        const queueAnchor = document.createElement("a");
+        queueAnchor.href = safeHref(group.resolutionQueueUrl, resolutionBasePath);
+        queueAnchor.textContent = "Open Resolution Queue";
+        actions.appendChild(queueAnchor);
         header.appendChild(actions);
         card.appendChild(header);
 
@@ -606,26 +638,69 @@ public static class OperatorAlertsWebShell
         alerts.forEach(function(alert) {
           const item = document.createElement("section");
           item.className = "alert-card";
-          item.innerHTML =
-            "<header>"
-            + "<div><h4>" + (alert.title || "Alert") + "</h4><p>" + (alert.summary || "No summary.") + "</p></div>"
-            + "<div class='priority'>" + (alert.priority || "n/a") + "</div>"
-            + "</header>"
-            + "<p><strong>Why it matters:</strong> " + (alert.whyItMatters || "n/a") + "</p>"
-            + "<div class='meta-row'>"
-            + "<span>" + (alert.itemType || "item") + "</span>"
-            + "<span>Status " + (alert.status || "n/a") + "</span>"
-            + "<span>Evidence " + Number(alert.evidenceCount || 0) + "</span>"
-            + "<span>Boundary " + (alert.escalationBoundary || "n/a") + "</span>"
-            + "<span>Rule " + (alert.alertRuleId || "n/a") + "</span>"
-            + "<span>Updated " + formatUtc(alert.updatedAtUtc) + "</span>"
-            + "</div>"
-            + "<p><strong>Related object:</strong> " + (alert.affectedFamily || "n/a") + " / " + (alert.affectedObjectRef || "n/a") + "</p>"
-            + "<p><strong>Recommended action:</strong> " + (alert.recommendedNextAction || "review") + "</p>"
-            + "<div class='link-row'>"
-            + "<a href=\"" + (alert.resolutionUrl || resolutionBasePath) + "\">Open Resolution</a>"
-            + "<a href=\"" + (alert.personWorkspaceUrl || personWorkspaceBasePath) + "\">Open Person</a>"
-            + "</div>";
+          const itemHeader = document.createElement("header");
+          const left = document.createElement("div");
+          const titleNode = document.createElement("h4");
+          titleNode.textContent = alert.title || "Alert";
+          left.appendChild(titleNode);
+          const summaryNode = document.createElement("p");
+          summaryNode.textContent = alert.summary || "No summary.";
+          left.appendChild(summaryNode);
+          itemHeader.appendChild(left);
+          const priorityNode = document.createElement("div");
+          priorityNode.className = "priority";
+          priorityNode.textContent = alert.priority || "n/a";
+          itemHeader.appendChild(priorityNode);
+          item.appendChild(itemHeader);
+
+          const why = document.createElement("p");
+          const whyStrong = document.createElement("strong");
+          whyStrong.textContent = "Why it matters:";
+          why.appendChild(whyStrong);
+          why.appendChild(document.createTextNode(" " + (alert.whyItMatters || "n/a")));
+          item.appendChild(why);
+
+          const meta = document.createElement("div");
+          meta.className = "meta-row";
+          [
+            alert.itemType || "item",
+            "Status " + (alert.status || "n/a"),
+            "Evidence " + Number(alert.evidenceCount || 0),
+            "Boundary " + (alert.escalationBoundary || "n/a"),
+            "Rule " + (alert.alertRuleId || "n/a"),
+            "Updated " + formatUtc(alert.updatedAtUtc)
+          ].forEach(function(text) {
+            const chip = document.createElement("span");
+            chip.textContent = text;
+            meta.appendChild(chip);
+          });
+          item.appendChild(meta);
+
+          const related = document.createElement("p");
+          const relatedStrong = document.createElement("strong");
+          relatedStrong.textContent = "Related object:";
+          related.appendChild(relatedStrong);
+          related.appendChild(document.createTextNode(" " + (alert.affectedFamily || "n/a") + " / " + (alert.affectedObjectRef || "n/a")));
+          item.appendChild(related);
+
+          const action = document.createElement("p");
+          const actionStrong = document.createElement("strong");
+          actionStrong.textContent = "Recommended action:";
+          action.appendChild(actionStrong);
+          action.appendChild(document.createTextNode(" " + (alert.recommendedNextAction || "review")));
+          item.appendChild(action);
+
+          const linkRow = document.createElement("div");
+          linkRow.className = "link-row";
+          const resolutionLink = document.createElement("a");
+          resolutionLink.href = safeHref(alert.resolutionUrl, resolutionBasePath);
+          resolutionLink.textContent = "Open Resolution";
+          linkRow.appendChild(resolutionLink);
+          const personLink = document.createElement("a");
+          personLink.href = safeHref(alert.personWorkspaceUrl, personWorkspaceBasePath);
+          personLink.textContent = "Open Person";
+          linkRow.appendChild(personLink);
+          item.appendChild(linkRow);
           alertList.appendChild(item);
         });
 

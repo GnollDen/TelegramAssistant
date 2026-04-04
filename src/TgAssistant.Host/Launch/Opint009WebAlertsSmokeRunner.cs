@@ -94,6 +94,27 @@ public static class Opint009WebAlertsSmokeRunner
             Ensure(shellHtml.Contains("/operator/person-workspace", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: web shell omits person workspace link contract.");
             Ensure(shellHtml.Contains("/operator/resolution", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: web shell omits resolution link contract.");
             Ensure(shellHtml.Contains("Grouped Alerts", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: grouped alerts shell section is missing.");
+            Ensure(!shellHtml.Contains("item.innerHTML", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: alert shell still uses unsafe innerHTML for alert cards.");
+            Ensure(!shellHtml.Contains("header.innerHTML", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: alert shell still uses unsafe innerHTML for group headers.");
+
+            var continuitySession = CreateSessionContext("web:opint009c1-continuity");
+            continuitySession.ActiveTrackedPersonId = SecondaryTrackedPersonId;
+            continuitySession.ActiveScopeItemKey = "resolution:continuity:scope";
+            continuitySession.ActiveMode = OperatorModeTypes.ResolutionDetail;
+            var continuityResult = await projectionBuilder.BuildAsync(
+                new OperatorAlertsQueryRequest
+                {
+                    EscalationBoundary = OperatorAlertsEscalationFilters.All,
+                    PersonLimit = 10,
+                    AlertsPerPersonLimit = 6
+                },
+                identity,
+                continuitySession,
+                ct);
+            Ensure(continuityResult.Accepted, "OPINT-009-C1 smoke failed: continuity query should be accepted.");
+            Ensure(continuityResult.Session.ActiveTrackedPersonId == SecondaryTrackedPersonId, "OPINT-009-C1 smoke failed: unscoped alerts query should preserve tracked-person session context.");
+            Ensure(string.Equals(continuityResult.Session.ActiveScopeItemKey, "resolution:continuity:scope", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: unscoped alerts query should preserve scope-item session context.");
+            Ensure(string.Equals(continuityResult.Session.ActiveMode, OperatorModeTypes.ResolutionDetail, StringComparison.Ordinal), "OPINT-009-C1 smoke failed: unscoped alerts query should preserve active mode.");
 
             report.AllChecksPassed = true;
             report.GroupCount = allResult.Groups.Count;

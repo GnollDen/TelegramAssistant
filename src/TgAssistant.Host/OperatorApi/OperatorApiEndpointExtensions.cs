@@ -76,7 +76,6 @@ public static class OperatorApiEndpointExtensions
             }
 
             var result = await projectionBuilder.BuildAsync(request, auth.OperatorIdentity, auth.Session, ct);
-            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 

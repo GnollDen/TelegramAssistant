@@ -425,16 +425,11 @@ public sealed class OperatorAlertsProjectionBuilder
     private static OperatorSessionContext CreateResponseSession(OperatorSessionContext session, Guid? trackedPersonId, DateTime nowUtc)
     {
         var clone = CloneSession(session, nowUtc);
-        clone.ActiveMode = OperatorModeTypes.ResolutionQueue;
-        clone.UnfinishedStep = null;
         if (trackedPersonId.HasValue && trackedPersonId.Value != Guid.Empty)
         {
             clone.ActiveTrackedPersonId = trackedPersonId.Value;
-        }
-        else
-        {
-            clone.ActiveTrackedPersonId = Guid.Empty;
-            clone.ActiveScopeItemKey = null;
+            clone.ActiveMode = OperatorModeTypes.ResolutionQueue;
+            clone.UnfinishedStep = null;
         }
 
         return clone;
