@@ -2479,12 +2479,12 @@
       "dependencies": [
         "OPINT-008-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Timeline view exposes key shifts in bounded tracked-person scope with recency ordering.",
         "Timeline drilldown links to evidence/revision context without leaving bounded workspace."
       ],
-      "notes": "Timeline isolated for clearer verification and recovery checkpoints."
+      "notes": "Completed 2026-04-04: implemented live Timeline tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/timeline/query` backed by durable timeline episode/story-arc read-model data, exposing recency-ordered key shifts with trust/uncertainty cues and revision/evidence/provenance drilldown seeds (durable metadata + model pass identifiers) within person-scoped operator auth/session bounds."
     },
     {
       "id": "OPINT-008-D1",

@@ -925,6 +925,155 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceTimelineQueryResult> QueryPersonWorkspaceTimelineAsync(
+        OperatorPersonWorkspaceTimelineQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceTimelineQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceTimelineQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceTimelineQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var episodes = await db.DurableTimelineEpisodes
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && (x.PersonId == trackedPerson.TrackedPersonId || x.RelatedPersonId == trackedPerson.TrackedPersonId))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var arcs = await db.DurableStoryArcs
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && (x.PersonId == trackedPerson.TrackedPersonId || x.RelatedPersonId == trackedPerson.TrackedPersonId))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var metadataIds = episodes
+            .Select(x => x.DurableObjectMetadataId)
+            .Concat(arcs.Select(x => x.DurableObjectMetadataId))
+            .Distinct()
+            .ToList();
+        var metadataById = metadataIds.Count == 0
+            ? new Dictionary<Guid, DbDurableObjectMetadata>()
+            : await db.DurableObjectMetadata
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.Id)
+                    && x.ScopeKey == trackedPerson.ScopeKey
+                    && (x.ObjectFamily == Stage7DurableObjectFamilies.TimelineEpisode || x.ObjectFamily == Stage7DurableObjectFamilies.StoryArc)
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var metadataIdList = metadataById.Keys.ToList();
+        var evidenceCounts = metadataById.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIdList.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var shifts = BuildTimelineShifts(episodes, arcs, metadataById, evidenceCounts)
+            .OrderByDescending(x => x.ShiftEndedAtUtc ?? x.ShiftStartedAtUtc ?? x.UpdatedAtUtc)
+            .ThenByDescending(x => x.Confidence)
+            .ThenBy(x => x.ShiftType, StringComparer.OrdinalIgnoreCase)
+            .Take(240)
+            .ToList();
+
+        var provenance = shifts
+            .Take(24)
+            .Select(shift => new OperatorWorkspaceProvenanceItem
+            {
+                Family = shift.Family,
+                ObjectKey = metadataById.TryGetValue(shift.DurableObjectMetadataId, out var metadata)
+                    ? metadata.ObjectKey
+                    : shift.DurableObjectId.ToString("D"),
+                DurableObjectMetadataId = shift.DurableObjectMetadataId,
+                LastModelPassRunId = shift.LastModelPassRunId,
+                EvidenceLinkCount = shift.EvidenceRefCount,
+                UpdatedAtUtc = shift.UpdatedAtUtc,
+                Summary = shift.Summary
+            })
+            .ToList();
+
+        var confidenceValues = metadataById.Values.Select(x => Clamp01(x.Confidence)).ToList();
+        var overallTrust = confidenceValues.Count == 0 ? 0f : confidenceValues.Average();
+        var openArcCount = arcs.Count(x => string.Equals(NormalizeOptional(x.ClosureState), Stage7ClosureStates.Open, StringComparison.Ordinal));
+        var contradictionCount = metadataById.Values.Sum(x => CountJsonArray(x.ContradictionMarkersJson));
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceTimelineQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Timeline = new OperatorPersonWorkspaceTimelineSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurableEpisodeCount = episodes.Count,
+                DurableStoryArcCount = arcs.Count,
+                KeyShiftCount = shifts.Count,
+                OpenArcCount = openArcCount,
+                ContradictionCount = contradictionCount,
+                OverallTrust = overallTrust,
+                OverallUncertainty = Clamp01(1f - overallTrust),
+                TotalEvidenceLinkCount = evidenceCounts.Values.Sum(),
+                Shifts = shifts,
+                Provenance = provenance
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -2137,7 +2286,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             new OperatorWorkspaceSectionState { SectionKey = "dossier", Label = "Dossier", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "pending", Available = false }
@@ -2589,6 +2738,147 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return Math.Max(0, total);
+    }
+
+    private static List<OperatorWorkspaceTimelineShiftView> BuildTimelineShifts(
+        IEnumerable<DbDurableTimelineEpisode> episodes,
+        IEnumerable<DbDurableStoryArc> arcs,
+        IReadOnlyDictionary<Guid, DbDurableObjectMetadata> metadataById,
+        IReadOnlyDictionary<Guid, int> evidenceCounts)
+    {
+        var shifts = new List<OperatorWorkspaceTimelineShiftView>();
+
+        foreach (var episode in episodes)
+        {
+            metadataById.TryGetValue(episode.DurableObjectMetadataId, out var metadata);
+            var evidenceRefCount = CountTimelineEvidenceRefs(
+                episode.PayloadJson,
+                "inferences",
+                "evidence_refs");
+            if (evidenceRefCount == 0)
+            {
+                evidenceRefCount = evidenceCounts.GetValueOrDefault(episode.DurableObjectMetadataId);
+            }
+
+            shifts.Add(new OperatorWorkspaceTimelineShiftView
+            {
+                Family = Stage7DurableObjectFamilies.TimelineEpisode,
+                DurableObjectId = episode.Id,
+                DurableObjectMetadataId = episode.DurableObjectMetadataId,
+                LastModelPassRunId = episode.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                RevisionNumber = episode.CurrentRevisionNumber,
+                ShiftType = NormalizeOptional(episode.EpisodeType) ?? "timeline_episode",
+                ClosureState = NormalizeOptional(episode.ClosureState) ?? "unknown",
+                Summary = BuildSummarySnippet(episode.SummaryJson),
+                ShiftStartedAtUtc = NormalizeUtc(episode.StartedAtUtc) ?? GetDateTimeFromJson(episode.PayloadJson, "started_at_utc"),
+                ShiftEndedAtUtc = NormalizeUtc(episode.EndedAtUtc) ?? GetDateTimeFromJson(episode.PayloadJson, "ended_at_utc"),
+                Confidence = Clamp01(metadata?.Confidence ?? 0f),
+                EvidenceRefCount = evidenceRefCount,
+                TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                UpdatedAtUtc = DateTime.SpecifyKind(episode.UpdatedAt, DateTimeKind.Utc)
+            });
+        }
+
+        foreach (var arc in arcs)
+        {
+            metadataById.TryGetValue(arc.DurableObjectMetadataId, out var metadata);
+            var evidenceRefCount = CountTimelineEvidenceRefs(
+                arc.PayloadJson,
+                "hypotheses",
+                "evidence_refs",
+                "conflicts");
+            if (evidenceRefCount == 0)
+            {
+                evidenceRefCount = evidenceCounts.GetValueOrDefault(arc.DurableObjectMetadataId);
+            }
+
+            shifts.Add(new OperatorWorkspaceTimelineShiftView
+            {
+                Family = Stage7DurableObjectFamilies.StoryArc,
+                DurableObjectId = arc.Id,
+                DurableObjectMetadataId = arc.DurableObjectMetadataId,
+                LastModelPassRunId = arc.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                RevisionNumber = arc.CurrentRevisionNumber,
+                ShiftType = NormalizeOptional(arc.ArcType) ?? "story_arc",
+                ClosureState = NormalizeOptional(arc.ClosureState) ?? "unknown",
+                Summary = BuildSummarySnippet(arc.SummaryJson),
+                ShiftStartedAtUtc = NormalizeUtc(arc.OpenedAtUtc) ?? GetDateTimeFromJson(arc.PayloadJson, "opened_at_utc"),
+                ShiftEndedAtUtc = NormalizeUtc(arc.ClosedAtUtc) ?? GetDateTimeFromJson(arc.PayloadJson, "closed_at_utc"),
+                Confidence = Clamp01(metadata?.Confidence ?? 0f),
+                EvidenceRefCount = evidenceRefCount,
+                TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                UpdatedAtUtc = DateTime.SpecifyKind(arc.UpdatedAt, DateTimeKind.Utc)
+            });
+        }
+
+        return shifts;
+    }
+
+    private static int CountTimelineEvidenceRefs(
+        string? payloadJson,
+        string primaryArrayProperty,
+        string evidenceRefsProperty,
+        string? secondaryArrayProperty = null)
+    {
+        if (!TryParseJsonObject(payloadJson, out var payloadRoot))
+        {
+            return 0;
+        }
+
+        var total = CountEvidenceRefsInArray(payloadRoot, primaryArrayProperty, evidenceRefsProperty);
+        if (!string.IsNullOrWhiteSpace(secondaryArrayProperty))
+        {
+            total += CountEvidenceRefsInArray(payloadRoot, secondaryArrayProperty!, evidenceRefsProperty);
+        }
+
+        return total;
+    }
+
+    private static int CountEvidenceRefsInArray(
+        JsonElement payloadRoot,
+        string arrayPropertyName,
+        string evidenceRefsProperty)
+    {
+        if (!payloadRoot.TryGetProperty(arrayPropertyName, out var arrayNode)
+            || arrayNode.ValueKind != JsonValueKind.Array)
+        {
+            return 0;
+        }
+
+        var total = 0;
+        foreach (var item in arrayNode.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            total += GetArrayLength(item, evidenceRefsProperty);
+        }
+
+        return total;
+    }
+
+    private static DateTime? GetDateTimeFromJson(string? payloadJson, string propertyName)
+    {
+        if (!TryParseJsonObject(payloadJson, out var payloadRoot))
+        {
+            return null;
+        }
+
+        return GetDateTime(payloadRoot, propertyName);
+    }
+
+    private static DateTime? NormalizeUtc(DateTime? value)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        return DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
     }
 
     private static string ResolvePairDynamicsDirection(

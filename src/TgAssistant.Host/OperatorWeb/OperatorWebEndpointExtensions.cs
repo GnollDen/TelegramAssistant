@@ -730,7 +730,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, and Pair Dynamics are live while remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, and Timeline are live while remaining sections stay explicitly pending.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -749,6 +749,10 @@ public static class OperatorWebEndpointExtensions
       <h2>Pair Dynamics</h2>
       <div id="pair-dynamics-content" class="state empty">Pair Dynamics is waiting for workspace data.</div>
     </section>
+    <section id="tab-timeline" class="panel tab-panel">
+      <h2>Timeline</h2>
+      <div id="timeline-content" class="state empty">Timeline is waiting for workspace data.</div>
+    </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
       <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
@@ -765,10 +769,12 @@ public static class OperatorWebEndpointExtensions
     const dossierContentNode = document.getElementById("dossier-content");
     const profileContentNode = document.getElementById("profile-content");
     const pairDynamicsContentNode = document.getElementById("pair-dynamics-content");
+    const timelineContentNode = document.getElementById("timeline-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
     const profilePanel = document.getElementById("tab-profile");
     const pairDynamicsPanel = document.getElementById("tab-pair-dynamics");
+    const timelinePanel = document.getElementById("tab-timeline");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -781,6 +787,7 @@ public static class OperatorWebEndpointExtensions
       dossier: null,
       profile: null,
       pairDynamics: null,
+      timeline: null,
       activeSection: "summary"
     };
 
@@ -1288,6 +1295,95 @@ public static class OperatorWebEndpointExtensions
       pairDynamicsContentNode.appendChild(updatedNote);
     }
 
+    function renderTimelineSection() {
+      const timeline = state.timeline;
+      if (!timeline) {
+        timelineContentNode.className = "state empty";
+        timelineContentNode.textContent = "Timeline data is unavailable.";
+        return;
+      }
+
+      const shifts = Array.isArray(timeline.shifts) ? timeline.shifts : [];
+      const provenance = Array.isArray(timeline.provenance) ? timeline.provenance : [];
+
+      timelineContentNode.className = "";
+      timelineContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(timeline.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(timeline.overallUncertainty) },
+        { label: "Durable Episodes", value: String(timeline.durableEpisodeCount || 0) },
+        { label: "Durable Story Arcs", value: String(timeline.durableStoryArcCount || 0) },
+        { label: "Key Shifts", value: String(timeline.keyShiftCount || 0) },
+        { label: "Open Arcs", value: String(timeline.openArcCount || 0) },
+        { label: "Contradictions", value: String(timeline.contradictionCount || 0) },
+        { label: "Evidence Links", value: String(timeline.totalEvidenceLinkCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      timelineContentNode.appendChild(metrics);
+
+      const shiftGrid = document.createElement("div");
+      shiftGrid.className = "card-grid";
+      shifts.forEach(function(shift) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize(shift.family || "timeline") + " / " + titleize(shift.shiftType || "unknown") + "</h3>" +
+          "<p><strong>Summary:</strong> " + (shift.summary || "n/a") + "</p>" +
+          "<p><strong>Window:</strong> " + formatUtc(shift.shiftStartedAtUtc) + " -> " + formatUtc(shift.shiftEndedAtUtc || shift.updatedAtUtc) + "</p>" +
+          "<p><strong>Closure:</strong> " + titleize(shift.closureState || "unknown") + " | <strong>Confidence:</strong> " + formatPercent(shift.confidence) + "</p>" +
+          "<p><strong>Truth:</strong> " + titleize(shift.truthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(shift.promotionState || "unknown") + "</p>" +
+          "<p><strong>Evidence refs:</strong> " + (shift.evidenceRefCount || 0) + " | <strong>Revision:</strong> " + (shift.revisionNumber || 0) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (shift.durableObjectMetadataId || "n/a") + ", object " + (shift.durableObjectId || "n/a") + ", model pass " + (shift.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(shift.updatedAtUtc) + "</p>";
+        shiftGrid.appendChild(node);
+      });
+      if (!shiftGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No timeline shifts are available for this person scope yet.";
+        shiftGrid.appendChild(empty);
+      }
+      timelineContentNode.appendChild(shiftGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Timeline Provenance Seeds";
+      timelineContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No timeline provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      timelineContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(timeline.generatedAtUtc) + " from bounded operator timeline read models.";
+      timelineContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1363,16 +1459,35 @@ public static class OperatorWebEndpointExtensions
       renderPairDynamicsSection();
     }
 
+    async function ensureTimelineLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.timeline) {
+        return;
+      }
+
+      timelineContentNode.className = "state loading";
+      timelineContentNode.textContent = "Loading bounded timeline view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/timeline/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.timeline = result.timeline || null;
+      renderTimelineSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
       const showProfile = state.activeSection === "profile";
       const showPairDynamics = state.activeSection === "pair_dynamics";
+      const showTimeline = state.activeSection === "timeline";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
       profilePanel.classList.toggle("active", showProfile);
       pairDynamicsPanel.classList.toggle("active", showPairDynamics);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics);
+      timelinePanel.classList.toggle("active", showTimeline);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
@@ -1389,6 +1504,11 @@ public static class OperatorWebEndpointExtensions
         ensurePairDynamicsLoaded(false).catch(function(error) {
           pairDynamicsContentNode.className = "state error";
           pairDynamicsContentNode.textContent = "Pair dynamics load failed: " + (error.message || "unknown_error");
+        });
+      } else if (showTimeline) {
+        ensureTimelineLoaded(false).catch(function(error) {
+          timelineContentNode.className = "state error";
+          timelineContentNode.textContent = "Timeline load failed: " + (error.message || "unknown_error");
         });
       } else {
         renderPlaceholderSection();
@@ -1409,6 +1529,7 @@ public static class OperatorWebEndpointExtensions
       state.dossier = null;
       state.profile = null;
       state.pairDynamics = null;
+      state.timeline = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();

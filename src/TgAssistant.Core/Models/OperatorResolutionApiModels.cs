@@ -168,6 +168,11 @@ public class OperatorPersonWorkspacePairDynamicsQueryRequest : OperatorContractR
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceTimelineQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -198,6 +203,14 @@ public class OperatorPersonWorkspacePairDynamicsQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspacePairDynamicsSectionView PairDynamics { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceTimelineQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceTimelineSectionView Timeline { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -274,6 +287,21 @@ public class OperatorPersonWorkspacePairDynamicsSectionView
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
 }
 
+public class OperatorPersonWorkspaceTimelineSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableEpisodeCount { get; set; }
+    public int DurableStoryArcCount { get; set; }
+    public int KeyShiftCount { get; set; }
+    public int OpenArcCount { get; set; }
+    public int ContradictionCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public int TotalEvidenceLinkCount { get; set; }
+    public List<OperatorWorkspaceTimelineShiftView> Shifts { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
 public class OperatorWorkspaceDossierFactView
 {
     public Guid DurableDossierId { get; set; }
@@ -321,6 +349,25 @@ public class OperatorWorkspacePairDynamicsSignalView
     public string Summary { get; set; } = string.Empty;
     public string? SignalValue { get; set; }
     public string DirectionOfChange { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public int EvidenceRefCount { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class OperatorWorkspaceTimelineShiftView
+{
+    public string Family { get; set; } = string.Empty;
+    public Guid DurableObjectId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string ShiftType { get; set; } = string.Empty;
+    public string ClosureState { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public DateTime? ShiftStartedAtUtc { get; set; }
+    public DateTime? ShiftEndedAtUtc { get; set; }
     public float Confidence { get; set; }
     public int EvidenceRefCount { get; set; }
     public string TruthLayer { get; set; } = string.Empty;
