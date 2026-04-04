@@ -1914,12 +1914,12 @@
       "dependencies": [
         "OPINT-003-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "UI-facing status projection is deterministic and queryable.",
         "Failure/degraded states are surfaced, not hidden behind success-only paths."
       ],
-      "notes": "Feedback contract consumed directly by Telegram/Web surfaces."
+      "notes": "Done on 2026-04-04: operator resolution actions now persist recompute lifecycle summary columns and project action/target UI feedback states (`running`/`done`/`failed`/`clarification_blocked`) from Stage8 queue state, with deduped queue reuse still refreshing linked action rows via accepted audit details. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-recompute-contract-smoke`."
     },
     {
       "id": "OPINT-003-D",

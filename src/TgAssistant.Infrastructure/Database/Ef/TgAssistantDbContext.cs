@@ -1484,12 +1484,19 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.UnfinishedStepKind).HasColumnName("unfinished_step_kind");
             e.Property(x => x.UnfinishedStepState).HasColumnName("unfinished_step_state");
             e.Property(x => x.UnfinishedStepStartedAtUtc).HasColumnName("unfinished_step_started_at_utc");
+            e.Property(x => x.RecomputeStatus).HasColumnName("recompute_status");
+            e.Property(x => x.RecomputeStatusUpdatedAtUtc).HasColumnName("recompute_status_updated_at_utc");
+            e.Property(x => x.RecomputeCompletedAtUtc).HasColumnName("recompute_completed_at_utc");
+            e.Property(x => x.RecomputeLastResultStatus).HasColumnName("recompute_last_result_status");
+            e.Property(x => x.RecomputeLastError).HasColumnName("recompute_last_error");
             e.Property(x => x.SubmittedAtUtc).HasColumnName("submitted_at_utc");
             e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
             e.HasIndex(x => x.RequestId).IsUnique();
             e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.CreatedAtUtc });
             e.HasIndex(x => new { x.ScopeItemKey, x.CreatedAtUtc });
             e.HasIndex(x => new { x.OperatorSessionId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.RecomputeStatus, x.RecomputeStatusUpdatedAtUtc })
+                .HasFilter("recompute_status IS NOT NULL");
         });
 
         modelBuilder.Entity<DbOperatorAuditEvent>(e =>

@@ -195,6 +195,22 @@ public class ResolutionActionResult
     public DateTime ProcessedAtUtc { get; set; }
 }
 
+public static class ResolutionRecomputeLifecycleStatuses
+{
+    public const string Running = "running";
+    public const string Done = "done";
+    public const string Failed = "failed";
+    public const string ClarificationBlocked = "clarification_blocked";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        Running,
+        Done,
+        Failed,
+        ClarificationBlocked
+    ];
+}
+
 public static class ResolutionRecomputeMappingRules
 {
     public const string AffectedFamilyExact = "affected_family_exact";
@@ -207,6 +223,11 @@ public class ResolutionRecomputeContract
     public bool Enqueued { get; set; }
     public string TriggerKind { get; set; } = string.Empty;
     public string TriggerRef { get; set; } = string.Empty;
+    public string LifecycleStatus { get; set; } = ResolutionRecomputeLifecycleStatuses.Running;
+    public DateTime? LifecycleUpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string? LastResultStatus { get; set; }
+    public string? FailureReason { get; set; }
     public List<ResolutionRecomputeTarget> Targets { get; set; } = [];
 }
 
@@ -217,4 +238,9 @@ public class ResolutionRecomputeTarget
     public string TargetRef { get; set; } = string.Empty;
     public string MappingRule { get; set; } = string.Empty;
     public int Priority { get; set; }
+    public string LifecycleStatus { get; set; } = ResolutionRecomputeLifecycleStatuses.Running;
+    public DateTime? LifecycleUpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string? LastResultStatus { get; set; }
+    public string? FailureReason { get; set; }
 }

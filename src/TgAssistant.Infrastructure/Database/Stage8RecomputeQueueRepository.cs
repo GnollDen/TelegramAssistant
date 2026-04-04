@@ -157,6 +157,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             recoveryTelemetry: null,
             nowUtc,
             ct);
+        await UpdateResolutionActionLifecycleAsync(db, queueItemId, ct);
         await tx.CommitAsync(ct);
     }
 
@@ -214,6 +215,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             recoveryTelemetry,
             nowUtc,
             ct);
+        await UpdateResolutionActionLifecycleAsync(db, queueItemId, ct);
         await tx.CommitAsync(ct);
     }
 
@@ -535,6 +537,67 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task UpdateResolutionActionLifecycleAsync(
+        TgAssistantDbContext db,
+        Guid queueItemId,
+        CancellationToken ct)
+    {
+        var queueRow = await db.Stage8RecomputeQueueItems.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == queueItemId, ct);
+        if (queueRow == null)
+        {
+            return;
+        }
+
+        var queueItemIdText = queueItemId.ToString("D");
+        var linkedActionIds = await (from actionRow in db.OperatorResolutionActions.AsNoTracking()
+                                     join auditRow in db.OperatorAuditEvents.AsNoTracking()
+                                         on actionRow.RequestId equals auditRow.RequestId
+                                     where auditRow.DecisionOutcome == OperatorAuditDecisionOutcomes.Accepted
+                                         && auditRow.ActionType != null
+                                         && EF.Functions.Like(auditRow.DetailsJson, $"%{queueItemIdText}%")
+                                     select actionRow.Id)
+            .Distinct()
+            .ToListAsync(ct);
+        if (ResolutionRecomputeLifecycleProjector.TryParseResolutionActionId(queueRow.TriggerRef, out var triggerActionId))
+        {
+            linkedActionIds.Add(triggerActionId);
+        }
+
+        if (linkedActionIds.Count == 0)
+        {
+            return;
+        }
+
+        var aggregate = ResolutionRecomputeLifecycleProjector.BuildAggregate(
+            [
+                new ResolutionRecomputeTarget
+                {
+                    QueueItemId = queueRow.Id,
+                    TargetFamily = queueRow.TargetFamily,
+                    TargetRef = queueRow.TargetRef,
+                    LifecycleStatus = ResolutionRecomputeLifecycleProjector.MapQueueItemLifecycleStatus(queueRow),
+                    LifecycleUpdatedAtUtc = queueRow.UpdatedAtUtc,
+                    CompletedAtUtc = queueRow.CompletedAtUtc,
+                    LastResultStatus = queueRow.LastResultStatus,
+                    FailureReason = queueRow.LastError
+                }
+            ]);
+
+        foreach (var actionId in linkedActionIds.Distinct())
+        {
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                update operator_resolution_actions
+                set recompute_status = {aggregate.Status},
+                    recompute_status_updated_at_utc = {aggregate.UpdatedAtUtc},
+                    recompute_completed_at_utc = {aggregate.CompletedAtUtc},
+                    recompute_last_result_status = {aggregate.LastResultStatus},
+                    recompute_last_error = {aggregate.LastError}
+                where id = {actionId}
+                """, ct);
+        }
     }
 
     private static Stage8RecomputeQueueItem MapQueueItem(DbStage8RecomputeQueueItem row)

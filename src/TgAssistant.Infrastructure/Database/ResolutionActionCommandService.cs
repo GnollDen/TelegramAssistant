@@ -51,7 +51,7 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                 .FirstOrDefaultAsync(x => x.RequestId == normalizedRequestId, ct);
             if (existing != null)
             {
-                var replayRecomputeContract = await LoadAcceptedRecomputeContractAsync(db, normalizedRequestId, ct);
+                var replayRecomputeContract = await LoadAcceptedRecomputeContractAsync(db, existing, null, ct);
                 _logger.LogInformation(
                     "Resolution action idempotent replay: request_id={RequestId}, action_id={ActionId}, operator_id={OperatorId}, decision={Decision}",
                     existing.RequestId,
@@ -230,7 +230,7 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                 .FirstOrDefaultAsync(x => x.RequestId == normalizedRequestId, ct);
             if (existing != null)
             {
-                var replayRecomputeContract = await LoadAcceptedRecomputeContractAsync(db, normalizedRequestId, ct);
+                var replayRecomputeContract = await LoadAcceptedRecomputeContractAsync(db, existing, null, ct);
                 _logger.LogInformation(
                     "Resolution action deduplicated after concurrent write: request_id={RequestId}, action_id={ActionId}, operator_id={OperatorId}, decision={Decision}",
                     existing.RequestId,
@@ -256,7 +256,8 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             actionRow.Surface,
             string.Join(",", recomputeContract.Targets.Select(target => $"{target.TargetFamily}:{target.MappingRule}")));
 
-        return MapAcceptedResult(actionRow, idempotentReplay: false, auditEventId, recomputeContract);
+        var projectedRecomputeContract = await LoadAcceptedRecomputeContractAsync(db, actionRow, recomputeContract, ct);
+        return MapAcceptedResult(actionRow, idempotentReplay: false, auditEventId, projectedRecomputeContract);
     }
 
     private async Task<ResolutionActionResult> PersistDeniedAuditAsync(
@@ -540,6 +541,11 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             UnfinishedStepKind = NormalizeOptional(request.Session.UnfinishedStep?.StepKind),
             UnfinishedStepState = NormalizeOptional(request.Session.UnfinishedStep?.StepState),
             UnfinishedStepStartedAtUtc = request.Session.UnfinishedStep?.StartedAtUtc,
+            RecomputeStatus = ResolutionRecomputeLifecycleStatuses.Running,
+            RecomputeStatusUpdatedAtUtc = nowUtc,
+            RecomputeCompletedAtUtc = null,
+            RecomputeLastResultStatus = null,
+            RecomputeLastError = null,
             SubmittedAtUtc = request.SubmittedAtUtc == default ? nowUtc : request.SubmittedAtUtc,
             CreatedAtUtc = nowUtc
         };
@@ -622,13 +628,23 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                         enqueued = recomputeContract.Enqueued,
                         trigger_kind = recomputeContract.TriggerKind,
                         trigger_ref = recomputeContract.TriggerRef,
+                        lifecycle_status = recomputeContract.LifecycleStatus,
+                        lifecycle_updated_at_utc = recomputeContract.LifecycleUpdatedAtUtc,
+                        completed_at_utc = recomputeContract.CompletedAtUtc,
+                        last_result_status = recomputeContract.LastResultStatus,
+                        failure_reason = recomputeContract.FailureReason,
                         targets = recomputeContract.Targets.Select(target => new
                         {
                             queue_item_id = target.QueueItemId,
                             target_family = target.TargetFamily,
                             target_ref = target.TargetRef,
                             mapping_rule = target.MappingRule,
-                            priority = target.Priority
+                            priority = target.Priority,
+                            lifecycle_status = target.LifecycleStatus,
+                            lifecycle_updated_at_utc = target.LifecycleUpdatedAtUtc,
+                            completed_at_utc = target.CompletedAtUtc,
+                            last_result_status = target.LastResultStatus,
+                            failure_reason = target.FailureReason
                         })
                     },
                 failure_reason = failureReason
@@ -659,19 +675,42 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
 
     private static async Task<ResolutionRecomputeContract?> LoadAcceptedRecomputeContractAsync(
         TgAssistantDbContext db,
-        string requestId,
+        DbOperatorResolutionAction actionRow,
+        ResolutionRecomputeContract? currentContract,
         CancellationToken ct)
     {
-        var detailsJson = await db.OperatorAuditEvents
-            .AsNoTracking()
-            .Where(x =>
-                x.RequestId == requestId
-                && x.DecisionOutcome == OperatorAuditDecisionOutcomes.Accepted
-                && x.ActionType != null)
-            .OrderByDescending(x => x.EventTimeUtc)
-            .Select(x => x.DetailsJson)
-            .FirstOrDefaultAsync(ct);
-        return ParseRecomputeContract(detailsJson);
+        var contract = currentContract;
+        if (contract == null)
+        {
+            var detailsJson = await db.OperatorAuditEvents
+                .AsNoTracking()
+                .Where(x =>
+                    x.RequestId == actionRow.RequestId
+                    && x.DecisionOutcome == OperatorAuditDecisionOutcomes.Accepted
+                    && x.ActionType != null)
+                .OrderByDescending(x => x.EventTimeUtc)
+                .Select(x => x.DetailsJson)
+                .FirstOrDefaultAsync(ct);
+            contract = ParseRecomputeContract(detailsJson);
+        }
+
+        if (contract == null)
+        {
+            return null;
+        }
+
+        var queueItemIds = contract.Targets
+            .Where(x => x.QueueItemId.HasValue)
+            .Select(x => x.QueueItemId!.Value)
+            .Distinct()
+            .ToList();
+        var queueItems = queueItemIds.Count == 0
+            ? new List<DbStage8RecomputeQueueItem>()
+            : await db.Stage8RecomputeQueueItems
+                .AsNoTracking()
+                .Where(x => queueItemIds.Contains(x.Id))
+                .ToListAsync(ct);
+        return ResolutionRecomputeLifecycleProjector.ProjectContract(contract, actionRow, queueItems);
     }
 
     private static ResolutionRecomputeContract? ParseRecomputeContract(string? detailsJson)
@@ -696,7 +735,12 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                 Enqueued = recomputeElement.TryGetProperty("enqueued", out var enqueuedElement)
                     && enqueuedElement.ValueKind == JsonValueKind.True,
                 TriggerKind = ReadStringProperty(recomputeElement, "trigger_kind"),
-                TriggerRef = ReadStringProperty(recomputeElement, "trigger_ref")
+                TriggerRef = ReadStringProperty(recomputeElement, "trigger_ref"),
+                LifecycleStatus = ReadStringProperty(recomputeElement, "lifecycle_status"),
+                LifecycleUpdatedAtUtc = ReadDateTimeProperty(recomputeElement, "lifecycle_updated_at_utc"),
+                CompletedAtUtc = ReadDateTimeProperty(recomputeElement, "completed_at_utc"),
+                LastResultStatus = ReadNullableStringProperty(recomputeElement, "last_result_status"),
+                FailureReason = ReadNullableStringProperty(recomputeElement, "failure_reason")
             };
 
             if (recomputeElement.TryGetProperty("targets", out var targetsElement)
@@ -722,7 +766,12 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                         Priority = targetElement.TryGetProperty("priority", out var priorityElement)
                             && priorityElement.TryGetInt32(out var priority)
                                 ? priority
-                                : 0
+                                : 0,
+                        LifecycleStatus = ReadStringProperty(targetElement, "lifecycle_status"),
+                        LifecycleUpdatedAtUtc = ReadDateTimeProperty(targetElement, "lifecycle_updated_at_utc"),
+                        CompletedAtUtc = ReadDateTimeProperty(targetElement, "completed_at_utc"),
+                        LastResultStatus = ReadNullableStringProperty(targetElement, "last_result_status"),
+                        FailureReason = ReadNullableStringProperty(targetElement, "failure_reason")
                     });
                 }
             }
@@ -741,6 +790,23 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             && property.ValueKind == JsonValueKind.String
             ? property.GetString() ?? string.Empty
             : string.Empty;
+    }
+
+    private static string? ReadNullableStringProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    private static DateTime? ReadDateTimeProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            && property.TryGetDateTime(out var value)
+                ? value
+                : null;
     }
 
     private static async Task<TrackedPersonScope?> LoadTrackedPersonScopeAsync(

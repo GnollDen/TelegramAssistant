@@ -1049,6 +1049,11 @@ public class DbOperatorResolutionAction
     public string? UnfinishedStepKind { get; set; }
     public string? UnfinishedStepState { get; set; }
     public DateTime? UnfinishedStepStartedAtUtc { get; set; }
+    public string? RecomputeStatus { get; set; }
+    public DateTime? RecomputeStatusUpdatedAtUtc { get; set; }
+    public DateTime? RecomputeCompletedAtUtc { get; set; }
+    public string? RecomputeLastResultStatus { get; set; }
+    public string? RecomputeLastError { get; set; }
     public DateTime SubmittedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
