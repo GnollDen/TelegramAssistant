@@ -2291,7 +2291,7 @@
       "dependencies": [
         "OPINT-007-A1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Saved offline events are queryable by operator scope and tracked person with stable identifiers.",
         "Read model exposes timeline-linkage/status metadata required by Telegram/web refinement flows."

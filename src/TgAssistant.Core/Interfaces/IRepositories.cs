@@ -375,6 +375,16 @@ public interface IOperatorOfflineEventRepository
     Task<OperatorOfflineEventRecord?> GetByIdAsync(
         Guid offlineEventId,
         CancellationToken ct = default);
+
+    Task<OperatorOfflineEventRecord?> GetByIdWithinScopeAsync(
+        Guid offlineEventId,
+        string scopeKey,
+        Guid trackedPersonId,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventQueryResult> QueryAsync(
+        OperatorOfflineEventQueryRequest request,
+        CancellationToken ct = default);
 }
 
 public interface IStage8RecomputeTriggerService
