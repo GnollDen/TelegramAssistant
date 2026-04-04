@@ -340,6 +340,17 @@ public interface IOperatorResolutionApplicationService
         CancellationToken ct = default);
 }
 
+public interface IOperatorAssistantResponseGenerationService
+{
+    OperatorAssistantResponseEnvelope BuildResponse(
+        OperatorAssistantResponseGenerationRequest request,
+        DateTime? generatedAtUtc = null);
+
+    IReadOnlyList<string> Validate(OperatorAssistantResponseEnvelope response);
+
+    string RenderTelegram(OperatorAssistantResponseEnvelope response);
+}
+
 public interface IOperatorSessionAuditService
 {
     Task<Guid> RecordSessionEventAsync(

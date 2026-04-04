@@ -2222,12 +2222,12 @@
       "dependencies": [
         "OPINT-006-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Assistant output consistently returns required sections and truth-label categories for bounded prompts.",
         "Trust value is included and formatted for Telegram rendering contract."
       ],
-      "notes": "Separates answer-shape generation from retrieval guardrails."
+      "notes": "Done 2026-04-04: implemented contract-first assistant answer generation for OPINT-006 with deterministic `opint_assistant_v1` envelope construction, truth-label normalization/validation, terminal trust rendering, and bounded Telegram text formatter; added bounded smoke entrypoint `--opint-006-b1-smoke` to verify required section order and label/trust presence."
     },
     {
       "id": "OPINT-006-B2",
