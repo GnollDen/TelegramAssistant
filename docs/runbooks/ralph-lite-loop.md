@@ -49,7 +49,7 @@ Current slice is tracked as a recovery hint to avoid jumping across unfinished u
 Command used per iteration:
 
 ```bash
-codex exec -C <repo_root> -a never -s workspace-write -o <tmp_last_message_file> -
+codex --search exec -C <repo_root> --dangerously-bypass-approvals-and-sandbox -o <tmp_last_message_file> -
 ```
 
 Optional:
@@ -58,6 +58,18 @@ Optional:
 - `--state-file <path>` overrides current-unit marker path
 
 Prompt is rendered from `scripts/ralph-lite-prompt.md` into a temp file and fed to stdin.
+
+Ubuntu dev environment notes:
+- Ralph-lite stays on fresh bounded `codex exec`; it does not switch to `codex resume`.
+- Legacy `-a never` is not used because this CLI profile does not support `-a`.
+- `workspace-write` sandbox is not used in this environment because it routes through `bwrap` and fails with `Operation not permitted` / `Failed RTM_NEWADDR: Operation not permitted`.
+- `--dangerously-bypass-approvals-and-sandbox` is used intentionally as the environment-compatible `exec` profile for this repo-local loop.
+- `--search` is passed as a top-level `codex` flag (before `exec`) to match this CLI profile in Ubuntu.
+
+Compared with a standard desktop/full-sandbox path:
+- this loop does not rely on Codex-managed sandbox isolation
+- filesystem and approval safety come from the bounded one-run-per-parent model, repo-local state marker, and operator-controlled dev environment
+- recovery remains file/state-based even though sandboxing is bypassed for compatibility
 
 ## Stop Conditions
 Loop stops immediately when any of the following occurs:

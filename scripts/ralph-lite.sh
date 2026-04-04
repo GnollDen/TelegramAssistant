@@ -536,7 +536,15 @@ run_iteration() {
   fi
 
   local -a cmd
-  cmd=("${CODEX_BIN}" "exec" "-C" "${REPO_ROOT}" "-a" "never" "-s" "workspace-write" "-o" "${last_msg_file}")
+  # Ubuntu dev environments in this repo cannot rely on workspace-write bwrap,
+  # and current codex exec no longer supports the legacy -a flag.
+  # Keep web search enabled via the top-level codex flag.
+  cmd=(
+    "${CODEX_BIN}" "--search" "exec"
+    "-C" "${REPO_ROOT}"
+    "--dangerously-bypass-approvals-and-sandbox"
+    "-o" "${last_msg_file}"
+  )
   if [[ -n "${MODEL}" ]]; then
     cmd+=("-m" "${MODEL}")
   fi
