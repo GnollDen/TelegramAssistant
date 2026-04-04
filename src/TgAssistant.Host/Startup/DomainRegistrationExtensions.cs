@@ -70,6 +70,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
         services.AddSingleton<IResolutionReadService, ResolutionReadProjectionService>();
         services.AddSingleton<IResolutionActionService, ResolutionActionCommandService>();
+        services.AddSingleton<IOperatorResolutionApplicationService, OperatorResolutionApplicationService>();
 
         services.AddSingleton<ExtractionSchemaValidator>();
         services.AddSingleton<MessageContentBuilder>();

@@ -1846,12 +1846,12 @@
       "dependencies": [
         "OPINT-002-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Contracts are execution-ready for both Telegram and Web surfaces.",
         "API/app layer remains independent from MCP and legacy Stage6 bot/web paths."
       ],
-      "notes": "Contract-first slice before UI work."
+      "notes": "Done on 2026-04-03: added clean operator application/API contracts for tracked-person selection plus resolution queue/detail/action access, including bounded queue filters, bounded queue/detail sorting, and normalized session echoes for Telegram/Web reuse. The active host now exposes role-gated `/api/operator/*` endpoints backed by `IOperatorResolutionApplicationService`, while tracked-person switch events are audited through the clean operator audit table without reviving MCP or legacy Stage6/web/tgbot paths. Verified with `dotnet build TelegramAssistant.sln` and `dotnet build src/TgAssistant.Host/TgAssistant.Host.csproj --no-restore`."
     },
     {
       "id": "OPINT-002-D",

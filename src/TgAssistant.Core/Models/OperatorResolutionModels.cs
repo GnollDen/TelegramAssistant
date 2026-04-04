@@ -6,8 +6,20 @@ public static class ResolutionActionTypes
     public const string Reject = "reject";
     public const string Defer = "defer";
     public const string Clarify = "clarify";
+    public const string Evidence = "evidence";
+    public const string OpenWeb = "open-web";
 
-    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    private static readonly string[] Ordered = 
+    [
+        Approve,
+        Reject,
+        Defer,
+        Clarify,
+        Evidence,
+        OpenWeb
+    ];
+
+    private static readonly HashSet<string> MutatingSupported = new(StringComparer.Ordinal)
     {
         Approve,
         Reject,
@@ -15,7 +27,11 @@ public static class ResolutionActionTypes
         Clarify
     };
 
-    public static IReadOnlyCollection<string> All => Supported;
+    private static readonly HashSet<string> Supported = new(Ordered, StringComparer.Ordinal);
+
+    public static IReadOnlyList<string> All { get; } = Ordered;
+
+    public static IReadOnlyCollection<string> Mutating => MutatingSupported;
 
     public static string Normalize(string? actionType)
     {
@@ -26,6 +42,9 @@ public static class ResolutionActionTypes
 
     public static bool IsSupported(string? actionType)
         => Supported.Contains(Normalize(actionType));
+
+    public static bool IsMutatingSupported(string? actionType)
+        => MutatingSupported.Contains(Normalize(actionType));
 
     public static bool RequiresExplanation(string? actionType)
     {

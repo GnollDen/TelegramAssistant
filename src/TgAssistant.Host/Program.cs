@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StackExchange.Redis;
@@ -12,6 +14,7 @@ using TgAssistant.Infrastructure.Redis;
 using TgAssistant.Host.Launch;
 using TgAssistant.Host.BootstrapSeed;
 using TgAssistant.Host.Health;
+using TgAssistant.Host.OperatorApi;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
@@ -437,6 +440,22 @@ try
                 runtimeRoleSelection.Roles,
                 runtimeRoleSelection.Source,
                 runtimeRoleSelection.RawValue);
+        })
+        .ConfigureWebHostDefaults(webBuilder =>
+        {
+            webBuilder.ConfigureServices(services =>
+            {
+                services.AddRouting();
+            });
+
+            webBuilder.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                    endpoints.MapOperatorApi();
+                });
+            });
         });
 
     var host = builder.Build();

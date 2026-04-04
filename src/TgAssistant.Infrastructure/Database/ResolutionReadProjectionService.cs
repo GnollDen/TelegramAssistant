@@ -97,14 +97,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             queueItems,
             runtimeDefects);
 
-        var filtered = string.IsNullOrWhiteSpace(request.ItemTypeFilter)
-            ? projected
-            : projected
-                .Where(x => string.Equals(x.Summary.ItemType, request.ItemTypeFilter.Trim(), StringComparison.Ordinal))
-                .ToList();
-
-        var ordered = OrderItems(filtered);
+        var filtered = ApplyQueueFilters(projected, request);
+        var ordered = OrderItems(filtered, request.SortBy, request.SortDirection);
         var boundedLimit = Math.Clamp(request.Limit, 1, 200);
+        var summaries = projected.Select(x => x.Summary).ToList();
 
         return new ResolutionQueueResult
         {
@@ -113,7 +109,20 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             ScopeKey = trackedPerson.ScopeKey,
             TrackedPersonDisplayName = trackedPerson.DisplayName,
             RuntimeState = runtimeState,
-            TotalOpenCount = ordered.Count,
+            TotalOpenCount = projected.Count,
+            FilteredCount = ordered.Count,
+            ItemTypeCounts = BuildFacetCounts(
+                summaries,
+                x => x.ItemType,
+                ResolutionItemTypes.All),
+            StatusCounts = BuildFacetCounts(
+                summaries,
+                x => x.Status,
+                ResolutionItemStatuses.All),
+            PriorityCounts = BuildFacetCounts(
+                summaries,
+                x => x.Priority,
+                ResolutionItemPriorities.All),
             Items = ordered
                 .Take(boundedLimit)
                 .Select(x => x.Summary)
@@ -209,6 +218,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             trackedPerson,
             match.DurableMetadataIds,
             match.UseTrackedPersonEvidence,
+            request.EvidenceSortBy,
+            request.EvidenceSortDirection,
             request.EvidenceLimit,
             ct);
 
@@ -231,6 +242,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 UpdatedAtUtc = match.Summary.UpdatedAtUtc,
                 Priority = match.Summary.Priority,
                 RecommendedNextAction = match.Summary.RecommendedNextAction,
+                AvailableActions = [.. match.Summary.AvailableActions],
                 SourceKind = match.SourceKind,
                 SourceRef = match.SourceRef,
                 RequiredAction = match.RequiredAction,
@@ -317,7 +329,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Priority = string.Equals(branch.BranchFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.Critical
                         : ResolutionItemPriorities.High,
-                    RecommendedNextAction = "clarify"
+                    RecommendedNextAction = "clarify",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "clarification_branch",
                 SourceRef = branch.Id.ToString("D"),
@@ -406,7 +419,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Priority = string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.Critical
                         : ResolutionItemPriorities.High,
-                    RecommendedNextAction = "clarify"
+                    RecommendedNextAction = "clarify",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "stage8_queue",
                 SourceRef = queueItem.Id.ToString("D"),
@@ -473,7 +487,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Priority = queueItem.AttemptCount >= 3
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
-                    RecommendedNextAction = "evidence"
+                    RecommendedNextAction = "evidence",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "stage8_queue",
                 SourceRef = queueItem.Id.ToString("D"),
@@ -519,7 +534,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
                     UpdatedAtUtc = defect.UpdatedAtUtc,
                     Priority = MapSeverityToPriority(defect.Severity),
-                    RecommendedNextAction = "evidence"
+                    RecommendedNextAction = "evidence",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "runtime_defect",
                 SourceRef = defect.Id.ToString("D"),
@@ -578,7 +594,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Priority = context.ContradictionCount > 1 || string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
-                    RecommendedNextAction = "evidence"
+                    RecommendedNextAction = "evidence",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "durable_object_metadata",
                 SourceRef = context.MetadataId.ToString("D"),
@@ -635,7 +652,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Priority = context.ContradictionCount > 0
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
-                    RecommendedNextAction = "open-web"
+                    RecommendedNextAction = "open-web",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "durable_object_metadata",
                 SourceRef = context.MetadataId.ToString("D"),
@@ -675,7 +693,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     EvidenceCount = runtimeDefects.Count,
                     UpdatedAtUtc = runtimeState.ActivatedAtUtc,
                     Priority = MapRuntimeStateToPriority(runtimeState.State),
-                    RecommendedNextAction = "open-web"
+                    RecommendedNextAction = "open-web",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "runtime_control_state",
                 SourceRef = runtimeState.State,
@@ -717,7 +736,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
                     UpdatedAtUtc = defect.UpdatedAtUtc,
                     Priority = MapSeverityToPriority(defect.Severity),
-                    RecommendedNextAction = "open-web"
+                    RecommendedNextAction = "open-web",
+                    AvailableActions = BuildAvailableActions()
                 },
                 SourceKind = "runtime_defect",
                 SourceRef = defect.Id.ToString("D"),
@@ -760,12 +780,93 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         return false;
     }
 
-    private static List<ProjectedResolutionItem> OrderItems(List<ProjectedResolutionItem> items)
+    private static List<ProjectedResolutionItem> ApplyQueueFilters(
+        List<ProjectedResolutionItem> items,
+        ResolutionQueueRequest request)
     {
+        var itemTypes = NormalizeFilters(request.ItemTypes);
+        var statuses = NormalizeFilters(request.Statuses);
+        var priorities = NormalizeFilters(request.Priorities);
+        var recommendedActions = NormalizeFilters(request.RecommendedActions);
+
         return items
-            .OrderByDescending(x => PriorityRank(x.Summary.Priority))
-            .ThenByDescending(x => x.Summary.UpdatedAtUtc)
+            .Where(x => itemTypes.Count == 0 || itemTypes.Contains(x.Summary.ItemType))
+            .Where(x => statuses.Count == 0 || statuses.Contains(x.Summary.Status))
+            .Where(x => priorities.Count == 0 || priorities.Contains(x.Summary.Priority))
+            .Where(x => recommendedActions.Count == 0 || recommendedActions.Contains(x.Summary.RecommendedNextAction ?? string.Empty))
             .ToList();
+    }
+
+    private static List<ProjectedResolutionItem> OrderItems(
+        List<ProjectedResolutionItem> items,
+        string? sortBy,
+        string? sortDirection)
+    {
+        var normalizedSortBy = ResolutionQueueSortFields.Normalize(sortBy);
+        var normalizedDirection = ResolutionSortDirections.Normalize(sortDirection);
+        var descending = string.Equals(normalizedDirection, ResolutionSortDirections.Desc, StringComparison.Ordinal);
+
+        return normalizedSortBy switch
+        {
+            ResolutionQueueSortFields.UpdatedAt => descending
+                ? items.OrderByDescending(x => x.Summary.UpdatedAtUtc)
+                    .ThenByDescending(x => PriorityRank(x.Summary.Priority))
+                    .ToList()
+                : items.OrderBy(x => x.Summary.UpdatedAtUtc)
+                    .ThenBy(x => PriorityRank(x.Summary.Priority))
+                    .ToList(),
+            _ => descending
+                ? items.OrderByDescending(x => PriorityRank(x.Summary.Priority))
+                    .ThenByDescending(x => x.Summary.UpdatedAtUtc)
+                    .ToList()
+                : items.OrderBy(x => PriorityRank(x.Summary.Priority))
+                    .ThenBy(x => x.Summary.UpdatedAtUtc)
+                    .ToList()
+        };
+    }
+
+    private static List<ResolutionFacetCount> BuildFacetCounts(
+        IReadOnlyList<ResolutionItemSummary> items,
+        Func<ResolutionItemSummary, string> selector,
+        IReadOnlyList<string> orderedKeys)
+    {
+        var counts = items
+            .GroupBy(selector, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
+
+        var result = new List<ResolutionFacetCount>();
+        foreach (var key in orderedKeys)
+        {
+            if (counts.TryGetValue(key, out var count))
+            {
+                result.Add(new ResolutionFacetCount
+                {
+                    Key = key,
+                    Count = count
+                });
+            }
+        }
+
+        foreach (var extra in counts.Keys.Except(orderedKeys, StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal))
+        {
+            result.Add(new ResolutionFacetCount
+            {
+                Key = extra,
+                Count = counts[extra]
+            });
+        }
+
+        return result;
+    }
+
+    private static HashSet<string> NormalizeFilters(IEnumerable<string>? values)
+    {
+        return values == null
+            ? []
+            : values
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToHashSet(StringComparer.Ordinal);
     }
 
     private static int PriorityRank(string priority)
@@ -840,6 +941,9 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             .Where(x => string.Equals(x.ObjectFamily, targetFamily.Trim(), StringComparison.Ordinal))
             .ToList();
     }
+
+    private static List<string> BuildAvailableActions()
+        => [.. ResolutionActionTypes.All];
 
     private static string BuildItemKey(string itemType, string sourceKind, string sourceId)
         => $"{itemType}:{sourceKind}:{sourceId}";
@@ -1107,30 +1211,36 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         TrackedPersonScope trackedPerson,
         IReadOnlyList<Guid> durableMetadataIds,
         bool useTrackedPersonEvidence,
+        string? evidenceSortBy,
+        string? evidenceSortDirection,
         int evidenceLimit,
         CancellationToken ct)
     {
         var boundedLimit = Math.Clamp(evidenceLimit, 1, 20);
+        var normalizedSortBy = ResolutionEvidenceSortFields.Normalize(evidenceSortBy);
+        var normalizedSortDirection = ResolutionSortDirections.Normalize(evidenceSortDirection);
 
         if (durableMetadataIds.Count > 0)
         {
-            var rows = await (from link in db.DurableObjectEvidenceLinks.AsNoTracking()
-                              join evidence in db.EvidenceItems.AsNoTracking()
-                                  on link.EvidenceItemId equals evidence.Id
-                              join sourceObject in db.SourceObjects.AsNoTracking()
-                                  on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
-                              from sourceObject in sourceObjects.DefaultIfEmpty()
-                              where durableMetadataIds.Contains(link.DurableObjectMetadataId)
-                              orderby evidence.ObservedAt descending, evidence.CreatedAt descending
-                              select new
-                              {
-                                  evidence.Id,
-                                  evidence.SummaryText,
-                                  evidence.Confidence,
-                                  evidence.ObservedAt,
-                                  SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
-                                  SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
-                              })
+            var query = from link in db.DurableObjectEvidenceLinks.AsNoTracking()
+                        join evidence in db.EvidenceItems.AsNoTracking()
+                            on link.EvidenceItemId equals evidence.Id
+                        join sourceObject in db.SourceObjects.AsNoTracking()
+                            on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
+                        from sourceObject in sourceObjects.DefaultIfEmpty()
+                        where durableMetadataIds.Contains(link.DurableObjectMetadataId)
+                        select new EvidenceProjectionRow
+                        {
+                            Id = evidence.Id,
+                            SummaryText = evidence.SummaryText,
+                            Confidence = evidence.Confidence,
+                            ObservedAt = evidence.ObservedAt,
+                            CreatedAt = evidence.CreatedAt,
+                            SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
+                            SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
+                        };
+
+            var rows = await ApplyEvidenceOrdering(query, normalizedSortBy, normalizedSortDirection)
                 .Take(boundedLimit)
                 .ToListAsync(ct);
 
@@ -1150,24 +1260,26 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             return [];
         }
 
-        var personRows = await (from personLink in db.EvidenceItemPersonLinks.AsNoTracking()
-                                join evidence in db.EvidenceItems.AsNoTracking()
-                                    on personLink.EvidenceItemId equals evidence.Id
-                                join sourceObject in db.SourceObjects.AsNoTracking()
-                                    on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
-                                from sourceObject in sourceObjects.DefaultIfEmpty()
-                                where personLink.ScopeKey == trackedPerson.ScopeKey
-                                    && personLink.PersonId == trackedPerson.PersonId
-                                orderby evidence.ObservedAt descending, evidence.CreatedAt descending
-                                select new
-                                {
-                                    evidence.Id,
-                                    evidence.SummaryText,
-                                    evidence.Confidence,
-                                    evidence.ObservedAt,
-                                    SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
-                                    SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
-                                })
+        var personQuery = from personLink in db.EvidenceItemPersonLinks.AsNoTracking()
+                          join evidence in db.EvidenceItems.AsNoTracking()
+                              on personLink.EvidenceItemId equals evidence.Id
+                          join sourceObject in db.SourceObjects.AsNoTracking()
+                              on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
+                          from sourceObject in sourceObjects.DefaultIfEmpty()
+                          where personLink.ScopeKey == trackedPerson.ScopeKey
+                              && personLink.PersonId == trackedPerson.PersonId
+                          select new EvidenceProjectionRow
+                          {
+                              Id = evidence.Id,
+                              SummaryText = evidence.SummaryText,
+                              Confidence = evidence.Confidence,
+                              ObservedAt = evidence.ObservedAt,
+                              CreatedAt = evidence.CreatedAt,
+                              SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
+                              SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
+                          };
+
+        var personRows = await ApplyEvidenceOrdering(personQuery, normalizedSortBy, normalizedSortDirection)
             .Take(boundedLimit)
             .ToListAsync(ct);
 
@@ -1180,6 +1292,31 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             SourceRef = x.SourceRef,
             SourceLabel = x.SourceLabel
         }).ToList();
+    }
+
+    private static IQueryable<EvidenceProjectionRow> ApplyEvidenceOrdering(
+        IQueryable<EvidenceProjectionRow> query,
+        string sortBy,
+        string sortDirection)
+    {
+        var descending = string.Equals(sortDirection, ResolutionSortDirections.Desc, StringComparison.Ordinal);
+        return sortBy switch
+        {
+            ResolutionEvidenceSortFields.TrustFactor => descending
+                ? query.OrderByDescending(x => x.Confidence)
+                    .ThenByDescending(x => x.ObservedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                : query.OrderBy(x => x.Confidence)
+                    .ThenBy(x => x.ObservedAt)
+                    .ThenBy(x => x.CreatedAt),
+            _ => descending
+                ? query.OrderByDescending(x => x.ObservedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .ThenByDescending(x => x.Confidence)
+                : query.OrderBy(x => x.ObservedAt)
+                    .ThenBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Confidence)
+        };
     }
 
     private static int CountJsonArrayItems(string? json)
@@ -1280,5 +1417,16 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         public List<ResolutionDetailNote> Notes { get; init; } = [];
         public List<Guid> DurableMetadataIds { get; init; } = [];
         public bool UseTrackedPersonEvidence { get; init; }
+    }
+
+    private sealed class EvidenceProjectionRow
+    {
+        public Guid Id { get; set; }
+        public string? SummaryText { get; set; }
+        public float Confidence { get; set; }
+        public DateTime? ObservedAt { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string? SourceRef { get; set; }
+        public string? SourceLabel { get; set; }
     }
 }

@@ -26,6 +26,16 @@ public static class ResolutionItemStatuses
     public const string Running = "running";
     public const string AttentionRequired = "attention_required";
     public const string Degraded = "degraded";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        Open,
+        Blocked,
+        Queued,
+        Running,
+        AttentionRequired,
+        Degraded
+    ];
 }
 
 public static class ResolutionItemPriorities
@@ -34,12 +44,25 @@ public static class ResolutionItemPriorities
     public const string High = "high";
     public const string Medium = "medium";
     public const string Low = "low";
+
+    public static IReadOnlyList<string> All { get; } =
+    [
+        Critical,
+        High,
+        Medium,
+        Low
+    ];
 }
 
 public class ResolutionQueueRequest
 {
     public Guid TrackedPersonId { get; set; }
-    public string? ItemTypeFilter { get; set; }
+    public List<string> ItemTypes { get; set; } = [];
+    public List<string> Statuses { get; set; } = [];
+    public List<string> Priorities { get; set; } = [];
+    public List<string> RecommendedActions { get; set; } = [];
+    public string SortBy { get; set; } = ResolutionQueueSortFields.Priority;
+    public string SortDirection { get; set; } = ResolutionSortDirections.Desc;
     public int Limit { get; set; } = 50;
 }
 
@@ -48,6 +71,8 @@ public class ResolutionDetailRequest
     public Guid TrackedPersonId { get; set; }
     public string ScopeItemKey { get; set; } = string.Empty;
     public int EvidenceLimit { get; set; } = 5;
+    public string EvidenceSortBy { get; set; } = ResolutionEvidenceSortFields.ObservedAt;
+    public string EvidenceSortDirection { get; set; } = ResolutionSortDirections.Desc;
 }
 
 public class ResolutionRuntimeStateSummary
@@ -67,6 +92,10 @@ public class ResolutionQueueResult
     public string? TrackedPersonDisplayName { get; set; }
     public ResolutionRuntimeStateSummary? RuntimeState { get; set; }
     public int TotalOpenCount { get; set; }
+    public int FilteredCount { get; set; }
+    public List<ResolutionFacetCount> ItemTypeCounts { get; set; } = [];
+    public List<ResolutionFacetCount> StatusCounts { get; set; } = [];
+    public List<ResolutionFacetCount> PriorityCounts { get; set; } = [];
     public List<ResolutionItemSummary> Items { get; set; } = [];
 }
 
@@ -93,6 +122,7 @@ public class ResolutionItemSummary
     public DateTime UpdatedAtUtc { get; set; }
     public string Priority { get; set; } = ResolutionItemPriorities.Medium;
     public string? RecommendedNextAction { get; set; }
+    public List<string> AvailableActions { get; set; } = [];
 }
 
 public class ResolutionItemDetail : ResolutionItemSummary

@@ -310,6 +310,29 @@ public interface IResolutionActionService
         CancellationToken ct = default);
 }
 
+public interface IOperatorResolutionApplicationService
+{
+    Task<OperatorTrackedPersonQueryResult> QueryTrackedPersonsAsync(
+        OperatorTrackedPersonQueryRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorTrackedPersonSelectionResult> SelectTrackedPersonAsync(
+        OperatorTrackedPersonSelectionRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
+        OperatorResolutionQueueQueryRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorResolutionDetailQueryResult> GetResolutionDetailAsync(
+        OperatorResolutionDetailQueryRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(
+        ResolutionActionRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeTriggerService
 {
     Task HandleSignalAsync(Stage8RecomputeTriggerSignal signal, CancellationToken ct = default);

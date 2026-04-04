@@ -309,7 +309,7 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             return "action_type_required";
         }
 
-        if (!ResolutionActionTypes.IsSupported(normalizedAction))
+        if (!ResolutionActionTypes.IsMutatingSupported(normalizedAction))
         {
             return "unsupported_action_type";
         }
