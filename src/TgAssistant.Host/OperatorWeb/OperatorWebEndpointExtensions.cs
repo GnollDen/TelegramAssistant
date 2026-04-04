@@ -210,6 +210,7 @@ public static class OperatorWebEndpointExtensions
     }
     select,
     input,
+    textarea,
     button,
     a {
       border-radius: 8px;
@@ -394,6 +395,37 @@ public static class OperatorWebEndpointExtensions
     .detail-list li {
       margin: 6px 0;
       font-size: 14px;
+    }
+    .action-panel {
+      display: grid;
+      gap: 8px;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .action-grid button {
+      margin: 0;
+    }
+    .action-grid .approve {
+      border-color: #7ec89f;
+      background: #e9fff2;
+    }
+    .action-grid .reject {
+      border-color: #d9a0a0;
+      background: #fff1f1;
+    }
+    .action-grid .defer {
+      border-color: #d7ca9f;
+      background: #fff9ea;
+    }
+    .action-grid .clarify {
+      border-color: #9fb7d7;
+      background: #edf4ff;
+    }
+    .action-feedback {
+      margin-top: 2px;
     }
     .evidence-inline {
       display: flex;
@@ -626,6 +658,52 @@ public static class OperatorWebEndpointExtensions
     </div>
   </aside>
 
+  <div id="clarification-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="clarification-drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <h3>Clarification Panel</h3>
+      <button id="clarification-close" type="button">Close</button>
+    </div>
+    <div class="stack">
+      <p id="clarification-context" class="muted">Select a queue item detail before opening clarification.</p>
+      <label>
+        Clarification summary
+        <input id="clarification-summary" type="text" maxlength="220" placeholder="Short summary for this follow-up">
+      </label>
+      <label>
+        Explanation (required)
+        <textarea id="clarification-explanation" rows="3" maxlength="1200" placeholder="Why clarification is needed for this item."></textarea>
+      </label>
+      <label>
+        Follow-up question (required)
+        <input id="clarification-question" type="text" maxlength="240" placeholder="What should be clarified next?">
+      </label>
+      <label>
+        Follow-up answer (required)
+        <textarea id="clarification-answer" rows="3" maxlength="1200" placeholder="Structured follow-up answer for recompute."></textarea>
+      </label>
+      <label>
+        Answer kind
+        <select id="clarification-answer-kind">
+          <option value="free_text" selected>Free text</option>
+          <option value="boolean">Boolean</option>
+          <option value="enum">Enum</option>
+          <option value="numeric">Numeric</option>
+          <option value="date">Date</option>
+        </select>
+      </label>
+      <label>
+        Follow-up notes
+        <textarea id="clarification-notes" rows="2" maxlength="400" placeholder="Optional bounded notes"></textarea>
+      </label>
+    </div>
+    <div id="clarification-state" class="state empty">Clarify keeps queue/detail context and submits structured follow-up payload.</div>
+    <div class="drawer-footer">
+      <button id="clarification-cancel" type="button">Cancel</button>
+      <button id="clarification-submit" class="primary" type="button">Submit Clarify</button>
+    </div>
+  </aside>
+
   <script>
     const stateNode = document.getElementById("state");
     const queueNode = document.getElementById("queue-list");
@@ -650,6 +728,19 @@ public static class OperatorWebEndpointExtensions
     const evidenceSortBySelect = document.getElementById("evidence-sort-by");
     const evidenceSortDirectionSelect = document.getElementById("evidence-sort-direction");
     const evidenceLimitSelect = document.getElementById("evidence-limit");
+    const clarificationBackdropNode = document.getElementById("clarification-backdrop");
+    const clarificationDrawerNode = document.getElementById("clarification-drawer");
+    const clarificationCloseButton = document.getElementById("clarification-close");
+    const clarificationCancelButton = document.getElementById("clarification-cancel");
+    const clarificationSubmitButton = document.getElementById("clarification-submit");
+    const clarificationStateNode = document.getElementById("clarification-state");
+    const clarificationContextNode = document.getElementById("clarification-context");
+    const clarificationSummaryInput = document.getElementById("clarification-summary");
+    const clarificationExplanationInput = document.getElementById("clarification-explanation");
+    const clarificationQuestionInput = document.getElementById("clarification-question");
+    const clarificationAnswerInput = document.getElementById("clarification-answer");
+    const clarificationAnswerKindSelect = document.getElementById("clarification-answer-kind");
+    const clarificationNotesInput = document.getElementById("clarification-notes");
 
     const priorityValues = ["critical", "high", "medium", "low"];
     const statusValues = ["open", "blocked", "queued", "running", "attention_required", "degraded"];
@@ -662,7 +753,11 @@ public static class OperatorWebEndpointExtensions
       selectedScopeItemKey: null,
       selectedDetailItem: null,
       evidenceIndex: -1,
-      evidenceDrawerOpen: false
+      evidenceDrawerOpen: false,
+      clarificationDrawerOpen: false,
+      actionSubmitting: false,
+      clarificationSubmitting: false,
+      toggleDetailActionButtons: null
     };
 
     function setState(kind, message) {
@@ -699,6 +794,15 @@ public static class OperatorWebEndpointExtensions
       }
 
       return Math.round(numeric * 100) + "%";
+    }
+
+    function createActionRequestId(actionType) {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return "web:" + actionType + ":" + window.crypto.randomUUID();
+      }
+
+      const fallback = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      return "web:" + actionType + ":" + fallback;
     }
 
     function createChecklist(containerId, title, values) {
@@ -925,8 +1029,10 @@ public static class OperatorWebEndpointExtensions
     function clearDetail(message) {
       state.selectedScopeItemKey = null;
       state.selectedDetailItem = null;
+      state.toggleDetailActionButtons = null;
       detailContentNode.innerHTML = "";
       resetEvidenceState();
+      closeClarificationDrawer();
       setDetailState("empty", message || "Select a queue item to inspect detail.");
       updateQueueSelectionUi();
     }
@@ -1012,6 +1118,112 @@ public static class OperatorWebEndpointExtensions
         "<p><strong>Required action:</strong> " + titleize(item.requiredAction || "none") + "</p>";
       detailContentNode.appendChild(provenanceBlock);
 
+      const actionsBlock = document.createElement("section");
+      actionsBlock.className = "detail-block action-panel";
+      actionsBlock.innerHTML = "<h4>Bounded Actions</h4>";
+
+      const explanationLabel = document.createElement("label");
+      explanationLabel.textContent = "Explanation (required for reject/defer/clarify)";
+      const explanationInput = document.createElement("textarea");
+      explanationInput.rows = 3;
+      explanationInput.placeholder = "Provide bounded rationale for reject/defer, or optional context for approve.";
+      explanationLabel.appendChild(explanationInput);
+      actionsBlock.appendChild(explanationLabel);
+
+      const actionGrid = document.createElement("div");
+      actionGrid.className = "action-grid";
+      const actionFeedback = document.createElement("div");
+      actionFeedback.className = "state empty action-feedback";
+      actionFeedback.textContent = "Submit approve/reject/defer or open clarify without leaving detail context.";
+
+      function disableActionButtons(disabled) {
+        state.actionSubmitting = disabled;
+        actionGrid.querySelectorAll("button").forEach(function(button) {
+          button.disabled = disabled;
+        });
+        explanationInput.disabled = disabled;
+      }
+      state.toggleDetailActionButtons = disableActionButtons;
+
+      async function submitResolutionAction(actionType) {
+        if (state.actionSubmitting) {
+          return;
+        }
+
+        const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+        const scopeItemKey = item.scopeItemKey || state.selectedScopeItemKey;
+        const explanation = explanationInput.value.trim();
+        if (!trackedPersonId || !scopeItemKey) {
+          actionFeedback.className = "state error action-feedback";
+          actionFeedback.textContent = "Tracked person and selected item are required before action submit.";
+          return;
+        }
+
+        if ((actionType === "reject" || actionType === "defer") && !explanation) {
+          actionFeedback.className = "state error action-feedback";
+          actionFeedback.textContent = titleize(actionType) + " requires explanation.";
+          return;
+        }
+
+        disableActionButtons(true);
+        actionFeedback.className = "state loading action-feedback";
+        actionFeedback.textContent = "Submitting " + actionType + " decision...";
+        try {
+          const result = await operatorPostJson("/api/operator/resolution/actions", {
+            requestId: createActionRequestId(actionType),
+            trackedPersonId: trackedPersonId,
+            scopeItemKey: scopeItemKey,
+            actionType: actionType,
+            explanation: explanation || null,
+            submittedAtUtc: new Date().toISOString()
+          });
+
+          const action = result && result.action ? result.action : null;
+          if (!result.accepted || !action || !action.accepted) {
+            throw new Error(result.failureReason || (action && action.failureReason) || "action_submit_rejected");
+          }
+
+          const recomputeStatus = action.recompute && action.recompute.lifecycleStatus
+            ? titleize(action.recompute.lifecycleStatus)
+            : "n/a";
+          const actionId = action.actionId || "n/a";
+          const auditEventId = action.auditEventId || "n/a";
+          actionFeedback.className = "state empty action-feedback";
+          actionFeedback.textContent = titleize(actionType) + " accepted. Recompute: " + recomputeStatus + ". Action ID: " + actionId + ". Audit: " + auditEventId + ".";
+          await loadQueue();
+        } catch (error) {
+          actionFeedback.className = "state error action-feedback";
+          actionFeedback.textContent = "Action submission failed: " + (error && error.message ? error.message : "unknown_error");
+        } finally {
+          disableActionButtons(false);
+        }
+      }
+
+      [
+        { type: "approve", label: "Approve", className: "approve" },
+        { type: "reject", label: "Reject", className: "reject" },
+        { type: "defer", label: "Defer", className: "defer" },
+        { type: "clarify", label: "Clarify", className: "clarify" }
+      ].forEach(function(definition) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = definition.label;
+        button.className = definition.className;
+        button.addEventListener("click", function() {
+          if (definition.type === "clarify") {
+            openClarificationDrawer(explanationInput.value.trim());
+            return;
+          }
+
+          submitResolutionAction(definition.type);
+        });
+        actionGrid.appendChild(button);
+      });
+
+      actionsBlock.appendChild(actionGrid);
+      actionsBlock.appendChild(actionFeedback);
+      detailContentNode.appendChild(actionsBlock);
+
       const notes = Array.isArray(item.notes) ? item.notes : [];
       if (notes.length > 0) {
         const notesBlock = document.createElement("section");
@@ -1039,6 +1251,158 @@ public static class OperatorWebEndpointExtensions
       }
 
       setDetailState("loading", "Detail loaded for selected queue item.");
+    }
+
+    function setClarificationState(kind, message) {
+      clarificationStateNode.className = "state " + kind;
+      clarificationStateNode.textContent = message;
+    }
+
+    function resetClarificationForm() {
+      clarificationSummaryInput.value = "";
+      clarificationExplanationInput.value = "";
+      clarificationQuestionInput.value = "";
+      clarificationAnswerInput.value = "";
+      clarificationAnswerKindSelect.value = "free_text";
+      clarificationNotesInput.value = "";
+      setClarificationState("empty", "Clarify keeps queue/detail context and submits structured follow-up payload.");
+    }
+
+    function openClarificationDrawer(prefillExplanation) {
+      const item = state.selectedDetailItem;
+      if (!item) {
+        setClarificationState("error", "Select a queue item detail before opening clarification.");
+        return;
+      }
+
+      resetClarificationForm();
+      clarificationContextNode.textContent =
+        "Item: " + (item.title || item.scopeItemKey || "n/a")
+        + " | Scope: " + (item.scopeItemKey || "n/a")
+        + " | Type: " + titleize(item.itemType || "unknown");
+      clarificationSummaryInput.value = "Clarification follow-up for " + (item.title || item.scopeItemKey || "selected item");
+      clarificationExplanationInput.value = prefillExplanation || "";
+      state.clarificationDrawerOpen = true;
+      clarificationBackdropNode.classList.add("open");
+      clarificationDrawerNode.classList.add("open");
+      clarificationBackdropNode.setAttribute("aria-hidden", "false");
+      clarificationDrawerNode.setAttribute("aria-hidden", "false");
+    }
+
+    function closeClarificationDrawer() {
+      state.clarificationDrawerOpen = false;
+      clarificationBackdropNode.classList.remove("open");
+      clarificationDrawerNode.classList.remove("open");
+      clarificationBackdropNode.setAttribute("aria-hidden", "true");
+      clarificationDrawerNode.setAttribute("aria-hidden", "true");
+    }
+
+    function toggleClarificationForm(disabled) {
+      state.clarificationSubmitting = disabled;
+      clarificationSummaryInput.disabled = disabled;
+      clarificationExplanationInput.disabled = disabled;
+      clarificationQuestionInput.disabled = disabled;
+      clarificationAnswerInput.disabled = disabled;
+      clarificationAnswerKindSelect.disabled = disabled;
+      clarificationNotesInput.disabled = disabled;
+      clarificationSubmitButton.disabled = disabled;
+      clarificationCancelButton.disabled = disabled;
+      if (typeof state.toggleDetailActionButtons === "function") {
+        state.toggleDetailActionButtons(disabled);
+      }
+    }
+
+    async function submitClarifyAction() {
+      if (state.clarificationSubmitting || state.actionSubmitting) {
+        return;
+      }
+
+      const item = state.selectedDetailItem;
+      const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+      const scopeItemKey = item && item.scopeItemKey ? item.scopeItemKey : state.selectedScopeItemKey;
+      const explanation = clarificationExplanationInput.value.trim();
+      const followUpQuestion = clarificationQuestionInput.value.trim();
+      const followUpAnswer = clarificationAnswerInput.value.trim();
+      const followUpNotes = clarificationNotesInput.value.trim();
+      const answerKind = clarificationAnswerKindSelect.value || "free_text";
+      const summary = clarificationSummaryInput.value.trim();
+      if (!trackedPersonId || !scopeItemKey || !item) {
+        setClarificationState("error", "Tracked person and selected item are required before clarify submit.");
+        return;
+      }
+
+      if (!explanation) {
+        setClarificationState("error", "Clarify requires explanation.");
+        return;
+      }
+
+      if (!followUpQuestion) {
+        setClarificationState("error", "Follow-up question is required.");
+        return;
+      }
+
+      if (!followUpAnswer) {
+        setClarificationState("error", "Follow-up answer is required.");
+        return;
+      }
+
+      toggleClarificationForm(true);
+      setClarificationState("loading", "Submitting clarify action...");
+      try {
+        const payload = {
+          summary: summary || ("Clarification follow-up for " + (item.title || item.scopeItemKey || "selected item")),
+          responses: [
+            {
+              questionKey: "operator_explanation",
+              questionText: "Operator explanation for clarify",
+              answerValue: explanation,
+              answerKind: "free_text"
+            },
+            {
+              questionKey: "follow_up_primary",
+              questionText: followUpQuestion,
+              answerValue: followUpAnswer,
+              answerKind: answerKind,
+              notes: followUpNotes || null
+            }
+          ],
+          metadata: {
+            surface: "web",
+            tracked_person_id: trackedPersonId,
+            scope_item_key: scopeItemKey,
+            item_type: item.itemType || "unknown",
+            action_type: "clarify",
+            captured_at_utc: new Date().toISOString()
+          }
+        };
+        const result = await operatorPostJson("/api/operator/resolution/actions", {
+          requestId: createActionRequestId("clarify"),
+          trackedPersonId: trackedPersonId,
+          scopeItemKey: scopeItemKey,
+          actionType: "clarify",
+          explanation: explanation,
+          clarificationPayload: payload,
+          submittedAtUtc: new Date().toISOString()
+        });
+
+        const action = result && result.action ? result.action : null;
+        if (!result.accepted || !action || !action.accepted) {
+          throw new Error(result.failureReason || (action && action.failureReason) || "action_submit_rejected");
+        }
+
+        const recomputeStatus = action.recompute && action.recompute.lifecycleStatus
+          ? titleize(action.recompute.lifecycleStatus)
+          : "n/a";
+        const actionId = action.actionId || "n/a";
+        const auditEventId = action.auditEventId || "n/a";
+        setClarificationState("empty", "Clarify accepted. Recompute: " + recomputeStatus + ". Action ID: " + actionId + ". Audit: " + auditEventId + ".");
+        closeClarificationDrawer();
+        await loadQueue();
+      } catch (error) {
+        setClarificationState("error", "Clarify submission failed: " + (error && error.message ? error.message : "unknown_error"));
+      } finally {
+        toggleClarificationForm(false);
+      }
     }
 
     function syncQueueSelection(items) {
@@ -1394,9 +1758,17 @@ public static class OperatorWebEndpointExtensions
     evidenceSortBySelect.addEventListener("change", refreshEvidenceFromDetailContext);
     evidenceSortDirectionSelect.addEventListener("change", refreshEvidenceFromDetailContext);
     evidenceLimitSelect.addEventListener("change", refreshEvidenceFromDetailContext);
+    clarificationCloseButton.addEventListener("click", closeClarificationDrawer);
+    clarificationCancelButton.addEventListener("click", closeClarificationDrawer);
+    clarificationBackdropNode.addEventListener("click", closeClarificationDrawer);
+    clarificationSubmitButton.addEventListener("click", submitClarifyAction);
     window.addEventListener("keydown", function(event) {
       if (event.key === "Escape" && state.evidenceDrawerOpen) {
         closeEvidenceDrawer();
+      }
+
+      if (event.key === "Escape" && state.clarificationDrawerOpen) {
+        closeClarificationDrawer();
       }
     });
 

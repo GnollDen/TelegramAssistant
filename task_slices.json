@@ -2136,12 +2136,12 @@
       "dependencies": [
         "OPINT-005-C2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Operator can submit approve/reject/defer from detail context without losing queue position.",
         "Action submission persists bounded operator/session/item scope and returns deterministic status payload."
       ],
-      "notes": "Single write scope for non-clarify action submission."
+      "notes": "Single write scope for non-clarify action submission. Completed 2026-04-04: /operator/resolution detail now includes bounded approve/reject/defer submission controls that call /api/operator/resolution/actions in place, enforce required explanation for reject/defer, preserve queue/detail selection context during refresh, and render deterministic action + recompute status feedback from persisted operator action results."
     },
     {
       "id": "OPINT-005-D2",
@@ -2153,12 +2153,12 @@
       "dependencies": [
         "OPINT-005-D1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Clarification drawer prompts for required follow-up fields and enforces configured explanation requirements.",
         "Clarify submission keeps context in-place and stores structured follow-up payload for recompute."
       ],
-      "notes": "Clarification workflow isolated from generic action buttons."
+      "notes": "Clarification workflow isolated from generic action buttons. Completed 2026-04-04: /operator/resolution now includes an in-context clarification drawer with required explanation + follow-up question/answer fields, structured clarify payload submission to /api/operator/resolution/actions, and context-preserving queue/detail refresh behavior after clarify acceptance."
     },
     {
       "id": "OPINT-005-E",
