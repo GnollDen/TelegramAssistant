@@ -148,6 +148,77 @@ public class OperatorPersonWorkspaceListQueryResult
     public List<OperatorTrackedPersonScopeSummary> Persons { get; set; } = [];
 }
 
+public class OperatorPersonWorkspaceSummaryQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
+public class OperatorPersonWorkspaceSummaryQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceView Workspace { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceView
+{
+    public OperatorTrackedPersonScopeSummary? TrackedPerson { get; set; }
+    public List<OperatorWorkspaceSectionState> Sections { get; set; } = [];
+    public OperatorPersonWorkspaceSummarySectionView Summary { get; set; } = new();
+}
+
+public class OperatorWorkspaceSectionState
+{
+    public string SectionKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public bool Available { get; set; }
+}
+
+public class OperatorPersonWorkspaceSummarySectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableObjectCount { get; set; }
+    public int UnresolvedCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public List<ResolutionFacetCount> TruthLayerCounts { get; set; } = [];
+    public List<ResolutionFacetCount> PromotionStateCounts { get; set; } = [];
+    public List<OperatorWorkspaceDurableFamilyCard> Families { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorWorkspaceDurableFamilyCard
+{
+    public string Family { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int ObjectCount { get; set; }
+    public float Trust { get; set; }
+    public float Uncertainty { get; set; }
+    public float Confidence { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public int ContradictionCount { get; set; }
+    public int EvidenceLinkCount { get; set; }
+    public DateTime? LatestUpdatedAtUtc { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public string? LatestSummary { get; set; }
+}
+
+public class OperatorWorkspaceProvenanceItem
+{
+    public string Family { get; set; } = string.Empty;
+    public string ObjectKey { get; set; } = string.Empty;
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public int EvidenceLinkCount { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? Summary { get; set; }
+}
+
 public class OperatorResolutionQueueQueryRequest : OperatorContractRequestBase
 {
     public Guid? TrackedPersonId { get; set; }

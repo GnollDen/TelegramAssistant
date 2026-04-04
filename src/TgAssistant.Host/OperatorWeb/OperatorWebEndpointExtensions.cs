@@ -560,7 +560,12 @@ public static class OperatorWebEndpointExtensions
       --ink: #14243c;
       --muted: #5e6e89;
       --line: #d9e1ef;
+      --accent: #0d4a7f;
+      --chip: #eef2fb;
+      --warn: #9a1a1a;
+      --ok: #0d6635;
     }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", "Noto Sans", sans-serif;
@@ -568,9 +573,9 @@ public static class OperatorWebEndpointExtensions
       color: var(--ink);
     }
     main {
-      max-width: 980px;
-      margin: 30px auto;
-      padding: 0 16px 28px;
+      max-width: 1120px;
+      margin: 28px auto;
+      padding: 0 16px 34px;
     }
     .panel {
       background: var(--panel);
@@ -580,18 +585,129 @@ public static class OperatorWebEndpointExtensions
       box-shadow: 0 10px 22px rgba(20, 36, 60, 0.08);
       margin-bottom: 14px;
     }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input,
+    button,
+    a {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      font: inherit;
+      color: inherit;
+      background: #fff;
+      text-decoration: none;
+    }
+    button { cursor: pointer; background: #f7faff; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .state {
+      border-left: 4px solid var(--accent);
+      background: #f8fbff;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .state.loading { border-left-color: var(--accent); }
+    .state.empty { border-left-color: var(--ok); }
+    .state.error { border-left-color: var(--warn); background: #fff6f6; }
+    .muted { color: var(--muted); }
     .tabs {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 8px;
     }
-    .tab {
+    .tab-btn {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 8px 10px;
       background: #f7faff;
-      color: var(--muted);
+      color: var(--ink);
       text-align: center;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #e8f2ff;
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .tab-btn.pending {
+      color: var(--muted);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .chip {
+      background: var(--chip);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      color: #2a4169;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 10px;
+      background: #fcfeff;
+    }
+    .metric strong {
+      display: block;
+      font-size: 20px;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+    }
+    .family-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+    }
+    .family-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+    .family-card p {
+      margin: 4px 0;
+      font-size: 13px;
+    }
+    .provenance-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .prov-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 9px;
+      font-size: 13px;
     }
   </style>
 </head>
@@ -599,36 +715,369 @@ public static class OperatorWebEndpointExtensions
   <main>
     <section class="panel">
       <h1>Person Workspace</h1>
-      <p id="person-line">Tracked person context is required.</p>
-      <p><a href="/operator/persons">Back to persons list</a></p>
+      <p id="person-line">Loading tracked person context...</p>
+      <div class="row">
+        <label>
+          Operator access token
+          <input id="access-token" type="password" autocomplete="off" placeholder="X-Tga-Operator-Key">
+        </label>
+      </div>
+      <div class="row">
+        <button id="refresh" class="primary" type="button">Refresh Summary</button>
+        <a href="/operator/persons">Back to persons list</a>
+      </div>
+      <div id="state" class="state loading">Reading bounded person workspace summary...</div>
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p>Workspace shell entry is available. Section implementation continues in OPINT-008-B1 and later slices.</p>
-      <div class="tabs">
-        <div class="tab">Summary</div>
-        <div class="tab">Dossier</div>
-        <div class="tab">Profile</div>
-        <div class="tab">Pair Dynamics</div>
-        <div class="tab">Timeline</div>
-        <div class="tab">Evidence</div>
-        <div class="tab">Revisions</div>
-        <div class="tab">Resolution</div>
-      </div>
+      <p class="muted">Person-scoped tab shell is stable; Summary is live in this slice and remaining sections stay explicitly pending.</p>
+      <div id="tabs" class="tabs"></div>
+    </section>
+    <section id="tab-summary" class="panel tab-panel active">
+      <h2>Summary</h2>
+      <div id="summary-content" class="state empty">Summary is waiting for workspace data.</div>
+    </section>
+    <section id="tab-placeholder" class="panel tab-panel">
+      <h2 id="placeholder-title">Section</h2>
+      <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
+      <div id="placeholder-meta" class="chip-list"></div>
     </section>
   </main>
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const trackedPersonId = params.get("trackedPersonId") || "n/a";
-    const displayName = params.get("displayName") || "n/a";
-    const scopeKey = params.get("scopeKey") || "n/a";
-    document.getElementById("person-line").textContent =
-      "Active tracked person: " + displayName + " (" + trackedPersonId + ") | scope " + scopeKey + ".";
+    const tokenInput = document.getElementById("access-token");
+    const refreshButton = document.getElementById("refresh");
+    const personLine = document.getElementById("person-line");
+    const stateNode = document.getElementById("state");
+    const tabsNode = document.getElementById("tabs");
+    const summaryContentNode = document.getElementById("summary-content");
+    const summaryPanel = document.getElementById("tab-summary");
+    const placeholderPanel = document.getElementById("tab-placeholder");
+    const placeholderTitleNode = document.getElementById("placeholder-title");
+    const placeholderTextNode = document.getElementById("placeholder-text");
+    const placeholderMetaNode = document.getElementById("placeholder-meta");
+
+    const query = new URLSearchParams(window.location.search);
+    const state = {
+      trackedPersonId: query.get("trackedPersonId") || "",
+      workspace: null,
+      activeSection: "summary"
+    };
+
+    function setState(kind, message) {
+      stateNode.className = "state " + kind;
+      stateNode.textContent = message;
+    }
+
+    function formatUtc(value) {
+      if (!value) {
+        return "n/a";
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString();
+    }
+
+    function formatPercent(value) {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) {
+        return "n/a";
+      }
+
+      return Math.round(numeric * 100) + "%";
+    }
+
+    function titleize(value) {
+      return (value || "").replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
+    function readAccessToken() {
+      return window.localStorage.getItem("operator_web_access_token") || "";
+    }
+
+    function writeAccessToken(token) {
+      window.localStorage.setItem("operator_web_access_token", token);
+      document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
+    }
+
+    function resolveHeaders() {
+      const token = readAccessToken();
+      const headers = {
+        "accept": "application/json",
+        "content-type": "application/json"
+      };
+      if (token) {
+        headers["X-Tga-Operator-Key"] = token;
+      }
+
+      return headers;
+    }
+
+    async function operatorPostJson(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: resolveHeaders(),
+        body: JSON.stringify(payload || {})
+      });
+
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_) {
+        body = null;
+      }
+
+      if (!response.ok) {
+        const reason = body && (body.failureReason || body.reason || body.message)
+          ? (body.failureReason || body.reason || body.message)
+          : "request_failed";
+        const error = new Error(reason);
+        error.status = response.status;
+        throw error;
+      }
+
+      return body || {};
+    }
+
+    function renderPersonLine() {
+      const trackedPerson = state.workspace && state.workspace.trackedPerson
+        ? state.workspace.trackedPerson
+        : null;
+      if (!trackedPerson) {
+        personLine.textContent = "Tracked person context is not loaded yet.";
+        return;
+      }
+
+      personLine.textContent =
+        "Active tracked person: " + trackedPerson.displayName + " (" + trackedPerson.trackedPersonId + ") | scope " + trackedPerson.scopeKey + ".";
+    }
+
+    function renderTabs() {
+      tabsNode.innerHTML = "";
+      const sections = state.workspace && Array.isArray(state.workspace.sections)
+        ? state.workspace.sections
+        : [];
+      if (sections.length === 0) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "tab-btn active";
+        button.textContent = "Summary";
+        tabsNode.appendChild(button);
+        return;
+      }
+
+      sections.forEach(function(section) {
+        const key = section.sectionKey || "";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "tab-btn";
+        if (!section.available) {
+          button.classList.add("pending");
+        }
+        if (key === state.activeSection) {
+          button.classList.add("active");
+        }
+        button.textContent = (section.label || titleize(key)) + " [" + titleize(section.status || "unknown") + "]";
+        button.addEventListener("click", function() {
+          state.activeSection = key || "summary";
+          renderTabs();
+          renderActiveSection();
+        });
+        tabsNode.appendChild(button);
+      });
+    }
+
+    function renderSummarySection() {
+      const summary = state.workspace && state.workspace.summary ? state.workspace.summary : null;
+      if (!summary) {
+        summaryContentNode.className = "state empty";
+        summaryContentNode.textContent = "Summary data is unavailable.";
+        return;
+      }
+
+      const families = Array.isArray(summary.families) ? summary.families : [];
+      const truthLayerCounts = Array.isArray(summary.truthLayerCounts) ? summary.truthLayerCounts : [];
+      const promotionCounts = Array.isArray(summary.promotionStateCounts) ? summary.promotionStateCounts : [];
+      const provenance = Array.isArray(summary.provenance) ? summary.provenance : [];
+
+      summaryContentNode.className = "";
+      summaryContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(summary.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(summary.overallUncertainty) },
+        { label: "Durable Objects", value: String(summary.durableObjectCount || 0) },
+        { label: "Unresolved Items", value: String(summary.unresolvedCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      summaryContentNode.appendChild(metrics);
+
+      const countChips = document.createElement("div");
+      countChips.className = "chip-list";
+      truthLayerCounts.forEach(function(entry) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "Truth " + titleize(entry.key || "unknown") + ": " + (entry.count || 0);
+        countChips.appendChild(chip);
+      });
+      promotionCounts.forEach(function(entry) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "Promotion " + titleize(entry.key || "unknown") + ": " + (entry.count || 0);
+        countChips.appendChild(chip);
+      });
+      if (!countChips.children.length) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "No durable truth/promotion data yet.";
+        countChips.appendChild(chip);
+      }
+      summaryContentNode.appendChild(countChips);
+
+      const familyGrid = document.createElement("div");
+      familyGrid.className = "card-grid";
+      families.forEach(function(card) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + (card.label || titleize(card.family || "unknown")) + "</h3>" +
+          "<p><strong>Trust:</strong> " + formatPercent(card.trust) + " | <strong>Uncertainty:</strong> " + formatPercent(card.uncertainty) + "</p>" +
+          "<p><strong>Confidence:</strong> " + formatPercent(card.confidence) + " | <strong>Coverage:</strong> " + formatPercent(card.coverage) + "</p>" +
+          "<p><strong>Freshness:</strong> " + formatPercent(card.freshness) + " | <strong>Stability:</strong> " + formatPercent(card.stability) + "</p>" +
+          "<p><strong>Objects:</strong> " + (card.objectCount || 0) + " | <strong>Contradictions:</strong> " + (card.contradictionCount || 0) + "</p>" +
+          "<p><strong>Provenance:</strong> evidence links " + (card.evidenceLinkCount || 0) + ", truth " + titleize(card.truthLayer || "unknown") + ", promotion " + titleize(card.promotionState || "unknown") + "</p>" +
+          "<p><strong>Latest update:</strong> " + formatUtc(card.latestUpdatedAtUtc) + "</p>" +
+          "<p><strong>Latest summary:</strong> " + (card.latestSummary || "n/a") + "</p>";
+        familyGrid.appendChild(node);
+      });
+      if (!familyGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No durable summary objects are available for this person scope yet.";
+        familyGrid.appendChild(empty);
+      }
+      summaryContentNode.appendChild(familyGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Provenance Drilldown Seeds";
+      summaryContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Family:</strong> " + titleize(item.family || "unknown") + "</p>" +
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      summaryContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(summary.generatedAtUtc) + " from bounded operator read models.";
+      summaryContentNode.appendChild(updatedNote);
+    }
+
+    function renderPlaceholderSection() {
+      const sections = state.workspace && Array.isArray(state.workspace.sections)
+        ? state.workspace.sections
+        : [];
+      const active = sections.find(function(section) {
+        return section.sectionKey === state.activeSection;
+      });
+      const label = active && active.label ? active.label : titleize(state.activeSection);
+      placeholderTitleNode.textContent = label;
+      placeholderTextNode.textContent = label + " is pending in later OPINT-008 slices.";
+      placeholderMetaNode.innerHTML = "";
+
+      [
+        "Section: " + (active && active.sectionKey ? active.sectionKey : state.activeSection),
+        "Status: " + titleize(active && active.status ? active.status : "pending"),
+        "Availability: " + ((active && active.available) ? "ready" : "pending")
+      ].forEach(function(text) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = text;
+        placeholderMetaNode.appendChild(chip);
+      });
+    }
+
+    function renderActiveSection() {
+      const showSummary = state.activeSection === "summary";
+      summaryPanel.classList.toggle("active", showSummary);
+      placeholderPanel.classList.toggle("active", !showSummary);
+      if (showSummary) {
+        renderSummarySection();
+      } else {
+        renderPlaceholderSection();
+      }
+    }
+
+    async function loadWorkspaceSummary() {
+      if (!state.trackedPersonId) {
+        setState("error", "trackedPersonId query parameter is required.");
+        return;
+      }
+
+      setState("loading", "Loading bounded workspace summary...");
+      const result = await operatorPostJson("/api/operator/person-workspace/summary/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.workspace = result.workspace || null;
+      renderPersonLine();
+      renderTabs();
+      renderActiveSection();
+      setState("empty", "Workspace summary loaded from durable/read-model contracts.");
+    }
+
+    tokenInput.value = readAccessToken();
+    tokenInput.addEventListener("change", function() {
+      writeAccessToken(tokenInput.value.trim());
+    });
+    refreshButton.addEventListener("click", async function() {
+      try {
+        writeAccessToken(tokenInput.value.trim());
+        await loadWorkspaceSummary();
+      } catch (error) {
+        setState("error", "Workspace summary request failed: " + (error.message || "unknown_error"));
+      }
+    });
+
+    (async function init() {
+      writeAccessToken(tokenInput.value.trim());
+      try {
+        await loadWorkspaceSummary();
+      } catch (error) {
+        setState("error", "Workspace summary request failed: " + (error.message || "unknown_error"));
+      }
+    })();
   </script>
 </body>
 </html>
 """;
-
     private const string OperatorResolutionHtml = """
 <!doctype html>
 <html lang="en">

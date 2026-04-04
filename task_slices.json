@@ -2411,12 +2411,12 @@
       "dependencies": [
         "OPINT-008-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Workspace shell is stable for person-scoped navigation and section switching.",
         "Summary section is grounded in durable read models with explicit trust/uncertainty signals."
       ],
-      "notes": "Shell + Summary is a single bounded outcome and checkpoint."
+      "notes": "Completed 2026-04-04: replaced `/operator/person-workspace` placeholder shell with stable person-scoped tab navigation and live Summary rendering; added bounded operator contract `/api/operator/person-workspace/summary/query` backed by durable-object metadata + Stage7 read-model projections to expose trust/uncertainty metrics, truth/promotion breakdowns, and provenance drilldown seeds for the selected tracked person."
     },
     {
       "id": "OPINT-008-B2",

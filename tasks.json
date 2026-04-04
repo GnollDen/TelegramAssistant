@@ -1285,7 +1285,7 @@
         "OPINT-005"
       ],
       "status": "pending",
-      "notes": "P1 deep-analysis expansion after P0 resolution surfaces. Progress 2026-04-04: OPINT-008-A completed by adding auth/session-bounded persons list UI at `/operator/persons` with search, unresolved badges, recent-update indicators, and tracked-person workspace handoff entry via `/operator/person-workspace`; backed by clean operator API query contract `/api/operator/persons/query` plus unresolved-signal projection from durable/read-model resolution views. Remaining slices OPINT-008-B1+ are pending."
+      "notes": "P1 deep-analysis expansion after P0 resolution surfaces. Progress 2026-04-04: OPINT-008-A completed by adding auth/session-bounded persons list UI at `/operator/persons` with search, unresolved badges, recent-update indicators, and tracked-person workspace handoff entry via `/operator/person-workspace`; backed by clean operator API query contract `/api/operator/persons/query` plus unresolved-signal projection from durable/read-model resolution views. Progress 2026-04-04: OPINT-008-B1 completed by implementing stable person-scoped workspace tab navigation on `/operator/person-workspace` and a durable/read-model Summary section served by `/api/operator/person-workspace/summary/query`, exposing trust/uncertainty signals, truth/promotion breakdowns, and provenance drilldown seeds for the selected tracked person. Remaining slices OPINT-008-B2+ are pending."
     },
     {
       "id": "OPINT-009",

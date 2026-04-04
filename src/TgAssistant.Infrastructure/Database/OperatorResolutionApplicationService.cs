@@ -13,6 +13,15 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private const string TrackedPersonSwitchSessionEventType = "tracked_person_switch";
     private const string OfflineEventScopeItemPrefix = "offline_event:";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> WorkspaceSummaryFamilies = new(StringComparer.Ordinal)
+    {
+        Stage7DurableObjectFamilies.Dossier,
+        Stage7DurableObjectFamilies.Profile,
+        Stage7DurableObjectFamilies.PairDynamics,
+        Stage7DurableObjectFamilies.Event,
+        Stage7DurableObjectFamilies.TimelineEpisode,
+        Stage7DurableObjectFamilies.StoryArc
+    };
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
@@ -281,6 +290,183 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         response.FilteredCount = filtered.Count();
         response.Persons = ordered;
         return response;
+    }
+
+    public async Task<OperatorPersonWorkspaceSummaryQueryResult> QueryPersonWorkspaceSummaryAsync(
+        OperatorPersonWorkspaceSummaryQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceSummaryQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceSummaryQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceSummaryQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var durableSources = await LoadWorkspaceDurableSourcesAsync(
+            db,
+            trackedPerson.ScopeKey,
+            trackedPerson.TrackedPersonId,
+            ct);
+        var metadataIds = durableSources.Select(x => x.Metadata.Id).Distinct().ToList();
+        var evidenceCounts = metadataIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var cards = durableSources
+            .GroupBy(x => x.Metadata.ObjectFamily, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var familySources = group.ToList();
+                var confidence = Clamp01(familySources.Average(x => x.Metadata.Confidence));
+                var coverage = Clamp01(familySources.Average(x => x.Metadata.Coverage));
+                var freshness = Clamp01(familySources.Average(x => x.Metadata.Freshness));
+                var stability = Clamp01(familySources.Average(x => x.Metadata.Stability));
+                var contradictionCount = familySources.Sum(x => CountJsonArray(x.Metadata.ContradictionMarkersJson));
+                var evidenceLinkCount = familySources.Sum(x => evidenceCounts.GetValueOrDefault(x.Metadata.Id));
+                var latest = familySources
+                    .OrderByDescending(x => x.UpdatedAtUtc)
+                    .FirstOrDefault();
+
+                return new OperatorWorkspaceDurableFamilyCard
+                {
+                    Family = group.Key,
+                    Label = ToFamilyLabel(group.Key),
+                    ObjectCount = familySources.Count,
+                    Trust = confidence,
+                    Uncertainty = Clamp01(1f - confidence),
+                    Confidence = confidence,
+                    Coverage = coverage,
+                    Freshness = freshness,
+                    Stability = stability,
+                    ContradictionCount = contradictionCount,
+                    EvidenceLinkCount = evidenceLinkCount,
+                    LatestUpdatedAtUtc = latest?.UpdatedAtUtc,
+                    TruthLayer = MostCommon(familySources.Select(x => x.Metadata.TruthLayer)),
+                    PromotionState = MostCommon(familySources.Select(x => x.Metadata.PromotionState)),
+                    LatestSummary = latest?.SummarySnippet
+                };
+            })
+            .OrderByDescending(x => x.ObjectCount)
+            .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var truthLayerCounts = durableSources
+            .GroupBy(x => NormalizeOptional(x.Metadata.TruthLayer) ?? "unknown", StringComparer.Ordinal)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .Select(x => new ResolutionFacetCount
+            {
+                Key = x.Key,
+                Count = x.Count()
+            })
+            .ToList();
+
+        var promotionStateCounts = durableSources
+            .GroupBy(x => NormalizeOptional(x.Metadata.PromotionState) ?? "unknown", StringComparer.Ordinal)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .Select(x => new ResolutionFacetCount
+            {
+                Key = x.Key,
+                Count = x.Count()
+            })
+            .ToList();
+
+        var provenance = durableSources
+            .OrderByDescending(x => x.UpdatedAtUtc)
+            .Take(16)
+            .Select(x => new OperatorWorkspaceProvenanceItem
+            {
+                Family = x.Metadata.ObjectFamily,
+                ObjectKey = x.Metadata.ObjectKey,
+                DurableObjectMetadataId = x.Metadata.Id,
+                LastModelPassRunId = x.Metadata.CreatedByModelPassRunId,
+                EvidenceLinkCount = evidenceCounts.GetValueOrDefault(x.Metadata.Id),
+                UpdatedAtUtc = x.UpdatedAtUtc,
+                Summary = x.SummarySnippet
+            })
+            .ToList();
+
+        var overallTrust = durableSources.Count == 0
+            ? 0f
+            : Clamp01(durableSources.Average(x => x.Metadata.Confidence));
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceSummaryQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Workspace = new OperatorPersonWorkspaceView
+            {
+                TrackedPerson = trackedPerson,
+                Sections = BuildWorkspaceSections(),
+                Summary = new OperatorPersonWorkspaceSummarySectionView
+                {
+                    GeneratedAtUtc = nowUtc,
+                    DurableObjectCount = durableSources.Count,
+                    UnresolvedCount = trackedPerson.UnresolvedCount,
+                    OverallTrust = overallTrust,
+                    OverallUncertainty = Clamp01(1f - overallTrust),
+                    TruthLayerCounts = truthLayerCounts,
+                    PromotionStateCounts = promotionStateCounts,
+                    Families = cards,
+                    Provenance = provenance
+                }
+            }
+        };
     }
 
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
@@ -1487,6 +1673,240 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             .FirstOrDefault(x => x.TrackedPersonId == trackedPersonId);
     }
 
+    private static List<OperatorWorkspaceSectionState> BuildWorkspaceSections()
+    {
+        return
+        [
+            new OperatorWorkspaceSectionState { SectionKey = "summary", Label = "Summary", Status = "ready", Available = true },
+            new OperatorWorkspaceSectionState { SectionKey = "dossier", Label = "Dossier", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "pending", Available = false }
+        ];
+    }
+
+    private static async Task<List<WorkspaceDurableSource>> LoadWorkspaceDurableSourcesAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        CancellationToken ct)
+    {
+        var metadataRows = await db.DurableObjectMetadata
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == scopeKey
+                && x.OwnerPersonId == trackedPersonId
+                && x.Status == ActiveStatus
+                && WorkspaceSummaryFamilies.Contains(x.ObjectFamily))
+            .ToListAsync(ct);
+        if (metadataRows.Count == 0)
+        {
+            return [];
+        }
+
+        var metadataIds = metadataRows.Select(x => x.Id).Distinct().ToList();
+        var dossiers = await db.DurableDossiers
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+        var profiles = await db.DurableProfiles
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+        var pairDynamics = await db.DurablePairDynamics
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+        var events = await db.DurableEvents
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+        var episodes = await db.DurableTimelineEpisodes
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+        var arcs = await db.DurableStoryArcs
+            .AsNoTracking()
+            .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+            .Select(x => new WorkspaceDurablePayloadRow
+            {
+                DurableObjectMetadataId = x.DurableObjectMetadataId,
+                SummaryJson = x.SummaryJson,
+                UpdatedAtUtc = DateTime.SpecifyKind(x.UpdatedAt, DateTimeKind.Utc)
+            })
+            .ToDictionaryAsync(x => x.DurableObjectMetadataId, x => x, ct);
+
+        return metadataRows
+            .Select(metadata =>
+            {
+                var payload = ResolvePayloadRow(metadata.ObjectFamily, metadata.Id, dossiers, profiles, pairDynamics, events, episodes, arcs);
+                var updatedAt = payload?.UpdatedAtUtc ?? DateTime.SpecifyKind(metadata.UpdatedAt, DateTimeKind.Utc);
+                var summaryJson = payload?.SummaryJson;
+                return new WorkspaceDurableSource
+                {
+                    Metadata = metadata,
+                    SummaryJson = summaryJson,
+                    SummarySnippet = BuildSummarySnippet(summaryJson),
+                    UpdatedAtUtc = updatedAt
+                };
+            })
+            .ToList();
+    }
+
+    private static WorkspaceDurablePayloadRow? ResolvePayloadRow(
+        string family,
+        Guid metadataId,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> dossiers,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> profiles,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> pairDynamics,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> events,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> episodes,
+        IReadOnlyDictionary<Guid, WorkspaceDurablePayloadRow> arcs)
+    {
+        return family switch
+        {
+            Stage7DurableObjectFamilies.Dossier => dossiers.GetValueOrDefault(metadataId),
+            Stage7DurableObjectFamilies.Profile => profiles.GetValueOrDefault(metadataId),
+            Stage7DurableObjectFamilies.PairDynamics => pairDynamics.GetValueOrDefault(metadataId),
+            Stage7DurableObjectFamilies.Event => events.GetValueOrDefault(metadataId),
+            Stage7DurableObjectFamilies.TimelineEpisode => episodes.GetValueOrDefault(metadataId),
+            Stage7DurableObjectFamilies.StoryArc => arcs.GetValueOrDefault(metadataId),
+            _ => null
+        };
+    }
+
+    private static string BuildSummarySnippet(string? summaryJson)
+    {
+        if (!TryParseJsonObject(summaryJson, out var root))
+        {
+            return "Summary not available.";
+        }
+
+        var preferredKeys = new[]
+        {
+            "tracked_person",
+            "operator_root",
+            "fact_count",
+            "inference_count",
+            "hypothesis_count",
+            "contradiction_count",
+            "closure_state",
+            "durable_field_count"
+        };
+        var parts = new List<string>();
+        foreach (var key in preferredKeys)
+        {
+            if (!root.TryGetProperty(key, out var value))
+            {
+                continue;
+            }
+
+            var renderedValue = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Number => value.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => null
+            };
+            var normalizedValue = NormalizeOptional(renderedValue);
+            if (string.IsNullOrWhiteSpace(normalizedValue))
+            {
+                continue;
+            }
+
+            parts.Add($"{key.Replace('_', ' ')}={normalizedValue}");
+            if (parts.Count == 3)
+            {
+                break;
+            }
+        }
+
+        return parts.Count == 0
+            ? "Summary available."
+            : string.Join(" | ", parts);
+    }
+
+    private static int CountJsonArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return 0;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.GetArrayLength()
+                : 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
+    }
+
+    private static string MostCommon(IEnumerable<string?> values)
+    {
+        return values
+            .Select(value => NormalizeOptional(value) ?? "unknown")
+            .GroupBy(value => value, StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => group.Key)
+            .FirstOrDefault() ?? "unknown";
+    }
+
+    private static float Clamp01(float value)
+        => Math.Clamp(value, 0f, 1f);
+
+    private static string ToFamilyLabel(string family)
+    {
+        return family switch
+        {
+            Stage7DurableObjectFamilies.Dossier => "Dossier",
+            Stage7DurableObjectFamilies.Profile => "Profile",
+            Stage7DurableObjectFamilies.PairDynamics => "Pair Dynamics",
+            Stage7DurableObjectFamilies.Event => "Events",
+            Stage7DurableObjectFamilies.TimelineEpisode => "Timeline Episodes",
+            Stage7DurableObjectFamilies.StoryArc => "Story Arcs",
+            _ => family.Replace("_", " ", StringComparison.Ordinal)
+        };
+    }
+
     private static bool TryParseJsonObject(string? json, out JsonElement root)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -1626,5 +2046,20 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return null;
+    }
+
+    private sealed class WorkspaceDurablePayloadRow
+    {
+        public Guid DurableObjectMetadataId { get; init; }
+        public string SummaryJson { get; init; } = "{}";
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    private sealed class WorkspaceDurableSource
+    {
+        public DbDurableObjectMetadata Metadata { get; init; } = new();
+        public string? SummaryJson { get; init; }
+        public string SummarySnippet { get; init; } = string.Empty;
+        public DateTime UpdatedAtUtc { get; init; }
     }
 }
