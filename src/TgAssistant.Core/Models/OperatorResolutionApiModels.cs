@@ -183,6 +183,11 @@ public class OperatorPersonWorkspaceRevisionsQueryRequest : OperatorContractRequ
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceResolutionQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -237,6 +242,14 @@ public class OperatorPersonWorkspaceRevisionsQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceRevisionsSectionView Revisions { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceResolutionQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceResolutionSectionView Resolution { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -352,6 +365,36 @@ public class OperatorPersonWorkspaceRevisionsSectionView
     public float OverallUncertainty { get; set; }
     public List<OperatorWorkspaceRevisionView> Revisions { get; set; } = [];
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorPersonWorkspaceResolutionSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int UnresolvedCount { get; set; }
+    public int ResolvedCount { get; set; }
+    public int ResolvedActionCount { get; set; }
+    public DateTime? LastResolvedAtUtc { get; set; }
+    public List<ResolutionFacetCount> StatusCounts { get; set; } = [];
+    public List<ResolutionFacetCount> PriorityCounts { get; set; } = [];
+    public List<OperatorWorkspaceResolutionItemView> Items { get; set; } = [];
+}
+
+public class OperatorWorkspaceResolutionItemView
+{
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string WhyItMatters { get; set; } = string.Empty;
+    public string AffectedFamily { get; set; } = string.Empty;
+    public string AffectedObjectRef { get; set; } = string.Empty;
+    public float TrustFactor { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int EvidenceCount { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string Priority { get; set; } = string.Empty;
+    public string? RecommendedNextAction { get; set; }
+    public List<string> AvailableActions { get; set; } = [];
 }
 
 public class OperatorWorkspaceEvidenceLinkView

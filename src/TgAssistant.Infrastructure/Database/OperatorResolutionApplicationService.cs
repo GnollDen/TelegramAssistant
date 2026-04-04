@@ -1656,6 +1656,144 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceResolutionQueryResult> QueryPersonWorkspaceResolutionAsync(
+        OperatorPersonWorkspaceResolutionQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceResolutionQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceResolutionQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceResolutionQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var queue = await _resolutionReadService.GetQueueAsync(
+            new ResolutionQueueRequest
+            {
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                SortBy = ResolutionQueueSortFields.Priority,
+                SortDirection = ResolutionSortDirections.Desc,
+                Limit = 100
+            },
+            ct);
+
+        if (!queue.ScopeBound)
+        {
+            return new OperatorPersonWorkspaceResolutionQueryResult
+            {
+                Accepted = false,
+                FailureReason = queue.ScopeFailureReason ?? "scope_not_bound",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var resolvedActions = await db.OperatorResolutionActions
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.TrackedPersonId == trackedPerson.TrackedPersonId
+                && x.RecomputeStatus == ResolutionRecomputeLifecycleStatuses.Done)
+            .OrderByDescending(x => x.RecomputeCompletedAtUtc ?? x.RecomputeStatusUpdatedAtUtc ?? x.CreatedAtUtc)
+            .Take(500)
+            .ToListAsync(ct);
+
+        var items = queue.Items
+            .Select(x => new OperatorWorkspaceResolutionItemView
+            {
+                ScopeItemKey = x.ScopeItemKey,
+                ItemType = x.ItemType,
+                Title = x.Title,
+                Summary = x.Summary,
+                WhyItMatters = x.WhyItMatters,
+                AffectedFamily = x.AffectedFamily,
+                AffectedObjectRef = x.AffectedObjectRef,
+                TrustFactor = Clamp01(x.TrustFactor),
+                Status = x.Status,
+                EvidenceCount = x.EvidenceCount,
+                UpdatedAtUtc = x.UpdatedAtUtc,
+                Priority = x.Priority,
+                RecommendedNextAction = x.RecommendedNextAction,
+                AvailableActions = x.AvailableActions
+            })
+            .ToList();
+
+        var resolvedDistinctCount = resolvedActions
+            .Where(x => !string.IsNullOrWhiteSpace(x.ScopeItemKey))
+            .Select(x => x.ScopeItemKey.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        var lastResolvedAtUtc = resolvedActions
+            .Select(x => x.RecomputeCompletedAtUtc ?? x.RecomputeStatusUpdatedAtUtc)
+            .Where(x => x.HasValue)
+            .Select(x => DateTime.SpecifyKind(x!.Value, DateTimeKind.Utc))
+            .OrderByDescending(x => x)
+            .FirstOrDefault();
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceResolutionQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Resolution = new OperatorPersonWorkspaceResolutionSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                UnresolvedCount = Math.Max(0, queue.TotalOpenCount),
+                ResolvedCount = resolvedDistinctCount,
+                ResolvedActionCount = resolvedActions.Count,
+                LastResolvedAtUtc = lastResolvedAtUtc == default ? null : lastResolvedAtUtc,
+                StatusCounts = queue.StatusCounts,
+                PriorityCounts = queue.PriorityCounts,
+                Items = items
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -2871,7 +3009,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "pending", Available = false }
+            new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "ready", Available = true }
         ];
     }
 

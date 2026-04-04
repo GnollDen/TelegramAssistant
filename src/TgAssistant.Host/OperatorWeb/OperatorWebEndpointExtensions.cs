@@ -730,7 +730,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, and Revisions are live while remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, Revisions, and Resolution are live from bounded operator contracts.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -761,6 +761,10 @@ public static class OperatorWebEndpointExtensions
       <h2>Revisions</h2>
       <div id="revisions-content" class="state empty">Revision history is waiting for workspace data.</div>
     </section>
+    <section id="tab-resolution" class="panel tab-panel">
+      <h2>Resolution</h2>
+      <div id="resolution-content" class="state empty">Resolution drilldown is waiting for workspace data.</div>
+    </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
       <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
@@ -780,6 +784,7 @@ public static class OperatorWebEndpointExtensions
     const timelineContentNode = document.getElementById("timeline-content");
     const evidenceContentNode = document.getElementById("evidence-content");
     const revisionsContentNode = document.getElementById("revisions-content");
+    const resolutionContentNode = document.getElementById("resolution-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
     const profilePanel = document.getElementById("tab-profile");
@@ -787,6 +792,7 @@ public static class OperatorWebEndpointExtensions
     const timelinePanel = document.getElementById("tab-timeline");
     const evidencePanel = document.getElementById("tab-evidence");
     const revisionsPanel = document.getElementById("tab-revisions");
+    const resolutionPanel = document.getElementById("tab-resolution");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -802,6 +808,7 @@ public static class OperatorWebEndpointExtensions
       timeline: null,
       evidence: null,
       revisions: null,
+      resolution: null,
       activeSection: "summary"
     };
 
@@ -834,6 +841,16 @@ public static class OperatorWebEndpointExtensions
 
     function titleize(value) {
       return (value || "").replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
+    function buildResolutionDrilldownUrl(scopeItemKey) {
+      const params = new URLSearchParams();
+      params.set("trackedPersonId", state.trackedPersonId || "");
+      if (scopeItemKey) {
+        params.set("scopeItemKey", scopeItemKey);
+      }
+
+      return "/operator/resolution?" + params.toString();
     }
 
     function readAccessToken() {
@@ -1576,6 +1593,96 @@ public static class OperatorWebEndpointExtensions
       revisionsContentNode.appendChild(updatedNote);
     }
 
+    function renderResolutionSection() {
+      const resolution = state.resolution;
+      if (!resolution) {
+        resolutionContentNode.className = "state empty";
+        resolutionContentNode.textContent = "Resolution drilldown data is unavailable.";
+        return;
+      }
+
+      const items = Array.isArray(resolution.items) ? resolution.items : [];
+      const statusCounts = Array.isArray(resolution.statusCounts) ? resolution.statusCounts : [];
+      const priorityCounts = Array.isArray(resolution.priorityCounts) ? resolution.priorityCounts : [];
+
+      resolutionContentNode.className = "";
+      resolutionContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Unresolved", value: String(resolution.unresolvedCount || 0) },
+        { label: "Resolved", value: String(resolution.resolvedCount || 0) },
+        { label: "Resolved Actions", value: String(resolution.resolvedActionCount || 0) },
+        { label: "Last Resolved At", value: formatUtc(resolution.lastResolvedAtUtc) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      resolutionContentNode.appendChild(metrics);
+
+      const chips = document.createElement("div");
+      chips.className = "chip-list";
+      statusCounts.forEach(function(entry) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "Status " + titleize(entry.key || "unknown") + ": " + (entry.count || 0);
+        chips.appendChild(chip);
+      });
+      priorityCounts.forEach(function(entry) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "Priority " + titleize(entry.key || "unknown") + ": " + (entry.count || 0);
+        chips.appendChild(chip);
+      });
+      if (!chips.children.length) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = "No resolution status counts are available yet.";
+        chips.appendChild(chip);
+      }
+      resolutionContentNode.appendChild(chips);
+
+      const itemGrid = document.createElement("div");
+      itemGrid.className = "card-grid";
+      items.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + (item.title || item.scopeItemKey || "Untitled item") + "</h3>" +
+          "<p><strong>Status:</strong> " + titleize(item.status || "unknown") + " | <strong>Priority:</strong> " + titleize(item.priority || "unknown") + "</p>" +
+          "<p><strong>Type:</strong> " + titleize(item.itemType || "unknown") + " | <strong>Trust:</strong> " + formatPercent(item.trustFactor) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>" +
+          "<p><strong>Why it matters:</strong> " + (item.whyItMatters || "n/a") + "</p>" +
+          "<p><strong>Affected:</strong> " + (item.affectedFamily || "n/a") + " / " + (item.affectedObjectRef || "n/a") + "</p>" +
+          "<p><strong>Evidence count:</strong> " + (item.evidenceCount || 0) + " | <strong>Recommended action:</strong> " + titleize(item.recommendedNextAction || "none") + "</p>" +
+          "<p><strong>Drilldown seed:</strong> scope item " + (item.scopeItemKey || "n/a") + " | <strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>";
+
+        const actionRow = document.createElement("div");
+        actionRow.className = "row";
+        const openLink = document.createElement("a");
+        openLink.href = buildResolutionDrilldownUrl(item.scopeItemKey || "");
+        openLink.textContent = "Open Resolution Detail";
+        actionRow.appendChild(openLink);
+        node.appendChild(actionRow);
+        itemGrid.appendChild(node);
+      });
+      if (!itemGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No unresolved resolution items are active for this person scope.";
+        itemGrid.appendChild(empty);
+      }
+      resolutionContentNode.appendChild(itemGrid);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(resolution.generatedAtUtc) + " from bounded resolution queue/action contracts.";
+      resolutionContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1702,6 +1809,23 @@ public static class OperatorWebEndpointExtensions
       renderRevisionsSection();
     }
 
+    async function ensureResolutionLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.resolution) {
+        return;
+      }
+
+      resolutionContentNode.className = "state loading";
+      resolutionContentNode.textContent = "Loading bounded resolution drilldown view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/resolution/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.resolution = result.resolution || null;
+      renderResolutionSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
@@ -1710,6 +1834,7 @@ public static class OperatorWebEndpointExtensions
       const showTimeline = state.activeSection === "timeline";
       const showEvidence = state.activeSection === "evidence";
       const showRevisions = state.activeSection === "revisions";
+      const showResolution = state.activeSection === "resolution";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
       profilePanel.classList.toggle("active", showProfile);
@@ -1717,7 +1842,8 @@ public static class OperatorWebEndpointExtensions
       timelinePanel.classList.toggle("active", showTimeline);
       evidencePanel.classList.toggle("active", showEvidence);
       revisionsPanel.classList.toggle("active", showRevisions);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence && !showRevisions);
+      resolutionPanel.classList.toggle("active", showResolution);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence && !showRevisions && !showResolution);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
@@ -1750,6 +1876,11 @@ public static class OperatorWebEndpointExtensions
           revisionsContentNode.className = "state error";
           revisionsContentNode.textContent = "Revision history load failed: " + (error.message || "unknown_error");
         });
+      } else if (showResolution) {
+        ensureResolutionLoaded(false).catch(function(error) {
+          resolutionContentNode.className = "state error";
+          resolutionContentNode.textContent = "Resolution drilldown load failed: " + (error.message || "unknown_error");
+        });
       } else {
         renderPlaceholderSection();
       }
@@ -1772,6 +1903,7 @@ public static class OperatorWebEndpointExtensions
       state.timeline = null;
       state.evidence = null;
       state.revisions = null;
+      state.resolution = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();
@@ -2397,12 +2529,15 @@ public static class OperatorWebEndpointExtensions
     const priorityValues = ["critical", "high", "medium", "low"];
     const statusValues = ["open", "blocked", "queued", "running", "attention_required", "degraded"];
     const typeValues = ["clarification", "review", "contradiction", "missing_data", "blocked_branch"];
+    const query = new URLSearchParams(window.location.search);
+    const bootTrackedPersonId = query.get("trackedPersonId") || "";
+    const bootScopeItemKey = query.get("scopeItemKey") || "";
 
     const state = {
       trackedPersons: [],
-      activeTrackedPersonId: null,
+      activeTrackedPersonId: bootTrackedPersonId || null,
       queue: null,
-      selectedScopeItemKey: null,
+      selectedScopeItemKey: bootScopeItemKey || null,
       selectedDetailItem: null,
       evidenceIndex: -1,
       evidenceDrawerOpen: false,
@@ -2410,7 +2545,10 @@ public static class OperatorWebEndpointExtensions
       actionSubmitting: false,
       clarificationSubmitting: false,
       toggleDetailActionButtons: null,
-      lastActionFeedback: null
+      lastActionFeedback: null,
+      bootTrackedPersonId: bootTrackedPersonId || null,
+      bootTrackedPersonApplied: false,
+      bootScopeItemKey: bootScopeItemKey || null
     };
 
     function setState(kind, message) {
@@ -2697,6 +2835,16 @@ public static class OperatorWebEndpointExtensions
         }
         trackedPersonSelect.appendChild(option);
       });
+
+      if (bootTrackedPersonId) {
+        const bootstrapOption = Array.from(trackedPersonSelect.options).find(function(option) {
+          return option.value === bootTrackedPersonId;
+        });
+        if (bootstrapOption) {
+          trackedPersonSelect.value = bootTrackedPersonId;
+          state.activeTrackedPersonId = bootTrackedPersonId;
+        }
+      }
 
       if (!state.activeTrackedPersonId && trackedPersonSelect.options.length > 0) {
         trackedPersonSelect.selectedIndex = 0;
@@ -3354,7 +3502,24 @@ public static class OperatorWebEndpointExtensions
         }
 
         if (state.activeTrackedPersonId) {
+          if (state.bootTrackedPersonId
+            && !state.bootTrackedPersonApplied
+            && state.activeTrackedPersonId === state.bootTrackedPersonId) {
+            await applyTrackedPersonSelection();
+            state.bootTrackedPersonApplied = true;
+          }
           await loadQueue();
+          if (state.bootScopeItemKey) {
+            const availableItems = state.queue && Array.isArray(state.queue.items) ? state.queue.items : [];
+            const bootstrapItem = availableItems.find(function(item) {
+              return item.scopeItemKey === state.bootScopeItemKey;
+            });
+            if (bootstrapItem && bootstrapItem.scopeItemKey) {
+              await selectScopeItem(bootstrapItem.scopeItemKey);
+              state.bootScopeItemKey = null;
+              setState("empty", "Queue loaded and drilldown focused on scoped resolution item.");
+            }
+          }
         } else {
           setState("empty", "Select a tracked person to load queue data.");
           queueNode.innerHTML = "";
