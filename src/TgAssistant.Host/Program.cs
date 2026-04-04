@@ -145,6 +145,10 @@ try
     var editDiffPilotValidateOutput = editDiffPilotValidateOutputArg is null
         ? null
         : editDiffPilotValidateOutputArg["--edit-diff-pilot-validate-output=".Length..];
+    var opint003ValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-003-d-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var opint003ValidateOutput = opint003ValidateOutputArg is null
+        ? null
+        : opint003ValidateOutputArg["--opint-003-d-validate-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -152,6 +156,7 @@ try
     var runResolutionRecomputeContractSmoke = args.Any(arg => string.Equals(arg, "--resolution-recompute-contract-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage8RelatedConflictSmoke = args.Any(arg => string.Equals(arg, "--stage8-related-conflict-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage8RecomputeSmoke = args.Any(arg => string.Equals(arg, "--stage8-recompute-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint003Validate = args.Any(arg => string.Equals(arg, "--opint-003-d-validate", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -643,6 +648,20 @@ try
                 report.GatewaySummary.FallbackRate,
                 report.BudgetCompatibility.QuotaRegistrationCompatible,
                 report.RolloutRecommendation);
+            return;
+        }
+
+        if (runOpint003Validate)
+        {
+            var report = await Opint003LoopValidationRunner.RunAsync(scope.ServiceProvider, opint003ValidateOutput, CancellationToken.None);
+            Log.Information(
+                "OPINT-003-D validation requested via --opint-003-d-validate. output={OutputPath}, passed={Passed}, scenarios={ScenarioPassCount}/{ScenarioTotal}, related_conflicts_created={CreatedCount}, related_conflicts_resolved={ResolvedCount}. Exiting after successful verification.",
+                report.OutputPath,
+                report.AllChecksPassed,
+                report.KeyMetrics.ScenariosPassed,
+                report.KeyMetrics.ScenariosTotal,
+                report.KeyMetrics.RelatedConflictCreated,
+                report.KeyMetrics.RelatedConflictResolved);
             return;
         }
 

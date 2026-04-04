@@ -552,15 +552,22 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         }
 
         var queueItemIdText = queueItemId.ToString("D");
-        var linkedActionIds = await (from actionRow in db.OperatorResolutionActions.AsNoTracking()
-                                     join auditRow in db.OperatorAuditEvents.AsNoTracking()
-                                         on actionRow.RequestId equals auditRow.RequestId
-                                     where auditRow.DecisionOutcome == OperatorAuditDecisionOutcomes.Accepted
-                                         && auditRow.ActionType != null
-                                         && EF.Functions.Like(auditRow.DetailsJson, $"%{queueItemIdText}%")
-                                     select actionRow.Id)
-            .Distinct()
-            .ToListAsync(ct);
+        var linkedActionIds = (await (from actionRow in db.OperatorResolutionActions.AsNoTracking()
+                                      join auditRow in db.OperatorAuditEvents.AsNoTracking()
+                                          on actionRow.RequestId equals auditRow.RequestId
+                                      where actionRow.ScopeKey == queueRow.ScopeKey
+                                          && auditRow.DecisionOutcome == OperatorAuditDecisionOutcomes.Accepted
+                                          && auditRow.ActionType != null
+                                      select new
+                                      {
+                                          actionRow.Id,
+                                          auditRow.DetailsJson
+                                      })
+            .ToListAsync(ct))
+            .Where(x => !string.IsNullOrWhiteSpace(x.DetailsJson)
+                        && x.DetailsJson.Contains(queueItemIdText, StringComparison.Ordinal))
+            .Select(x => x.Id)
+            .ToList();
         if (ResolutionRecomputeLifecycleProjector.TryParseResolutionActionId(queueRow.TriggerRef, out var triggerActionId))
         {
             linkedActionIds.Add(triggerActionId);

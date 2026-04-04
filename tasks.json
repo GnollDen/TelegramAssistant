@@ -1172,8 +1172,8 @@
       "dependencies": [
         "OPINT-002"
       ],
-      "status": "pending",
-      "notes": "Completes P0 backend loop before Telegram/Web surface rollout."
+      "status": "done",
+      "notes": "Done 2026-04-04: OPINT-003-A/B/C/D completed the bounded recompute-after-resolution loop for P0: accepted operator actions enqueue scoped Stage8 recompute with explicit target mapping, related conflicts are reevaluated and auto-closed/updated with audit traceability, lifecycle feedback states are persisted/projected (`running`/`done`/`failed`/`clarification_blocked`), and bounded seeded runtime validation evidence is recorded in docs/planning/OPINT-003-D_VALIDATION_2026-04-04.md."
     },
     {
       "id": "OPINT-004",

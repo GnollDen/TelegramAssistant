@@ -1931,12 +1931,12 @@
       "dependencies": [
         "OPINT-003-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Recompute-after-resolution loop is evidence-backed on bounded runtime.",
         "Execution artifacts are sufficient for P0 surface implementation runs."
       ],
-      "notes": "Hard gate for Telegram/Web rollout."
+      "notes": "Done on 2026-04-04: added bounded runtime validator entrypoint `--opint-003-d-validate` plus evidence note `docs/planning/OPINT-003-D_VALIDATION_2026-04-04.md`, then ran `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --operator-schema-init --opint-003-d-validate --opint-003-d-validate-output=/home/codex/projects/TelegramAssistant/logs/opint-003-d-validation-report.json` against bounded scope `chat:885574984`. Validation proved the normal loop `action -> recompute -> related-conflict transition -> replayed lifecycle feedback` (`running -> done`, `created=1`, `resolved=1`, `domain_review_events=2`) and a degraded `clarification_blocked` lifecycle path with zero residual seed rows after cleanup. During validation a real runtime defect was confirmed and fixed in `Stage8RecomputeQueueRepository`: linked action lifecycle refresh was issuing `LIKE` against `jsonb` audit details, which failed during recompute completion on Postgres."
     },
     {
       "id": "OPINT-004-A",
