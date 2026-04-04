@@ -13,30 +13,42 @@ public sealed class TelegramOperatorWorkflowService
     private const string ModeSwitchSessionEventType = "mode_switch";
     private const string TelegramAuthSource = "telegram_owner_allowlist";
     private const string TrackedPersonCallbackPrefix = "tracked:";
+    private const string AssistantTrackedPersonCallbackPrefix = "assistant:tracked:";
+    private const string AssistantSwitchPersonCallback = "assistant:switch-person";
     private const string ResolutionActionCallbackPrefix = "ra:";
     private const string ResolutionCancelInputCallback = "resolution:cancel-input";
     private const string PendingActionInputStepKind = "resolution_action_input";
     private const int MaxResolutionCards = 3;
     private const int MaxExplanationLength = 1000;
+    private const int MaxAssistantQuestionLength = 1000;
     private const int EvidencePreviewLimit = 3;
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
     private readonly TelegramSettings _settings;
+    private readonly WebSettings _webSettings;
     private readonly TelegramOperatorSessionStore _sessionStore;
     private readonly IOperatorResolutionApplicationService _operatorResolutionService;
+    private readonly IOperatorAssistantResponseGenerationService _assistantResponseGenerationService;
+    private readonly IOperatorAssistantContextAssemblyService _assistantContextAssemblyService;
     private readonly IOperatorSessionAuditService _auditService;
     private readonly ILogger<TelegramOperatorWorkflowService> _logger;
 
     public TelegramOperatorWorkflowService(
         IOptions<TelegramSettings> settings,
+        IOptions<WebSettings> webSettings,
         TelegramOperatorSessionStore sessionStore,
         IOperatorResolutionApplicationService operatorResolutionService,
+        IOperatorAssistantResponseGenerationService assistantResponseGenerationService,
+        IOperatorAssistantContextAssemblyService assistantContextAssemblyService,
         IOperatorSessionAuditService auditService,
         ILogger<TelegramOperatorWorkflowService> logger)
     {
         _settings = settings.Value;
+        _webSettings = webSettings.Value;
         _sessionStore = sessionStore;
         _operatorResolutionService = operatorResolutionService;
+        _assistantResponseGenerationService = assistantResponseGenerationService;
+        _assistantContextAssemblyService = assistantContextAssemblyService;
         _auditService = auditService;
         _logger = logger;
     }
@@ -100,6 +112,11 @@ public sealed class TelegramOperatorWorkflowService
             return await EnterResolutionModeAsync(state, interaction, nowUtc, ct);
         }
 
+        if (string.Equals(text, "/assistant", StringComparison.OrdinalIgnoreCase))
+        {
+            return await EnterAssistantModeAsync(state, interaction, nowUtc, ct);
+        }
+
         if (string.Equals(text, "/cancel", StringComparison.OrdinalIgnoreCase))
         {
             return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
@@ -118,6 +135,11 @@ public sealed class TelegramOperatorWorkflowService
                 nowUtc,
                 note: "Free chat is disabled in Telegram cockpit mode. Use the compact controls below.",
                 ct);
+        }
+
+        if (state.SurfaceMode == TelegramOperatorSurfaceModes.Assistant)
+        {
+            return await SubmitAssistantQuestionAsync(state, interaction, text, nowUtc, ct);
         }
 
         return CreateModeCard(
@@ -153,13 +175,24 @@ public sealed class TelegramOperatorWorkflowService
             return await EnterResolutionModeAsync(state, interaction, nowUtc, ct);
         }
 
-        if (string.Equals(callbackData, "mode:assistant", StringComparison.Ordinal)
-            || string.Equals(callbackData, "mode:offline_event", StringComparison.Ordinal)
+        if (string.Equals(callbackData, "mode:assistant", StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "A resolution action input is in progress. Send explanation text or choose Cancel.");
+            }
+
+            return await EnterAssistantModeAsync(state, interaction, nowUtc, ct);
+        }
+
+        if (string.Equals(callbackData, "mode:offline_event", StringComparison.Ordinal)
             || string.Equals(callbackData, "mode:alerts", StringComparison.Ordinal))
         {
             return CreateModeCard(
                 state,
-                "Only Resolution mode is in scope for the current OPINT-004 Telegram slice. Assistant, Offline Event, and Alerts stay deferred.",
+                "Offline Event and Alerts stay deferred in this slice.",
                 callbackNotice: "Not in this slice");
         }
 
@@ -193,6 +226,24 @@ public sealed class TelegramOperatorWorkflowService
             return await RenderResolutionContextAsync(state, interaction, nowUtc, note: null, ct);
         }
 
+        if (string.Equals(callbackData, AssistantSwitchPersonCallback, StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before switching tracked person.");
+            }
+
+            return await RenderAssistantTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Select the active tracked person for Assistant mode.",
+                callbackNotice: "Switch tracked person",
+                ct);
+        }
+
         if (string.Equals(callbackData, ResolutionCancelInputCallback, StringComparison.Ordinal))
         {
             return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
@@ -210,6 +261,23 @@ public sealed class TelegramOperatorWorkflowService
             return await SelectTrackedPersonAsync(state, interaction, callbackData[TrackedPersonCallbackPrefix.Length..], nowUtc, ct);
         }
 
+        if (callbackData.StartsWith(AssistantTrackedPersonCallbackPrefix, StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before changing tracked person.");
+            }
+
+            return await SelectTrackedPersonForAssistantAsync(
+                state,
+                interaction,
+                callbackData[AssistantTrackedPersonCallbackPrefix.Length..],
+                nowUtc,
+                ct);
+        }
+
         if (callbackData.StartsWith(ResolutionActionCallbackPrefix, StringComparison.Ordinal))
         {
             return await HandleResolutionActionCallbackAsync(
@@ -222,7 +290,7 @@ public sealed class TelegramOperatorWorkflowService
 
         return CreateModeCard(
             state,
-            "That control is not available in OPINT-004-B.",
+            "That control is not available in the current Telegram workflow slice.",
             callbackNotice: "Unsupported");
     }
 
@@ -284,6 +352,63 @@ public sealed class TelegramOperatorWorkflowService
             callbackNotice: "Pick tracked person");
     }
 
+    private async Task<TelegramOperatorResponse> EnterAssistantModeAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var previousActiveMode = state.Session.ActiveMode;
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Assistant;
+        state.Session.ActiveMode = OperatorModeTypes.Assistant;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Assistant mode could not start: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Assistant unavailable");
+        }
+
+        if (query.ActiveTrackedPerson != null)
+        {
+            await AuditModeSwitchIfNeededAsync(
+                interaction,
+                state,
+                previousActiveMode,
+                selectionSource: query.SelectionSource,
+                nowUtc,
+                ct);
+            return CreateAssistantReadyCard(
+                state,
+                note: query.AutoSelected
+                    ? $"Assistant mode auto-selected {query.ActiveTrackedPerson.DisplayName}."
+                    : null,
+                callbackNotice: "Assistant");
+        }
+
+        return BuildAssistantTrackedPersonPickerResponse(
+            state,
+            query.TrackedPersons,
+            "Assistant mode requires an explicit active tracked person.",
+            callbackNotice: "Pick tracked person");
+    }
+
     private async Task<TelegramOperatorResponse> SelectTrackedPersonAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -340,6 +465,56 @@ public sealed class TelegramOperatorWorkflowService
             nowUtc,
             note: $"Resolution mode active for {selection.ActiveTrackedPerson.DisplayName}.",
             ct);
+    }
+
+    private async Task<TelegramOperatorResponse> SelectTrackedPersonForAssistantAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string trackedPersonValue,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(trackedPersonValue, out var trackedPersonId) || trackedPersonId == Guid.Empty)
+        {
+            return await RenderAssistantTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Tracked person selection was invalid. Choose a listed person.",
+                callbackNotice: "Invalid selection",
+                ct);
+        }
+
+        var selection = await _operatorResolutionService.SelectTrackedPersonAsync(
+            new OperatorTrackedPersonSelectionRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = trackedPersonId,
+                RequestedAtUtc = nowUtc
+            },
+            ct);
+
+        state.Session = selection.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Assistant;
+        state.Session.ActiveMode = OperatorModeTypes.Assistant;
+        UpdateActiveTrackedPersonState(state, selection.ActiveTrackedPerson);
+
+        if (!selection.Accepted || selection.ActiveTrackedPerson == null)
+        {
+            return await RenderAssistantTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Tracked person switch failed: {selection.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Switch failed",
+                ct);
+        }
+
+        return CreateAssistantReadyCard(
+            state,
+            note: $"Assistant mode active for {selection.ActiveTrackedPerson.DisplayName}.",
+            callbackNotice: "Assistant");
     }
 
     private async Task<TelegramOperatorResponse> HandleResolutionActionCallbackAsync(
@@ -583,6 +758,133 @@ public sealed class TelegramOperatorWorkflowService
             nowUtc,
             note: $"{FormatActionLabel(pending.ActionType)} input canceled for {pending.ItemTitle}.",
             ct);
+    }
+
+    private async Task<TelegramOperatorResponse> SubmitAssistantQuestionAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string messageText,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return await RenderAssistantTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Assistant mode requires an active tracked person.",
+                callbackNotice: "Pick tracked person",
+                ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return CreateAssistantReadyCard(
+                state,
+                note: "Send a bounded question for the active tracked person.",
+                callbackNotice: null);
+        }
+
+        if (messageText.Length > MaxAssistantQuestionLength)
+        {
+            return CreateAssistantReadyCard(
+                state,
+                note: $"Question is too long ({messageText.Length} chars). Limit is {MaxAssistantQuestionLength}.",
+                callbackNotice: "Question too long");
+        }
+
+        if (string.IsNullOrWhiteSpace(state.ActiveTrackedPersonScopeKey))
+        {
+            return await RenderAssistantTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Active tracked-person scope is unavailable. Re-select tracked person and retry.",
+                callbackNotice: "Scope unavailable",
+                ct);
+        }
+
+        try
+        {
+            var response = await _assistantContextAssemblyService.BuildBoundedResponseAsync(
+                new OperatorAssistantContextAssemblyRequest
+                {
+                    OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                    Session = CloneSession(state.Session),
+                    TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                    ScopeKey = state.ActiveTrackedPersonScopeKey,
+                    ScopeItemKey = state.Session.ActiveScopeItemKey,
+                    Question = messageText.Trim(),
+                    QueueLimit = 10,
+                    EvidenceLimit = 3,
+                    OpenInWebEnabled = true,
+                    OpenInWebTargetApi = "/api/operator/resolution/detail/query",
+                    OpenInWebActiveMode = OperatorModeTypes.ResolutionDetail
+                },
+                generatedAtUtc: nowUtc,
+                ct);
+
+            state.SurfaceMode = TelegramOperatorSurfaceModes.Assistant;
+            state.Session.ActiveMode = OperatorModeTypes.Assistant;
+            state.Session.ActiveScopeItemKey = string.IsNullOrWhiteSpace(response.OpenInWeb.ScopeItemKey)
+                ? state.Session.ActiveScopeItemKey
+                : response.OpenInWeb.ScopeItemKey.Trim();
+            state.Session.UnfinishedStep = null;
+
+            var rendered = _assistantResponseGenerationService.RenderTelegram(response);
+            var lines = new List<string>
+            {
+                "Assistant Mode",
+                $"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "unknown"}",
+                $"Question: {response.Question}",
+                string.Empty,
+                rendered
+            };
+
+            var buttons = new List<List<TelegramOperatorButton>>();
+            if (response.OpenInWeb.Enabled)
+            {
+                var webUrl = BuildAssistantOpenWebUrl(response);
+                if (!string.IsNullOrWhiteSpace(webUrl))
+                {
+                    buttons.Add(
+                    [
+                        new TelegramOperatorButton
+                        {
+                            Text = "Open in Web",
+                            Url = webUrl
+                        }
+                    ]);
+                }
+            }
+
+            buttons.Add(
+            [
+                new TelegramOperatorButton { Text = "Switch Person", CallbackData = AssistantSwitchPersonCallback },
+                new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+            ]);
+
+            return new TelegramOperatorResponse
+            {
+                Messages =
+                [
+                    new TelegramOperatorMessage
+                    {
+                        Text = string.Join(Environment.NewLine, lines),
+                        Buttons = buttons
+                    }
+                ]
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            var failureReason = NormalizeAssistantFailureReason(ex.Message);
+            return CreateAssistantReadyCard(
+                state,
+                note: $"Assistant response blocked: {failureReason}.",
+                callbackNotice: "Assistant blocked");
+        }
     }
 
     private static ResolutionClarificationPayload BuildClarificationPayload(
@@ -947,6 +1249,43 @@ public sealed class TelegramOperatorWorkflowService
         return BuildTrackedPersonPickerResponse(state, query.TrackedPersons, note, callbackNotice);
     }
 
+    private async Task<TelegramOperatorResponse> RenderAssistantTrackedPersonPickerAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        string? note,
+        string? callbackNotice,
+        CancellationToken ct)
+    {
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Assistant;
+        state.Session.ActiveMode = OperatorModeTypes.Assistant;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Tracked person selection is unavailable: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Selection unavailable");
+        }
+
+        return BuildAssistantTrackedPersonPickerResponse(state, query.TrackedPersons, note, callbackNotice);
+    }
+
     private async Task<TelegramOperatorResponse> RenderResolutionContextAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -983,6 +1322,10 @@ public sealed class TelegramOperatorWorkflowService
         if (!string.IsNullOrWhiteSpace(queue.Queue.TrackedPersonDisplayName))
         {
             state.ActiveTrackedPersonDisplayName = queue.Queue.TrackedPersonDisplayName;
+        }
+        if (!string.IsNullOrWhiteSpace(queue.Queue.ScopeKey))
+        {
+            state.ActiveTrackedPersonScopeKey = queue.Queue.ScopeKey;
         }
 
         if (!queue.Accepted)
@@ -1298,6 +1641,16 @@ public sealed class TelegramOperatorWorkflowService
         return $"{normalized[..(maxLength - 3)]}...";
     }
 
+    private static string NormalizeAssistantFailureReason(string? value)
+    {
+        var normalized = NormalizeOptional(value) ?? "assistant_error";
+        var separatorIndex = normalized.IndexOf(':', StringComparison.Ordinal);
+        return separatorIndex <= 0 ? normalized : normalized[..separatorIndex];
+    }
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string BuildOpenWebHandoffToken(OperatorSessionContext session, ResolutionItemDetail item)
     {
         var payload = string.Join(
@@ -1309,6 +1662,37 @@ public sealed class TelegramOperatorWorkflowService
             session.OperatorSessionId.Trim());
         var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private string? BuildAssistantOpenWebUrl(OperatorAssistantResponseEnvelope response)
+    {
+        if (!response.OpenInWeb.Enabled)
+        {
+            return null;
+        }
+
+        var webUrl = NormalizeOptional(_webSettings.Url);
+        if (!Uri.TryCreate(webUrl, UriKind.Absolute, out var baseUri))
+        {
+            return null;
+        }
+
+        var queryParts = new List<string>
+        {
+            $"tracked_person_id={Uri.EscapeDataString(response.OpenInWeb.TrackedPersonId.ToString("D"))}",
+            $"scope_item_key={Uri.EscapeDataString(response.OpenInWeb.ScopeItemKey ?? string.Empty)}",
+            $"operator_session_id={Uri.EscapeDataString(response.OperatorSessionId ?? string.Empty)}",
+            $"active_mode={Uri.EscapeDataString(response.OpenInWeb.ActiveMode ?? string.Empty)}",
+            $"handoff_token={Uri.EscapeDataString(response.OpenInWeb.HandoffToken ?? string.Empty)}",
+            $"target_api={Uri.EscapeDataString(response.OpenInWeb.TargetApi ?? string.Empty)}"
+        };
+
+        var builder = new UriBuilder(baseUri)
+        {
+            Path = "/operator/resolution",
+            Query = string.Join("&", queryParts)
+        };
+        return builder.Uri.ToString();
     }
 
     private TelegramOperatorResponse BuildTrackedPersonPickerResponse(
@@ -1355,6 +1739,92 @@ public sealed class TelegramOperatorWorkflowService
                 {
                     Text = string.Join(Environment.NewLine, lines),
                     Buttons = buttons
+                }
+            ]
+        };
+    }
+
+    private TelegramOperatorResponse BuildAssistantTrackedPersonPickerResponse(
+        TelegramOperatorConversationState state,
+        IReadOnlyList<OperatorTrackedPersonScopeSummary> trackedPersons,
+        string? note,
+        string? callbackNotice)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Assistant Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "none"}");
+        lines.Add("Select the tracked person for this bounded assistant session.");
+
+        var buttons = new List<List<TelegramOperatorButton>>();
+        foreach (var person in trackedPersons.Take(12))
+        {
+            buttons.Add(
+            [
+                new TelegramOperatorButton
+                {
+                    Text = person.DisplayName,
+                    CallbackData = $"{AssistantTrackedPersonCallbackPrefix}{person.TrackedPersonId:D}"
+                }
+            ]);
+        }
+
+        buttons.Add(
+        [
+            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+        ]);
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = callbackNotice,
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons = buttons
+                }
+            ]
+        };
+    }
+
+    private TelegramOperatorResponse CreateAssistantReadyCard(
+        TelegramOperatorConversationState state,
+        string? note,
+        string? callbackNotice)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Assistant Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "none"}");
+        lines.Add("Ask a bounded question about this tracked person.");
+        lines.Add("Response contract: Short Answer, What Is Known, What It Means, Recommendation, Trust.");
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = callbackNotice,
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton { Text = "Switch Person", CallbackData = AssistantSwitchPersonCallback },
+                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                        ]
+                    ]
                 }
             ]
         };
@@ -1607,12 +2077,14 @@ public sealed class TelegramOperatorWorkflowService
             if (state.Session.ActiveTrackedPersonId == Guid.Empty)
             {
                 state.ActiveTrackedPersonDisplayName = null;
+                state.ActiveTrackedPersonScopeKey = null;
             }
 
             return;
         }
 
         state.ActiveTrackedPersonDisplayName = activeTrackedPerson.DisplayName;
+        state.ActiveTrackedPersonScopeKey = activeTrackedPerson.ScopeKey;
     }
 
     private static string BuildRequestId(string prefix, long chatId, DateTime nowUtc)

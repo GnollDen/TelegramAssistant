@@ -77,6 +77,19 @@ public sealed class TelegramBotApiClient
             return;
         }
 
+        var keyboardRows = message.Buttons
+            .Select(row => row
+                .Where(button => !string.IsNullOrWhiteSpace(button.CallbackData) || !string.IsNullOrWhiteSpace(button.Url))
+                .Select(button => new TelegramInlineKeyboardButton
+                {
+                    Text = button.Text,
+                    CallbackData = string.IsNullOrWhiteSpace(button.CallbackData) ? null : button.CallbackData.Trim(),
+                    Url = string.IsNullOrWhiteSpace(button.Url) ? null : button.Url.Trim()
+                })
+                .ToList())
+            .Where(row => row.Count > 0)
+            .ToList();
+
         var response = await _httpClient.PostAsJsonAsync(
             BuildUrl("sendMessage"),
             new TelegramSendMessageRequest
@@ -84,17 +97,11 @@ public sealed class TelegramBotApiClient
                 ChatId = chatId,
                 Text = message.Text,
                 DisableNotification = true,
-                ReplyMarkup = message.Buttons.Count == 0
+                ReplyMarkup = keyboardRows.Count == 0
                     ? null
                     : new TelegramInlineKeyboardMarkup
                     {
-                        InlineKeyboard = message.Buttons
-                            .Select(row => row.Select(button => new TelegramInlineKeyboardButton
-                            {
-                                Text = button.Text,
-                                CallbackData = button.CallbackData
-                            }).ToList())
-                            .ToList()
+                        InlineKeyboard = keyboardRows
                     }
             },
             JsonOptions,
@@ -204,7 +211,8 @@ internal sealed class TelegramInlineKeyboardMarkup
 internal sealed class TelegramInlineKeyboardButton
 {
     public string Text { get; set; } = string.Empty;
-    public string CallbackData { get; set; } = string.Empty;
+    public string? CallbackData { get; set; }
+    public string? Url { get; set; }
 }
 
 internal sealed class TelegramAnswerCallbackQueryRequest

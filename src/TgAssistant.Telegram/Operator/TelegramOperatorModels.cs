@@ -5,6 +5,7 @@ namespace TgAssistant.Telegram.Operator;
 public static class TelegramOperatorSurfaceModes
 {
     public const string None = "none";
+    public const string Assistant = "assistant";
     public const string Resolution = "resolution";
 }
 
@@ -22,7 +23,8 @@ public sealed class TelegramOperatorInteraction
 public sealed class TelegramOperatorButton
 {
     public string Text { get; set; } = string.Empty;
-    public string CallbackData { get; set; } = string.Empty;
+    public string? CallbackData { get; set; }
+    public string? Url { get; set; }
 }
 
 public sealed class TelegramOperatorMessage
@@ -44,6 +46,7 @@ public sealed class TelegramOperatorSessionSnapshot
     public Guid ActiveTrackedPersonId { get; set; }
     public string ActiveMode { get; set; } = string.Empty;
     public string? ActiveTrackedPersonDisplayName { get; set; }
+    public string? ActiveTrackedPersonScopeKey { get; set; }
     public DateTime? ExpiresAtUtc { get; set; }
 }
 
@@ -53,6 +56,7 @@ internal sealed class TelegramOperatorConversationState
     public long UserId { get; set; }
     public string SurfaceMode { get; set; } = TelegramOperatorSurfaceModes.None;
     public string? ActiveTrackedPersonDisplayName { get; set; }
+    public string? ActiveTrackedPersonScopeKey { get; set; }
     public int ResolutionCardGeneration { get; set; }
     public Dictionary<string, TelegramResolutionCardBinding> ResolutionCardBindings { get; set; } = new(StringComparer.Ordinal);
     public TelegramPendingResolutionInput? PendingResolutionInput { get; set; }
@@ -67,6 +71,7 @@ internal sealed class TelegramOperatorConversationState
             ActiveTrackedPersonId = Session.ActiveTrackedPersonId,
             ActiveMode = Session.ActiveMode,
             ActiveTrackedPersonDisplayName = ActiveTrackedPersonDisplayName,
+            ActiveTrackedPersonScopeKey = ActiveTrackedPersonScopeKey,
             ExpiresAtUtc = Session.ExpiresAtUtc
         };
     }

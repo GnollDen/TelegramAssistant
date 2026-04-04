@@ -2256,12 +2256,12 @@
       "dependencies": [
         "OPINT-006-B2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Telegram assistant mode uses required response structure and labels.",
         "Deep-analysis handoff uses bounded web links in active person context."
       ],
-      "notes": "P1 assistant mode slice."
+      "notes": "P1 assistant mode slice. Completed 2026-04-04: Telegram assistant mode now runs on active tracked-person context with deterministic OPINT assistant section rendering/truth labels/trust display and bounded Open-in-Web web-link handoff; validated via --opint-006-c-smoke."
     },
     {
       "id": "OPINT-007-A1",

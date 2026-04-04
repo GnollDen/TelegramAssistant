@@ -23,6 +23,7 @@ public sealed class TelegramOperatorSessionStore
     internal static void ClearResolutionContext(TelegramOperatorConversationState state)
     {
         state.ActiveTrackedPersonDisplayName = null;
+        state.ActiveTrackedPersonScopeKey = null;
         state.SurfaceMode = TelegramOperatorSurfaceModes.None;
         state.ResolutionCardBindings.Clear();
         state.PendingResolutionInput = null;
