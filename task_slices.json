@@ -2051,12 +2051,12 @@
       "dependencies": [
         "OPINT-004-D"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Operator can enter a dedicated Resolution route from web home/navigation without legacy Stage6 pages.",
         "Resolution entry state handles loading, empty queue, and failure modes explicitly."
       ],
-      "notes": "Separates web shell/runtime entry from queue/detail/action implementation."
+      "notes": "2026-04-04: Added clean operator web shell bootstrap routes (`/operator`, `/operator/resolution`) in host runtime with explicit resolution entry loading/empty/error state rendering via `/operator/resolution/bootstrap`; home navigation now enters dedicated Resolution route and explicitly excludes legacy Stage6 web/queue/case pages."
     },
     {
       "id": "OPINT-005-A2",

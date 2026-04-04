@@ -15,6 +15,7 @@ using TgAssistant.Host.Launch;
 using TgAssistant.Host.BootstrapSeed;
 using TgAssistant.Host.Health;
 using TgAssistant.Host.OperatorApi;
+using TgAssistant.Host.OperatorWeb;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
@@ -482,6 +483,7 @@ try
                 app.UseRouting();
                 app.UseEndpoints(endpoints =>
                 {
+                    endpoints.MapOperatorWebShell();
                     endpoints.MapOperatorApi();
                 });
             });
