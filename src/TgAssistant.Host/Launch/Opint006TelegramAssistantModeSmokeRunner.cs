@@ -28,6 +28,7 @@ public static class Opint006TelegramAssistantModeSmokeRunner
             resolutionService,
             new OperatorAssistantResponseGenerationService(),
             assistantContextService,
+            new NoopOperatorOfflineEventRepository(),
             new NoopOperatorSessionAuditService(),
             NullLogger<TelegramOperatorWorkflowService>.Instance);
 
@@ -371,5 +372,30 @@ public static class Opint006TelegramAssistantModeSmokeRunner
     {
         public Task<Guid> RecordSessionEventAsync(OperatorSessionAuditRequest request, CancellationToken ct = default)
             => Task.FromResult(Guid.NewGuid());
+    }
+
+    private sealed class NoopOperatorOfflineEventRepository : IOperatorOfflineEventRepository
+    {
+        public Task<OperatorOfflineEventRecord> CreateAsync(
+            OperatorOfflineEventCreateRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new OperatorOfflineEventRecord());
+
+        public Task<OperatorOfflineEventRecord?> GetByIdAsync(
+            Guid offlineEventId,
+            CancellationToken ct = default)
+            => Task.FromResult<OperatorOfflineEventRecord?>(null);
+
+        public Task<OperatorOfflineEventRecord?> GetByIdWithinScopeAsync(
+            Guid offlineEventId,
+            string scopeKey,
+            Guid trackedPersonId,
+            CancellationToken ct = default)
+            => Task.FromResult<OperatorOfflineEventRecord?>(null);
+
+        public Task<OperatorOfflineEventQueryResult> QueryAsync(
+            OperatorOfflineEventQueryRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new OperatorOfflineEventQueryResult());
     }
 }

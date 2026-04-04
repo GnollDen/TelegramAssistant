@@ -79,6 +79,7 @@ public static class OperatorSurfaceTypes
 public static class OperatorModeTypes
 {
     public const string Assistant = "assistant";
+    public const string OfflineEvent = "offline_event";
     public const string ResolutionQueue = "resolution_queue";
     public const string ResolutionDetail = "resolution_detail";
     public const string Clarification = "clarification";
@@ -87,6 +88,7 @@ public static class OperatorModeTypes
     private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
     {
         Assistant,
+        OfflineEvent,
         ResolutionQueue,
         ResolutionDetail,
         Clarification,

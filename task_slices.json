@@ -2308,12 +2308,12 @@
       "dependencies": [
         "OPINT-007-A2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Telegram flow captures summary and optional recording reference in active tracked-person context.",
         "Captured input persists as bounded offline-event draft with operator/session linkage."
       ],
-      "notes": "Capture-input step isolated from clarification loop policy and refinement UI."
+      "notes": "Completed 2026-04-04: Telegram operator offline-event mode now captures summary plus optional recording reference in active tracked-person context and persists bounded draft records through `operator_offline_events` with operator/session linkage; clarification-loop policy remains deferred to OPINT-007-B2/B3."
     },
     {
       "id": "OPINT-007-B2",

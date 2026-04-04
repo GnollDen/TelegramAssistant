@@ -14,13 +14,24 @@ public sealed class TelegramOperatorWorkflowService
     private const string TelegramAuthSource = "telegram_owner_allowlist";
     private const string TrackedPersonCallbackPrefix = "tracked:";
     private const string AssistantTrackedPersonCallbackPrefix = "assistant:tracked:";
+    private const string OfflineTrackedPersonCallbackPrefix = "offline:tracked:";
     private const string AssistantSwitchPersonCallback = "assistant:switch-person";
+    private const string OfflineSwitchPersonCallback = "offline:switch-person";
+    private const string OfflineCaptureSummaryCallback = "offline:capture-summary";
+    private const string OfflineCaptureRecordingCallback = "offline:capture-recording";
+    private const string OfflineSaveDraftCallback = "offline:save";
     private const string ResolutionActionCallbackPrefix = "ra:";
     private const string ResolutionCancelInputCallback = "resolution:cancel-input";
+    private const string OfflineCancelInputCallback = "offline:cancel-input";
     private const string PendingActionInputStepKind = "resolution_action_input";
+    private const string PendingOfflineEventInputStepKind = "offline_event_input";
+    private const string OfflineEventInputKindSummary = "summary";
+    private const string OfflineEventInputKindRecordingReference = "recording_reference";
     private const int MaxResolutionCards = 3;
     private const int MaxExplanationLength = 1000;
     private const int MaxAssistantQuestionLength = 1000;
+    private const int MaxOfflineEventSummaryLength = 2000;
+    private const int MaxOfflineEventRecordingReferenceLength = 1000;
     private const int EvidencePreviewLimit = 3;
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
@@ -30,6 +41,7 @@ public sealed class TelegramOperatorWorkflowService
     private readonly IOperatorResolutionApplicationService _operatorResolutionService;
     private readonly IOperatorAssistantResponseGenerationService _assistantResponseGenerationService;
     private readonly IOperatorAssistantContextAssemblyService _assistantContextAssemblyService;
+    private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly IOperatorSessionAuditService _auditService;
     private readonly ILogger<TelegramOperatorWorkflowService> _logger;
 
@@ -40,6 +52,7 @@ public sealed class TelegramOperatorWorkflowService
         IOperatorResolutionApplicationService operatorResolutionService,
         IOperatorAssistantResponseGenerationService assistantResponseGenerationService,
         IOperatorAssistantContextAssemblyService assistantContextAssemblyService,
+        IOperatorOfflineEventRepository operatorOfflineEventRepository,
         IOperatorSessionAuditService auditService,
         ILogger<TelegramOperatorWorkflowService> logger)
     {
@@ -49,6 +62,7 @@ public sealed class TelegramOperatorWorkflowService
         _operatorResolutionService = operatorResolutionService;
         _assistantResponseGenerationService = assistantResponseGenerationService;
         _assistantContextAssemblyService = assistantContextAssemblyService;
+        _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _auditService = auditService;
         _logger = logger;
     }
@@ -103,6 +117,7 @@ public sealed class TelegramOperatorWorkflowService
             || string.Equals(text, "/modes", StringComparison.OrdinalIgnoreCase))
         {
             state.PendingResolutionInput = null;
+            state.PendingOfflineEventInput = null;
             state.Session.UnfinishedStep = null;
             return CreateModeCard(state, note: null);
         }
@@ -119,12 +134,22 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(text, "/cancel", StringComparison.OrdinalIgnoreCase))
         {
+            if (state.PendingOfflineEventInput != null)
+            {
+                return await CancelPendingOfflineEventInputAsync(state, interaction, nowUtc, ct);
+            }
+
             return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
         }
 
         if (state.PendingResolutionInput != null)
         {
             return await SubmitPendingResolutionInputAsync(state, interaction, text, nowUtc, ct);
+        }
+
+        if (state.PendingOfflineEventInput != null)
+        {
+            return await SubmitPendingOfflineEventInputAsync(state, interaction, text, nowUtc, ct);
         }
 
         if (state.SurfaceMode == TelegramOperatorSurfaceModes.Resolution)
@@ -142,6 +167,16 @@ public sealed class TelegramOperatorWorkflowService
             return await SubmitAssistantQuestionAsync(state, interaction, text, nowUtc, ct);
         }
 
+        if (state.SurfaceMode == TelegramOperatorSurfaceModes.OfflineEvent)
+        {
+            return await RenderOfflineEventContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Use the capture controls below to update summary and recording reference, then save a draft.",
+                ct);
+        }
+
         return CreateModeCard(
             state,
             "Telegram no longer defaults to free chat. Choose a mode first.");
@@ -156,6 +191,13 @@ public sealed class TelegramOperatorWorkflowService
         var callbackData = interaction.CallbackData!.Trim();
         if (string.Equals(callbackData, "mode:menu", StringComparison.Ordinal))
         {
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "An offline-event input step is in progress. Send text or choose Cancel.");
+            }
+
             state.SurfaceMode = TelegramOperatorSurfaceModes.None;
             state.ResolutionCardBindings.Clear();
             state.PendingResolutionInput = null;
@@ -172,6 +214,13 @@ public sealed class TelegramOperatorWorkflowService
                     "A resolution action input is in progress. Send explanation text or choose Cancel.");
             }
 
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "An offline-event input step is in progress. Send text or choose Cancel.");
+            }
+
             return await EnterResolutionModeAsync(state, interaction, nowUtc, ct);
         }
 
@@ -184,15 +233,40 @@ public sealed class TelegramOperatorWorkflowService
                     "A resolution action input is in progress. Send explanation text or choose Cancel.");
             }
 
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "An offline-event input step is in progress. Send text or choose Cancel.");
+            }
+
             return await EnterAssistantModeAsync(state, interaction, nowUtc, ct);
         }
 
-        if (string.Equals(callbackData, "mode:offline_event", StringComparison.Ordinal)
-            || string.Equals(callbackData, "mode:alerts", StringComparison.Ordinal))
+        if (string.Equals(callbackData, "mode:offline_event", StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "A resolution action input is in progress. Send explanation text or choose Cancel.");
+            }
+
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "An offline-event input step is in progress. Send text or choose Cancel.");
+            }
+
+            return await EnterOfflineEventModeAsync(state, interaction, nowUtc, ct);
+        }
+
+        if (string.Equals(callbackData, "mode:alerts", StringComparison.Ordinal))
         {
             return CreateModeCard(
                 state,
-                "Offline Event and Alerts stay deferred in this slice.",
+                "Alerts stay deferred in this slice.",
                 callbackNotice: "Not in this slice");
         }
 
@@ -244,9 +318,57 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
+        if (string.Equals(callbackData, OfflineSwitchPersonCallback, StringComparison.Ordinal))
+        {
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "Finish or cancel the pending offline-event input before switching tracked person.");
+            }
+
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Select the active tracked person for Offline Event mode.",
+                callbackNotice: "Switch tracked person",
+                ct);
+        }
+
+        if (string.Equals(callbackData, OfflineCaptureSummaryCallback, StringComparison.Ordinal))
+        {
+            return await StartPendingOfflineEventInputAsync(
+                state,
+                interaction,
+                OfflineEventInputKindSummary,
+                nowUtc,
+                ct);
+        }
+
+        if (string.Equals(callbackData, OfflineCaptureRecordingCallback, StringComparison.Ordinal))
+        {
+            return await StartPendingOfflineEventInputAsync(
+                state,
+                interaction,
+                OfflineEventInputKindRecordingReference,
+                nowUtc,
+                ct);
+        }
+
+        if (string.Equals(callbackData, OfflineSaveDraftCallback, StringComparison.Ordinal))
+        {
+            return await SaveOfflineEventDraftAsync(state, interaction, nowUtc, ct);
+        }
+
         if (string.Equals(callbackData, ResolutionCancelInputCallback, StringComparison.Ordinal))
         {
             return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
+        }
+
+        if (string.Equals(callbackData, OfflineCancelInputCallback, StringComparison.Ordinal))
+        {
+            return await CancelPendingOfflineEventInputAsync(state, interaction, nowUtc, ct);
         }
 
         if (callbackData.StartsWith(TrackedPersonCallbackPrefix, StringComparison.Ordinal))
@@ -274,6 +396,23 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 callbackData[AssistantTrackedPersonCallbackPrefix.Length..],
+                nowUtc,
+                ct);
+        }
+
+        if (callbackData.StartsWith(OfflineTrackedPersonCallbackPrefix, StringComparison.Ordinal))
+        {
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "Finish or cancel the pending offline-event input before changing tracked person.");
+            }
+
+            return await SelectTrackedPersonForOfflineAsync(
+                state,
+                interaction,
+                callbackData[OfflineTrackedPersonCallbackPrefix.Length..],
                 nowUtc,
                 ct);
         }
@@ -409,6 +548,58 @@ public sealed class TelegramOperatorWorkflowService
             callbackNotice: "Pick tracked person");
     }
 
+    private async Task<TelegramOperatorResponse> EnterOfflineEventModeAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Offline Event mode could not start: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Offline Event unavailable");
+        }
+
+        if (query.ActiveTrackedPerson != null)
+        {
+            EnsureOfflineDraftContext(state, nowUtc);
+            return await RenderOfflineEventContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: query.AutoSelected
+                    ? $"Offline Event mode auto-selected {query.ActiveTrackedPerson.DisplayName}."
+                    : null,
+                ct);
+        }
+
+        return BuildOfflineTrackedPersonPickerResponse(
+            state,
+            query.TrackedPersons,
+            "Offline Event mode requires an explicit active tracked person.",
+            callbackNotice: "Pick tracked person");
+    }
+
     private async Task<TelegramOperatorResponse> SelectTrackedPersonAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -515,6 +706,63 @@ public sealed class TelegramOperatorWorkflowService
             state,
             note: $"Assistant mode active for {selection.ActiveTrackedPerson.DisplayName}.",
             callbackNotice: "Assistant");
+    }
+
+    private async Task<TelegramOperatorResponse> SelectTrackedPersonForOfflineAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string trackedPersonValue,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(trackedPersonValue, out var trackedPersonId) || trackedPersonId == Guid.Empty)
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Tracked person selection was invalid. Choose a listed person.",
+                callbackNotice: "Invalid selection",
+                ct);
+        }
+
+        var selection = await _operatorResolutionService.SelectTrackedPersonAsync(
+            new OperatorTrackedPersonSelectionRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = trackedPersonId,
+                RequestedAtUtc = nowUtc
+            },
+            ct);
+
+        state.Session = selection.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        UpdateActiveTrackedPersonState(state, selection.ActiveTrackedPerson);
+
+        if (!selection.Accepted || selection.ActiveTrackedPerson == null)
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Tracked person switch failed: {selection.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Switch failed",
+                ct);
+        }
+
+        state.PendingOfflineEventInput = null;
+        state.Session.UnfinishedStep = null;
+        state.OfflineEventDraft = null;
+        EnsureOfflineDraftContext(state, nowUtc);
+
+        return await RenderOfflineEventContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"Offline Event mode active for {selection.ActiveTrackedPerson.DisplayName}.",
+            ct);
     }
 
     private async Task<TelegramOperatorResponse> HandleResolutionActionCallbackAsync(
@@ -885,6 +1133,342 @@ public sealed class TelegramOperatorWorkflowService
                 note: $"Assistant response blocked: {failureReason}.",
                 callbackNotice: "Assistant blocked");
         }
+    }
+
+    private async Task<TelegramOperatorResponse> StartPendingOfflineEventInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string inputKind,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (state.PendingResolutionInput != null)
+        {
+            return CreatePendingResolutionInputPrompt(
+                state,
+                "A resolution action input is in progress. Send explanation text or choose Cancel.");
+        }
+
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Offline Event mode requires an active tracked person.",
+                callbackNotice: "Pick tracked person",
+                ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(state.ActiveTrackedPersonScopeKey))
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Active tracked-person scope is unavailable. Re-select tracked person and retry.",
+                callbackNotice: "Scope unavailable",
+                ct);
+        }
+
+        EnsureOfflineDraftContext(state, nowUtc);
+        state.PendingOfflineEventInput = new TelegramPendingOfflineEventInput
+        {
+            InputKind = inputKind,
+            StartedAtUtc = nowUtc,
+            BoundTrackedPersonId = state.Session.ActiveTrackedPersonId
+        };
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        state.Session.UnfinishedStep = new OperatorWorkflowStepContext
+        {
+            StepKind = PendingOfflineEventInputStepKind,
+            StepState = inputKind,
+            StartedAtUtc = nowUtc,
+            BoundTrackedPersonId = state.Session.ActiveTrackedPersonId,
+            BoundScopeItemKey = state.ActiveTrackedPersonScopeKey ?? string.Empty
+        };
+
+        var prompt = string.Equals(inputKind, OfflineEventInputKindSummary, StringComparison.Ordinal)
+            ? $"Enter offline-event summary (max {MaxOfflineEventSummaryLength} chars). Send /cancel to abort."
+            : $"Enter recording reference URL or note (max {MaxOfflineEventRecordingReferenceLength} chars). Send /cancel to abort.";
+        return CreatePendingOfflineEventInputPrompt(state, prompt);
+    }
+
+    private async Task<TelegramOperatorResponse> SubmitPendingOfflineEventInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string messageText,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var pending = state.PendingOfflineEventInput;
+        if (pending == null)
+        {
+            return await RenderOfflineEventContextAsync(state, interaction, nowUtc, note: null, ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return CreatePendingOfflineEventInputPrompt(
+                state,
+                "Input cannot be empty. Enter text or send /cancel.");
+        }
+
+        var value = messageText.Trim();
+        var maxLength = string.Equals(pending.InputKind, OfflineEventInputKindSummary, StringComparison.Ordinal)
+            ? MaxOfflineEventSummaryLength
+            : MaxOfflineEventRecordingReferenceLength;
+        if (value.Length > maxLength)
+        {
+            return CreatePendingOfflineEventInputPrompt(
+                state,
+                $"Input is too long ({value.Length} chars). Limit is {maxLength}. Edit and resend or /cancel.");
+        }
+
+        EnsureOfflineDraftContext(state, nowUtc);
+        if (string.Equals(pending.InputKind, OfflineEventInputKindSummary, StringComparison.Ordinal))
+        {
+            state.OfflineEventDraft!.Summary = value;
+        }
+        else
+        {
+            state.OfflineEventDraft!.RecordingReference = value;
+        }
+
+        state.OfflineEventDraft.UpdatedAtUtc = nowUtc;
+        state.PendingOfflineEventInput = null;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        state.Session.UnfinishedStep = null;
+
+        var updatedLabel = string.Equals(pending.InputKind, OfflineEventInputKindSummary, StringComparison.Ordinal)
+            ? "Summary updated."
+            : "Recording reference updated.";
+        return await RenderOfflineEventContextAsync(state, interaction, nowUtc, note: updatedLabel, ct);
+    }
+
+    private async Task<TelegramOperatorResponse> CancelPendingOfflineEventInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var pending = state.PendingOfflineEventInput;
+        if (pending == null)
+        {
+            if (state.SurfaceMode == TelegramOperatorSurfaceModes.OfflineEvent)
+            {
+                return await RenderOfflineEventContextAsync(state, interaction, nowUtc, note: "No pending offline-event input.", ct);
+            }
+
+            return CreateModeCard(state, note: "No pending offline-event input.");
+        }
+
+        state.PendingOfflineEventInput = null;
+        state.Session.UnfinishedStep = null;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+
+        var itemLabel = string.Equals(pending.InputKind, OfflineEventInputKindSummary, StringComparison.Ordinal)
+            ? "summary"
+            : "recording reference";
+        return await RenderOfflineEventContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"{itemLabel} input canceled.",
+            ct);
+    }
+
+    private async Task<TelegramOperatorResponse> SaveOfflineEventDraftAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (state.PendingOfflineEventInput != null)
+        {
+            return CreatePendingOfflineEventInputPrompt(
+                state,
+                "Finish or cancel the pending input before saving.");
+        }
+
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Offline Event mode requires an active tracked person.",
+                callbackNotice: "Pick tracked person",
+                ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(state.ActiveTrackedPersonScopeKey))
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Active tracked-person scope is unavailable. Re-select tracked person and retry.",
+                callbackNotice: "Scope unavailable",
+                ct);
+        }
+
+        EnsureOfflineDraftContext(state, nowUtc);
+        var summary = NormalizeOptional(state.OfflineEventDraft?.Summary);
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return await RenderOfflineEventContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Summary is required before saving. Choose Capture Summary.",
+                ct);
+        }
+
+        var request = new OperatorOfflineEventCreateRequest
+        {
+            TrackedPersonId = state.Session.ActiveTrackedPersonId,
+            ScopeKey = state.ActiveTrackedPersonScopeKey!,
+            Summary = summary,
+            RecordingReference = NormalizeOptional(state.OfflineEventDraft?.RecordingReference),
+            Status = OperatorOfflineEventStatuses.Draft,
+            CapturePayloadJson = BuildOfflineEventCapturePayloadJson(state, interaction, nowUtc),
+            ClarificationStateJson = "{}",
+            TimelineLinkageJson = "{}",
+            CapturedAtUtc = state.OfflineEventDraft!.StartedAtUtc,
+            SavedAtUtc = null,
+            OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+            Session = CloneSession(state.Session)
+        };
+
+        var saved = await _operatorOfflineEventRepository.CreateAsync(request, ct);
+
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        state.Session.ActiveScopeItemKey = $"offline_event:{saved.OfflineEventId:D}";
+        state.Session.UnfinishedStep = null;
+        state.PendingOfflineEventInput = null;
+        state.OfflineEventDraft = null;
+
+        return await RenderOfflineEventContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"Offline-event draft saved: {saved.OfflineEventId:D}",
+            ct);
+    }
+
+    private async Task<TelegramOperatorResponse> RenderOfflineEventContextAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        string? note,
+        CancellationToken ct)
+    {
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note ?? "Offline Event mode requires an active tracked person.",
+                callbackNotice: "Pick tracked person",
+                ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(state.ActiveTrackedPersonScopeKey))
+        {
+            return await RenderOfflineTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Active tracked-person scope is unavailable. Re-select tracked person and retry.",
+                callbackNotice: "Scope unavailable",
+                ct);
+        }
+
+        EnsureOfflineDraftContext(state, nowUtc);
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Offline Event Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "unknown"}");
+        lines.Add($"Scope: {state.ActiveTrackedPersonScopeKey}");
+        lines.Add($"Summary: {TrimForInline(state.OfflineEventDraft?.Summary, 280)}");
+        lines.Add($"Recording ref: {TrimForInline(state.OfflineEventDraft?.RecordingReference, 180)}");
+        lines.Add("Clarification loop and partial-confidence save are deferred to later slices.");
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = interaction.CallbackData == null ? null : "Offline Event",
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton { Text = "Capture Summary", CallbackData = OfflineCaptureSummaryCallback },
+                            new TelegramOperatorButton { Text = "Add Recording Ref", CallbackData = OfflineCaptureRecordingCallback }
+                        ],
+                        [
+                            new TelegramOperatorButton { Text = "Save Draft", CallbackData = OfflineSaveDraftCallback },
+                            new TelegramOperatorButton { Text = "Switch Person", CallbackData = OfflineSwitchPersonCallback }
+                        ],
+                        [
+                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                        ]
+                    ]
+                }
+            ]
+        };
+    }
+
+    private async Task<TelegramOperatorResponse> RenderOfflineTrackedPersonPickerAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        string? note,
+        string? callbackNotice,
+        CancellationToken ct)
+    {
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
+        state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Tracked person selection is unavailable: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Selection unavailable");
+        }
+
+        return BuildOfflineTrackedPersonPickerResponse(state, query.TrackedPersons, note, callbackNotice);
     }
 
     private static ResolutionClarificationPayload BuildClarificationPayload(
@@ -1791,6 +2375,148 @@ public sealed class TelegramOperatorWorkflowService
                 }
             ]
         };
+    }
+
+    private TelegramOperatorResponse BuildOfflineTrackedPersonPickerResponse(
+        TelegramOperatorConversationState state,
+        IReadOnlyList<OperatorTrackedPersonScopeSummary> trackedPersons,
+        string? note,
+        string? callbackNotice)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Offline Event Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "none"}");
+        lines.Add("Select the tracked person for this bounded offline-event session.");
+
+        var buttons = new List<List<TelegramOperatorButton>>();
+        foreach (var person in trackedPersons.Take(12))
+        {
+            buttons.Add(
+            [
+                new TelegramOperatorButton
+                {
+                    Text = person.DisplayName,
+                    CallbackData = $"{OfflineTrackedPersonCallbackPrefix}{person.TrackedPersonId:D}"
+                }
+            ]);
+        }
+
+        buttons.Add(
+        [
+            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+        ]);
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = callbackNotice,
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons = buttons
+                }
+            ]
+        };
+    }
+
+    private static TelegramOperatorResponse CreatePendingOfflineEventInputPrompt(
+        TelegramOperatorConversationState state,
+        string note)
+    {
+        var pending = state.PendingOfflineEventInput;
+        if (pending == null)
+        {
+            return new TelegramOperatorResponse
+            {
+                CallbackNotificationText = "No pending input",
+                Messages =
+                [
+                    CreateMessage("No pending offline-event input.")
+                ]
+            };
+        }
+
+        var fieldName = string.Equals(pending.InputKind, OfflineEventInputKindSummary, StringComparison.Ordinal)
+            ? "Summary"
+            : "Recording reference";
+        var lines = new List<string>
+        {
+            "Offline Event Input",
+            $"Field: {fieldName}",
+            note
+        };
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = "Input required",
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton
+                            {
+                                Text = "Cancel",
+                                CallbackData = OfflineCancelInputCallback
+                            }
+                        ]
+                    ]
+                }
+            ]
+        };
+    }
+
+    private void EnsureOfflineDraftContext(TelegramOperatorConversationState state, DateTime nowUtc)
+    {
+        if (state.OfflineEventDraft != null)
+        {
+            if (state.OfflineEventDraft.BoundTrackedPersonId != state.Session.ActiveTrackedPersonId
+                || !string.Equals(state.OfflineEventDraft.ScopeKey, state.ActiveTrackedPersonScopeKey, StringComparison.Ordinal))
+            {
+                state.OfflineEventDraft = null;
+            }
+        }
+
+        if (state.OfflineEventDraft == null)
+        {
+            state.OfflineEventDraft = new TelegramOfflineEventDraft
+            {
+                StartedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc,
+                BoundTrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeKey = state.ActiveTrackedPersonScopeKey ?? string.Empty
+            };
+        }
+    }
+
+    private static string BuildOfflineEventCapturePayloadJson(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc)
+    {
+        var draft = state.OfflineEventDraft;
+        var payload = new
+        {
+            source = "telegram_offline_event_mode",
+            summary = NormalizeOptional(draft?.Summary),
+            recording_reference = NormalizeOptional(draft?.RecordingReference),
+            captured_at_utc = nowUtc,
+            draft_started_at_utc = draft?.StartedAtUtc,
+            draft_updated_at_utc = draft?.UpdatedAtUtc,
+            operator_chat_id = interaction.ChatId,
+            operator_user_id = interaction.UserId
+        };
+        return System.Text.Json.JsonSerializer.Serialize(payload);
     }
 
     private TelegramOperatorResponse CreateAssistantReadyCard(

@@ -6,6 +6,7 @@ public static class TelegramOperatorSurfaceModes
 {
     public const string None = "none";
     public const string Assistant = "assistant";
+    public const string OfflineEvent = "offline_event";
     public const string Resolution = "resolution";
 }
 
@@ -60,6 +61,8 @@ internal sealed class TelegramOperatorConversationState
     public int ResolutionCardGeneration { get; set; }
     public Dictionary<string, TelegramResolutionCardBinding> ResolutionCardBindings { get; set; } = new(StringComparer.Ordinal);
     public TelegramPendingResolutionInput? PendingResolutionInput { get; set; }
+    public TelegramOfflineEventDraft? OfflineEventDraft { get; set; }
+    public TelegramPendingOfflineEventInput? PendingOfflineEventInput { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
 
     public TelegramOperatorSessionSnapshot ToSnapshot()
@@ -92,6 +95,23 @@ internal sealed class TelegramPendingResolutionInput
     public string ScopeItemKey { get; set; } = string.Empty;
     public string ItemType { get; set; } = string.Empty;
     public string ItemTitle { get; set; } = string.Empty;
+    public DateTime StartedAtUtc { get; set; }
+    public Guid BoundTrackedPersonId { get; set; }
+}
+
+internal sealed class TelegramOfflineEventDraft
+{
+    public string? Summary { get; set; }
+    public string? RecordingReference { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public Guid BoundTrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+}
+
+internal sealed class TelegramPendingOfflineEventInput
+{
+    public string InputKind { get; set; } = string.Empty;
     public DateTime StartedAtUtc { get; set; }
     public Guid BoundTrackedPersonId { get; set; }
 }
