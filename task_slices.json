@@ -2170,12 +2170,12 @@
       "dependencies": [
         "OPINT-005-D2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "UI reflects running/done/failure/clarification-blocked states after actions.",
         "Auto-resolved, remaining, and newly-emerged conflicts are visible post-recompute."
       ],
-      "notes": "Completes P0 recompute visibility requirement on web surface."
+      "notes": "Completes P0 recompute visibility requirement on web surface. Completed 2026-04-04: /operator/resolution now renders deterministic post-action recompute lifecycle feedback (running/done/failed/clarification_blocked) and projection-based related-conflict outcome deltas (auto-resolved, remaining, newly-emerged) from pre/post queue refresh while preserving in-place operator context."
     },
     {
       "id": "OPINT-005-F",

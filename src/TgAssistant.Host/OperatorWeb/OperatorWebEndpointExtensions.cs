@@ -757,7 +757,8 @@ public static class OperatorWebEndpointExtensions
       clarificationDrawerOpen: false,
       actionSubmitting: false,
       clarificationSubmitting: false,
-      toggleDetailActionButtons: null
+      toggleDetailActionButtons: null,
+      lastActionFeedback: null
     };
 
     function setState(kind, message) {
@@ -794,6 +795,138 @@ public static class OperatorWebEndpointExtensions
       }
 
       return Math.round(numeric * 100) + "%";
+    }
+
+    function snapshotQueueProjection(queue) {
+      if (!queue || !Array.isArray(queue.items)) {
+        return null;
+      }
+
+      return {
+        totalOpenCount: Number(queue.totalOpenCount || 0),
+        filteredCount: Number(queue.filteredCount || 0),
+        scopeItemKeys: queue.items
+          .map(function(item) { return item && item.scopeItemKey ? item.scopeItemKey : null; })
+          .filter(function(scopeItemKey) { return !!scopeItemKey; })
+      };
+    }
+
+    function computeProjectionDelta(beforeSnapshot, afterSnapshot) {
+      if (!beforeSnapshot || !afterSnapshot) {
+        return null;
+      }
+
+      const beforeSet = new Set(beforeSnapshot.scopeItemKeys || []);
+      const afterSet = new Set(afterSnapshot.scopeItemKeys || []);
+      let autoResolvedCount = 0;
+      let remainingCount = 0;
+      let newlyEmergedCount = 0;
+
+      beforeSet.forEach(function(scopeItemKey) {
+        if (afterSet.has(scopeItemKey)) {
+          remainingCount += 1;
+        } else {
+          autoResolvedCount += 1;
+        }
+      });
+      afterSet.forEach(function(scopeItemKey) {
+        if (!beforeSet.has(scopeItemKey)) {
+          newlyEmergedCount += 1;
+        }
+      });
+
+      return {
+        autoResolvedCount: autoResolvedCount,
+        remainingCount: remainingCount,
+        newlyEmergedCount: newlyEmergedCount
+      };
+    }
+
+    function resolveFeedbackStateKind(lifecycleStatus, failureReason) {
+      const normalizedLifecycle = (lifecycleStatus || "").toLowerCase();
+      if (normalizedLifecycle === "failed" || failureReason) {
+        return "error";
+      }
+
+      if (normalizedLifecycle === "running") {
+        return "loading";
+      }
+
+      return "empty";
+    }
+
+    function formatTargetLifecycleSummary(recompute) {
+      const targets = recompute && Array.isArray(recompute.targets) ? recompute.targets : [];
+      if (targets.length === 0) {
+        return "no target lifecycle details";
+      }
+
+      const counts = {};
+      targets.forEach(function(target) {
+        const status = (target && target.lifecycleStatus ? target.lifecycleStatus : "unknown").toLowerCase();
+        counts[status] = (counts[status] || 0) + 1;
+      });
+
+      return Object.keys(counts)
+        .sort()
+        .map(function(status) {
+          return titleize(status) + " " + counts[status];
+        })
+        .join(", ");
+    }
+
+    function buildActionFeedback(actionType, action, beforeSnapshot, afterSnapshot) {
+      const recompute = action && action.recompute ? action.recompute : null;
+      const lifecycleStatus = recompute && recompute.lifecycleStatus ? recompute.lifecycleStatus : "unknown";
+      const lastResultStatus = recompute && recompute.lastResultStatus ? recompute.lastResultStatus : null;
+      const failureReason = recompute && recompute.failureReason ? recompute.failureReason : null;
+      const targetSummary = formatTargetLifecycleSummary(recompute);
+      const projectionDelta = computeProjectionDelta(beforeSnapshot, afterSnapshot);
+      const actionId = action && action.actionId ? action.actionId : "n/a";
+      const auditEventId = action && action.auditEventId ? action.auditEventId : "n/a";
+
+      const parts = [
+        titleize(actionType) + " accepted.",
+        "Recompute: " + titleize(lifecycleStatus) + ".",
+        "Targets: " + targetSummary + "."
+      ];
+
+      if (lastResultStatus) {
+        parts.push("Last result: " + titleize(lastResultStatus) + ".");
+      }
+      if (failureReason) {
+        parts.push("Failure: " + failureReason + ".");
+      }
+
+      if (projectionDelta) {
+        parts.push(
+          "Related conflicts (current projection) - Auto-resolved: " + projectionDelta.autoResolvedCount
+            + ", Remaining: " + projectionDelta.remainingCount
+            + ", Newly emerged: " + projectionDelta.newlyEmergedCount + "."
+        );
+      } else {
+        parts.push("Related conflicts (current projection) are unavailable.");
+      }
+
+      parts.push("Action ID: " + actionId + ".");
+      parts.push("Audit: " + auditEventId + ".");
+
+      return {
+        kind: resolveFeedbackStateKind(lifecycleStatus, failureReason),
+        message: parts.join(" ")
+      };
+    }
+
+    async function refreshQueueForActionFeedback(actionType, action, beforeSnapshot, scopeItemKey) {
+      await loadQueue();
+      const afterSnapshot = snapshotQueueProjection(state.queue);
+      const feedback = buildActionFeedback(actionType, action, beforeSnapshot, afterSnapshot);
+      state.lastActionFeedback = {
+        scopeItemKey: scopeItemKey || null,
+        kind: feedback.kind,
+        message: feedback.message
+      };
+      return feedback;
     }
 
     function createActionRequestId(actionType) {
@@ -1135,6 +1268,12 @@ public static class OperatorWebEndpointExtensions
       const actionFeedback = document.createElement("div");
       actionFeedback.className = "state empty action-feedback";
       actionFeedback.textContent = "Submit approve/reject/defer or open clarify without leaving detail context.";
+      if (state.lastActionFeedback
+        && state.lastActionFeedback.scopeItemKey
+        && state.lastActionFeedback.scopeItemKey === item.scopeItemKey) {
+        actionFeedback.className = "state " + state.lastActionFeedback.kind + " action-feedback";
+        actionFeedback.textContent = state.lastActionFeedback.message;
+      }
 
       function disableActionButtons(disabled) {
         state.actionSubmitting = disabled;
@@ -1169,6 +1308,7 @@ public static class OperatorWebEndpointExtensions
         actionFeedback.className = "state loading action-feedback";
         actionFeedback.textContent = "Submitting " + actionType + " decision...";
         try {
+          const beforeSnapshot = snapshotQueueProjection(state.queue);
           const result = await operatorPostJson("/api/operator/resolution/actions", {
             requestId: createActionRequestId(actionType),
             trackedPersonId: trackedPersonId,
@@ -1183,14 +1323,10 @@ public static class OperatorWebEndpointExtensions
             throw new Error(result.failureReason || (action && action.failureReason) || "action_submit_rejected");
           }
 
-          const recomputeStatus = action.recompute && action.recompute.lifecycleStatus
-            ? titleize(action.recompute.lifecycleStatus)
-            : "n/a";
-          const actionId = action.actionId || "n/a";
-          const auditEventId = action.auditEventId || "n/a";
-          actionFeedback.className = "state empty action-feedback";
-          actionFeedback.textContent = titleize(actionType) + " accepted. Recompute: " + recomputeStatus + ". Action ID: " + actionId + ". Audit: " + auditEventId + ".";
-          await loadQueue();
+          const feedback = await refreshQueueForActionFeedback(actionType, action, beforeSnapshot, scopeItemKey);
+          actionFeedback.className = "state " + feedback.kind + " action-feedback";
+          actionFeedback.textContent = feedback.message;
+          setState(feedback.kind, feedback.message);
         } catch (error) {
           actionFeedback.className = "state error action-feedback";
           actionFeedback.textContent = "Action submission failed: " + (error && error.message ? error.message : "unknown_error");
@@ -1349,6 +1485,7 @@ public static class OperatorWebEndpointExtensions
       toggleClarificationForm(true);
       setClarificationState("loading", "Submitting clarify action...");
       try {
+        const beforeSnapshot = snapshotQueueProjection(state.queue);
         const payload = {
           summary: summary || ("Clarification follow-up for " + (item.title || item.scopeItemKey || "selected item")),
           responses: [
@@ -1390,14 +1527,10 @@ public static class OperatorWebEndpointExtensions
           throw new Error(result.failureReason || (action && action.failureReason) || "action_submit_rejected");
         }
 
-        const recomputeStatus = action.recompute && action.recompute.lifecycleStatus
-          ? titleize(action.recompute.lifecycleStatus)
-          : "n/a";
-        const actionId = action.actionId || "n/a";
-        const auditEventId = action.auditEventId || "n/a";
-        setClarificationState("empty", "Clarify accepted. Recompute: " + recomputeStatus + ". Action ID: " + actionId + ". Audit: " + auditEventId + ".");
+        const feedback = await refreshQueueForActionFeedback("clarify", action, beforeSnapshot, scopeItemKey);
+        setClarificationState(feedback.kind, feedback.message);
+        setState(feedback.kind, feedback.message);
         closeClarificationDrawer();
-        await loadQueue();
       } catch (error) {
         setClarificationState("error", "Clarify submission failed: " + (error && error.message ? error.message : "unknown_error"));
       } finally {
