@@ -2583,12 +2583,12 @@
       "dependencies": [
         "OPINT-009-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Web alerts list is grouped/filterable and maps each alert to related resolution/person context.",
         "Alert list remains workflow-focused and excludes non-critical default feed noise."
       ],
-      "notes": "Core web alerts outcome separated from control-plane analytics widgets."
+      "notes": "Completed 2026-04-04: shipped web alerts surface with grouped/filterable workflow-critical context, bounded `/api/operator/alerts/query` projection, related resolution/person links, dedicated `/operator/alerts` shell, and validation via `--opint-009-c1-smoke`; control/analytics widgets remain deferred to C2."
     },
     {
       "id": "OPINT-009-C2",

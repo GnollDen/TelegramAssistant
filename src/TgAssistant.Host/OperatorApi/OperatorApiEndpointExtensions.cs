@@ -62,6 +62,24 @@ public static class OperatorApiEndpointExtensions
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
+        group.MapPost("/alerts/query", async (
+            HttpContext httpContext,
+            OperatorAlertsQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            OperatorAlertsProjectionBuilder projectionBuilder,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            var result = await projectionBuilder.BuildAsync(request, auth.OperatorIdentity, auth.Session, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
         group.MapPost("/resolution/handoff/consume", async (
             HttpContext httpContext,
             OperatorResolutionHandoffConsumeRequest request,

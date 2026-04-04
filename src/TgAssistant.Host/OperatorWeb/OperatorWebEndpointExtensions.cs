@@ -18,6 +18,7 @@ public static class OperatorWebEndpointExtensions
 
         endpoints.MapGet("/", () => Results.Redirect("/operator"));
         endpoints.MapGet("/operator", () => Results.Content(OperatorHomeHtml, "text/html; charset=utf-8"));
+        endpoints.MapGet("/operator/alerts", () => Results.Content(OperatorAlertsWebShell.Html, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/persons", () => Results.Content(OperatorPersonsHtml, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/person-workspace", () => Results.Content(OperatorPersonWorkspaceShellHtml, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/resolution", () => Results.Content(OperatorResolutionHtml, "text/html; charset=utf-8"));
@@ -142,10 +143,10 @@ public static class OperatorWebEndpointExtensions
           <strong>Persons <span class="badge">P1</span></strong>
           <small>Browse tracked persons with unresolved and recency signals.</small>
         </a>
-        <span class="nav-item" aria-disabled="true">
-          <strong>Alerts</strong>
-          <small>Planned in later OPINT slices.</small>
-        </span>
+        <a class="nav-item" href="/operator/alerts">
+          <strong>Alerts <span class="badge">P2</span></strong>
+          <small>Grouped workflow-critical alerts linked to person and resolution context.</small>
+        </a>
       </div>
     </section>
     <section class="card">
