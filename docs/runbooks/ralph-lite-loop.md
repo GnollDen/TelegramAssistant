@@ -11,6 +11,7 @@ Local script-driven execution loop for bounded Codex runs:
 - Prompt template: `scripts/ralph-lite-prompt.md`
 - Progress log: `logs/ralph-lite-progress.md` (append-only)
 - Current-unit state marker: `logs/ralph-lite-current.json`
+- Per-iteration detailed logs: `logs/ralph-lite/`
 - Git recovery policy: `docs/runbooks/ralph-lite-git-recovery.md`
 
 ## Prerequisites
@@ -58,6 +59,26 @@ Optional:
 - `--state-file <path>` overrides current-unit marker path
 
 Prompt is rendered from `scripts/ralph-lite-prompt.md` into a temp file and fed to stdin.
+
+## Console UI
+Default console output is intentionally compact:
+- one short iteration header with parent task, slice, and retry count
+- short status lines such as `running`, `success`, `failed`, `blocked`, `interrupted`, or `no_progress`
+- short outcome summary and any detected commit hash
+- file paths for detailed logs
+
+Default stdout should not contain:
+- full rendered prompt
+- full Codex transcript
+- large raw shell or model dumps
+
+Detailed diagnostics are written to files instead of the console:
+- append-only progress summary: `logs/ralph-lite-progress.md`
+- per-iteration raw Codex console log: `logs/ralph-lite/<iteration-id>-codex.log`
+- per-iteration last message capture: `logs/ralph-lite/<iteration-id>-last-message.txt`
+- per-iteration rendered prompt snapshot: `logs/ralph-lite/<iteration-id>-prompt.md`
+
+Use `--verbose` when you want the console to show more of the live Codex output in addition to the saved files.
 
 Ubuntu dev environment notes:
 - Ralph-lite stays on fresh bounded `codex exec`; it does not switch to `codex resume`.
@@ -123,6 +144,11 @@ Each iteration appends one markdown block with:
 - summary, blocker, progress_note
 - git status snapshots before/after
 
+Per-iteration detail files under `logs/ralph-lite/` are the primary debugging source when the compact console summary is not enough:
+- raw Codex stdout/stderr
+- captured final assistant message
+- rendered prompt used for the bounded run
+
 State marker contract (`logs/ralph-lite-current.json`):
 - `current_parent_task_id`
 - `current_slice_id` (optional)
@@ -146,6 +172,12 @@ Dry run with explicit retry threshold and state file:
 bash scripts/ralph-lite.sh --dry-run --max-retries 3 --state-file logs/ralph-lite-current.json --max-iterations 1
 ```
 
+Dry run with expanded console output:
+
+```bash
+bash scripts/ralph-lite.sh --dry-run --verbose --max-iterations 1
+```
+
 Run loop normally:
 
 ```bash
@@ -163,6 +195,12 @@ Custom progress file:
 ```bash
 bash scripts/ralph-lite.sh --progress-file logs/ralph-lite-progress-dev.md
 ```
+
+When a run fails or is interrupted, read details in this order:
+1. The short console summary for outcome and file paths.
+2. `logs/ralph-lite/<iteration-id>-codex.log` for raw Codex output.
+3. `logs/ralph-lite/<iteration-id>-last-message.txt` for parsed `RESULT:` / `BLOCKER:` / `PROGRESS:` markers.
+4. `logs/ralph-lite-progress.md` for append-only iteration history and git snapshots.
 
 Retry behavior:
 - On `interrupted|failed|no_progress`, loop records failed iteration, increments retry counter in state file, and stops.

@@ -7,16 +7,20 @@ SLICES_FILE="${REPO_ROOT}/task_slices.json"
 PROMPT_TEMPLATE_DEFAULT="${REPO_ROOT}/scripts/ralph-lite-prompt.md"
 PROGRESS_FILE_DEFAULT="${REPO_ROOT}/logs/ralph-lite-progress.md"
 STATE_FILE_DEFAULT="${REPO_ROOT}/logs/ralph-lite-current.json"
+LOG_DIR_DEFAULT="${REPO_ROOT}/logs/ralph-lite"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 DRY_RUN=0
+VERBOSE=0
+QUIET=0
 FORCE_TASK_ID=""
 MAX_ITERATIONS=100
 MAX_RETRIES=3
 PROMPT_TEMPLATE="${PROMPT_TEMPLATE_DEFAULT}"
 PROGRESS_FILE="${PROGRESS_FILE_DEFAULT}"
 STATE_FILE="${STATE_FILE_DEFAULT}"
+LOG_DIR="${LOG_DIR_DEFAULT}"
 CODEX_BIN="codex"
 MODEL=""
 
@@ -26,11 +30,14 @@ Usage: scripts/ralph-lite.sh [options]
 
 Options:
   --dry-run                  Select/render/log only; do not run codex
+  --verbose                  Stream Codex transcript to console as well as log file
+  --quiet                    Suppress non-error status lines
   --task-id <id>             Force specific parent task id (must be eligible)
   --max-iterations <n>       Max loop iterations in this invocation (default: 100)
   --max-retries <n>          Max retries per current unfinished unit (default: 3)
   --progress-file <path>     Append-only progress file path
   --state-file <path>        Current-unit state marker file path
+  --log-dir <path>           Persistent directory for raw Codex logs and last messages
   --prompt-template <path>   Prompt template markdown path
   --codex-bin <path>         Codex binary (default: codex)
   --model <name>             Optional codex model override
@@ -43,6 +50,14 @@ parse_args() {
     case "$1" in
       --dry-run)
         DRY_RUN=1
+        shift
+        ;;
+      --verbose)
+        VERBOSE=1
+        shift
+        ;;
+      --quiet)
+        QUIET=1
         shift
         ;;
       --task-id)
@@ -63,6 +78,10 @@ parse_args() {
         ;;
       --state-file)
         STATE_FILE="${2:-}"
+        shift 2
+        ;;
+      --log-dir)
+        LOG_DIR="${2:-}"
         shift 2
         ;;
       --prompt-template)
@@ -107,10 +126,56 @@ ensure_paths() {
   [[ -f "${PROMPT_TEMPLATE}" ]] || { echo "Missing ${PROMPT_TEMPLATE}" >&2; exit 1; }
   mkdir -p "$(dirname "${PROGRESS_FILE}")"
   mkdir -p "$(dirname "${STATE_FILE}")"
+  mkdir -p "${LOG_DIR}"
 }
 
 current_utc() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+relative_path() {
+  local path="$1"
+  if [[ "${path}" == "${REPO_ROOT}/"* ]]; then
+    printf '%s\n' "${path#"${REPO_ROOT}/"}"
+  else
+    printf '%s\n' "${path}"
+  fi
+}
+
+ui_info() {
+  [[ "${QUIET}" -eq 1 ]] && return 0
+  printf '%s\n' "$*"
+}
+
+ui_error() {
+  printf '%s\n' "$*" >&2
+}
+
+ui_iteration_header() {
+  local iteration_number="$1"
+  local parent_id="$2"
+  local slice_id="$3"
+  local retry_count="$4"
+  ui_info "[${iteration_number}/${MAX_ITERATIONS}] ${parent_id} / ${slice_id:-none}"
+  ui_info "retry: ${retry_count}/${MAX_RETRIES}"
+}
+
+ui_iteration_details() {
+  local progress_path="$1"
+  local raw_log_path="$2"
+  local last_msg_path="$3"
+  ui_info "details: $(relative_path "${raw_log_path}")"
+  ui_info "last_message: $(relative_path "${last_msg_path}")"
+  ui_info "progress: $(relative_path "${progress_path}")"
+}
+
+ui_iteration_error_details() {
+  local progress_path="$1"
+  local raw_log_path="$2"
+  local last_msg_path="$3"
+  ui_error "details: $(relative_path "${raw_log_path}")"
+  ui_error "last_message: $(relative_path "${last_msg_path}")"
+  ui_error "progress: $(relative_path "${progress_path}")"
 }
 
 git_head() {
@@ -499,7 +564,7 @@ run_iteration() {
   local iteration_id started_at ended_at
   local head_before head_after git_before git_after
   local task_status_before task_status_after
-  local prompt_file last_msg_file
+  local prompt_file prompt_log_file last_msg_file raw_log_file
   local summary blocker progress_note
   local codex_exit outcome new_retry
   local task_done=0 head_changed=0 worktree_changed=0 explicit_progress=0
@@ -511,7 +576,9 @@ run_iteration() {
   task_status_before="$(task_status "${parent_id}")"
 
   if [[ "${retry_before}" -ge "${MAX_RETRIES}" ]]; then
-    echo "Retry threshold reached for parent ${parent_id}: retry_count=${retry_before}, max_retries=${MAX_RETRIES}" >&2
+    ui_error "status: failed"
+    ui_error "reason: retry threshold reached for ${parent_id} (${retry_before}/${MAX_RETRIES})"
+    ui_error "progress: $(relative_path "${PROGRESS_FILE}")"
     append_progress_entry \
       "${iteration_id}" "${parent_id}" "${slice_id}" "${started_at}" "${started_at}" \
       "failed" "${retry_before}" "999" "${head_before}" "${head_before}" \
@@ -521,17 +588,25 @@ run_iteration() {
   fi
 
   prompt_file="${TMP_DIR}/prompt-${iteration_id}.md"
-  last_msg_file="${TMP_DIR}/last-message-${iteration_id}.txt"
+  prompt_log_file="${LOG_DIR}/${iteration_id}-prompt.md"
+  last_msg_file="${LOG_DIR}/${iteration_id}-last-message.txt"
+  raw_log_file="${LOG_DIR}/${iteration_id}-codex.log"
   render_prompt "${parent_id}" "${slice_id}" "${retry_before}" "${prompt_file}"
+  cp "${prompt_file}" "${prompt_log_file}"
+
+  ui_iteration_header "${iteration_number}" "${parent_id}" "${slice_id}" "${retry_before}"
 
   if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf 'dry-run: codex not invoked\n' > "${raw_log_file}"
+    printf 'RESULT: dry_run\nPROGRESS: dry_run\n' > "${last_msg_file}"
     ended_at="$(current_utc)"
     append_progress_entry \
       "${iteration_id}" "${parent_id}" "${slice_id}" "${started_at}" "${ended_at}" \
       "success" "${retry_before}" "0" "${head_before}" "${head_before}" \
       "Dry run only; codex was not invoked." "" "dry_run" \
       "${task_status_before}" "${task_status_before}" "${git_before}" "${git_before}"
-    echo "Dry run: parent=${parent_id} slice=${slice_id:-none} retry=${retry_before} prompt=${prompt_file}"
+    ui_info "status: dry-run"
+    ui_iteration_details "${PROGRESS_FILE}" "${raw_log_file}" "${last_msg_file}"
     return 0
   fi
 
@@ -550,9 +625,15 @@ run_iteration() {
   fi
   cmd+=("-")
 
+  ui_info "status: running"
   set +e
-  "${cmd[@]}" < "${prompt_file}"
-  codex_exit=$?
+  if [[ "${VERBOSE}" -eq 1 ]]; then
+    "${cmd[@]}" < "${prompt_file}" 2>&1 | tee "${raw_log_file}"
+    codex_exit=${PIPESTATUS[0]}
+  else
+    "${cmd[@]}" < "${prompt_file}" > "${raw_log_file}" 2>&1
+    codex_exit=$?
+  fi
   set -e
 
   ended_at="$(current_utc)"
@@ -614,13 +695,19 @@ run_iteration() {
       fi
       write_state "${parent_id}" "${next_slice}" "0" "success" "${iteration_id}" "parent still open after successful bounded run"
     fi
-    echo "Iteration ${iteration_number}: parent=${parent_id} slice=${slice_id:-none} outcome=${outcome}"
+    ui_info "status: success"
+    if [[ "${head_before}" != "${head_after}" ]]; then
+      ui_info "commit: ${head_after:0:7}"
+    fi
+    ui_iteration_details "${PROGRESS_FILE}" "${raw_log_file}" "${last_msg_file}"
     return 0
   fi
 
   if [[ "${outcome}" == "blocked" ]]; then
     write_state "${parent_id}" "${slice_id}" "${new_retry}" "blocked" "${iteration_id}" "blocker returned by codex"
-    echo "Iteration ${iteration_number}: parent=${parent_id} outcome=blocked"
+    ui_error "status: blocked"
+    [[ -n "${blocker}" ]] && ui_error "reason: ${blocker}"
+    ui_iteration_error_details "${PROGRESS_FILE}" "${raw_log_file}" "${last_msg_file}"
     return 2
   fi
 
@@ -628,11 +715,25 @@ run_iteration() {
   write_state "${parent_id}" "${slice_id}" "${new_retry}" "${outcome}" "${iteration_id}" "retry same unfinished unit"
 
   if [[ "${new_retry}" -ge "${MAX_RETRIES}" ]]; then
-    echo "Iteration ${iteration_number}: parent=${parent_id} outcome=${outcome} retry_count=${new_retry} reached max_retries=${MAX_RETRIES}. Manual attention required." >&2
+    ui_error "status: ${outcome}"
+    if [[ -n "${summary}" ]]; then
+      ui_error "reason: ${summary}"
+    else
+      ui_error "reason: codex_exit=${codex_exit}"
+    fi
+    ui_error "retry: ${new_retry}/${MAX_RETRIES} (manual attention required)"
+    ui_iteration_error_details "${PROGRESS_FILE}" "${raw_log_file}" "${last_msg_file}"
     return 2
   fi
 
-  echo "Iteration ${iteration_number}: parent=${parent_id} outcome=${outcome} retry_count=${new_retry}. Same unit will be retried on next run."
+  ui_error "status: ${outcome}"
+  if [[ -n "${summary}" ]]; then
+    ui_error "reason: ${summary}"
+  else
+    ui_error "reason: codex_exit=${codex_exit}"
+  fi
+  ui_error "retry: ${new_retry}/${MAX_RETRIES}"
+  ui_iteration_error_details "${PROGRESS_FILE}" "${raw_log_file}" "${last_msg_file}"
   return 2
 }
 
@@ -653,7 +754,10 @@ main() {
   while [[ "${i}" -le "${MAX_ITERATIONS}" ]]; do
     if ! resolve_current_unit; then
       case $? in
-        1) exit 0 ;;
+        1)
+          ui_info "status: idle"
+          exit 0
+          ;;
         *) exit 2 ;;
       esac
     fi
@@ -665,7 +769,8 @@ main() {
     i=$((i + 1))
   done
 
-  echo "Reached max iterations (${MAX_ITERATIONS}). Stopping."
+  ui_info "status: stopped"
+  ui_info "reason: reached max iterations (${MAX_ITERATIONS})"
 }
 
 main "$@"
