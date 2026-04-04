@@ -2147,20 +2147,12 @@ public sealed class TelegramOperatorWorkflowService
         {
             "Факты по карточке",
             $"Карточка: {ResolveResolutionCardTitle(item)}",
-            $"Вторично: {ResolveResolutionCardSecondary(item)}",
-            $"Показано фактов: {Math.Min(item.Evidence.Count, EvidencePreviewLimit)} из {item.EvidenceCount}"
+            BuildEvidenceSelectionSummary(item, Math.Min(item.Evidence.Count, EvidencePreviewLimit))
         };
         foreach (var (evidence, index) in item.Evidence.Take(EvidencePreviewLimit).Select((value, index) => (value, index)))
         {
-            var evidenceLine = $"{index + 1}. {TrimForInline(evidence.Summary, 160)}";
-            var observedAt = evidence.ObservedAtUtc.HasValue
-                ? FormatUtc(evidence.ObservedAtUtc.Value)
-                : "неизвестно";
-            var sourceLabel = string.IsNullOrWhiteSpace(evidence.SourceLabel)
-                ? "неизвестный источник"
-                : evidence.SourceLabel;
-            lines.Add(evidenceLine);
-            lines.Add($"   Доверие {FormatTrust(evidence.TrustFactor)} | Наблюдалось {observedAt} | Источник {sourceLabel}");
+            lines.Add($"{index + 1}. {BuildEvidencePreviewSnippet(evidence)}");
+            lines.Add($"   Почему важно: {DescribeEvidenceRelevanceHint(item, evidence, index, nowUtc)} · Источник: {TrimForInline(FormatEvidenceSourceLabel(evidence), 72)}");
         }
 
         if (item.Evidence.Count == 0)
@@ -2168,7 +2160,7 @@ public sealed class TelegramOperatorWorkflowService
             lines.Add("Связанные факты для этой карточки пока не спроецированы.");
         }
 
-        lines.Add("Для детального разбора используйте «В веб».");
+        lines.Add("Для деталей: в веб.");
 
         return new TelegramOperatorResponse
         {
@@ -2970,6 +2962,190 @@ public sealed class TelegramOperatorWorkflowService
                 : "Связанных фактов пока не видно.");
         return LimitCardLine(text, 180);
     }
+
+    private static string BuildEvidenceSelectionSummary(ResolutionItemDetail item, int shownCount)
+    {
+        var totalCount = Math.Max(item.EvidenceCount, shownCount);
+        var reason = FirstNonEmpty(
+            item.WhyOperatorAnswerNeeded,
+            item.WhyItMatters,
+            item.EvidenceHint,
+            item.WhatHappened,
+            "текущая интерпретация остается неоднозначной");
+        return $"Показано {shownCount} из {totalCount}: эти факты поясняют, почему карточка вынесена на решение оператора ({TrimForInline(reason, 128)}).";
+    }
+
+    private static string BuildEvidencePreviewSnippet(ResolutionEvidenceSummary evidence)
+        => TrimForInline(FirstNonEmpty(evidence.Summary, "Факт без краткого описания."), 108);
+
+    private static string DescribeEvidenceRelevanceHint(
+        ResolutionItemSummary item,
+        ResolutionEvidenceSummary evidence,
+        int index,
+        DateTime nowUtc)
+    {
+        if (evidence.TrustFactor < 0.45f)
+        {
+            return "Сигнал слабый, подтверждения пока недостаточно.";
+        }
+
+        if (LooksLikeEmotionalFragment(evidence.Summary))
+        {
+            return "Эмоциональная реакция без достаточного контекста.";
+        }
+
+        if (LooksAmbiguous(evidence.Summary))
+        {
+            return "Фраза допускает несколько интерпретаций.";
+        }
+
+        var itemType = string.IsNullOrWhiteSpace(item.ItemType)
+            ? string.Empty
+            : item.ItemType.Trim().ToLowerInvariant();
+        if (string.Equals(itemType, ResolutionItemTypes.Contradiction, StringComparison.Ordinal))
+        {
+            return "Показывает конфликт сигналов и причину неопределенности.";
+        }
+
+        if (string.Equals(itemType, ResolutionItemTypes.MissingData, StringComparison.Ordinal))
+        {
+            return "Показывает, какого сигнала не хватает для решения.";
+        }
+
+        if (string.Equals(itemType, ResolutionItemTypes.Clarification, StringComparison.Ordinal)
+            || string.Equals(itemType, ResolutionItemTypes.BlockedBranch, StringComparison.Ordinal))
+        {
+            return "Показывает, что блокирует следующий шаг.";
+        }
+
+        if (index == 0 && evidence.ObservedAtUtc.HasValue)
+        {
+            var age = nowUtc - evidence.ObservedAtUtc.Value.ToUniversalTime();
+            if (age <= TimeSpan.FromDays(3))
+            {
+                return "Самый свежий сигнал по текущей неопределенности.";
+            }
+        }
+
+        return "Связан с причиной, по которой карточка вынесена на разбор.";
+    }
+
+    private static bool LooksAmbiguous(string? summary)
+    {
+        var normalized = NormalizeOptional(summary);
+        if (normalized == null)
+        {
+            return false;
+        }
+
+        return normalized.Contains('?')
+            || normalized.Contains("может", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("кажется", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("возможно", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeEmotionalFragment(string? summary)
+    {
+        var normalized = NormalizeOptional(summary);
+        if (normalized == null)
+        {
+            return false;
+        }
+
+        if (normalized.Length <= 8)
+        {
+            var punctuationCount = normalized.Count(ch => char.IsPunctuation(ch) || char.IsSymbol(ch));
+            if (punctuationCount >= normalized.Length / 2)
+            {
+                return true;
+            }
+        }
+
+        var tokenCount = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        return tokenCount <= 2 && normalized.Any(char.IsPunctuation);
+    }
+
+    private static string FormatEvidenceSourceLabel(ResolutionEvidenceSummary evidence)
+    {
+        var normalizedLabel = NormalizeOptional(evidence.SourceLabel);
+        var humanizedLabel = TryHumanizeEvidenceSourceLabel(normalizedLabel)
+            ?? TryHumanizeEvidenceSourceRef(evidence.SourceRef)
+            ?? "источник не указан";
+
+        if (!evidence.ObservedAtUtc.HasValue)
+        {
+            return humanizedLabel;
+        }
+
+        return $"{humanizedLabel}, {FormatCompactDate(evidence.ObservedAtUtc.Value)}";
+    }
+
+    private static string? TryHumanizeEvidenceSourceLabel(string? sourceLabel)
+    {
+        var normalized = NormalizeOptional(sourceLabel);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        if (TryParseMessageSourceLabel(normalized, "Archive message ", out _))
+        {
+            return "архивное сообщение";
+        }
+
+        if (TryParseMessageSourceLabel(normalized, "Realtime message ", out _))
+        {
+            return "сообщение из чата";
+        }
+
+        return normalized;
+    }
+
+    private static string? TryHumanizeEvidenceSourceRef(string? sourceRef)
+    {
+        var normalized = NormalizeOptional(sourceRef);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        var segments = normalized.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (segments.Length == 2
+            && segments[0].Length > 0
+            && segments[1].Length > 0
+            && IsNumericToken(segments[0])
+            && IsNumericToken(segments[1]))
+        {
+            return "сообщение из чата";
+        }
+
+        return normalized;
+    }
+
+    private static string FormatCompactDate(DateTime value)
+        => value.ToUniversalTime().ToString("dd.MM.yyyy");
+
+    private static bool TryParseMessageSourceLabel(string sourceLabel, string prefix, out string messageId)
+    {
+        messageId = string.Empty;
+        if (!sourceLabel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var remainder = sourceLabel[prefix.Length..].Trim();
+        var separator = remainder.IndexOf(" in chat ", StringComparison.OrdinalIgnoreCase);
+        if (separator <= 0)
+        {
+            return false;
+        }
+
+        messageId = remainder[..separator].Trim();
+        return messageId.Length > 0;
+    }
+
+    private static bool IsNumericToken(string value)
+        => value.All(ch => char.IsDigit(ch) || ch == '-');
 
     private static string ResolveResolutionCardSecondary(ResolutionItemSummary item)
         => LimitCardLine(FirstNonEmpty(
