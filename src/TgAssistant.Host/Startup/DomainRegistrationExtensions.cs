@@ -74,6 +74,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IResolutionActionService, ResolutionActionCommandService>();
         services.AddSingleton<IOperatorResolutionApplicationService, OperatorResolutionApplicationService>();
         services.AddSingleton<IOperatorAssistantResponseGenerationService, OperatorAssistantResponseGenerationService>();
+        services.AddSingleton<IOperatorAssistantContextAssemblyService, OperatorAssistantContextAssemblyService>();
         services.AddSingleton<IOperatorSessionAuditService, OperatorSessionAuditService>();
         services.AddSingleton<WebOperatorSessionStore>();
         services.AddSingleton<WebOperatorAuthSessionResolver>();

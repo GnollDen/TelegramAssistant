@@ -2239,12 +2239,12 @@
       "dependencies": [
         "OPINT-006-B1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Assistant context assembly is bounded to active tracked-person scope and remains MCP-independent.",
         "Read-model usage is auditable by scope/person/session and rejects cross-scope leakage."
       ],
-      "notes": "Dedicated verification path for retrieval scoping and auditability."
+      "notes": "Done 2026-04-04: added `IOperatorAssistantContextAssemblyService` with bounded active tracked-person retrieval via `IResolutionReadService` only (queue + optional detail), explicit scope/person/session guardrails, deterministic cross-scope rejection, and read-model audit metadata on assistant guardrails; wired host entrypoint `--opint-006-b2-smoke` to validate scope-bounded assembly, audit payload integrity, and leakage rejection."
     },
     {
       "id": "OPINT-006-C",

@@ -45,6 +45,9 @@ public static class OperatorAssistantFailureReasons
     public const string TrackedPersonScopeMismatch = "tracked_person_scope_mismatch";
     public const string SessionScopeItemMismatch = "session_scope_item_mismatch";
     public const string MissingActiveTrackedPerson = "missing_active_tracked_person";
+    public const string ReadModelScopeUnbounded = "read_model_scope_unbounded";
+    public const string ReadModelScopeMismatch = "read_model_scope_mismatch";
+    public const string ReadModelScopeItemNotFound = "read_model_scope_item_not_found";
 }
 
 public class OperatorAssistantStatementInput
@@ -70,6 +73,19 @@ public class OperatorAssistantResponseGenerationRequest : OperatorContractReques
     public string OpenInWebScopeItemKey { get; set; } = string.Empty;
     public string OpenInWebActiveMode { get; set; } = OperatorModeTypes.ResolutionDetail;
     public string? OpenInWebHandoffToken { get; set; }
+}
+
+public class OperatorAssistantContextAssemblyRequest : OperatorContractRequestBase
+{
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Question { get; set; } = string.Empty;
+    public string? ScopeItemKey { get; set; }
+    public int QueueLimit { get; set; } = 10;
+    public int EvidenceLimit { get; set; } = 3;
+    public bool OpenInWebEnabled { get; set; } = true;
+    public string OpenInWebTargetApi { get; set; } = "/api/operator/resolution/detail/query";
+    public string OpenInWebActiveMode { get; set; } = OperatorModeTypes.ResolutionDetail;
 }
 
 public class OperatorAssistantStatement
@@ -130,6 +146,42 @@ public class OperatorAssistantGuardrailContract
 
     [JsonPropertyName("mcp_dependent")]
     public bool McpDependent { get; set; }
+
+    [JsonPropertyName("read_model_bounded")]
+    public bool ReadModelBounded { get; set; } = true;
+
+    [JsonPropertyName("read_model_audit")]
+    public List<OperatorAssistantReadModelAuditEntry> ReadModelAudit { get; set; } = [];
+}
+
+public class OperatorAssistantReadModelAuditEntry
+{
+    [JsonPropertyName("read_model")]
+    public string ReadModel { get; set; } = string.Empty;
+
+    [JsonPropertyName("bounded")]
+    public bool Bounded { get; set; }
+
+    [JsonPropertyName("tracked_person_id")]
+    public Guid TrackedPersonId { get; set; }
+
+    [JsonPropertyName("scope_key")]
+    public string ScopeKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("scope_item_key")]
+    public string ScopeItemKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("record_count")]
+    public int RecordCount { get; set; }
+
+    [JsonPropertyName("operator_session_id")]
+    public string OperatorSessionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("observed_at_utc")]
+    public DateTime ObservedAtUtc { get; set; }
+
+    [JsonPropertyName("notes")]
+    public string? Notes { get; set; }
 }
 
 public class OperatorAssistantResponseEnvelope

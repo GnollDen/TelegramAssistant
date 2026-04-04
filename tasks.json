@@ -1240,7 +1240,7 @@
         "OPINT-005"
       ],
       "status": "pending",
-      "notes": "Lower than P0 resolution-system work by design. Progress 2026-04-04: OPINT-006-A completed with contract-first authority in docs/planning/OPINT-006-A_ASSISTANT_RESPONSE_CONTRACT_2026-04-04.md, defining deterministic assistant response sections/truth-label/trust formatting plus bounded scope and Open in Web handoff rules. Progress 2026-04-04: OPINT-006-B1 completed with backend assistant response generation service and smoke validation for required section shape, truth labels, and terminal trust rendering (`--opint-006-b1-smoke`). Remaining slices OPINT-006-B2 and OPINT-006-C are pending."
+      "notes": "Lower than P0 resolution-system work by design. Progress 2026-04-04: OPINT-006-A completed with contract-first authority in docs/planning/OPINT-006-A_ASSISTANT_RESPONSE_CONTRACT_2026-04-04.md, defining deterministic assistant response sections/truth-label/trust formatting plus bounded scope and Open in Web handoff rules. Progress 2026-04-04: OPINT-006-B1 completed with backend assistant response generation service and smoke validation for required section shape, truth labels, and terminal trust rendering (`--opint-006-b1-smoke`). Progress 2026-04-04: OPINT-006-B2 completed with bounded assistant context assembly over active tracked-person read models (`IResolutionReadService` queue/detail only), auditable read-model scope/person/session guardrail metadata, deterministic cross-scope rejection, and smoke validation via `--opint-006-b2-smoke`. Remaining slice OPINT-006-C is pending."
     },
     {
       "id": "OPINT-007",

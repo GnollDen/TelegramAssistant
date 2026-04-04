@@ -176,6 +176,19 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
             {
                 errors.Add("mcp_dependent_invalid");
             }
+
+            if (!response.Guardrails.ReadModelBounded)
+            {
+                errors.Add("read_model_bounded_invalid");
+            }
+
+            if (response.Guardrails.ReadModelAudit.Any(x =>
+                    !x.Bounded
+                    || x.TrackedPersonId != response.TrackedPersonId
+                    || !string.Equals(NormalizeOptional(x.ScopeKey), NormalizeOptional(response.ScopeKey), StringComparison.Ordinal)))
+            {
+                errors.Add("read_model_audit_scope_invalid");
+            }
         }
 
         return errors;

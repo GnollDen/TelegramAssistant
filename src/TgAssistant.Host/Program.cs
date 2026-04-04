@@ -162,6 +162,7 @@ try
     var runStage8RelatedConflictSmoke = args.Any(arg => string.Equals(arg, "--stage8-related-conflict-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage8RecomputeSmoke = args.Any(arg => string.Equals(arg, "--stage8-recompute-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint006B1Smoke = args.Any(arg => string.Equals(arg, "--opint-006-b1-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint006B2Smoke = args.Any(arg => string.Equals(arg, "--opint-006-b2-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint003Validate = args.Any(arg => string.Equals(arg, "--opint-003-d-validate", StringComparison.OrdinalIgnoreCase));
     var runOpint004Smoke = args.Any(arg => string.Equals(arg, "--opint-004-a-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
@@ -240,6 +241,7 @@ try
         "--stage8-related-conflict-smoke",
         "--stage8-recompute-smoke",
         "--opint-006-b1-smoke",
+        "--opint-006-b2-smoke",
         "--opint-004-a-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
@@ -456,6 +458,13 @@ try
     {
         Opint006AssistantResponseSmokeRunner.Run();
         Log.Information("OPINT-006-B1 smoke requested via --opint-006-b1-smoke. Exiting after successful verification.");
+        return;
+    }
+
+    if (runOpint006B2Smoke)
+    {
+        await Opint006AssistantContextAssemblySmokeRunner.RunAsync();
+        Log.Information("OPINT-006-B2 smoke requested via --opint-006-b2-smoke. Exiting after successful verification.");
         return;
     }
 

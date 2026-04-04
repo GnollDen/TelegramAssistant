@@ -351,6 +351,14 @@ public interface IOperatorAssistantResponseGenerationService
     string RenderTelegram(OperatorAssistantResponseEnvelope response);
 }
 
+public interface IOperatorAssistantContextAssemblyService
+{
+    Task<OperatorAssistantResponseEnvelope> BuildBoundedResponseAsync(
+        OperatorAssistantContextAssemblyRequest request,
+        DateTime? generatedAtUtc = null,
+        CancellationToken ct = default);
+}
+
 public interface IOperatorSessionAuditService
 {
     Task<Guid> RecordSessionEventAsync(
