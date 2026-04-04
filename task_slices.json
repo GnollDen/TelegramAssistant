@@ -2085,12 +2085,12 @@
       "dependencies": [
         "OPINT-005-A2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Queue ordering follows critical/high/medium/low then activity recency.",
         "Counts and filters are consistent with backend resolution projections for the active operator scope."
       ],
-      "notes": "Queue-first view before detail interactions."
+      "notes": "2026-04-04: Implemented web resolution queue on `/operator/resolution` using clean `/api/operator/*` contracts with tracked-person scope selection, priority/status/type filtering, unresolved counters, and priority/activity sorting controls rendered from backend queue projections; legacy Stage6 web/queue/case pages remain excluded."
     },
     {
       "id": "OPINT-005-C1",

@@ -36,9 +36,10 @@ public static class OperatorWebEndpointExtensions
 
             return Results.Ok(new
             {
-                state = "empty",
-                queueCount = 0,
-                message = "No unresolved items are currently projected for the active tracked person."
+                state = "ready",
+                queueRoute = "/api/operator/resolution/queue/query",
+                trackedPersonsRoute = "/api/operator/tracked-persons/query",
+                trackedPersonSelectionRoute = "/api/operator/tracked-persons/select"
             });
         });
 
@@ -143,7 +144,7 @@ public static class OperatorWebEndpointExtensions
     <section class="card">
       <h2>Operational Snapshot</h2>
       <p>System status: <strong>normal</strong></p>
-      <p class="critical">Critical unresolved items: pending OPINT-005-B queue integration.</p>
+      <p class="critical">Critical unresolved items: resolution queue connected; detail/evidence/action slices remain.</p>
     </section>
   </main>
 </body>
@@ -168,6 +169,7 @@ public static class OperatorWebEndpointExtensions
       --accent: #0d4a7f;
       --warn: #9a1a1a;
       --ok: #0d6635;
+      --chip: #eef2fb;
     }
     * { box-sizing: border-box; }
     body {
@@ -177,113 +179,614 @@ public static class OperatorWebEndpointExtensions
       background: linear-gradient(180deg, #e7eefb, var(--bg) 240px);
     }
     main {
-      max-width: 1000px;
-      margin: 36px auto;
-      padding: 0 20px;
+      max-width: 1160px;
+      margin: 28px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 14px;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
-      padding: 18px;
-      margin-bottom: 14px;
+      padding: 14px;
       box-shadow: 0 10px 22px rgba(20, 36, 60, 0.08);
     }
-    .row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin-top: 8px;
+    .panel h1,
+    .panel h2,
+    .panel h3 {
+      margin: 0 0 10px;
     }
-    a, button {
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    select,
+    input,
+    button,
+    a {
       border-radius: 8px;
       border: 1px solid var(--line);
-      padding: 8px 12px;
-      text-decoration: none;
-      color: var(--ink);
-      background: #f7faff;
+      padding: 8px 10px;
       font: inherit;
+      color: inherit;
+      background: #fff;
+      text-decoration: none;
+    }
+    button,
+    select,
+    input {
+      width: 100%;
+    }
+    button {
       cursor: pointer;
+      background: #f7faff;
     }
     button.primary {
       background: var(--accent);
       border-color: var(--accent);
       color: #fff;
     }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .row > * {
+      flex: 1 1 150px;
+    }
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .chip {
+      background: var(--chip);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      color: #2a4169;
+    }
     .state {
       border-left: 4px solid var(--accent);
       background: #f8fbff;
-      padding: 12px;
+      padding: 10px;
       border-radius: 8px;
-      margin-top: 10px;
+      font-size: 14px;
     }
     .state.loading { border-left-color: var(--accent); }
     .state.empty { border-left-color: var(--ok); }
     .state.error { border-left-color: var(--warn); background: #fff6f6; }
     .muted { color: var(--muted); }
-    code { background: #eef2fb; padding: 2px 6px; border-radius: 6px; }
+    .queue-list {
+      display: grid;
+      gap: 8px;
+      max-height: 68vh;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 11px;
+      background: #fcfdff;
+    }
+    .item-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .item h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .item p {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    .meta span {
+      background: var(--chip);
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+    .priority-critical { color: #8d0e0e; }
+    .priority-high { color: #9d400f; }
+    .priority-medium { color: #27538f; }
+    .priority-low { color: #216333; }
+    .filter-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .checklist {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fafcff;
+    }
+    .checklist strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .checklist label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 13px;
+      margin: 4px 0;
+    }
+    .checklist input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+    .inline-note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media (max-width: 920px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+      .queue-list {
+        max-height: none;
+      }
+    }
   </style>
 </head>
 <body>
   <main>
-    <section class="panel">
-      <h1>Resolution Route</h1>
-      <p class="muted">Dedicated P0 resolution entry. Queue/detail/action flows will be layered on this route in subsequent OPINT-005 slices.</p>
-      <div class="row">
-        <a href="/operator">Back to Home</a>
-        <button id="retry" class="primary" type="button">Retry Bootstrap</button>
+    <section class="panel stack">
+      <div>
+        <h1>Resolution Queue</h1>
+        <p class="muted">Priority-first queue for bounded operator resolution contracts.</p>
       </div>
-      <div id="state" class="state loading">Loading resolution bootstrap...</div>
+
+      <div class="stack">
+        <label>
+          Operator access token
+          <input id="access-token" type="password" autocomplete="off" placeholder="X-Tga-Operator-Key">
+        </label>
+        <p class="inline-note">Stored in local browser storage for this route only.</p>
+      </div>
+
+      <div class="stack">
+        <label>
+          Tracked person
+          <select id="tracked-person"></select>
+        </label>
+        <div class="row">
+          <button id="refresh-people" type="button">Refresh scope</button>
+          <button id="apply-person" type="button">Apply scope</button>
+        </div>
+      </div>
+
+      <div class="stack">
+        <label>
+          Sort
+          <select id="sort-by">
+            <option value="priority">Priority then activity</option>
+            <option value="updated_at">Activity recency</option>
+          </select>
+        </label>
+        <label>
+          Direction
+          <select id="sort-direction">
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="filter-grid">
+        <div class="checklist" id="priority-filters"></div>
+        <div class="checklist" id="status-filters"></div>
+        <div class="checklist" id="type-filters"></div>
+      </div>
+
+      <div class="row">
+        <button id="refresh-queue" class="primary" type="button">Refresh queue</button>
+        <a href="/operator">Back to home</a>
+      </div>
+
+      <div id="state" class="state loading">Loading tracked person scope...</div>
     </section>
 
-    <section class="panel">
-      <h2>Contract Boundary</h2>
-      <p>This route targets clean operator contracts only: <code>/api/operator/resolution/*</code>. Legacy Stage6 web/queue/case pages are excluded.</p>
-      <p class="muted">Use <code>?simulate=error</code> to verify explicit failure-state rendering.</p>
+    <section class="panel stack">
+      <h2>Queue Projection</h2>
+      <div id="counts" class="chip-list"></div>
+      <div id="queue-list" class="queue-list"></div>
+      <p class="muted">This route uses <code>/api/operator/resolution/queue/query</code> and excludes legacy Stage6 queue/case pages.</p>
     </section>
   </main>
 
   <script>
     const stateNode = document.getElementById("state");
-    const retryButton = document.getElementById("retry");
+    const queueNode = document.getElementById("queue-list");
+    const countsNode = document.getElementById("counts");
+    const tokenInput = document.getElementById("access-token");
+    const trackedPersonSelect = document.getElementById("tracked-person");
+    const refreshPeopleButton = document.getElementById("refresh-people");
+    const applyPersonButton = document.getElementById("apply-person");
+    const refreshQueueButton = document.getElementById("refresh-queue");
+    const sortBySelect = document.getElementById("sort-by");
+    const sortDirectionSelect = document.getElementById("sort-direction");
+
+    const priorityValues = ["critical", "high", "medium", "low"];
+    const statusValues = ["open", "blocked", "queued", "running", "attention_required", "degraded"];
+    const typeValues = ["clarification", "review", "contradiction", "missing_data", "blocked_branch"];
+
+    const state = {
+      trackedPersons: [],
+      activeTrackedPersonId: null,
+      queue: null
+    };
 
     function setState(kind, message) {
       stateNode.className = "state " + kind;
       stateNode.textContent = message;
     }
 
-    async function loadBootstrap() {
-      setState("loading", "Loading resolution bootstrap...");
-      const search = new URLSearchParams(window.location.search);
-      const simulate = search.get("simulate");
-      const endpoint = simulate ? "/operator/resolution/bootstrap?simulate=" + encodeURIComponent(simulate) : "/operator/resolution/bootstrap";
+    function titleize(value) {
+      return value.replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
+    function formatUtc(value) {
+      if (!value) {
+        return "n/a";
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString();
+    }
+
+    function formatPercent(value) {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) {
+        return "n/a";
+      }
+
+      return Math.round(numeric * 100) + "%";
+    }
+
+    function createChecklist(containerId, title, values) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = "";
+      const titleNode = document.createElement("strong");
+      titleNode.textContent = title;
+      container.appendChild(titleNode);
+
+      values.forEach(function(value) {
+        const id = containerId + "-" + value;
+        const label = document.createElement("label");
+        label.setAttribute("for", id);
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = id;
+        input.value = value;
+
+        const text = document.createElement("span");
+        text.textContent = titleize(value);
+
+        label.appendChild(input);
+        label.appendChild(text);
+        container.appendChild(label);
+      });
+    }
+
+    function selectedChecklistValues(containerId) {
+      return Array.from(document.querySelectorAll("#" + containerId + " input[type='checkbox']:checked"))
+        .map(function(node) { return node.value; });
+    }
+
+    function readAccessToken() {
+      return window.localStorage.getItem("operator_web_access_token") || "";
+    }
+
+    function writeAccessToken(token) {
+      window.localStorage.setItem("operator_web_access_token", token);
+      document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
+    }
+
+    function resolveHeaders() {
+      const token = readAccessToken();
+      const headers = {
+        "accept": "application/json",
+        "content-type": "application/json"
+      };
+
+      if (token) {
+        headers["X-Tga-Operator-Key"] = token;
+      }
+
+      return headers;
+    }
+
+    async function operatorPostJson(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: resolveHeaders(),
+        body: JSON.stringify(payload || {})
+      });
+
+      let body = null;
       try {
-        const response = await fetch(endpoint, { method: "GET", headers: { "accept": "application/json" } });
-        if (!response.ok) {
-          let reason = "request_failed";
-          try {
-            const body = await response.json();
-            reason = body.reason || body.message || reason;
-          } catch (_) {
-          }
-          throw new Error(reason);
-        }
+        body = await response.json();
+      } catch (_) {
+        body = null;
+      }
 
-        const payload = await response.json();
-        if (payload.state === "empty") {
-          setState("empty", "Empty queue: " + (payload.message || "No unresolved items."));
-          return;
-        }
+      if (!response.ok) {
+        const reason = body && (body.failureReason || body.reason || body.message)
+          ? (body.failureReason || body.reason || body.message)
+          : "request_failed";
+        const error = new Error(reason);
+        error.status = response.status;
+        throw error;
+      }
 
-        setState("loading", "Bootstrap completed. Queue rendering will be enabled in OPINT-005-B.");
-      } catch (error) {
-        setState("error", "Failed to load resolution entry state: " + (error && error.message ? error.message : "unknown_error"));
+      return body || {};
+    }
+
+    function renderTrackedPersons(queryResult) {
+      const trackedPersons = Array.isArray(queryResult.trackedPersons) ? queryResult.trackedPersons : [];
+      state.trackedPersons = trackedPersons;
+      state.activeTrackedPersonId = queryResult.activeTrackedPersonId || null;
+
+      trackedPersonSelect.innerHTML = "";
+      if (trackedPersons.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No tracked persons available";
+        trackedPersonSelect.appendChild(option);
+        trackedPersonSelect.disabled = true;
+        return;
+      }
+
+      trackedPersonSelect.disabled = false;
+      trackedPersons.forEach(function(person) {
+        const option = document.createElement("option");
+        option.value = person.trackedPersonId;
+        const suffix = person.scopeKey ? " | " + person.scopeKey : "";
+        option.textContent = person.displayName + suffix;
+        if (state.activeTrackedPersonId && person.trackedPersonId === state.activeTrackedPersonId) {
+          option.selected = true;
+        }
+        trackedPersonSelect.appendChild(option);
+      });
+
+      if (!state.activeTrackedPersonId && trackedPersonSelect.options.length > 0) {
+        trackedPersonSelect.selectedIndex = 0;
       }
     }
 
-    retryButton.addEventListener("click", loadBootstrap);
-    loadBootstrap();
+    function renderCounts(queue) {
+      countsNode.innerHTML = "";
+
+      const chips = [
+        "Total open: " + (queue.totalOpenCount || 0),
+        "Filtered: " + (queue.filteredCount || 0),
+        "Scope: " + (queue.scopeKey || "n/a")
+      ];
+
+      const priorityCounts = Array.isArray(queue.priorityCounts) ? queue.priorityCounts : [];
+      priorityCounts.forEach(function(entry) {
+        chips.push(titleize(entry.key) + ": " + entry.count);
+      });
+
+      chips.forEach(function(text) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = text;
+        countsNode.appendChild(chip);
+      });
+    }
+
+    function renderQueueItems(queue) {
+      queueNode.innerHTML = "";
+      const items = Array.isArray(queue.items) ? queue.items : [];
+      if (items.length === 0) {
+        setState("empty", "No unresolved items match current filters.");
+        return;
+      }
+
+      items.forEach(function(item) {
+        const card = document.createElement("article");
+        card.className = "item";
+
+        const top = document.createElement("div");
+        top.className = "item-top";
+
+        const title = document.createElement("h3");
+        title.textContent = item.title || item.scopeItemKey;
+
+        const priority = document.createElement("strong");
+        const priorityValue = (item.priority || "unknown").toLowerCase();
+        priority.className = "priority-" + priorityValue;
+        priority.textContent = titleize(priorityValue);
+
+        top.appendChild(title);
+        top.appendChild(priority);
+        card.appendChild(top);
+
+        const summary = document.createElement("p");
+        summary.textContent = item.summary || "No summary.";
+        card.appendChild(summary);
+
+        const why = document.createElement("p");
+        why.className = "muted";
+        why.textContent = "Why it matters: " + (item.whyItMatters || "Not provided.");
+        card.appendChild(why);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+
+        const metaValues = [
+          "Type: " + titleize(item.itemType || "unknown"),
+          "Status: " + titleize(item.status || "unknown"),
+          "Trust: " + formatPercent(item.trustFactor),
+          "Evidence: " + (item.evidenceCount || 0),
+          "Updated: " + formatUtc(item.updatedAtUtc),
+          "Family: " + (item.affectedFamily || "n/a"),
+          "Action: " + titleize(item.recommendedNextAction || "none")
+        ];
+
+        metaValues.forEach(function(value) {
+          const tag = document.createElement("span");
+          tag.textContent = value;
+          meta.appendChild(tag);
+        });
+
+        card.appendChild(meta);
+        queueNode.appendChild(card);
+      });
+
+      setState("loading", "Queue loaded from bounded operator projection.");
+    }
+
+    async function loadTrackedPersons() {
+      setState("loading", "Loading tracked person scope...");
+      const result = await operatorPostJson("/api/operator/tracked-persons/query", { limit: 50 });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "tracked_person_query_rejected");
+      }
+
+      renderTrackedPersons(result);
+      if (!state.activeTrackedPersonId && trackedPersonSelect.value) {
+        state.activeTrackedPersonId = trackedPersonSelect.value;
+      }
+    }
+
+    async function applyTrackedPersonSelection() {
+      const selected = trackedPersonSelect.value;
+      if (!selected) {
+        throw new Error("tracked_person_selection_required");
+      }
+
+      const result = await operatorPostJson("/api/operator/tracked-persons/select", {
+        trackedPersonId: selected,
+        requestedAtUtc: new Date().toISOString()
+      });
+
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "tracked_person_select_rejected");
+      }
+
+      if (result.activeTrackedPerson && result.activeTrackedPerson.trackedPersonId) {
+        state.activeTrackedPersonId = result.activeTrackedPerson.trackedPersonId;
+      } else {
+        state.activeTrackedPersonId = selected;
+      }
+    }
+
+    async function loadQueue() {
+      const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+      if (!trackedPersonId) {
+        setState("empty", "Tracked person selection is required before queue read.");
+        queueNode.innerHTML = "";
+        countsNode.innerHTML = "";
+        return;
+      }
+
+      setState("loading", "Loading resolution queue...");
+      const result = await operatorPostJson("/api/operator/resolution/queue/query", {
+        trackedPersonId: trackedPersonId,
+        sortBy: sortBySelect.value,
+        sortDirection: sortDirectionSelect.value,
+        priorities: selectedChecklistValues("priority-filters"),
+        statuses: selectedChecklistValues("status-filters"),
+        itemTypes: selectedChecklistValues("type-filters"),
+        limit: 100
+      });
+
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "queue_query_rejected");
+      }
+
+      state.queue = result.queue || null;
+      if (!state.queue) {
+        throw new Error("queue_payload_missing");
+      }
+
+      renderCounts(state.queue);
+      renderQueueItems(state.queue);
+    }
+
+    async function refreshAll() {
+      try {
+        const token = tokenInput.value.trim();
+        if (token) {
+          writeAccessToken(token);
+        }
+
+        await loadTrackedPersons();
+        if (state.activeTrackedPersonId) {
+          await loadQueue();
+        } else {
+          setState("empty", "Select a tracked person to load queue data.");
+          queueNode.innerHTML = "";
+          countsNode.innerHTML = "";
+        }
+      } catch (error) {
+        setState("error", "Resolution queue load failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    async function onApplyScope() {
+      try {
+        const token = tokenInput.value.trim();
+        if (token) {
+          writeAccessToken(token);
+        }
+
+        await applyTrackedPersonSelection();
+        await loadQueue();
+      } catch (error) {
+        setState("error", "Scope update failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    tokenInput.value = readAccessToken();
+    createChecklist("priority-filters", "Priority", priorityValues);
+    createChecklist("status-filters", "Status", statusValues);
+    createChecklist("type-filters", "Item type", typeValues);
+
+    refreshPeopleButton.addEventListener("click", refreshAll);
+    applyPersonButton.addEventListener("click", onApplyScope);
+    refreshQueueButton.addEventListener("click", loadQueue);
+    sortBySelect.addEventListener("change", loadQueue);
+    sortDirectionSelect.addEventListener("change", loadQueue);
+
+    document.querySelectorAll("#priority-filters input, #status-filters input, #type-filters input")
+      .forEach(function(node) {
+        node.addEventListener("change", loadQueue);
+      });
+
+    refreshAll();
   </script>
 </body>
 </html>
