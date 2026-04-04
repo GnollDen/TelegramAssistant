@@ -2600,12 +2600,12 @@
       "dependencies": [
         "OPINT-009-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Control/analytics widgets are bounded, auditable, and linked to actionable alert context.",
         "Widgets do not expose raw admin/debug consoles as product UI."
       ],
-      "notes": "Keeps higher-risk control/analytics scope independent from base alerts list."
+      "notes": "Completed 2026-04-04: extended `/api/operator/alerts/query` with lightweight workflow analytics facets plus acknowledgement/enter-resolution counts, rendered compact auditable widgets on `/operator/alerts` with links only to existing operator pages, and validated with `dotnet build TelegramAssistant.sln -v minimal`, `--opint-009-c1-smoke`, and `--opint-009-c2-smoke`."
     },
     {
       "id": "OPINT-009-D",

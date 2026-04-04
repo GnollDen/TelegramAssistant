@@ -9,6 +9,9 @@ namespace TgAssistant.Infrastructure.Database;
 public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventRepository
 {
     private const string ActivePersonStatus = "active";
+    private const string OfflineEventRefinementActionType = "offline_event_refinement";
+    private const string OfflineEventRefinementSessionEventType = "offline_event_refinement";
+    private const string OfflineEventRefinementItemType = "offline_event";
     private const string OfflineEventTimelineLinkageUpdateActionType = "timeline_linkage_update";
     private const string OfflineEventTimelineLinkageUpdateSessionEventType = "offline_event_timeline_linkage_update";
     private const string OfflineEventTimelineLinkageItemType = "offline_event_timeline_linkage";
@@ -213,13 +216,14 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         };
     }
 
-    public async Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+    public async Task<OperatorOfflineEventRefinementRecord?> RefineWithinScopeAsync(
         Guid offlineEventId,
         string scopeKey,
         Guid trackedPersonId,
         string? summary,
         string? recordingReference,
         bool clearRecordingReference,
+        string? refinementNote,
         OperatorIdentityContext operatorIdentity,
         OperatorSessionContext session,
         DateTime refinedAtUtc,
@@ -233,6 +237,7 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         var normalizedScopeKey = scopeKey.Trim();
         var normalizedSummary = NormalizeOptional(summary);
         var normalizedRecordingReference = NormalizeOptional(recordingReference);
+        var normalizedRefinementNote = NormalizeOptional(refinementNote);
         var nowUtc = refinedAtUtc == default ? DateTime.UtcNow : refinedAtUtc;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -246,6 +251,10 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         {
             return null;
         }
+
+        var previousSummary = NormalizeOptional(row.SummaryText);
+        var previousRecordingReference = NormalizeOptional(row.RecordingReference);
+        var normalizedSurface = OperatorSurfaceTypes.Normalize(session.Surface);
 
         if (!string.IsNullOrWhiteSpace(normalizedSummary))
         {
@@ -267,6 +276,9 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         row.AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown");
         row.AuthTimeUtc = operatorIdentity.AuthTimeUtc == default ? nowUtc : operatorIdentity.AuthTimeUtc;
         row.OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown");
+        row.Surface = OperatorSurfaceTypes.IsSupported(normalizedSurface)
+            ? normalizedSurface
+            : NormalizeRequired(normalizedSurface, "unknown");
         row.SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default ? nowUtc : session.AuthenticatedAtUtc;
         row.SessionLastSeenAtUtc = session.LastSeenAtUtc == default ? nowUtc : session.LastSeenAtUtc;
         row.SessionExpiresAtUtc = session.ExpiresAtUtc;
@@ -276,8 +288,45 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         row.UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc;
         row.UpdatedAtUtc = nowUtc;
 
+        var auditEventId = Guid.NewGuid();
+        db.OperatorAuditEvents.Add(new DbOperatorAuditEvent
+        {
+            AuditEventId = auditEventId,
+            RequestId = BuildRefinementRequestId(row.OperatorSessionId, row.Id, nowUtc),
+            ScopeKey = row.ScopeKey,
+            TrackedPersonId = row.TrackedPersonId,
+            ScopeItemKey = BuildOfflineEventScopeItemKey(row.Id),
+            ItemType = OfflineEventRefinementItemType,
+            OperatorId = row.OperatorId,
+            OperatorDisplay = row.OperatorDisplay,
+            OperatorSessionId = row.OperatorSessionId,
+            Surface = row.Surface,
+            SurfaceSubject = row.SurfaceSubject,
+            AuthSource = row.AuthSource,
+            ActiveMode = row.ActiveMode,
+            UnfinishedStepKind = row.UnfinishedStepKind,
+            ActionType = OfflineEventRefinementActionType,
+            SessionEventType = OfflineEventRefinementSessionEventType,
+            DecisionOutcome = OperatorAuditDecisionOutcomes.Accepted,
+            FailureReason = null,
+            DetailsJson = BuildRefinementAuditDetailsJson(
+                previousSummary,
+                NormalizeOptional(row.SummaryText),
+                previousRecordingReference,
+                NormalizeOptional(row.RecordingReference),
+                normalizedRefinementNote,
+                NormalizeOptional(row.UnfinishedStepKind),
+                NormalizeOptional(row.UnfinishedStepState),
+                nowUtc),
+            EventTimeUtc = nowUtc
+        });
+
         await db.SaveChangesAsync(ct);
-        return Map(row);
+        return new OperatorOfflineEventRefinementRecord
+        {
+            AuditEventId = auditEventId,
+            OfflineEvent = Map(row)
+        };
     }
 
     public async Task<OperatorOfflineEventTimelineLinkageUpdateRecord?> UpdateTimelineLinkageWithinScopeAsync(
@@ -590,6 +639,33 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
 
     private static string BuildTimelineLinkageRequestId(string sessionId, Guid offlineEventId, DateTime updatedAtUtc)
         => $"{OfflineEventTimelineLinkageUpdateSessionEventType}:{sessionId}:{offlineEventId:D}:{updatedAtUtc:yyyyMMddHHmmssfff}";
+
+    private static string BuildRefinementRequestId(string sessionId, Guid offlineEventId, DateTime updatedAtUtc)
+        => $"{OfflineEventRefinementSessionEventType}:{sessionId}:{offlineEventId:D}:{updatedAtUtc:yyyyMMddHHmmssfff}";
+
+    private static string BuildRefinementAuditDetailsJson(
+        string? previousSummary,
+        string? currentSummary,
+        string? previousRecordingReference,
+        string? currentRecordingReference,
+        string? refinementNote,
+        string? unfinishedStepKind,
+        string? unfinishedStepState,
+        DateTime refinedAtUtc)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["previous_summary"] = previousSummary ?? string.Empty,
+            ["current_summary"] = currentSummary ?? string.Empty,
+            ["previous_recording_reference"] = previousRecordingReference,
+            ["current_recording_reference"] = currentRecordingReference,
+            ["refinement_note"] = refinementNote,
+            ["unfinished_step_kind"] = unfinishedStepKind,
+            ["unfinished_step_state"] = unfinishedStepState,
+            ["refined_at_utc"] = refinedAtUtc
+        };
+        return JsonSerializer.Serialize(payload, JsonOptions);
+    }
 
     private static string BuildOfflineEventScopeItemKey(Guid offlineEventId)
         => $"offline_event:{offlineEventId:D}";

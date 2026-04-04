@@ -179,6 +179,10 @@ try
     var opint009C1SmokeOutput = opint009C1SmokeOutputArg is null
         ? null
         : opint009C1SmokeOutputArg["--opint-009-c1-smoke-output=".Length..];
+    var opint009C2SmokeOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-009-c2-smoke-output=", StringComparison.OrdinalIgnoreCase));
+    var opint009C2SmokeOutput = opint009C2SmokeOutputArg is null
+        ? null
+        : opint009C2SmokeOutputArg["--opint-009-c2-smoke-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -197,6 +201,7 @@ try
     var runOpint009ASmoke = args.Any(arg => string.Equals(arg, "--opint-009-a-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009BSmoke = args.Any(arg => string.Equals(arg, "--opint-009-b-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009C1Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c1-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint009C2Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c2-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -282,6 +287,7 @@ try
         "--opint-009-a-smoke",
         "--opint-009-b-smoke",
         "--opint-009-c1-smoke",
+        "--opint-009-c2-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -547,6 +553,18 @@ try
             report.AllChecksPassed,
             report.GroupCount,
             report.TotalAlerts);
+        return;
+    }
+
+    if (runOpint009C2Smoke)
+    {
+        var report = await Opint009WebAlertsWidgetsSmokeRunner.RunAsync(opint009C2SmokeOutput, CancellationToken.None);
+        Log.Information(
+            "OPINT-009-C2 smoke requested via --opint-009-c2-smoke. output={OutputPath}, passed={Passed}, active_scope_ack_count={ActiveScopeAcknowledgementCount}, bounded_facet_url_count={BoundedFacetUrlCount}. Exiting after successful verification.",
+            report.OutputPath,
+            report.AllChecksPassed,
+            report.ActiveScopeAcknowledgementCount,
+            report.BoundedFacetUrlCount);
         return;
     }
 

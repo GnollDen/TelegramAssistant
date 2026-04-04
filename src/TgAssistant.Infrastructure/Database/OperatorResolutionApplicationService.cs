@@ -2153,18 +2153,19 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             };
         }
 
-        var record = await _operatorOfflineEventRepository.RefineWithinScopeAsync(
+        var refinementRecord = await _operatorOfflineEventRepository.RefineWithinScopeAsync(
             request.OfflineEventId,
             trackedPerson.ScopeKey,
             trackedPersonId.Value,
             request.Summary,
             request.RecordingReference,
             request.ClearRecordingReference,
+            request.RefinementNote,
             request.OperatorIdentity,
             request.Session,
             request.SubmittedAtUtc == default ? nowUtc : request.SubmittedAtUtc,
             ct);
-        if (record == null)
+        if (refinementRecord == null)
         {
             return new OperatorOfflineEventRefinementResult
             {
@@ -2186,11 +2187,19 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         session.ActiveMode = OperatorModeTypes.OfflineEvent;
         session.UnfinishedStep = null;
 
+        _logger.LogInformation(
+            "Offline-event refinement updated: offline_event_id={OfflineEventId}, tracked_person_id={TrackedPersonId}, operator_id={OperatorId}, audit_event_id={AuditEventId}",
+            refinementRecord.OfflineEvent.OfflineEventId,
+            trackedPersonId.Value,
+            request.OperatorIdentity.OperatorId,
+            refinementRecord.AuditEventId);
+
         return new OperatorOfflineEventRefinementResult
         {
             Accepted = true,
+            AuditEventId = refinementRecord.AuditEventId,
             Session = session,
-            OfflineEvent = BuildOfflineEventDetailView(record)
+            OfflineEvent = BuildOfflineEventDetailView(refinementRecord.OfflineEvent)
         };
     }
 

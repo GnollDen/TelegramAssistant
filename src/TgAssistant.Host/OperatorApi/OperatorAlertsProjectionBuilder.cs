@@ -119,6 +119,10 @@ public sealed class OperatorAlertsProjectionBuilder
             .ThenBy(group => group.TrackedPerson.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var allAlerts = groups
+            .SelectMany(group => group.Alerts)
+            .ToList();
+
         return new OperatorAlertsQueryResult
         {
             Accepted = true,
@@ -132,7 +136,11 @@ public sealed class OperatorAlertsProjectionBuilder
                 TotalAlerts = groups.Sum(group => group.AlertCount),
                 TelegramPushCount = groups.Sum(group => group.TelegramPushCount),
                 WebOnlyCount = groups.Sum(group => group.WebOnlyCount),
-                EscalationBoundary = boundary
+                RequiresAcknowledgementCount = allAlerts.Count(alert => alert.RequiresAcknowledgement),
+                EnterResolutionCount = allAlerts.Count(alert => alert.EnterResolutionContext),
+                EscalationBoundary = boundary,
+                TopReasons = BuildTopReasonFacets(allAlerts, request.TrackedPersonId, boundary),
+                BoundaryBreakdown = BuildBoundaryFacets(allAlerts, request.TrackedPersonId, normalizedSearch)
             },
             Groups = groups
         };
@@ -214,6 +222,7 @@ public sealed class OperatorAlertsProjectionBuilder
             || Matches(item.Status, normalizedSearch)
             || Matches(item.ScopeItemKey, normalizedSearch)
             || Matches(decision.RuleId, normalizedSearch)
+            || Matches(decision.Reason, normalizedSearch)
             || Matches(decision.EscalationBoundary, normalizedSearch);
     }
 
@@ -286,6 +295,100 @@ public sealed class OperatorAlertsProjectionBuilder
             : string.Equals(priority, ResolutionItemPriorities.High, StringComparison.Ordinal) ? 1
             : string.Equals(priority, ResolutionItemPriorities.Medium, StringComparison.Ordinal) ? 2
             : 3;
+
+    private static List<OperatorAlertsFacetCountView> BuildTopReasonFacets(
+        IReadOnlyCollection<OperatorAlertItemView> alerts,
+        Guid? trackedPersonId,
+        string boundary)
+    {
+        return alerts
+            .GroupBy(
+                alert => NormalizeOptional(alert.AlertRuleId) ?? "unknown_rule",
+                StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var label = group
+                    .Select(alert => NormalizeOptional(alert.AlertReason))
+                    .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason))
+                    ?? HumanizeToken(group.Key);
+                return new OperatorAlertsFacetCountView
+                {
+                    Key = group.Key,
+                    Label = label,
+                    Count = group.Count(),
+                    AlertsUrl = BuildAlertsUrl(trackedPersonId, boundary, group.Key)
+                };
+            })
+            .OrderByDescending(facet => facet.Count)
+            .ThenBy(facet => facet.Key, StringComparer.Ordinal)
+            .Take(3)
+            .ToList();
+    }
+
+    private static List<OperatorAlertsFacetCountView> BuildBoundaryFacets(
+        IReadOnlyCollection<OperatorAlertItemView> alerts,
+        Guid? trackedPersonId,
+        string? normalizedSearch)
+    {
+        return alerts
+            .GroupBy(
+                alert => NormalizeOptional(alert.EscalationBoundary) ?? OperatorAlertsEscalationFilters.All,
+                StringComparer.Ordinal)
+            .Select(group => new OperatorAlertsFacetCountView
+            {
+                Key = group.Key,
+                Label = HumanizeBoundary(group.Key),
+                Count = group.Count(),
+                AlertsUrl = BuildAlertsUrl(trackedPersonId, group.Key, normalizedSearch)
+            })
+            .OrderByDescending(facet => facet.Count)
+            .ThenBy(facet => facet.Key, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static string HumanizeBoundary(string boundary)
+        => string.Equals(boundary, OperatorAlertEscalationBoundaries.TelegramPushAcknowledge, StringComparison.Ordinal)
+            ? "Telegram + acknowledge"
+            : string.Equals(boundary, OperatorAlertEscalationBoundaries.WebOnly, StringComparison.Ordinal)
+                ? "Web-only"
+                : HumanizeToken(boundary);
+
+    private static string HumanizeToken(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Unknown";
+        }
+
+        return string.Join(
+            ' ',
+            value.Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(segment => char.ToUpperInvariant(segment[0]) + segment[1..]));
+    }
+
+    private static string BuildAlertsUrl(Guid? trackedPersonId, string boundary, string? search)
+    {
+        var parameters = new List<string>();
+        if (trackedPersonId.HasValue && trackedPersonId.Value != Guid.Empty)
+        {
+            parameters.Add($"trackedPersonId={Uri.EscapeDataString(trackedPersonId.Value.ToString("D"))}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(boundary)
+            && !string.Equals(boundary, OperatorAlertsEscalationFilters.All, StringComparison.Ordinal))
+        {
+            parameters.Add($"boundary={Uri.EscapeDataString(boundary)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            parameters.Add($"search={Uri.EscapeDataString(search)}");
+        }
+
+        return parameters.Count == 0
+            ? "/operator/alerts"
+            : $"/operator/alerts?{string.Join("&", parameters)}";
+    }
 
     private static string BuildResolutionDetailUrl(Guid trackedPersonId, string scopeItemKey)
     {

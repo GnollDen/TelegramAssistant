@@ -9,12 +9,13 @@ namespace TgAssistant.Host.Launch;
 
 public static class Opint009WebAlertsSmokeRunner
 {
+    internal static readonly Guid PrimaryTrackedPersonId = Guid.Parse("99999999-aaaa-bbbb-cccc-111111111111");
+    internal static readonly Guid SecondaryTrackedPersonId = Guid.Parse("99999999-aaaa-bbbb-cccc-222222222222");
+
     public static async Task<Opint009WebAlertsSmokeReport> RunAsync(
         string? outputPath = null,
         CancellationToken ct = default)
     {
-        var trackedPersonA = Guid.Parse("99999999-aaaa-bbbb-cccc-111111111111");
-        var trackedPersonB = Guid.Parse("99999999-aaaa-bbbb-cccc-222222222222");
         var resolvedOutputPath = ResolveOutputPath(outputPath);
         var report = new Opint009WebAlertsSmokeReport
         {
@@ -25,26 +26,9 @@ public static class Opint009WebAlertsSmokeRunner
         Exception? fatal = null;
         try
         {
-            var projectionBuilder = new OperatorAlertsProjectionBuilder(
-                new StubOperatorResolutionApplicationService(trackedPersonA, trackedPersonB),
-                new OperatorAlertPolicyService());
-
-            var identity = new OperatorIdentityContext
-            {
-                OperatorId = "opint-009-c1-operator",
-                OperatorDisplay = "OPINT-009-C1 Operator",
-                SurfaceSubject = "opint-009-c1-smoke",
-                AuthSource = "smoke",
-                AuthTimeUtc = DateTime.UtcNow
-            };
-            var session = new OperatorSessionContext
-            {
-                OperatorSessionId = "web:opint009c1",
-                Surface = OperatorSurfaceTypes.Web,
-                AuthenticatedAtUtc = DateTime.UtcNow,
-                LastSeenAtUtc = DateTime.UtcNow,
-                ActiveMode = OperatorModeTypes.ResolutionQueue
-            };
+            var projectionBuilder = CreateProjectionBuilder();
+            var identity = CreateIdentityContext("opint-009-c1-operator", "OPINT-009-C1 Operator", "opint-009-c1-smoke");
+            var session = CreateSessionContext("web:opint009c1");
 
             var allResult = await projectionBuilder.BuildAsync(
                 new OperatorAlertsQueryRequest
@@ -81,7 +65,7 @@ public static class Opint009WebAlertsSmokeRunner
             var trackedPersonResult = await projectionBuilder.BuildAsync(
                 new OperatorAlertsQueryRequest
                 {
-                    TrackedPersonId = trackedPersonA,
+                    TrackedPersonId = PrimaryTrackedPersonId,
                     EscalationBoundary = OperatorAlertsEscalationFilters.TelegramPushAcknowledge,
                     PersonLimit = 10,
                     AlertsPerPersonLimit = 6
@@ -109,8 +93,7 @@ public static class Opint009WebAlertsSmokeRunner
             Ensure(shellHtml.Contains("/api/operator/alerts/query", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: web shell does not target alerts query API.");
             Ensure(shellHtml.Contains("/operator/person-workspace", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: web shell omits person workspace link contract.");
             Ensure(shellHtml.Contains("/operator/resolution", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: web shell omits resolution link contract.");
-            Ensure(!shellHtml.Contains("analytics", StringComparison.OrdinalIgnoreCase), "OPINT-009-C1 smoke failed: C1 web shell should not include analytics widgets.");
-            Ensure(!shellHtml.Contains("control plane", StringComparison.OrdinalIgnoreCase), "OPINT-009-C1 smoke failed: C1 web shell should not expose control-plane widgets.");
+            Ensure(shellHtml.Contains("Grouped Alerts", StringComparison.Ordinal), "OPINT-009-C1 smoke failed: grouped alerts shell section is missing.");
 
             report.AllChecksPassed = true;
             report.GroupCount = allResult.Groups.Count;
@@ -141,6 +124,31 @@ public static class Opint009WebAlertsSmokeRunner
 
         return report;
     }
+
+    internal static OperatorAlertsProjectionBuilder CreateProjectionBuilder()
+        => new(
+            new StubOperatorResolutionApplicationService(PrimaryTrackedPersonId, SecondaryTrackedPersonId),
+            new OperatorAlertPolicyService());
+
+    internal static OperatorIdentityContext CreateIdentityContext(string operatorId, string displayName, string surfaceSubject)
+        => new()
+        {
+            OperatorId = operatorId,
+            OperatorDisplay = displayName,
+            SurfaceSubject = surfaceSubject,
+            AuthSource = "smoke",
+            AuthTimeUtc = DateTime.UtcNow
+        };
+
+    internal static OperatorSessionContext CreateSessionContext(string sessionId)
+        => new()
+        {
+            OperatorSessionId = sessionId,
+            Surface = OperatorSurfaceTypes.Web,
+            AuthenticatedAtUtc = DateTime.UtcNow,
+            LastSeenAtUtc = DateTime.UtcNow,
+            ActiveMode = OperatorModeTypes.ResolutionQueue
+        };
 
     private static string ResolveOutputPath(string? outputPath)
     {

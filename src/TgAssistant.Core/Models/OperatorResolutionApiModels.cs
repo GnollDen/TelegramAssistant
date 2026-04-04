@@ -651,6 +651,7 @@ public class OperatorOfflineEventRefinementResult
 {
     public bool Accepted { get; set; }
     public string? FailureReason { get; set; }
+    public Guid? AuditEventId { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
 }

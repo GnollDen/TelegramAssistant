@@ -438,13 +438,14 @@ public interface IOperatorOfflineEventRepository
         OperatorOfflineEventQueryRequest request,
         CancellationToken ct = default);
 
-    Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+    Task<OperatorOfflineEventRefinementRecord?> RefineWithinScopeAsync(
         Guid offlineEventId,
         string scopeKey,
         Guid trackedPersonId,
         string? summary,
         string? recordingReference,
         bool clearRecordingReference,
+        string? refinementNote,
         OperatorIdentityContext operatorIdentity,
         OperatorSessionContext session,
         DateTime refinedAtUtc,

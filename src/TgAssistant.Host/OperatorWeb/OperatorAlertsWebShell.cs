@@ -98,6 +98,42 @@ public static class OperatorAlertsWebShell
       padding: 3px 9px;
     }
     .muted { color: var(--muted); }
+    .widgets-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .widget-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fbfdff;
+      display: grid;
+      gap: 10px;
+    }
+    .widget-card h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .widget-metric {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .widget-copy {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .widget-actions, .widget-facets {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .widget-actions a, .widget-facets a {
+      background: #f7faff;
+    }
     #alerts-groups {
       display: grid;
       gap: 12px;
@@ -215,6 +251,13 @@ public static class OperatorAlertsWebShell
       <div id="counts" class="counts"></div>
     </section>
     <section class="panel">
+      <h2>Workflow Widgets</h2>
+      <p class="muted">Compact audit-friendly shortcuts. Widgets only link into existing operator pages and never expose raw admin or debug controls.</p>
+      <div id="widgets" class="widgets-grid">
+        <p class="muted">Load alerts to see workflow widgets.</p>
+      </div>
+    </section>
+    <section class="panel">
       <h2>Grouped Alerts</h2>
       <div id="alerts-groups">
         <p class="muted">No alerts loaded yet.</p>
@@ -231,8 +274,14 @@ public static class OperatorAlertsWebShell
     const stateNode = document.getElementById("state");
     const countsNode = document.getElementById("counts");
     const groupsNode = document.getElementById("alerts-groups");
+    const widgetsNode = document.getElementById("widgets");
     const personWorkspaceBasePath = "/operator/person-workspace";
     const resolutionBasePath = "/operator/resolution";
+    const query = new URLSearchParams(window.location.search);
+    const initialTrackedPersonId = query.get("trackedPersonId") || "";
+    const initialBoundary = query.get("boundary") || "";
+    const initialSearch = query.get("search") || "";
+    let pendingTrackedPersonFilter = initialTrackedPersonId;
 
     function setState(kind, message) {
       stateNode.className = "state " + kind;
@@ -309,7 +358,7 @@ public static class OperatorAlertsWebShell
 
     function syncTrackedPersonFilter(result) {
       const groups = Array.isArray(result.groups) ? result.groups : [];
-      const selected = personFilter.value;
+      const selected = personFilter.value || pendingTrackedPersonFilter;
       const options = [
         "<option value=\"\">All tracked persons</option>"
       ];
@@ -327,6 +376,7 @@ public static class OperatorAlertsWebShell
       personFilter.innerHTML = options.join("");
       if (selected && Array.from(personFilter.options).some(function(option) { return option.value === selected; })) {
         personFilter.value = selected;
+        pendingTrackedPersonFilter = "";
       }
     }
 
@@ -346,6 +396,167 @@ public static class OperatorAlertsWebShell
       });
     }
 
+    function titleize(value) {
+      return String(value || "")
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, function(char) { return char.toUpperCase(); });
+    }
+
+    function buildWidgetCard(title, metric, description) {
+      const card = document.createElement("article");
+      card.className = "widget-card";
+
+      const titleNode = document.createElement("h3");
+      titleNode.textContent = title;
+      card.appendChild(titleNode);
+
+      const metricNode = document.createElement("div");
+      metricNode.className = "widget-metric";
+      metricNode.textContent = String(metric);
+      card.appendChild(metricNode);
+
+      const copyNode = document.createElement("p");
+      copyNode.className = "widget-copy";
+      copyNode.textContent = description;
+      card.appendChild(copyNode);
+
+      return card;
+    }
+
+    function appendWidgetLinkRow(card, links) {
+      const row = document.createElement("div");
+      row.className = "widget-actions";
+      links.forEach(function(link) {
+        if (!link || !link.href) {
+          return;
+        }
+
+        const anchor = document.createElement("a");
+        anchor.href = link.href;
+        anchor.textContent = link.label;
+        row.appendChild(anchor);
+      });
+
+      if (row.childNodes.length > 0) {
+        card.appendChild(row);
+      }
+    }
+
+    function appendFacetRow(card, facets, emptyText) {
+      const row = document.createElement("div");
+      row.className = "widget-facets";
+      if (!Array.isArray(facets) || facets.length === 0) {
+        const muted = document.createElement("span");
+        muted.className = "muted";
+        muted.textContent = emptyText;
+        row.appendChild(muted);
+        card.appendChild(row);
+        return;
+      }
+
+      facets.forEach(function(facet) {
+        const anchor = document.createElement("a");
+        anchor.href = facet.alertsUrl || "/operator/alerts";
+        anchor.className = "chip";
+        anchor.textContent = (facet.label || facet.key || "Unknown") + " (" + Number(facet.count || 0) + ")";
+        row.appendChild(anchor);
+      });
+      card.appendChild(row);
+    }
+
+    function findFocusAlert(groups, predicate) {
+      for (const group of Array.isArray(groups) ? groups : []) {
+        for (const alert of Array.isArray(group.alerts) ? group.alerts : []) {
+          if (predicate(alert, group)) {
+            return {
+              alert: alert,
+              group: group
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function syncLocationState(activeTrackedPersonId) {
+      const params = new URLSearchParams();
+      if (activeTrackedPersonId) {
+        params.set("trackedPersonId", activeTrackedPersonId);
+      }
+
+      if (boundaryFilter.value && boundaryFilter.value !== "all") {
+        params.set("boundary", boundaryFilter.value);
+      }
+
+      if (searchInput.value.trim()) {
+        params.set("search", searchInput.value.trim());
+      }
+
+      const queryString = params.toString();
+      const nextUrl = queryString ? "/operator/alerts?" + queryString : "/operator/alerts";
+      window.history.replaceState(null, "", nextUrl);
+    }
+
+    function renderWidgets(result) {
+      const summary = result.summary || {};
+      const groups = Array.isArray(result.groups) ? result.groups : [];
+      widgetsNode.innerHTML = "";
+
+      const acknowledgementFocus = findFocusAlert(groups, function(alert) {
+        return !!alert.requiresAcknowledgement;
+      });
+      const resolutionFocus = findFocusAlert(groups, function(alert) {
+        return !!alert.enterResolutionContext;
+      });
+
+      const ackWidget = buildWidgetCard(
+        "Acknowledgement Queue",
+        Number(summary.requiresAcknowledgementCount || 0),
+        acknowledgementFocus
+          ? "Highest-priority acknowledgement path stays bounded to the linked resolution and person pages."
+          : "No acknowledgement-required alerts in the current filter.");
+      appendWidgetLinkRow(
+        ackWidget,
+        acknowledgementFocus
+          ? [
+              { href: acknowledgementFocus.alert.resolutionUrl || resolutionBasePath, label: "Open Focus Resolution" },
+              { href: acknowledgementFocus.alert.personWorkspaceUrl || personWorkspaceBasePath, label: "Open Focus Person" }
+            ]
+          : []);
+      widgetsNode.appendChild(ackWidget);
+
+      const resolutionWidget = buildWidgetCard(
+        "Enter Resolution",
+        Number(summary.enterResolutionCount || 0),
+        resolutionFocus
+          ? (resolutionFocus.alert.title || "Workflow blocker") + " is ready for direct drilldown."
+          : "No resolution-entry alert is available in the current filter.");
+      appendWidgetLinkRow(
+        resolutionWidget,
+        resolutionFocus
+          ? [
+              { href: resolutionFocus.alert.resolutionUrl || resolutionBasePath, label: "Open Resolution Drilldown" },
+              { href: resolutionFocus.group && resolutionFocus.group.resolutionQueueUrl ? resolutionFocus.group.resolutionQueueUrl : resolutionBasePath, label: "Open Person Queue" }
+            ]
+          : []);
+      widgetsNode.appendChild(resolutionWidget);
+
+      const reasonsWidget = buildWidgetCard(
+        "Top Alert Reasons",
+        Array.isArray(summary.topReasons) ? summary.topReasons.length : 0,
+        "Reason facets deep-link back into the bounded alerts page using stable workflow filters.");
+      appendFacetRow(reasonsWidget, summary.topReasons, "No reason facets available.");
+      widgetsNode.appendChild(reasonsWidget);
+
+      const boundariesWidget = buildWidgetCard(
+        "Boundary Mix",
+        Array.isArray(summary.boundaryBreakdown) ? summary.boundaryBreakdown.length : 0,
+        "Boundary facets keep operators inside approved alert scopes with explicit labels.");
+      appendFacetRow(boundariesWidget, summary.boundaryBreakdown, "No boundary facets available.");
+      widgetsNode.appendChild(boundariesWidget);
+    }
+
     function renderGroups(result) {
       const groups = Array.isArray(result.groups) ? result.groups : [];
       groupsNode.innerHTML = "";
@@ -356,6 +567,10 @@ public static class OperatorAlertsWebShell
 
       groups.forEach(function(group) {
         const person = group.trackedPerson || {};
+        const alerts = Array.isArray(group.alerts) ? group.alerts : [];
+        const ackRequiredCount = alerts.filter(function(alert) { return !!alert.requiresAcknowledgement; }).length;
+        const enterResolutionCount = alerts.filter(function(alert) { return !!alert.enterResolutionContext; }).length;
+        const focusAlert = alerts.find(function(alert) { return !!alert.enterResolutionContext; }) || alerts[0] || null;
         const card = document.createElement("article");
         card.className = "group-card";
 
@@ -369,12 +584,18 @@ public static class OperatorAlertsWebShell
           + "<span>Alerts " + Number(group.alertCount || 0) + "</span>"
           + "<span>Telegram-bound " + Number(group.telegramPushCount || 0) + "</span>"
           + "<span>Web-only " + Number(group.webOnlyCount || 0) + "</span>"
+          + "<span>Ack-required " + ackRequiredCount + "</span>"
+          + "<span>Enter resolution " + enterResolutionCount + "</span>"
           + "</div>"
           + "</div>";
 
         const actions = document.createElement("div");
         actions.className = "group-actions";
         actions.innerHTML =
+          (focusAlert && focusAlert.resolutionUrl
+            ? "<a href=\"" + focusAlert.resolutionUrl + "\">Open Focus Alert</a>"
+            : "")
+          +
           "<a href=\"" + (group.personWorkspaceUrl || personWorkspaceBasePath) + "\">Open Person Workspace</a>"
           + "<a href=\"" + (group.resolutionQueueUrl || resolutionBasePath) + "\">Open Resolution Queue</a>";
         header.appendChild(actions);
@@ -382,7 +603,7 @@ public static class OperatorAlertsWebShell
 
         const alertList = document.createElement("div");
         alertList.className = "alert-list";
-        (group.alerts || []).forEach(function(alert) {
+        alerts.forEach(function(alert) {
           const item = document.createElement("section");
           item.className = "alert-card";
           item.innerHTML =
@@ -422,7 +643,7 @@ public static class OperatorAlertsWebShell
 
         setState("loading", "Loading workflow-critical alerts...");
         const result = await operatorPostJson("/api/operator/alerts/query", {
-          trackedPersonId: personFilter.value || null,
+          trackedPersonId: personFilter.value || pendingTrackedPersonFilter || null,
           escalationBoundary: boundaryFilter.value || "all",
           search: searchInput.value.trim() || null,
           personLimit: 24,
@@ -435,6 +656,8 @@ public static class OperatorAlertsWebShell
         syncTrackedPersonFilter(result);
         renderCounts(result);
         renderGroups(result);
+        renderWidgets(result);
+        syncLocationState(personFilter.value || pendingTrackedPersonFilter || "");
         setState("success", "Alerts loaded from bounded operator projections.");
       } catch (error) {
         setState("error", "Alerts load failed: " + describeFailureReason(error && error.message ? error.message : "unknown_error"));
@@ -442,9 +665,20 @@ public static class OperatorAlertsWebShell
     }
 
     tokenInput.value = readAccessToken();
+    if (initialBoundary === "web_only" || initialBoundary === "telegram_push_acknowledge") {
+      boundaryFilter.value = initialBoundary;
+    }
+    if (initialSearch) {
+      searchInput.value = initialSearch;
+    }
     refreshButton.addEventListener("click", refreshAlerts);
-    personFilter.addEventListener("change", refreshAlerts);
-    boundaryFilter.addEventListener("change", refreshAlerts);
+    personFilter.addEventListener("change", function() {
+      pendingTrackedPersonFilter = "";
+      refreshAlerts();
+    });
+    boundaryFilter.addEventListener("change", function() {
+      refreshAlerts();
+    });
     searchInput.addEventListener("keydown", function(event) {
       if (event.key === "Enter") {
         refreshAlerts();

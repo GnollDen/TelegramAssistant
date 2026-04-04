@@ -56,7 +56,19 @@ public sealed class OperatorAlertsSummaryView
     public int TotalAlerts { get; set; }
     public int TelegramPushCount { get; set; }
     public int WebOnlyCount { get; set; }
+    public int RequiresAcknowledgementCount { get; set; }
+    public int EnterResolutionCount { get; set; }
     public string EscalationBoundary { get; set; } = OperatorAlertsEscalationFilters.All;
+    public List<OperatorAlertsFacetCountView> TopReasons { get; set; } = [];
+    public List<OperatorAlertsFacetCountView> BoundaryBreakdown { get; set; } = [];
+}
+
+public sealed class OperatorAlertsFacetCountView
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int Count { get; set; }
+    public string AlertsUrl { get; set; } = string.Empty;
 }
 
 public sealed class OperatorAlertGroupView

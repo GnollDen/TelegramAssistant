@@ -215,6 +215,12 @@ public class OperatorOfflineEventRefinementRequest : OperatorContractRequestBase
     public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public class OperatorOfflineEventRefinementRecord
+{
+    public Guid AuditEventId { get; set; }
+    public OperatorOfflineEventRecord OfflineEvent { get; set; } = new();
+}
+
 public static class OperatorOfflineEventTimelineLinkageStatuses
 {
     public const string Unlinked = "unlinked";
