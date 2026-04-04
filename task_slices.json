@@ -1945,14 +1945,14 @@
       "priority": "critical",
       "description": "Implement Telegram mode selection card and active tracked-person context state for resolution mode.",
       "executor_agent": "frontend-developer",
-    "dependencies": [
-      "OPINT-003-D"
-    ],
-    "status": "done",
-    "acceptance_focus": [
-      "Telegram no longer defaults to free chat and requires mode/context selection.",
-      "Active tracked-person state is explicit and switchable."
-    ],
+      "dependencies": [
+        "OPINT-003-D"
+      ],
+      "status": "done",
+      "acceptance_focus": [
+        "Telegram no longer defaults to free chat and requires mode/context selection.",
+        "Active tracked-person state is explicit and switchable."
+      ],
       "notes": "Foundation for compact operator cockpit behavior."
     },
     {
@@ -1973,21 +1973,55 @@
       "notes": "Done on 2026-04-04: Telegram resolution mode now renders compact card messages with required metadata fields (`type/summary/why/trust/status/evidence/updated-at`) and bounded action controls mapped to OPINT contracts (`approve/reject/defer/clarify/evidence/open-web`) via tokenized callbacks, without legacy bot command reuse. `approve` is wired end-to-end to bounded action submission while explanation-requiring actions remain explicitly deferred to OPINT-004-C. Verified with `dotnet build TelegramAssistant.sln` and bounded Telegram smoke `dotnet run --project src/TgAssistant.Host -- --opint-004-a-smoke --runtime-role=ops`."
     },
     {
-      "id": "OPINT-004-C",
+      "id": "OPINT-004-C1",
       "parent_task_id": "OPINT-004",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement Telegram clarification/evidence/open-web side flows and recompute feedback state rendering.",
+      "description": "Implement Telegram clarification submission flow for clarify/reject/defer with bounded follow-up input and structured payload persistence.",
       "executor_agent": "frontend-developer",
       "dependencies": [
         "OPINT-004-B"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Clarify path supports bounded follow-up input and submits structured payload.",
-        "Evidence/Open Web actions are available without expanding Telegram into deep-analysis UI."
+        "Clarify/reject/defer actions require bounded explanation input when configured by the action contract.",
+        "Submitted payload keeps operator/session/person/item scope and is auditable in persisted action data."
       ],
-      "notes": "Keeps Telegram compact and web handoff-friendly."
+      "notes": "Narrow write scope: Telegram action-input workflow and structured payload mapping."
+    },
+    {
+      "id": "OPINT-004-C2",
+      "parent_task_id": "OPINT-004",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Telegram evidence preview and Open in Web handoff actions with bounded tracked-person/item context.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-004-C1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Evidence action shows compact bounded evidence summary without expanding Telegram into deep-analysis workspace.",
+        "Open in Web handoff includes stable bounded context (person/item/session) and avoids legacy web routes."
+      ],
+      "notes": "Separates navigation/handoff outcomes from mutation/recompute outcomes."
+    },
+    {
+      "id": "OPINT-004-C3",
+      "parent_task_id": "OPINT-004",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Render Telegram recompute lifecycle feedback after submitted resolution actions.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-004-C1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Telegram displays running/done/failed/clarification-blocked recompute states for the acted item.",
+        "Post-action feedback shows unresolved/auto-resolved/newly-emerged related-conflict deltas for the same bounded scope."
+      ],
+      "notes": "Dedicated verification path for action->recompute feedback loop."
     },
     {
       "id": "OPINT-004-D",
@@ -1997,31 +2031,49 @@
       "description": "Run bounded Telegram resolution pilot validation with authorization, action persistence, and recompute feedback checks.",
       "executor_agent": "reviewer",
       "dependencies": [
-        "OPINT-004-C"
+        "OPINT-004-C2",
+        "OPINT-004-C3"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Telegram P0 resolution path is execution-ready on bounded scope.",
-        "Unauthorized operator attempts are denied and audited."
+        "A reproducible bounded Telegram smoke path validates authorize -> action -> persistence -> recompute feedback.",
+        "Unauthorized operator attempts are denied, audited, and visible in validation output."
       ],
       "notes": "P0 surface validation checkpoint #1."
     },
     {
-      "id": "OPINT-005-A",
+      "id": "OPINT-005-A1",
       "parent_task_id": "OPINT-005",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "critical",
-      "description": "Implement web resolution runtime boundary and minimal navigation entry to Resolution section.",
+      "description": "Implement web operator shell bootstrap and bounded Resolution route entry (loading/empty/error states included).",
       "executor_agent": "frontend-developer",
       "dependencies": [
         "OPINT-004-D"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Web surface is active for operator resolution workflows.",
-        "No dependency on legacy Stage6 web pages or case-centric routes."
+        "Operator can enter a dedicated Resolution route from web home/navigation without legacy Stage6 pages.",
+        "Resolution entry state handles loading, empty queue, and failure modes explicitly."
       ],
-      "notes": "Entry slice for P0 deep-analysis surface."
+      "notes": "Separates web shell/runtime entry from queue/detail/action implementation."
+    },
+    {
+      "id": "OPINT-005-A2",
+      "parent_task_id": "OPINT-005",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "critical",
+      "description": "Implement web auth/session boundary for operator-resolution contracts.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "OPINT-005-A1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Web resolution requests include trusted operator/session context instead of free-form unauthenticated payload construction.",
+        "Denied/expired session paths are deterministic and auditable for bounded operator flows."
+      ],
+      "notes": "Hard prerequisite for safe web operator actions."
     },
     {
       "id": "OPINT-005-B",
@@ -2031,48 +2083,82 @@
       "description": "Implement web resolution queue with priority sorting, filtering, unresolved counters, and latest-activity ordering.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-005-A"
+        "OPINT-005-A2"
       ],
       "status": "pending",
       "acceptance_focus": [
         "Queue ordering follows critical/high/medium/low then activity recency.",
-        "Counts and filters are consistent with backend resolution projections."
+        "Counts and filters are consistent with backend resolution projections for the active operator scope."
       ],
       "notes": "Queue-first view before detail interactions."
     },
     {
-      "id": "OPINT-005-C",
+      "id": "OPINT-005-C1",
       "parent_task_id": "OPINT-005",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "critical",
-      "description": "Implement web resolution detail and evidence panel for selected items with trust/provenance visibility.",
+      "description": "Implement web resolution detail panel for selected queue item with why-it-matters/trust/provenance visibility.",
       "executor_agent": "frontend-developer",
       "dependencies": [
         "OPINT-005-B"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Detail view keeps why-it-matters, trust, and affected objects explicit.",
-        "Evidence panel supports summarized evidence drilldown in MVP scope."
+        "Detail view exposes item type, summary, why-it-matters, trust factor, affected objects, and bounded status metadata.",
+        "Detail state transitions are deterministic across selection, refresh, and unavailable-item cases."
       ],
-      "notes": "Deep-analysis detail surface for P0."
+      "notes": "Detail-view checkpoint isolated from evidence drawer and mutation paths."
     },
     {
-      "id": "OPINT-005-D",
+      "id": "OPINT-005-C2",
       "parent_task_id": "OPINT-005",
       "phase": "phase-f-operator-interaction-layer",
-      "priority": "high",
-      "description": "Implement clarification side panel/drawer workflow and bounded action submission from web detail context.",
+      "priority": "critical",
+      "description": "Implement evidence drawer/panel in web resolution detail flow.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-005-C"
+        "OPINT-005-C1"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Operator can submit clarify/reject/defer/approve without losing context.",
-        "Follow-up questions appear only under configured information-gain rules."
+        "Evidence drawer shows bounded summarized evidence with provenance and confidence cues for the selected item.",
+        "Evidence open/close/navigation keeps operator in the same resolution context without route reset."
       ],
-      "notes": "Implements PRD side-panel interaction model."
+      "notes": "Evidence read path separated from action-write paths."
+    },
+    {
+      "id": "OPINT-005-D1",
+      "parent_task_id": "OPINT-005",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement bounded approve/reject/defer action submission from web resolution detail context.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-005-C2"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Operator can submit approve/reject/defer from detail context without losing queue position.",
+        "Action submission persists bounded operator/session/item scope and returns deterministic status payload."
+      ],
+      "notes": "Single write scope for non-clarify action submission."
+    },
+    {
+      "id": "OPINT-005-D2",
+      "parent_task_id": "OPINT-005",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement clarification side panel/drawer follow-up flow and bounded clarify action submission.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-005-D1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Clarification drawer prompts for required follow-up fields and enforces configured explanation requirements.",
+        "Clarify submission keeps context in-place and stores structured follow-up payload for recompute."
+      ],
+      "notes": "Clarification workflow isolated from generic action buttons."
     },
     {
       "id": "OPINT-005-E",
@@ -2082,7 +2168,7 @@
       "description": "Render recompute progress/result feedback and updated related-conflict state in web resolution workflow.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-005-D"
+        "OPINT-005-D2"
       ],
       "status": "pending",
       "acceptance_focus": [
@@ -2103,8 +2189,8 @@
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Web P0 resolution surface is execution-ready for next runs.",
-        "Validation includes normal path, failure path, and integration edge coverage."
+        "Web P0 resolution smoke path is reproducible and checks queue/detail/evidence/action/recompute transitions.",
+        "Validation artifact captures normal path, denied-action path, and recompute-failure/degraded path."
       ],
       "notes": "P0 surface validation checkpoint #2."
     },
@@ -2113,34 +2199,52 @@
       "parent_task_id": "OPINT-006",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Define assistant response contract and truth-label rendering requirements (Fact/Inference/Hypothesis/Recommendation + Trust%).",
+      "description": "Define assistant response schema and rendering contract (Short Answer/What Is Known/What It Means/Recommendation/Trust%) with explicit truth labels.",
       "executor_agent": "business-analyst",
       "dependencies": [
-        "OPINT-005-F"
+        "OPINT-004-D",
+        "OPINT-005-A2"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Assistant output contract is deterministic and reviewable.",
-        "Truth-label and trust display requirements are explicit for implementation/testing."
+        "Assistant output contract is deterministic, machine-checkable, and reviewable with bounded examples.",
+        "Truth-label and trust display requirements are explicit for implementation/testing across Telegram assistant mode."
       ],
-      "notes": "Contract-first before assistant UI wiring."
+      "notes": "Contract-first artifact without waiting for full web P0 validation."
     },
     {
-      "id": "OPINT-006-B",
+      "id": "OPINT-006-B1",
       "parent_task_id": "OPINT-006",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement bounded retrieval/context assembly for assistant answers using active tracked-person read models only.",
+      "description": "Implement assistant answer generation service that emits required structured sections, truth labels, and trust value.",
       "executor_agent": "backend-developer",
       "dependencies": [
         "OPINT-006-A"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Assistant context assembly is bounded and MCP-independent.",
-        "Read-model usage is auditable by scope/person/session."
+        "Assistant output consistently returns required sections and truth-label categories for bounded prompts.",
+        "Trust value is included and formatted for Telegram rendering contract."
       ],
-      "notes": "Backend prerequisite for assistant mode UI."
+      "notes": "Separates answer-shape generation from retrieval guardrails."
+    },
+    {
+      "id": "OPINT-006-B2",
+      "parent_task_id": "OPINT-006",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement bounded retrieval/context assembly guardrails for assistant answers using active tracked-person read models only.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "OPINT-006-B1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Assistant context assembly is bounded to active tracked-person scope and remains MCP-independent.",
+        "Read-model usage is auditable by scope/person/session and rejects cross-scope leakage."
+      ],
+      "notes": "Dedicated verification path for retrieval scoping and auditability."
     },
     {
       "id": "OPINT-006-C",
@@ -2150,7 +2254,7 @@
       "description": "Implement Telegram assistant mode UI over active tracked-person context with Open in Web handoff.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-006-B"
+        "OPINT-006-B2"
       ],
       "status": "pending",
       "acceptance_focus": [
@@ -2160,55 +2264,125 @@
       "notes": "P1 assistant mode slice."
     },
     {
-      "id": "OPINT-007-A",
+      "id": "OPINT-007-A1",
       "parent_task_id": "OPINT-007",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Define clean offline-event record model and persistence boundary for operator-layer flow (separate from legacy Stage6 offline path).",
+      "description": "Implement operator-layer offline-event record model, migration, and persistence boundary (separate from legacy Stage6 offline path).",
       "executor_agent": "backend-developer",
       "dependencies": [
-        "OPINT-005-F"
+        "OPINT-002-D",
+        "OPINT-004-D"
       ],
       "status": "pending",
       "acceptance_focus": [
         "Offline-event data contract is scoped to operator-layer requirements.",
         "Persistence boundary avoids reopening legacy Stage6 command path semantics."
       ],
-      "notes": "Storage/model prerequisite for capture and web refinement."
+      "notes": "Backend-only storage boundary checkpoint, independent from web P0 completion."
     },
     {
-      "id": "OPINT-007-B",
+      "id": "OPINT-007-A2",
       "parent_task_id": "OPINT-007",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement Telegram offline-event capture flow (summary + optional recording reference) and prioritized clarification-question loop with stop rule.",
-      "executor_agent": "frontend-developer",
+      "description": "Implement offline-event operator read model/query path with tracked-person scope and timeline-linkage metadata.",
+      "executor_agent": "backend-developer",
       "dependencies": [
-        "OPINT-007-A"
+        "OPINT-007-A1"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Capture loop asks highest-gain follow-ups first and stops on low-gain/repetition conditions.",
-        "Structured input is persisted for downstream analysis."
+        "Saved offline events are queryable by operator scope and tracked person with stable identifiers.",
+        "Read model exposes timeline-linkage/status metadata required by Telegram/web refinement flows."
       ],
-      "notes": "P1 capture flow; bounded and auditable."
+      "notes": "Creates explicit queryable increment requested by parent acceptance."
     },
     {
-      "id": "OPINT-007-C",
+      "id": "OPINT-007-B1",
       "parent_task_id": "OPINT-007",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement web offline-event inspection/refinement page with confidence/trust, clarification history, and timeline linkage updates.",
+      "description": "Implement Telegram offline-event capture intake (summary + optional recording reference) with draft persistence.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-007-B"
+        "OPINT-007-A2"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Web exposes offline-event details needed for review/correction/linkage.",
-        "Refinement actions remain bounded and auditable."
+        "Telegram flow captures summary and optional recording reference in active tracked-person context.",
+        "Captured input persists as bounded offline-event draft with operator/session linkage."
       ],
-      "notes": "P1 web offline-event continuation."
+      "notes": "Capture-input step isolated from clarification loop policy and refinement UI."
+    },
+    {
+      "id": "OPINT-007-B2",
+      "parent_task_id": "OPINT-007",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement prioritized offline-event clarification-question loop with PRD stop-rule enforcement.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "OPINT-007-B1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Clarification questions are ranked by expected information gain for the active offline-event draft.",
+        "Loop terminates on low-gain/repetition/unknown-answer patterns and supports partial-confidence save."
+      ],
+      "notes": "Narrow decision/policy slice for clarification ranking and stop conditions."
+    },
+    {
+      "id": "OPINT-007-B3",
+      "parent_task_id": "OPINT-007",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Telegram orchestration for offline-event clarification loop and partial-confidence final save.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-007-B2"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Telegram operator can progress through clarification questions and save when stop conditions are reached.",
+        "Final saved offline event includes confidence/trust indicators and full clarification history linkage."
+      ],
+      "notes": "Completes bounded Telegram flow after capture and ranking policies are in place."
+    },
+    {
+      "id": "OPINT-007-C1",
+      "parent_task_id": "OPINT-007",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement web offline-event inspection/refinement page with confidence/trust and clarification history.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-005-E",
+        "OPINT-007-B3"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Web exposes offline-event details needed for review/correction with confidence/trust and clarification history visibility.",
+        "Refinement actions remain bounded to the selected offline event and operator session."
+      ],
+      "notes": "Web refinement separated from timeline linkage mutation."
+    },
+    {
+      "id": "OPINT-007-C2",
+      "parent_task_id": "OPINT-007",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement bounded timeline-linkage updates for refined offline events.",
+      "executor_agent": "backend-developer",
+      "dependencies": [
+        "OPINT-007-C1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Operator-approved refinement can update offline-event timeline linkage in bounded scope.",
+        "Linkage updates are auditable and do not mutate unrelated person/timeline objects."
+      ],
+      "notes": "Dedicated write path for timeline-linkage mutations."
     },
     {
       "id": "OPINT-008-A",
@@ -2218,7 +2392,7 @@
       "description": "Implement web persons list with search, unresolved badges, and recent-update indicators for tracked-person navigation.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-005-F"
+        "OPINT-005-A2"
       ],
       "status": "pending",
       "acceptance_focus": [
@@ -2228,74 +2402,159 @@
       "notes": "Start of P1 workspace expansion."
     },
     {
-      "id": "OPINT-008-B",
+      "id": "OPINT-008-B1",
       "parent_task_id": "OPINT-008",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement workspace shell and tabs for Summary, Dossier, and Profile with trust/uncertainty/provenance visibility.",
+      "description": "Implement workspace shell and Summary section with trust/uncertainty/provenance visibility.",
       "executor_agent": "frontend-developer",
       "dependencies": [
         "OPINT-008-A"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Summary/Dossier/Profile views are readable and grounded in durable read models.",
-        "Trust and uncertainty signals are explicit across tabs."
+        "Workspace shell is stable for person-scoped navigation and section switching.",
+        "Summary section is grounded in durable read models with explicit trust/uncertainty signals."
       ],
-      "notes": "Core person workspace baseline."
+      "notes": "Shell + Summary is a single bounded outcome and checkpoint."
     },
     {
-      "id": "OPINT-008-C",
+      "id": "OPINT-008-B2",
       "parent_task_id": "OPINT-008",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement Pair Dynamics and Timeline tabs with summary + drilldown + evidence access.",
+      "description": "Implement Dossier section in person workspace with provenance visibility.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-008-B"
+        "OPINT-008-B1"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Pair/Timeline views expose direction-of-change and key shifts.",
-        "Drilldown paths link back to durable evidence context."
+        "Dossier section is readable from durable read models in person-scoped workspace context.",
+        "Dossier facts expose provenance/trust markers and bounded drilldown entry points."
       ],
-      "notes": "Extends workspace to full behavioral/timeline analysis."
+      "notes": "Dossier separated from Profile and timeline-heavy sections."
     },
     {
-      "id": "OPINT-008-D",
+      "id": "OPINT-008-B3",
       "parent_task_id": "OPINT-008",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "high",
-      "description": "Implement Evidence and Revisions tabs with durable-object change history and trigger context.",
+      "description": "Implement Profile section in person workspace with uncertainty and confidence signals.",
       "executor_agent": "frontend-developer",
       "dependencies": [
-        "OPINT-008-C"
+        "OPINT-008-B2"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Operator can inspect why durable objects exist and how they changed.",
-        "Revision history includes trigger and version/change cues for analysis."
+        "Profile section is grounded in durable read models for the selected tracked person.",
+        "Confidence/uncertainty signals are explicit and navigable to supporting context."
       ],
-      "notes": "Completes required P1 workspace tabs."
+      "notes": "Profile isolated from Pair/Timeline/Evidence/Revisions scopes."
+    },
+    {
+      "id": "OPINT-008-C1",
+      "parent_task_id": "OPINT-008",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Pair Dynamics section with bounded summary and evidence drilldown links.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-008-B3"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Pair Dynamics view exposes current pair state and direction-of-change signals for the tracked person scope.",
+        "Pair-level drilldown links route to bounded evidence context."
+      ],
+      "notes": "Separates Pair Dynamics from Timeline rendering complexity."
+    },
+    {
+      "id": "OPINT-008-C2",
+      "parent_task_id": "OPINT-008",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Timeline section with bounded summary and revision/evidence drilldown.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-008-C1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Timeline view exposes key shifts in bounded tracked-person scope with recency ordering.",
+        "Timeline drilldown links to evidence/revision context without leaving bounded workspace."
+      ],
+      "notes": "Timeline isolated for clearer verification and recovery checkpoints."
+    },
+    {
+      "id": "OPINT-008-D1",
+      "parent_task_id": "OPINT-008",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Evidence section with durable-object evidence drilldown and provenance context.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-008-C2"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Evidence section explains why durable objects exist with bounded provenance and confidence context.",
+        "Evidence navigation keeps person workspace scope stable."
+      ],
+      "notes": "Evidence-focused checkpoint separated from revision history."
+    },
+    {
+      "id": "OPINT-008-D2",
+      "parent_task_id": "OPINT-008",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Revisions section with durable-object change history and trigger context.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-008-D1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Revision history shows version/change cues and trigger context for bounded durable objects.",
+        "Operator can traverse revision history without leaving person workspace scope."
+      ],
+      "notes": "Revision-history checkpoint separated from evidence existence checks."
+    },
+    {
+      "id": "OPINT-008-E",
+      "parent_task_id": "OPINT-008",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "high",
+      "description": "Implement Resolution section/drilldown in person workspace.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-008-D2"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Person workspace exposes Resolution section with unresolved/resolved status and bounded drilldown to resolution items.",
+        "Resolution drilldown reuses operator-layer contracts and preserves tracked-person context."
+      ],
+      "notes": "Explicit slice owner for parent requirement covering Resolution section."
     },
     {
       "id": "OPINT-009-A",
       "parent_task_id": "OPINT-009",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "medium",
-      "description": "Define critical-alert taxonomy and delivery policy across runtime defects, blocking resolution items, materialization failures, and control-plane stops.",
+      "description": "Define critical-alert taxonomy and default suppression policy across runtime defects, blocking resolution items, materialization failures, and control-plane stops.",
       "executor_agent": "architect-reviewer",
       "dependencies": [
         "OPINT-006-C",
-        "OPINT-007-C",
-        "OPINT-008-D"
+        "OPINT-007-C2",
+        "OPINT-008-E"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Default alert policy is workflow-critical only.",
-        "Alert sources and suppression boundaries are explicit."
+        "Default alert policy is workflow-critical only and explicitly suppresses non-critical state churn.",
+        "Alert source classes, suppression rules, and escalation boundaries are explicit and testable."
       ],
-      "notes": "P2 foundation before delivery surfaces."
+      "notes": "P2 policy foundation before delivery surfaces."
     },
     {
       "id": "OPINT-009-B",
@@ -2315,21 +2574,55 @@
       "notes": "Telegram alert surface."
     },
     {
-      "id": "OPINT-009-C",
+      "id": "OPINT-009-C1",
       "parent_task_id": "OPINT-009",
       "phase": "phase-f-operator-interaction-layer",
       "priority": "medium",
-      "description": "Implement web alerts list/grouping/filtering with links to related resolution/person objects and bounded control/analytics widgets.",
+      "description": "Implement web alerts list/grouping/filtering with links to related resolution/person objects.",
       "executor_agent": "frontend-developer",
       "dependencies": [
         "OPINT-009-B"
       ],
       "status": "pending",
       "acceptance_focus": [
-        "Web alerts provide richer context than Telegram while staying workflow-focused.",
-        "Control/analytics enrichments avoid broad unsafe admin surfaces."
+        "Web alerts list is grouped/filterable and maps each alert to related resolution/person context.",
+        "Alert list remains workflow-focused and excludes non-critical default feed noise."
       ],
-      "notes": "Final P2 surface slice."
+      "notes": "Core web alerts outcome separated from control-plane analytics widgets."
+    },
+    {
+      "id": "OPINT-009-C2",
+      "parent_task_id": "OPINT-009",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "medium",
+      "description": "Implement bounded web control/analytics widgets linked to alert context.",
+      "executor_agent": "frontend-developer",
+      "dependencies": [
+        "OPINT-009-C1"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Control/analytics widgets are bounded, auditable, and linked to actionable alert context.",
+        "Widgets do not expose raw admin/debug consoles as product UI."
+      ],
+      "notes": "Keeps higher-risk control/analytics scope independent from base alerts list."
+    },
+    {
+      "id": "OPINT-009-D",
+      "parent_task_id": "OPINT-009",
+      "phase": "phase-f-operator-interaction-layer",
+      "priority": "medium",
+      "description": "Run bounded alerts validation for delivery, suppression, acknowledgement, and deep-link recovery.",
+      "executor_agent": "reviewer",
+      "dependencies": [
+        "OPINT-009-C2"
+      ],
+      "status": "pending",
+      "acceptance_focus": [
+        "Validation artifact proves critical-only delivery, suppression behavior, and acknowledgment persistence.",
+        "Deep-link handoff/recovery paths are verified for Telegram and web alert surfaces."
+      ],
+      "notes": "Final P2 validation checkpoint."
     }
   ]
 }
