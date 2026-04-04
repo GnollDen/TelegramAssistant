@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
@@ -9,6 +10,18 @@ namespace TgAssistant.Infrastructure.Database;
 public sealed class ResolutionReadProjectionService : IResolutionReadService
 {
     private const string ActiveStatus = "active";
+    private static readonly Regex GuidRegex = new(
+        @"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex InternalKeyValueRegex = new(
+        @"\b(?:tracked_person_id|scope_item_key|scope_key|operator_session_id|source_ref|target_ref|object_ref)\s*[:=]\s*\S+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ScopeTokenRegex = new(
+        @"\bscope:[^\s,;]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex WhitespaceRegex = new(
+        @"\s{2,}",
+        RegexOptions.Compiled);
 
     private static readonly IReadOnlyDictionary<string, string[]> TargetFamilyToObjectFamilies =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -234,6 +247,12 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 Title = match.Summary.Title,
                 Summary = match.Summary.Summary,
                 WhyItMatters = match.Summary.WhyItMatters,
+                HumanShortTitle = match.Summary.HumanShortTitle,
+                WhatHappened = match.Summary.WhatHappened,
+                WhyOperatorAnswerNeeded = match.Summary.WhyOperatorAnswerNeeded,
+                WhatToDoPrompt = match.Summary.WhatToDoPrompt,
+                EvidenceHint = match.Summary.EvidenceHint,
+                SecondaryText = match.Summary.SecondaryText,
                 AffectedFamily = match.Summary.AffectedFamily,
                 AffectedObjectRef = match.Summary.AffectedObjectRef,
                 TrustFactor = match.Summary.TrustFactor,
@@ -284,6 +303,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         foreach (var branch in clarificationBranches)
         {
             var targetContexts = GetTargetContexts(branch.BranchFamily, durableContexts);
+            var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
             var title = $"Clarification needed for {DescribeFamily(branch.BranchFamily)}";
             var summary = string.IsNullOrWhiteSpace(branch.BlockReason)
                 ? "Operator clarification is required before this branch can continue."
@@ -320,12 +340,27 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Title = title,
                     Summary = summary,
                     WhyItMatters = whyItMatters,
+                    HumanShortTitle = $"Нужно уточнение: {DescribeFamilyRu(branch.BranchFamily)}",
+                    WhatHappened = SanitizeVisibleCardTextOrDefault(
+                        string.IsNullOrWhiteSpace(branch.BlockReason)
+                            ? "Ветка обработки остановилась: системе не хватает однозначного ответа."
+                            : branch.BlockReason,
+                        "Ветка обработки остановилась и требует уточнения от оператора."),
+                    WhyOperatorAnswerNeeded = $"Без ответа оператора обработка по теме «{DescribeFamilyRu(branch.BranchFamily)}» не продолжится.",
+                    WhatToDoPrompt = BuildClarificationPrompt(branch.RequiredAction),
+                    EvidenceHint = BuildEvidenceHint(
+                        evidenceCount,
+                        GetFirstVisibleNote(notes, "unknown", "normalization_issue")),
                     AffectedFamily = branch.BranchFamily,
                     AffectedObjectRef = branch.TargetRef,
                     TrustFactor = targetContexts.Count == 0 ? 0.5f : AverageTrust(targetContexts),
                     Status = ResolutionItemStatuses.Open,
-                    EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
+                    EvidenceCount = evidenceCount,
                     UpdatedAtUtc = branch.LastBlockedAtUtc,
+                    SecondaryText = BuildSecondaryText(
+                        targetContexts.Count == 0 ? 0.5f : AverageTrust(targetContexts),
+                        ResolutionItemStatuses.Open,
+                        branch.LastBlockedAtUtc),
                     Priority = string.Equals(branch.BranchFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.Critical
                         : ResolutionItemPriorities.High,
@@ -370,6 +405,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
             var branch = matchingBranches[0];
             var targetContexts = GetTargetContexts(queueItem.TargetFamily, durableContexts);
+            var trustFactor = targetContexts.Count == 0 ? 0.45f : AverageTrust(targetContexts);
+            var status = queueItem.Status == Stage8RecomputeQueueStatuses.Leased
+                ? ResolutionItemStatuses.Running
+                : ResolutionItemStatuses.Blocked;
+            var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
             var notes = new List<ResolutionDetailNote>
             {
                 new()
@@ -408,14 +448,27 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                         ? "A queued recompute branch is blocked by unresolved clarification."
                         : branch.BlockReason.Trim(),
                     WhyItMatters = $"The queued Stage8 recompute for {DescribeFamily(queueItem.TargetFamily)} cannot complete until the clarification branch is resolved.",
+                    HumanShortTitle = $"Блокер в очереди: {DescribeFamilyRu(queueItem.TargetFamily)}",
+                    WhatHappened = SanitizeVisibleCardTextOrDefault(
+                        string.IsNullOrWhiteSpace(branch.BlockReason)
+                            ? "Очередь пересчета уперлась в незакрытое уточнение."
+                            : branch.BlockReason,
+                        "Очередь пересчета остановилась и ожидает решения оператора."),
+                    WhyOperatorAnswerNeeded = "Пока оператор не снимет блокировку, эта ветка не сможет завершить пересчет.",
+                    WhatToDoPrompt = BuildClarificationPrompt(branch.RequiredAction),
+                    EvidenceHint = BuildEvidenceHint(
+                        evidenceCount,
+                        "Очередь ждет закрытия уточнения."),
                     AffectedFamily = queueItem.TargetFamily,
                     AffectedObjectRef = queueItem.TargetRef,
-                    TrustFactor = targetContexts.Count == 0 ? 0.45f : AverageTrust(targetContexts),
-                    Status = queueItem.Status == Stage8RecomputeQueueStatuses.Leased
-                        ? ResolutionItemStatuses.Running
-                        : ResolutionItemStatuses.Blocked,
-                    EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
+                    TrustFactor = trustFactor,
+                    Status = status,
+                    EvidenceCount = evidenceCount,
                     UpdatedAtUtc = Max(queueItem.UpdatedAtUtc, branch.LastBlockedAtUtc),
+                    SecondaryText = BuildSecondaryText(
+                        trustFactor,
+                        status,
+                        Max(queueItem.UpdatedAtUtc, branch.LastBlockedAtUtc)),
                     Priority = string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.Stage6Bootstrap, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.Critical
                         : ResolutionItemPriorities.High,
@@ -450,6 +503,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         foreach (var queueItem in queueCandidates)
         {
             var targetContexts = GetTargetContexts(queueItem.TargetFamily, durableContexts);
+            var trustFactor = targetContexts.Count == 0 ? 0.35f : Math.Min(AverageTrust(targetContexts), 0.55f);
+            var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
             var notes = new List<ResolutionDetailNote>
             {
                 new()
@@ -478,12 +533,21 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Title = $"{DescribeFamily(queueItem.TargetFamily)} needs more evidence",
                     Summary = "The latest bounded recompute could not form a durable result from the available evidence.",
                     WhyItMatters = $"This {DescribeFamily(queueItem.TargetFamily)} branch will remain incomplete until more evidence or operator-provided clarification arrives.",
+                    HumanShortTitle = $"Не хватает данных: {DescribeFamilyRu(queueItem.TargetFamily)}",
+                    WhatHappened = "Последний пересчет не смог собрать устойчивый результат из доступных фактов.",
+                    WhyOperatorAnswerNeeded = "Без решения оператора ветка останется неполной и не сможет двигаться дальше.",
+                    WhatToDoPrompt = "Нажмите «Факты», проверьте опору и решите: добавить данные, дать уточнение или отложить решение.",
+                    EvidenceHint = BuildEvidenceHint(evidenceCount),
                     AffectedFamily = queueItem.TargetFamily,
                     AffectedObjectRef = queueItem.TargetRef,
-                    TrustFactor = targetContexts.Count == 0 ? 0.35f : Math.Min(AverageTrust(targetContexts), 0.55f),
+                    TrustFactor = trustFactor,
                     Status = ResolutionItemStatuses.Open,
-                    EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
+                    EvidenceCount = evidenceCount,
                     UpdatedAtUtc = queueItem.UpdatedAtUtc,
+                    SecondaryText = BuildSecondaryText(
+                        trustFactor,
+                        ResolutionItemStatuses.Open,
+                        queueItem.UpdatedAtUtc),
                     Priority = queueItem.AttemptCount >= 3
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
@@ -518,6 +582,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             }
 
             var targetContexts = GetTargetContexts(defect.ObjectType, durableContexts);
+            var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
+            var priority = MapSeverityToPriority(defect.Severity);
             items.Add(new ProjectedResolutionItem
             {
                 Summary = new ResolutionItemSummary
@@ -527,13 +593,24 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Title = $"{DescribeFamily(defect.ObjectType)} data gap",
                     Summary = defect.Summary,
                     WhyItMatters = "The active bounded scope is missing enough substrate or normalized input to keep this branch moving.",
+                    HumanShortTitle = $"Пробел в данных: {DescribeFamilyRu(defect.ObjectType)}",
+                    WhatHappened = SanitizeVisibleCardTextOrDefault(
+                        defect.Summary,
+                        "Для этой ветки не хватает данных, чтобы продолжить обработку."),
+                    WhyOperatorAnswerNeeded = "Без решения оператора текущий контекст останется неполным и часть обработки не продвинется дальше.",
+                    WhatToDoPrompt = "Нажмите «Факты» и проверьте, каких сигналов не хватает; затем решите, нужно ли уточнение или пауза.",
+                    EvidenceHint = BuildEvidenceHint(evidenceCount),
                     AffectedFamily = defect.ObjectType ?? "scope",
                     AffectedObjectRef = defect.ObjectRef ?? $"scope:{trackedPerson.ScopeKey}",
                     TrustFactor = 0.8f,
                     Status = ResolutionItemStatuses.AttentionRequired,
-                    EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
+                    EvidenceCount = evidenceCount,
                     UpdatedAtUtc = defect.UpdatedAtUtc,
-                    Priority = MapSeverityToPriority(defect.Severity),
+                    SecondaryText = BuildSecondaryText(
+                        0.8f,
+                        ResolutionItemStatuses.AttentionRequired,
+                        defect.UpdatedAtUtc),
+                    Priority = priority,
                     RecommendedNextAction = "evidence",
                     AvailableActions = BuildAvailableActions()
                 },
@@ -583,6 +660,13 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     WhyItMatters = string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal)
                         ? "Contradictions are blocking promotion into canonical truth."
                         : "Contradictions lower trust and make downstream resolution decisions less stable.",
+                    HumanShortTitle = $"Противоречие: {DescribeFamilyRu(context.ObjectFamily)}",
+                    WhatHappened = "По теме остались несовместимые сигналы и объект не выглядит согласованным.",
+                    WhyOperatorAnswerNeeded = string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal)
+                        ? "Пока конфликт не снят, объект нельзя продвинуть дальше."
+                        : "Пока конфликт не снят, следующие решения будут менее надежными.",
+                    WhatToDoPrompt = "Нажмите «Факты», сопоставьте конфликтующие сигналы и решите: подтвердить, отклонить или отложить.",
+                    EvidenceHint = BuildContradictionEvidenceHint(context.ContradictionCount, context.EvidenceCount),
                     AffectedFamily = context.ObjectFamily,
                     AffectedObjectRef = context.ObjectKey,
                     TrustFactor = context.TrustFactor,
@@ -591,6 +675,12 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                         : ResolutionItemStatuses.Open,
                     EvidenceCount = context.EvidenceCount,
                     UpdatedAtUtc = context.UpdatedAtUtc,
+                    SecondaryText = BuildSecondaryText(
+                        context.TrustFactor,
+                        string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal)
+                            ? ResolutionItemStatuses.Blocked
+                            : ResolutionItemStatuses.Open,
+                        context.UpdatedAtUtc),
                     Priority = context.ContradictionCount > 1 || string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal)
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
@@ -643,12 +733,23 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     WhyItMatters = context.ContradictionCount > 0
                         ? "Contradiction pressure is blocking promotion and needs operator review."
                         : "This durable object is held below canonical truth and needs operator review before downstream surfaces rely on it.",
+                    HumanShortTitle = $"Нужна проверка: {DescribeFamilyRu(context.ObjectFamily)}",
+                    WhatHappened = "Объект не прошел дальше в канонический слой и остался на ручной проверке.",
+                    WhyOperatorAnswerNeeded = context.ContradictionCount > 0
+                        ? "Есть конфликтующие сигналы, поэтому автоматического продвижения нет."
+                        : "Автоматика оставила объект на ручной проверке, прежде чем на него смогут опираться другие поверхности.",
+                    WhatToDoPrompt = "Нажмите «В веб» и решите, можно ли продвигать объект дальше или его нужно оставить на проверке.",
+                    EvidenceHint = BuildEvidenceHint(context.EvidenceCount),
                     AffectedFamily = context.ObjectFamily,
                     AffectedObjectRef = context.ObjectKey,
                     TrustFactor = context.TrustFactor,
                     Status = ResolutionItemStatuses.AttentionRequired,
                     EvidenceCount = context.EvidenceCount,
                     UpdatedAtUtc = context.UpdatedAtUtc,
+                    SecondaryText = BuildSecondaryText(
+                        context.TrustFactor,
+                        ResolutionItemStatuses.AttentionRequired,
+                        context.UpdatedAtUtc),
                     Priority = context.ContradictionCount > 0
                         ? ResolutionItemPriorities.High
                         : ResolutionItemPriorities.Medium,
@@ -675,6 +776,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
         if (runtimeState != null && !string.Equals(runtimeState.State, RuntimeControlStates.Normal, StringComparison.Ordinal))
         {
+            var runtimeStatus = runtimeState.State == RuntimeControlStates.Degraded
+                ? ResolutionItemStatuses.Degraded
+                : ResolutionItemStatuses.AttentionRequired;
+            var priority = MapRuntimeStateToPriority(runtimeState.State);
             items.Add(new ProjectedResolutionItem
             {
                 Summary = new ResolutionItemSummary
@@ -684,15 +789,28 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Title = $"Runtime operating in {runtimeState.State}",
                     Summary = runtimeState.Reason,
                     WhyItMatters = "Runtime control state is directly affecting which Stage8 work can run or promote inside this tracked-person scope.",
+                    HumanShortTitle = $"Рантайм: {DescribeRuntimeStateRu(runtimeState.State)}",
+                    WhatHappened = SanitizeVisibleCardTextOrDefault(
+                        string.IsNullOrWhiteSpace(runtimeState.Reason)
+                            ? "Контур исполнения работает с ограничениями."
+                            : runtimeState.Reason,
+                        "Контур исполнения работает с ограничениями."),
+                    WhyOperatorAnswerNeeded = "Это влияет на то, какие ветки могут выполняться и продвигаться в текущем контексте.",
+                    WhatToDoPrompt = "Нажмите «В веб» и проверьте, нужно ли снять ограничение или оставить его до стабилизации.",
+                    EvidenceHint = runtimeDefects.Count > 0
+                        ? $"Есть {FormatCountRu(runtimeDefects.Count, "открытый сбой", "открытых сбоя", "открытых сбоев")} рантайма в этом контексте."
+                        : "Связанных открытых сбоев рантайма в этом контексте пока не видно.",
                     AffectedFamily = "runtime_control",
                     AffectedObjectRef = $"scope:{trackedPerson.ScopeKey}",
                     TrustFactor = 1f,
-                    Status = runtimeState.State == RuntimeControlStates.Degraded
-                        ? ResolutionItemStatuses.Degraded
-                        : ResolutionItemStatuses.AttentionRequired,
+                    Status = runtimeStatus,
                     EvidenceCount = runtimeDefects.Count,
                     UpdatedAtUtc = runtimeState.ActivatedAtUtc,
-                    Priority = MapRuntimeStateToPriority(runtimeState.State),
+                    SecondaryText = BuildSecondaryText(
+                        1f,
+                        runtimeStatus,
+                        runtimeState.ActivatedAtUtc),
+                    Priority = priority,
                     RecommendedNextAction = "open-web",
                     AvailableActions = BuildAvailableActions()
                 },
@@ -718,6 +836,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             }
 
             var targetContexts = GetTargetContexts(defect.ObjectType, durableContexts);
+            var status = defect.EscalationAction == RuntimeDefectEscalationActions.Observe
+                ? ResolutionItemStatuses.Open
+                : ResolutionItemStatuses.AttentionRequired;
+            var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
+            var priority = MapSeverityToPriority(defect.Severity);
             items.Add(new ProjectedResolutionItem
             {
                 Summary = new ResolutionItemSummary
@@ -727,15 +850,24 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Title = $"{NormalizeDefectTitle(defect)}",
                     Summary = defect.Summary,
                     WhyItMatters = "Operator review is required because runtime defects are affecting data integrity, promotion safety, or bounded execution reliability.",
+                    HumanShortTitle = $"Разбор рантайма: {DescribeRuntimeTargetRu(defect)}",
+                    WhatHappened = SanitizeVisibleCardTextOrDefault(
+                        defect.Summary,
+                        "Обнаружен сбой в рантайме, который требует операторского решения."),
+                    WhyOperatorAnswerNeeded = "Сбой влияет на целостность данных, безопасность продвижения или стабильность текущего контура обработки.",
+                    WhatToDoPrompt = "Нажмите «В веб» для детального разбора и решите, нужен ли фикс, ручное подтверждение или наблюдение.",
+                    EvidenceHint = BuildEvidenceHint(evidenceCount),
                     AffectedFamily = defect.ObjectType ?? defect.DefectClass,
                     AffectedObjectRef = defect.ObjectRef ?? $"scope:{trackedPerson.ScopeKey}",
                     TrustFactor = 1f,
-                    Status = defect.EscalationAction == RuntimeDefectEscalationActions.Observe
-                        ? ResolutionItemStatuses.Open
-                        : ResolutionItemStatuses.AttentionRequired,
-                    EvidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts),
+                    Status = status,
+                    EvidenceCount = evidenceCount,
                     UpdatedAtUtc = defect.UpdatedAtUtc,
-                    Priority = MapSeverityToPriority(defect.Severity),
+                    SecondaryText = BuildSecondaryText(
+                        1f,
+                        status,
+                        defect.UpdatedAtUtc),
+                    Priority = priority,
                     RecommendedNextAction = "open-web",
                     AvailableActions = BuildAvailableActions()
                 },
@@ -951,6 +1083,181 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
     private static DateTime Max(DateTime left, DateTime right)
         => left >= right ? left : right;
 
+    private static string BuildClarificationPrompt(string? requiredAction)
+    {
+        if (!string.IsNullOrWhiteSpace(requiredAction))
+        {
+            var actionText = EnsureSentence(requiredAction);
+            if (!string.IsNullOrWhiteSpace(actionText))
+            {
+                return $"Нажмите «Уточнить» и зафиксируйте решение: {actionText}";
+            }
+        }
+
+        return "Нажмите «Уточнить» и дайте короткий ответ, который снимает неоднозначность.";
+    }
+
+    private static string BuildEvidenceHint(int evidenceCount, string? customHint = null)
+    {
+        var countHint = evidenceCount > 0
+            ? $"Связано {FormatCountRu(evidenceCount, "факт", "факта", "фактов")}."
+            : "Связанных фактов пока мало или они не выделены.";
+
+        if (string.IsNullOrWhiteSpace(customHint))
+        {
+            return countHint;
+        }
+
+        return $"{EnsureSentence(customHint)} {countHint}";
+    }
+
+    private static string BuildContradictionEvidenceHint(int contradictionCount, int evidenceCount)
+        => $"Есть {FormatCountRu(contradictionCount, "маркер противоречия", "маркера противоречия", "маркеров противоречия")} и {FormatCountRu(evidenceCount, "связанный факт", "связанных факта", "связанных фактов")}.";
+
+    private static string BuildSecondaryText(float trustFactor, string status, DateTime updatedAtUtc)
+        => $"Доверие {FormatTrustPercentRu(trustFactor)} · {DescribeStatusRu(status)} · обновлено {updatedAtUtc:yyyy-MM-dd HH:mm} UTC";
+
+    private static string FormatTrustPercentRu(float trustFactor)
+        => $"{Math.Round(Clamp01(trustFactor) * 100, 0, MidpointRounding.AwayFromZero):0}%";
+
+    private static string GetFirstVisibleNote(
+        IEnumerable<ResolutionDetailNote> notes,
+        params string[] preferredKinds)
+    {
+        foreach (var kind in preferredKinds)
+        {
+            var match = notes.FirstOrDefault(x =>
+                string.Equals(x.Kind, kind, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(x.Text));
+            if (match != null)
+            {
+                return SanitizeVisibleCardText(match.Text);
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string EnsureSentence(string? value)
+    {
+        var sanitized = SanitizeVisibleCardText(value);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return string.Empty;
+        }
+
+        return sanitized.EndsWith('.')
+               || sanitized.EndsWith('!')
+               || sanitized.EndsWith('?')
+            ? sanitized
+            : $"{sanitized}.";
+    }
+
+    private static string SanitizeVisibleCardText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = value.Trim();
+        sanitized = GuidRegex.Replace(sanitized, "[id]");
+        sanitized = InternalKeyValueRegex.Replace(sanitized, string.Empty);
+        sanitized = ScopeTokenRegex.Replace(sanitized, "текущий контекст");
+        sanitized = ReplaceKnownInternalTokens(sanitized);
+        sanitized = WhitespaceRegex.Replace(sanitized, " ").Trim(' ', ',', ';', ':');
+        return sanitized;
+    }
+
+    private static string SanitizeVisibleCardTextOrDefault(string? value, string fallback)
+    {
+        var sanitized = SanitizeVisibleCardText(value);
+        if (!string.IsNullOrWhiteSpace(sanitized))
+        {
+            return sanitized;
+        }
+
+        return SanitizeVisibleCardText(fallback);
+    }
+
+    private static string ReplaceKnownInternalTokens(string value)
+    {
+        return value
+            .Replace("safe_mode", "безопасный режим", StringComparison.OrdinalIgnoreCase)
+            .Replace("review_only", "режим только проверки", StringComparison.OrdinalIgnoreCase)
+            .Replace("budget_protected", "режим защиты бюджета", StringComparison.OrdinalIgnoreCase)
+            .Replace("promotion_blocked", "режим блокировки продвижения", StringComparison.OrdinalIgnoreCase)
+            .Replace("runtime_control", "контур рантайма", StringComparison.OrdinalIgnoreCase)
+            .Replace("clarification_branch", "ветка уточнения", StringComparison.OrdinalIgnoreCase)
+            .Replace("stage8_queue", "очередь пересчета", StringComparison.OrdinalIgnoreCase)
+            .Replace("durable_object_metadata", "объект сводки", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatCountRu(int count, string one, string few, string many)
+    {
+        var remainder100 = count % 100;
+        var remainder10 = count % 10;
+        var noun = remainder100 is >= 11 and <= 14
+            ? many
+            : remainder10 switch
+            {
+                1 => one,
+                2 or 3 or 4 => few,
+                _ => many
+            };
+
+        return $"{count} {noun}";
+    }
+
+    private static string DescribeStatusRu(string status)
+    {
+        return status switch
+        {
+            ResolutionItemStatuses.Open => "открыто",
+            ResolutionItemStatuses.Blocked => "заблокировано",
+            ResolutionItemStatuses.Queued => "в очереди",
+            ResolutionItemStatuses.Running => "в работе",
+            ResolutionItemStatuses.AttentionRequired => "требует внимания",
+            ResolutionItemStatuses.Degraded => "деградировано",
+            _ => string.IsNullOrWhiteSpace(status) ? "неизвестно" : SanitizeVisibleCardText(status)
+        };
+    }
+
+    private static string DescribeRuntimeStateRu(string state)
+    {
+        return state switch
+        {
+            RuntimeControlStates.Normal => "нормальный режим",
+            RuntimeControlStates.SafeMode => "безопасный режим",
+            RuntimeControlStates.ReviewOnly => "режим только проверки",
+            RuntimeControlStates.BudgetProtected => "режим защиты бюджета",
+            RuntimeControlStates.PromotionBlocked => "режим блокировки продвижения",
+            RuntimeControlStates.Degraded => "деградированный режим",
+            _ => SanitizeVisibleCardText(state)
+        };
+    }
+
+    private static string DescribeRuntimeTargetRu(DbRuntimeDefect defect)
+    {
+        if (!string.IsNullOrWhiteSpace(defect.ObjectType))
+        {
+            return DescribeFamilyRu(defect.ObjectType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(defect.DefectClass))
+        {
+            return defect.DefectClass switch
+            {
+                RuntimeDefectClasses.ControlPlane => "контур рантайма",
+                RuntimeDefectClasses.Ingestion => "контур загрузки данных",
+                RuntimeDefectClasses.Data => "данные",
+                _ => SanitizeVisibleCardText(defect.DefectClass)
+            };
+        }
+
+        return "рантайм";
+    }
+
     private static string NormalizeDefectTitle(DbRuntimeDefect defect)
     {
         if (!string.IsNullOrWhiteSpace(defect.ObjectType))
@@ -959,6 +1266,24 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         }
 
         return $"{defect.DefectClass} runtime review";
+    }
+
+    private static string DescribeFamilyRu(string? family)
+    {
+        return family switch
+        {
+            Stage8RecomputeTargetFamilies.Stage6Bootstrap => "стартовый контекст",
+            Stage8RecomputeTargetFamilies.DossierProfile => "досье и профиль",
+            Stage8RecomputeTargetFamilies.PairDynamics => "динамика пары",
+            Stage8RecomputeTargetFamilies.TimelineObjects => "таймлайн",
+            Stage7DurableObjectFamilies.Dossier => "досье",
+            Stage7DurableObjectFamilies.Profile => "профиль",
+            Stage7DurableObjectFamilies.Event => "событие",
+            Stage7DurableObjectFamilies.TimelineEpisode => "эпизод таймлайна",
+            Stage7DurableObjectFamilies.StoryArc => "сюжетная арка",
+            "runtime_control" => "контур рантайма",
+            _ => string.IsNullOrWhiteSpace(family) ? "текущий контекст" : SanitizeVisibleCardText(family)
+        };
     }
 
     private static string DescribeFamily(string? family)

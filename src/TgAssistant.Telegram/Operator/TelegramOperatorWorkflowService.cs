@@ -2007,10 +2007,9 @@ public sealed class TelegramOperatorWorkflowService
 
         var lines = new List<string>
         {
-            "Resolution Input",
-            $"Action: {FormatActionLabel(pending.ActionType)}",
-            $"Item: {pending.ItemTitle}",
-            $"Scope: {pending.ScopeItemKey}",
+            "Пояснение к решению",
+            $"Действие: {FormatActionLabel(pending.ActionType)}",
+            $"Карточка: {pending.ItemTitle}",
             note
         };
 
@@ -2027,7 +2026,7 @@ public sealed class TelegramOperatorWorkflowService
                         [
                             new TelegramOperatorButton
                             {
-                                Text = "Cancel",
+                                Text = "Отмена",
                                 CallbackData = ResolutionCancelInputCallback
                             }
                         ]
@@ -2146,37 +2145,34 @@ public sealed class TelegramOperatorWorkflowService
 
         var lines = new List<string>
         {
-            "Evidence Preview",
-            $"Item: {item.Title}",
-            $"Type: {item.ItemType}",
-            $"Scope: {item.ScopeItemKey}",
-            $"Status: {item.Status}",
-            $"Trust: {FormatTrust(item.TrustFactor)}",
-            $"Showing top evidence: {Math.Min(item.Evidence.Count, EvidencePreviewLimit)} of {item.EvidenceCount}"
+            "Факты по карточке",
+            $"Карточка: {ResolveResolutionCardTitle(item)}",
+            $"Вторично: {ResolveResolutionCardSecondary(item)}",
+            $"Показано фактов: {Math.Min(item.Evidence.Count, EvidencePreviewLimit)} из {item.EvidenceCount}"
         };
         foreach (var (evidence, index) in item.Evidence.Take(EvidencePreviewLimit).Select((value, index) => (value, index)))
         {
             var evidenceLine = $"{index + 1}. {TrimForInline(evidence.Summary, 160)}";
             var observedAt = evidence.ObservedAtUtc.HasValue
                 ? FormatUtc(evidence.ObservedAtUtc.Value)
-                : "unknown";
+                : "неизвестно";
             var sourceLabel = string.IsNullOrWhiteSpace(evidence.SourceLabel)
-                ? "unknown source"
+                ? "неизвестный источник"
                 : evidence.SourceLabel;
             lines.Add(evidenceLine);
-            lines.Add($"   Trust {FormatTrust(evidence.TrustFactor)} | Observed {observedAt} | Source {sourceLabel}");
+            lines.Add($"   Доверие {FormatTrust(evidence.TrustFactor)} | Наблюдалось {observedAt} | Источник {sourceLabel}");
         }
 
         if (item.Evidence.Count == 0)
         {
-            lines.Add("No bounded evidence summaries are currently projected for this item.");
+            lines.Add("Связанные факты для этой карточки пока не спроецированы.");
         }
 
-        lines.Add("Use Open Web for deep analysis.");
+        lines.Add("Для детального разбора используйте «В веб».");
 
         return new TelegramOperatorResponse
         {
-            CallbackNotificationText = "Evidence",
+            CallbackNotificationText = "Факты",
             Messages =
             [
                 new TelegramOperatorMessage
@@ -2187,13 +2183,13 @@ public sealed class TelegramOperatorWorkflowService
                         [
                             new TelegramOperatorButton
                             {
-                                Text = "Open Web",
+                                Text = "В веб",
                                 CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.OpenWeb}:{binding.Token}"
                             }
                         ],
                         [
-                            new TelegramOperatorButton { Text = "Back to Queue", CallbackData = "resolution:refresh" },
-                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
+                            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
                         ]
                     ]
                 }
@@ -2254,7 +2250,7 @@ public sealed class TelegramOperatorWorkflowService
 
         return new TelegramOperatorResponse
         {
-            CallbackNotificationText = "Open Web",
+            CallbackNotificationText = "В веб",
             Messages =
             [
                 new TelegramOperatorMessage
@@ -2265,13 +2261,13 @@ public sealed class TelegramOperatorWorkflowService
                         [
                             new TelegramOperatorButton
                             {
-                                Text = "Evidence",
+                                Text = "Факты",
                                 CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
                             }
                         ],
                         [
-                            new TelegramOperatorButton { Text = "Back to Queue", CallbackData = "resolution:refresh" },
-                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
+                            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
                         ]
                     ]
                 }
@@ -2463,7 +2459,7 @@ public sealed class TelegramOperatorWorkflowService
 
         if (queue.Queue.RuntimeState != null)
         {
-            lines.Add($"Runtime: {queue.Queue.RuntimeState.State}");
+            lines.Add($"Рантайм: {DescribeRuntimeStateForTelegram(queue.Queue.RuntimeState.State)}");
         }
 
         AddResolutionActionFeedbackLines(lines, actionFeedback, queue.Queue);
@@ -2572,7 +2568,7 @@ public sealed class TelegramOperatorWorkflowService
         lines.Add($"Acknowledged this session: {state.AcknowledgedAlertScopeItemKeys.Count}");
         if (queue.Queue.RuntimeState != null)
         {
-            lines.Add($"Runtime: {queue.Queue.RuntimeState.State}");
+            lines.Add($"Рантайм: {DescribeRuntimeStateForTelegram(queue.Queue.RuntimeState.State)}");
         }
 
         if (cardMessages.Count == 0)
@@ -2825,7 +2821,7 @@ public sealed class TelegramOperatorWorkflowService
                 Token = token,
                 ScopeItemKey = item.ScopeItemKey,
                 ItemType = item.ItemType,
-                Title = item.Title,
+                Title = ResolveResolutionCardTitle(item),
                 AvailableActions = [.. item.AvailableActions.Select(ResolutionActionTypes.Normalize)]
             };
             state.ResolutionCardBindings[token] = binding;
@@ -2920,19 +2916,98 @@ public sealed class TelegramOperatorWorkflowService
 
     private static string BuildResolutionCardText(ResolutionItemSummary item)
     {
+        var title = ResolveResolutionCardTitle(item);
+        var happened = ResolveResolutionCardWhatHappened(item);
+        var why = ResolveResolutionCardWhy(item);
+        var prompt = ResolveResolutionCardPrompt(item);
+        var evidenceHint = ResolveResolutionCardEvidenceHint(item);
+        var secondary = ResolveResolutionCardSecondary(item);
         var lines = new List<string>
         {
-            item.Title,
-            $"Type: {item.ItemType}",
-            $"Summary: {item.Summary}",
-            $"Why: {item.WhyItMatters}",
-            $"Trust: {FormatTrust(item.TrustFactor)}",
-            $"Status: {item.Status}",
-            $"Evidence: {item.EvidenceCount}",
-            $"Updated: {FormatUtc(item.UpdatedAtUtc)}"
+            title,
+            $"Что случилось: {happened}",
+            $"Почему нужен ответ оператора: {why}",
+            $"Что сделать: {prompt}",
+            $"Подсказка по фактам: {evidenceHint}",
+            $"Вторично: {secondary}"
         };
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string ResolveResolutionCardTitle(ResolutionItemSummary item)
+        => FirstNonEmpty(item.HumanShortTitle, item.Title, "Нужна проверка");
+
+    private static string ResolveResolutionCardWhatHappened(ResolutionItemSummary item)
+        => LimitCardLine(FirstNonEmpty(item.WhatHappened, "Нужен разбор текущей ситуации."), 240);
+
+    private static string ResolveResolutionCardWhy(ResolutionItemSummary item)
+        => LimitCardLine(FirstNonEmpty(item.WhyOperatorAnswerNeeded, item.WhyItMatters, "Без ответа оператора ветка не продвинется дальше."), 240);
+
+    private static string ResolveResolutionCardPrompt(ResolutionItemSummary item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.WhatToDoPrompt))
+        {
+            return LimitCardLine(item.WhatToDoPrompt.Trim(), 220);
+        }
+
+        var fallback = item.RecommendedNextAction switch
+        {
+            ResolutionActionTypes.OpenWeb => "Откройте карточку в вебе и примите решение.",
+            ResolutionActionTypes.Evidence => "Откройте факты и проверьте опору перед решением.",
+            ResolutionActionTypes.Clarify => "Выберите «Уточнить» и дайте краткий ответ оператором.",
+            _ => "Выберите действие на карточке и зафиксируйте решение."
+        };
+        return LimitCardLine(fallback, 220);
+    }
+
+    private static string ResolveResolutionCardEvidenceHint(ResolutionItemSummary item)
+    {
+        var text = FirstNonEmpty(
+            item.EvidenceHint,
+            item.EvidenceCount > 0
+                ? $"Количество фактов: {item.EvidenceCount}."
+                : "Связанных фактов пока не видно.");
+        return LimitCardLine(text, 180);
+    }
+
+    private static string ResolveResolutionCardSecondary(ResolutionItemSummary item)
+        => LimitCardLine(FirstNonEmpty(
+            item.SecondaryText,
+            $"Доверие {FormatTrust(item.TrustFactor)} · {DescribeResolutionStatus(item.Status)} · обновлено {FormatUtc(item.UpdatedAtUtc)}"), 180);
+
+    private static string DescribeResolutionStatus(string status)
+    {
+        return status switch
+        {
+            ResolutionItemStatuses.Open => "открыто",
+            ResolutionItemStatuses.Blocked => "заблокировано",
+            ResolutionItemStatuses.Queued => "в очереди",
+            ResolutionItemStatuses.Running => "в работе",
+            ResolutionItemStatuses.AttentionRequired => "требует внимания",
+            ResolutionItemStatuses.Degraded => "деградировано",
+            _ => string.IsNullOrWhiteSpace(status) ? "неизвестно" : status.Trim()
+        };
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private static string LimitCardLine(string value, int maxLength)
+        => TrimForInline(value, Math.Max(20, maxLength));
+
+    private static string DescribeRuntimeStateForTelegram(string? state)
+    {
+        return state switch
+        {
+            RuntimeControlStates.Normal => "нормальный режим",
+            RuntimeControlStates.SafeMode => "безопасный режим",
+            RuntimeControlStates.ReviewOnly => "режим только проверки",
+            RuntimeControlStates.BudgetProtected => "режим защиты бюджета",
+            RuntimeControlStates.PromotionBlocked => "режим блокировки продвижения",
+            RuntimeControlStates.Degraded => "деградированный режим",
+            _ => string.IsNullOrWhiteSpace(state) ? "неизвестно" : state.Trim()
+        };
     }
 
     private static string BuildAlertCardText(ResolutionItemSummary item, TelegramAlertCardBinding binding, bool acknowledged)
@@ -3025,12 +3100,12 @@ public sealed class TelegramOperatorWorkflowService
     {
         return ResolutionActionTypes.Normalize(actionType) switch
         {
-            ResolutionActionTypes.OpenWeb => "Open Web",
-            ResolutionActionTypes.Approve => "Approve",
-            ResolutionActionTypes.Reject => "Reject",
-            ResolutionActionTypes.Defer => "Defer",
-            ResolutionActionTypes.Clarify => "Clarify",
-            ResolutionActionTypes.Evidence => "Evidence",
+            ResolutionActionTypes.OpenWeb => "В веб",
+            ResolutionActionTypes.Approve => "Подтвердить",
+            ResolutionActionTypes.Reject => "Отклонить",
+            ResolutionActionTypes.Defer => "Отложить",
+            ResolutionActionTypes.Clarify => "Уточнить",
+            ResolutionActionTypes.Evidence => "Факты",
             _ => actionType
         };
     }

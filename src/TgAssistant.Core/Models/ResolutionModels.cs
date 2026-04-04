@@ -114,6 +114,12 @@ public class ResolutionItemSummary
     public string Title { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
     public string WhyItMatters { get; set; } = string.Empty;
+    public string? HumanShortTitle { get; set; }
+    public string? WhatHappened { get; set; }
+    public string? WhyOperatorAnswerNeeded { get; set; }
+    public string? WhatToDoPrompt { get; set; }
+    public string? EvidenceHint { get; set; }
+    public string? SecondaryText { get; set; }
     public string AffectedFamily { get; set; } = string.Empty;
     public string AffectedObjectRef { get; set; } = string.Empty;
     public float TrustFactor { get; set; }
