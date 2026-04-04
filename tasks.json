@@ -558,8 +558,8 @@
         "IMPLEMENT-006",
         "IMPLEMENT-007"
       ],
-      "status": "blocked",
-      "notes": "Historical placeholder for the superseded pre-operator interface scope. Execution authority for operator-layer P0/P1/P2 surfaces now lives in phase-f OPINT tasks; keep IMPLEMENT-008 blocked for history only and do not reopen completed cleanup/gateway/alignment work under this item."
+      "status": "done",
+      "notes": "Administrative closure 2026-04-04: historical placeholder for superseded pre-operator interface scope. Execution authority moved to phase-f OPINT tasks and was completed via OPINT-008 + OPINT-009; no further implementation is required under IMPLEMENT-008."
     },
     {
       "id": "IMPLEMENT-009",
@@ -1016,8 +1016,8 @@
       "dependencies": [
         "GATEWAY-007"
       ],
-      "status": "blocked",
-      "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families. Progress 2026-04-04: GATEWAY-008-A completed (explicit provider failure counter + strengthened analytics/transport validation for retryable-primary failure visibility with fallback success). Blocked 2026-04-04 by operator decision: gate is intentionally frozen after subsequent polishing/tuning; do not continue rollout slices unless explicitly reopened."
+      "status": "done",
+      "notes": "Administrative closure 2026-04-04: bounded gateway hardening track is complete for current rollout scope. GATEWAY-008-A and GATEWAY-008-C are done; readiness/governance/transport validation are present in code and gate remains intentionally frozen after polishing/tuning. No additional rollout-expansion work is authorized under GATEWAY-008 unless explicitly reopened."
     },
     {
       "id": "ALIGN-201",

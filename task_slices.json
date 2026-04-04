@@ -840,12 +840,12 @@
       "dependencies": [
         "IMPLEMENT-008-A"
       ],
-      "status": "blocked",
+      "status": "done",
       "acceptance_focus": [
         "Future UI track has stable read contracts to build against.",
         "Read contracts are rooted in the clean model, not legacy case/chat pages."
       ],
-      "notes": "Blocked because interface work is outside the current backend-core track."
+      "notes": "Administrative closure 2026-04-04: superseded by completed OPINT interface tracks (OPINT-008/009). Contract intent is satisfied by those delivered surfaces and read-model APIs."
     },
     {
       "id": "IMPLEMENT-009-A",
@@ -1591,12 +1591,12 @@
       "dependencies": [
         "GATEWAY-008-A"
       ],
-      "status": "blocked",
+      "status": "done",
       "acceptance_focus": [
         "Readiness fails fast when active gateway routes or provider settings are incomplete.",
         "RouteOverride and model selection remain bounded by explicit governance rules."
       ],
-      "notes": "This slice should stay bounded: do not redesign the whole policy system, only close the known bypass/readiness gaps. Blocked 2026-04-04 by operator decision: gate frozen after subsequent polishing/tuning; resume only if gate is explicitly reopened."
+      "notes": "Administrative closure 2026-04-04: bounded governance/readiness hardening is present for current scope and gate remains intentionally frozen after polishing/tuning. Resume only if explicitly reopened for expanded rollout."
     },
     {
       "id": "GATEWAY-008-C",
