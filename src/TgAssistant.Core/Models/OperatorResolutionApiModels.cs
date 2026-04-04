@@ -178,6 +178,11 @@ public class OperatorPersonWorkspaceEvidenceQueryRequest : OperatorContractReque
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceRevisionsQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -224,6 +229,14 @@ public class OperatorPersonWorkspaceEvidenceQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceEvidenceSectionView Evidence { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceRevisionsQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceRevisionsSectionView Revisions { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -328,6 +341,19 @@ public class OperatorPersonWorkspaceEvidenceSectionView
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
 }
 
+public class OperatorPersonWorkspaceRevisionsSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableObjectCount { get; set; }
+    public int RevisionCount { get; set; }
+    public int TriggeredRevisionCount { get; set; }
+    public int ContradictionRevisionCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public List<OperatorWorkspaceRevisionView> Revisions { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
 public class OperatorWorkspaceEvidenceLinkView
 {
     public Guid DurableObjectMetadataId { get; set; }
@@ -350,6 +376,33 @@ public class OperatorWorkspaceEvidenceLinkView
     public DateTime? ObservedAtUtc { get; set; }
     public DateTime? SourceOccurredAtUtc { get; set; }
     public DateTime LinkedAtUtc { get; set; }
+}
+
+public class OperatorWorkspaceRevisionView
+{
+    public string Family { get; set; } = string.Empty;
+    public Guid DurableObjectId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public string ObjectKey { get; set; } = string.Empty;
+    public Guid? ModelPassRunId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string RevisionHash { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public int ContradictionCount { get; set; }
+    public int EvidenceRefCount { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public string TriggerKind { get; set; } = string.Empty;
+    public string TriggerRef { get; set; } = string.Empty;
+    public string PassFamily { get; set; } = string.Empty;
+    public string RunKind { get; set; } = string.Empty;
+    public string ResultStatus { get; set; } = string.Empty;
+    public string TargetType { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
 }
 
 public class OperatorWorkspaceDossierFactView

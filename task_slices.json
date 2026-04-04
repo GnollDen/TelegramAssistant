@@ -2513,12 +2513,12 @@
       "dependencies": [
         "OPINT-008-D1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Revision history shows version/change cues and trigger context for bounded durable objects.",
         "Operator can traverse revision history without leaving person workspace scope."
       ],
-      "notes": "Revision-history checkpoint separated from evidence existence checks."
+      "notes": "Completed 2026-04-04: enabled live Revisions tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/revisions/query`, aggregating durable revision history across dossier/profile/pair-dynamics/timeline families with explicit revision/change cues plus model-pass trigger context (trigger kind/ref, pass family, run kind, result status, target refs) and provenance drilldown seeds while preserving person-scoped operator auth/session bounds."
     },
     {
       "id": "OPINT-008-E",

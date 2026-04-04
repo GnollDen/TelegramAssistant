@@ -730,7 +730,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, and Evidence are live while remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, and Revisions are live while remaining sections stay explicitly pending.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -757,6 +757,10 @@ public static class OperatorWebEndpointExtensions
       <h2>Evidence</h2>
       <div id="evidence-content" class="state empty">Evidence is waiting for workspace data.</div>
     </section>
+    <section id="tab-revisions" class="panel tab-panel">
+      <h2>Revisions</h2>
+      <div id="revisions-content" class="state empty">Revision history is waiting for workspace data.</div>
+    </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
       <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
@@ -775,12 +779,14 @@ public static class OperatorWebEndpointExtensions
     const pairDynamicsContentNode = document.getElementById("pair-dynamics-content");
     const timelineContentNode = document.getElementById("timeline-content");
     const evidenceContentNode = document.getElementById("evidence-content");
+    const revisionsContentNode = document.getElementById("revisions-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
     const profilePanel = document.getElementById("tab-profile");
     const pairDynamicsPanel = document.getElementById("tab-pair-dynamics");
     const timelinePanel = document.getElementById("tab-timeline");
     const evidencePanel = document.getElementById("tab-evidence");
+    const revisionsPanel = document.getElementById("tab-revisions");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -795,6 +801,7 @@ public static class OperatorWebEndpointExtensions
       pairDynamics: null,
       timeline: null,
       evidence: null,
+      revisions: null,
       activeSection: "summary"
     };
 
@@ -1480,6 +1487,95 @@ public static class OperatorWebEndpointExtensions
       evidenceContentNode.appendChild(updatedNote);
     }
 
+    function renderRevisionsSection() {
+      const revisions = state.revisions;
+      if (!revisions) {
+        revisionsContentNode.className = "state empty";
+        revisionsContentNode.textContent = "Revision history data is unavailable.";
+        return;
+      }
+
+      const revisionItems = Array.isArray(revisions.revisions) ? revisions.revisions : [];
+      const provenance = Array.isArray(revisions.provenance) ? revisions.provenance : [];
+
+      revisionsContentNode.className = "";
+      revisionsContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(revisions.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(revisions.overallUncertainty) },
+        { label: "Durable Objects", value: String(revisions.durableObjectCount || 0) },
+        { label: "Revision Entries", value: String(revisions.revisionCount || 0) },
+        { label: "Triggered Revisions", value: String(revisions.triggeredRevisionCount || 0) },
+        { label: "Contradiction Revisions", value: String(revisions.contradictionRevisionCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      revisionsContentNode.appendChild(metrics);
+
+      const revisionGrid = document.createElement("div");
+      revisionGrid.className = "card-grid";
+      revisionItems.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize(item.family || "durable") + " / " + (item.objectKey || "n/a") + " / r" + (item.revisionNumber || 0) + "</h3>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>" +
+          "<p><strong>Confidence:</strong> " + formatPercent(item.confidence) + " | <strong>Freshness:</strong> " + formatPercent(item.freshness) + " | <strong>Stability:</strong> " + formatPercent(item.stability) + "</p>" +
+          "<p><strong>Truth:</strong> " + titleize(item.truthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(item.promotionState || "unknown") + "</p>" +
+          "<p><strong>Trigger:</strong> " + titleize(item.triggerKind || "none") + " / " + (item.triggerRef || "n/a") + " | <strong>Pass:</strong> " + titleize(item.passFamily || "unknown") + " / " + titleize(item.runKind || "unknown") + "</p>" +
+          "<p><strong>Result:</strong> " + titleize(item.resultStatus || "unknown") + " | <strong>Target:</strong> " + titleize(item.targetType || "unknown") + " / " + (item.targetRef || "n/a") + "</p>" +
+          "<p><strong>Contradictions:</strong> " + (item.contradictionCount || 0) + " | <strong>Evidence refs:</strong> " + (item.evidenceRefCount || 0) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (item.durableObjectMetadataId || "n/a") + ", object " + (item.durableObjectId || "n/a") + ", revision hash " + (item.revisionHash || "n/a") + ", model pass " + (item.modelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.createdAtUtc) + "</p>";
+        revisionGrid.appendChild(node);
+      });
+      if (!revisionGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No durable revision entries are available for this person scope yet.";
+        revisionGrid.appendChild(empty);
+      }
+      revisionsContentNode.appendChild(revisionGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Revision Provenance Seeds";
+      revisionsContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Family:</strong> " + titleize(item.family || "unknown") + "</p>" +
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No revision provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      revisionsContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(revisions.generatedAtUtc) + " from bounded durable revision history contracts.";
+      revisionsContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1589,6 +1685,23 @@ public static class OperatorWebEndpointExtensions
       renderEvidenceSection();
     }
 
+    async function ensureRevisionsLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.revisions) {
+        return;
+      }
+
+      revisionsContentNode.className = "state loading";
+      revisionsContentNode.textContent = "Loading bounded revision history view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/revisions/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.revisions = result.revisions || null;
+      renderRevisionsSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
@@ -1596,13 +1709,15 @@ public static class OperatorWebEndpointExtensions
       const showPairDynamics = state.activeSection === "pair_dynamics";
       const showTimeline = state.activeSection === "timeline";
       const showEvidence = state.activeSection === "evidence";
+      const showRevisions = state.activeSection === "revisions";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
       profilePanel.classList.toggle("active", showProfile);
       pairDynamicsPanel.classList.toggle("active", showPairDynamics);
       timelinePanel.classList.toggle("active", showTimeline);
       evidencePanel.classList.toggle("active", showEvidence);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence);
+      revisionsPanel.classList.toggle("active", showRevisions);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence && !showRevisions);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
@@ -1630,6 +1745,11 @@ public static class OperatorWebEndpointExtensions
           evidenceContentNode.className = "state error";
           evidenceContentNode.textContent = "Evidence load failed: " + (error.message || "unknown_error");
         });
+      } else if (showRevisions) {
+        ensureRevisionsLoaded(false).catch(function(error) {
+          revisionsContentNode.className = "state error";
+          revisionsContentNode.textContent = "Revision history load failed: " + (error.message || "unknown_error");
+        });
       } else {
         renderPlaceholderSection();
       }
@@ -1651,6 +1771,7 @@ public static class OperatorWebEndpointExtensions
       state.pairDynamics = null;
       state.timeline = null;
       state.evidence = null;
+      state.revisions = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();

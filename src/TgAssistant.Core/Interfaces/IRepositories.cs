@@ -355,6 +355,10 @@ public interface IOperatorResolutionApplicationService
         OperatorPersonWorkspaceEvidenceQueryRequest request,
         CancellationToken ct = default);
 
+    Task<OperatorPersonWorkspaceRevisionsQueryResult> QueryPersonWorkspaceRevisionsAsync(
+        OperatorPersonWorkspaceRevisionsQueryRequest request,
+        CancellationToken ct = default);
+
     Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default);

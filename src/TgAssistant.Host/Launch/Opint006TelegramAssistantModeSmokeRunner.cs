@@ -261,6 +261,11 @@ public static class Opint006TelegramAssistantModeSmokeRunner
             CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-006-C smoke should not query person workspace evidence.");
 
+        public Task<OperatorPersonWorkspaceRevisionsQueryResult> QueryPersonWorkspaceRevisionsAsync(
+            OperatorPersonWorkspaceRevisionsQueryRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not query person workspace revisions.");
+
         public Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(OperatorResolutionQueueQueryRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-006-C smoke should not use resolution queue query path.");
 

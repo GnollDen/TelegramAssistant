@@ -1265,6 +1265,397 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceRevisionsQueryResult> QueryPersonWorkspaceRevisionsAsync(
+        OperatorPersonWorkspaceRevisionsQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceRevisionsQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceRevisionsQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceRevisionsQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var metadataRows = await db.DurableObjectMetadata
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.OwnerPersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus
+                && WorkspaceSummaryFamilies.Contains(x.ObjectFamily))
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(300)
+            .ToListAsync(ct);
+        var metadataById = metadataRows.ToDictionary(x => x.Id, x => x);
+        var metadataIds = metadataById.Keys.ToList();
+
+        var evidenceCounts = metadataIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var dossierById = await db.DurableDossiers
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.PersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+        var profileById = await db.DurableProfiles
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.PersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+        var pairById = await db.DurablePairDynamics
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId)
+                && (x.LeftPersonId == trackedPerson.TrackedPersonId || x.RightPersonId == trackedPerson.TrackedPersonId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+        var eventById = await db.DurableEvents
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId)
+                && (x.PersonId == trackedPerson.TrackedPersonId || x.RelatedPersonId == trackedPerson.TrackedPersonId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+        var episodeById = await db.DurableTimelineEpisodes
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId)
+                && (x.PersonId == trackedPerson.TrackedPersonId || x.RelatedPersonId == trackedPerson.TrackedPersonId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+        var arcById = await db.DurableStoryArcs
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == ActiveStatus
+                && metadataIds.Contains(x.DurableObjectMetadataId)
+                && (x.PersonId == trackedPerson.TrackedPersonId || x.RelatedPersonId == trackedPerson.TrackedPersonId))
+            .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var revisions = new List<WorkspaceRevisionSource>(capacity: 512);
+        var dossierIds = dossierById.Keys.ToList();
+        if (dossierIds.Count != 0)
+        {
+            var rows = await db.DurableDossierRevisions
+                .AsNoTracking()
+                .Where(x => dossierIds.Contains(x.DurableDossierId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.Dossier,
+                DurableObjectId = x.DurableDossierId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = dossierById[x.DurableDossierId].DurableObjectMetadataId
+            }));
+        }
+
+        var profileIds = profileById.Keys.ToList();
+        if (profileIds.Count != 0)
+        {
+            var rows = await db.DurableProfileRevisions
+                .AsNoTracking()
+                .Where(x => profileIds.Contains(x.DurableProfileId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.Profile,
+                DurableObjectId = x.DurableProfileId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = profileById[x.DurableProfileId].DurableObjectMetadataId
+            }));
+        }
+
+        var pairIds = pairById.Keys.ToList();
+        if (pairIds.Count != 0)
+        {
+            var rows = await db.DurablePairDynamicsRevisions
+                .AsNoTracking()
+                .Where(x => pairIds.Contains(x.DurablePairDynamicsId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.PairDynamics,
+                DurableObjectId = x.DurablePairDynamicsId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = pairById[x.DurablePairDynamicsId].DurableObjectMetadataId
+            }));
+        }
+
+        var eventIds = eventById.Keys.ToList();
+        if (eventIds.Count != 0)
+        {
+            var rows = await db.DurableEventRevisions
+                .AsNoTracking()
+                .Where(x => eventIds.Contains(x.DurableEventId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.Event,
+                DurableObjectId = x.DurableEventId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = eventById[x.DurableEventId].DurableObjectMetadataId
+            }));
+        }
+
+        var episodeIds = episodeById.Keys.ToList();
+        if (episodeIds.Count != 0)
+        {
+            var rows = await db.DurableTimelineEpisodeRevisions
+                .AsNoTracking()
+                .Where(x => episodeIds.Contains(x.DurableTimelineEpisodeId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.TimelineEpisode,
+                DurableObjectId = x.DurableTimelineEpisodeId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = episodeById[x.DurableTimelineEpisodeId].DurableObjectMetadataId
+            }));
+        }
+
+        var arcIds = arcById.Keys.ToList();
+        if (arcIds.Count != 0)
+        {
+            var rows = await db.DurableStoryArcRevisions
+                .AsNoTracking()
+                .Where(x => arcIds.Contains(x.DurableStoryArcId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(240)
+                .ToListAsync(ct);
+            revisions.AddRange(rows.Select(x => new WorkspaceRevisionSource
+            {
+                Family = Stage7DurableObjectFamilies.StoryArc,
+                DurableObjectId = x.DurableStoryArcId,
+                RevisionId = x.Id,
+                RevisionNumber = x.RevisionNumber,
+                RevisionHash = x.RevisionHash,
+                ModelPassRunId = x.ModelPassRunId,
+                Confidence = x.Confidence,
+                Freshness = x.Freshness,
+                Stability = x.Stability,
+                ContradictionMarkersJson = x.ContradictionMarkersJson,
+                SummaryJson = x.SummaryJson,
+                CreatedAtUtc = DateTime.SpecifyKind(x.CreatedAt, DateTimeKind.Utc),
+                DurableObjectMetadataId = arcById[x.DurableStoryArcId].DurableObjectMetadataId
+            }));
+        }
+
+        revisions = revisions
+            .Where(x => metadataById.ContainsKey(x.DurableObjectMetadataId))
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.RevisionNumber)
+            .ThenByDescending(x => x.Confidence)
+            .Take(360)
+            .ToList();
+
+        var modelPassIds = revisions
+            .Select(x => x.ModelPassRunId)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToList();
+        var modelPassById = modelPassIds.Count == 0
+            ? new Dictionary<Guid, WorkspaceModelPassTrigger>()
+            : await db.ModelPassRuns
+                .AsNoTracking()
+                .Where(x => modelPassIds.Contains(x.Id))
+                .ToDictionaryAsync(
+                    x => x.Id,
+                    x => new WorkspaceModelPassTrigger
+                    {
+                        TriggerKind = NormalizeOptional(x.TriggerKind) ?? "none",
+                        TriggerRef = NormalizeOptional(x.TriggerRef) ?? "n/a",
+                        PassFamily = NormalizeOptional(x.PassFamily) ?? "unknown",
+                        RunKind = NormalizeOptional(x.RunKind) ?? "unknown",
+                        ResultStatus = NormalizeOptional(x.ResultStatus) ?? "unknown",
+                        TargetType = NormalizeOptional(x.TargetType) ?? "unknown",
+                        TargetRef = NormalizeOptional(x.TargetRef) ?? "n/a"
+                    },
+                    ct);
+
+        var revisionViews = revisions
+            .Select(revision =>
+            {
+                metadataById.TryGetValue(revision.DurableObjectMetadataId, out var metadata);
+                modelPassById.TryGetValue(revision.ModelPassRunId ?? Guid.Empty, out var trigger);
+                return new OperatorWorkspaceRevisionView
+                {
+                    Family = revision.Family,
+                    DurableObjectId = revision.DurableObjectId,
+                    DurableObjectMetadataId = revision.DurableObjectMetadataId,
+                    ObjectKey = metadata?.ObjectKey ?? revision.DurableObjectId.ToString("D"),
+                    ModelPassRunId = revision.ModelPassRunId,
+                    RevisionNumber = revision.RevisionNumber,
+                    RevisionHash = revision.RevisionHash,
+                    Confidence = Clamp01(revision.Confidence),
+                    Freshness = Clamp01(revision.Freshness),
+                    Stability = Clamp01(revision.Stability),
+                    ContradictionCount = CountJsonArray(revision.ContradictionMarkersJson),
+                    EvidenceRefCount = evidenceCounts.GetValueOrDefault(revision.DurableObjectMetadataId),
+                    TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                    PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                    TriggerKind = trigger?.TriggerKind ?? "none",
+                    TriggerRef = trigger?.TriggerRef ?? "n/a",
+                    PassFamily = trigger?.PassFamily ?? "unknown",
+                    RunKind = trigger?.RunKind ?? "unknown",
+                    ResultStatus = trigger?.ResultStatus ?? "unknown",
+                    TargetType = trigger?.TargetType ?? "unknown",
+                    TargetRef = trigger?.TargetRef ?? "n/a",
+                    Summary = BuildSummarySnippet(revision.SummaryJson),
+                    CreatedAtUtc = revision.CreatedAtUtc
+                };
+            })
+            .ToList();
+
+        var averageTrust = revisionViews.Count == 0
+            ? 0f
+            : Clamp01(revisionViews.Average(x => x.Confidence));
+
+        var provenance = revisionViews
+            .Select(item => new OperatorWorkspaceProvenanceItem
+            {
+                Family = item.Family,
+                ObjectKey = item.ObjectKey,
+                DurableObjectMetadataId = item.DurableObjectMetadataId,
+                LastModelPassRunId = item.ModelPassRunId,
+                EvidenceLinkCount = item.EvidenceRefCount,
+                UpdatedAtUtc = item.CreatedAtUtc,
+                Summary = item.Summary
+            })
+            .DistinctBy(x => x.DurableObjectMetadataId)
+            .Take(48)
+            .ToList();
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceRevisionsQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Revisions = new OperatorPersonWorkspaceRevisionsSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurableObjectCount = metadataRows.Count,
+                RevisionCount = revisionViews.Count,
+                TriggeredRevisionCount = revisionViews.Count(x => !string.Equals(x.TriggerKind, "none", StringComparison.Ordinal)),
+                ContradictionRevisionCount = revisionViews.Count(x => x.ContradictionCount > 0),
+                OverallTrust = averageTrust,
+                OverallUncertainty = Clamp01(1f - averageTrust),
+                Revisions = revisionViews,
+                Provenance = provenance
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -2479,7 +2870,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "pending", Available = false }
         ];
     }
@@ -3419,5 +3810,33 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         public string? SummaryJson { get; init; }
         public string SummarySnippet { get; init; } = string.Empty;
         public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    private sealed class WorkspaceRevisionSource
+    {
+        public string Family { get; init; } = string.Empty;
+        public Guid DurableObjectId { get; init; }
+        public Guid RevisionId { get; init; }
+        public Guid DurableObjectMetadataId { get; init; }
+        public Guid? ModelPassRunId { get; init; }
+        public int RevisionNumber { get; init; }
+        public string RevisionHash { get; init; } = string.Empty;
+        public float Confidence { get; init; }
+        public float Freshness { get; init; }
+        public float Stability { get; init; }
+        public string ContradictionMarkersJson { get; init; } = "[]";
+        public string SummaryJson { get; init; } = "{}";
+        public DateTime CreatedAtUtc { get; init; }
+    }
+
+    private sealed class WorkspaceModelPassTrigger
+    {
+        public string TriggerKind { get; init; } = "none";
+        public string TriggerRef { get; init; } = "n/a";
+        public string PassFamily { get; init; } = "unknown";
+        public string RunKind { get; init; } = "unknown";
+        public string ResultStatus { get; init; } = "unknown";
+        public string TargetType { get; init; } = "unknown";
+        public string TargetRef { get; init; } = "n/a";
     }
 }
