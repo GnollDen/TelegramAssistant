@@ -229,6 +229,27 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             Ensure(
                 string.Equals(report.StoredDraft.Surface, OperatorSurfaceTypes.Telegram, StringComparison.Ordinal),
                 "Stored offline-event surface mismatch.");
+            Ensure(
+                !string.IsNullOrWhiteSpace(report.StoredDraft.ClarificationStateJson)
+                    && !string.Equals(report.StoredDraft.ClarificationStateJson, "{}", StringComparison.Ordinal),
+                "Stored offline-event clarification state was empty.");
+            using (var clarificationDoc = JsonDocument.Parse(report.StoredDraft.ClarificationStateJson))
+            {
+                var root = clarificationDoc.RootElement;
+                Ensure(
+                    root.TryGetProperty("questions", out var questionsElement)
+                    && questionsElement.ValueKind == JsonValueKind.Array
+                    && questionsElement.GetArrayLength() > 0,
+                    "Stored offline-event clarification state is missing ranked questions.");
+                Ensure(
+                    root.TryGetProperty("nextQuestionKey", out var nextQuestionKeyElement)
+                    && nextQuestionKeyElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(nextQuestionKeyElement.GetString()),
+                    "Stored offline-event clarification state is missing nextQuestionKey.");
+            }
+            Ensure(
+                report.StoredDraft.Confidence.HasValue,
+                "Stored offline-event confidence was not set from clarification policy state.");
 
             report.AllChecksPassed = true;
         }
@@ -360,7 +381,9 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             OperatorSessionId = row.OperatorSessionId,
             ActiveMode = row.ActiveMode,
             Surface = row.Surface,
-            CapturePayloadJson = row.CapturePayloadJson
+            CapturePayloadJson = row.CapturePayloadJson,
+            ClarificationStateJson = row.ClarificationStateJson,
+            Confidence = row.Confidence
         };
     }
 
@@ -487,6 +510,8 @@ public sealed class Opint007StoredDraft
     public string ActiveMode { get; set; } = string.Empty;
     public string Surface { get; set; } = string.Empty;
     public string CapturePayloadJson { get; set; } = string.Empty;
+    public string ClarificationStateJson { get; set; } = string.Empty;
+    public float? Confidence { get; set; }
 }
 
 internal sealed class Opint007SeedState

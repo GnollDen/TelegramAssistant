@@ -2325,12 +2325,12 @@
       "dependencies": [
         "OPINT-007-B1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Clarification questions are ranked by expected information gain for the active offline-event draft.",
         "Loop terminates on low-gain/repetition/unknown-answer patterns and supports partial-confidence save."
       ],
-      "notes": "Narrow decision/policy slice for clarification ranking and stop conditions."
+      "notes": "Completed 2026-04-04: implemented operator-layer offline-event clarification policy with ranked question pool (expected information gain) plus deterministic stop-rule enforcement for repetition, no-new-information, unknown-answer patterns, and sustained low-gain outcomes; policy is persisted as structured clarification state for later Telegram orchestration and partial-confidence save."
     },
     {
       "id": "OPINT-007-B3",
@@ -2342,12 +2342,12 @@
       "dependencies": [
         "OPINT-007-B2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Telegram operator can progress through clarification questions and save when stop conditions are reached.",
         "Final saved offline event includes confidence/trust indicators and full clarification history linkage."
       ],
-      "notes": "Completes bounded Telegram flow after capture and ranking policies are in place."
+      "notes": "Completed 2026-04-04: wired Telegram offline-event clarification orchestration so operators can step through ranked questions (`offline:clarify-next`), capture clarification answers, enforce stop-triggered progression state, and perform partial-confidence final save (`offline:save-final`) with trust/confidence plus full clarification history persisted for later web refinement (`status=saved`, `saved_at_utc`, clarification history/stop metadata). Added bounded runtime validation runner `--opint-007-b3-smoke` for end-to-end Telegram clarification + final-save flow."
     },
     {
       "id": "OPINT-007-C1",

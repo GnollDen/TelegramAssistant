@@ -35,6 +35,7 @@ using TgAssistant.Intelligence.Stage6.Strategy;
 using TgAssistant.Processing.Archive;
 using TgAssistant.Processing.Archive.ExternalIngestion;
 using TgAssistant.Processing.Workers;
+using TgAssistant.Telegram.Operator;
 using TgAssistant.Telegram.Listener;
 
 Log.Logger = new LoggerConfiguration()
@@ -158,6 +159,14 @@ try
     var opint007B1SmokeOutput = opint007B1SmokeOutputArg is null
         ? null
         : opint007B1SmokeOutputArg["--opint-007-b1-smoke-output=".Length..];
+    var opint007B2SmokeOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-007-b2-smoke-output=", StringComparison.OrdinalIgnoreCase));
+    var opint007B2SmokeOutput = opint007B2SmokeOutputArg is null
+        ? null
+        : opint007B2SmokeOutputArg["--opint-007-b2-smoke-output=".Length..];
+    var opint007B3SmokeOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-007-b3-smoke-output=", StringComparison.OrdinalIgnoreCase));
+    var opint007B3SmokeOutput = opint007B3SmokeOutputArg is null
+        ? null
+        : opint007B3SmokeOutputArg["--opint-007-b3-smoke-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -171,6 +180,8 @@ try
     var runOpint003Validate = args.Any(arg => string.Equals(arg, "--opint-003-d-validate", StringComparison.OrdinalIgnoreCase));
     var runOpint004Smoke = args.Any(arg => string.Equals(arg, "--opint-004-a-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint007B1Smoke = args.Any(arg => string.Equals(arg, "--opint-007-b1-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint007B2Smoke = args.Any(arg => string.Equals(arg, "--opint-007-b2-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint007B3Smoke = args.Any(arg => string.Equals(arg, "--opint-007-b3-smoke", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -251,6 +262,8 @@ try
         "--opint-006-c-smoke",
         "--opint-004-a-smoke",
         "--opint-007-b1-smoke",
+        "--opint-007-b2-smoke",
+        "--opint-007-b3-smoke",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -727,6 +740,30 @@ try
                 report.AllChecksPassed,
                 report.SavedOfflineEventId,
                 report.SessionSnapshot.ActiveTrackedPersonId);
+            return;
+        }
+
+        if (runOpint007B2Smoke)
+        {
+            var policy = scope.ServiceProvider.GetRequiredService<OfflineEventClarificationPolicy>();
+            var report = await Opint007OfflineEventClarificationPolicySmokeRunner.RunAsync(policy, opint007B2SmokeOutput, CancellationToken.None);
+            Log.Information(
+                "OPINT-007-B2 smoke requested via --opint-007-b2-smoke. output={OutputPath}, passed={Passed}, top_question_key={TopQuestionKey}. Exiting after successful verification.",
+                report.OutputPath,
+                report.AllChecksPassed,
+                report.RankingTopQuestionKey);
+            return;
+        }
+
+        if (runOpint007B3Smoke)
+        {
+            var report = await Opint007OfflineEventClarificationOrchestrationSmokeRunner.RunAsync(scope.ServiceProvider, opint007B3SmokeOutput, CancellationToken.None);
+            Log.Information(
+                "OPINT-007-B3 smoke requested via --opint-007-b3-smoke. output={OutputPath}, passed={Passed}, offline_event_id={OfflineEventId}, confidence={Confidence}. Exiting after successful verification.",
+                report.OutputPath,
+                report.AllChecksPassed,
+                report.SavedOfflineEventId,
+                report.StoredEvent?.Confidence);
             return;
         }
 

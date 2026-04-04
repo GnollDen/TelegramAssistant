@@ -103,6 +103,7 @@ internal sealed class TelegramOfflineEventDraft
 {
     public string? Summary { get; set; }
     public string? RecordingReference { get; set; }
+    public OfflineEventClarificationState? ClarificationState { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public Guid BoundTrackedPersonId { get; set; }
@@ -112,6 +113,7 @@ internal sealed class TelegramOfflineEventDraft
 internal sealed class TelegramPendingOfflineEventInput
 {
     public string InputKind { get; set; } = string.Empty;
+    public string? ClarificationQuestionKey { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public Guid BoundTrackedPersonId { get; set; }
 }
