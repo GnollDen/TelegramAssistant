@@ -1965,12 +1965,12 @@
       "dependencies": [
         "OPINT-004-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Cards include type/summary/why/trust/status/evidence/updated-at.",
         "Actions map directly to backend bounded contracts without legacy bot command reuse."
       ],
-      "notes": "Compact action-oriented UX only."
+      "notes": "Done on 2026-04-04: Telegram resolution mode now renders compact card messages with required metadata fields (`type/summary/why/trust/status/evidence/updated-at`) and bounded action controls mapped to OPINT contracts (`approve/reject/defer/clarify/evidence/open-web`) via tokenized callbacks, without legacy bot command reuse. `approve` is wired end-to-end to bounded action submission while explanation-requiring actions remain explicitly deferred to OPINT-004-C. Verified with `dotnet build TelegramAssistant.sln` and bounded Telegram smoke `dotnet run --project src/TgAssistant.Host -- --opint-004-a-smoke --runtime-role=ops`."
     },
     {
       "id": "OPINT-004-C",

@@ -53,6 +53,8 @@ internal sealed class TelegramOperatorConversationState
     public long UserId { get; set; }
     public string SurfaceMode { get; set; } = TelegramOperatorSurfaceModes.None;
     public string? ActiveTrackedPersonDisplayName { get; set; }
+    public int ResolutionCardGeneration { get; set; }
+    public Dictionary<string, TelegramResolutionCardBinding> ResolutionCardBindings { get; set; } = new(StringComparer.Ordinal);
     public OperatorSessionContext Session { get; set; } = new();
 
     public TelegramOperatorSessionSnapshot ToSnapshot()
@@ -67,4 +69,13 @@ internal sealed class TelegramOperatorConversationState
             ExpiresAtUtc = Session.ExpiresAtUtc
         };
     }
+}
+
+internal sealed class TelegramResolutionCardBinding
+{
+    public string Token { get; set; } = string.Empty;
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public List<string> AvailableActions { get; set; } = [];
 }

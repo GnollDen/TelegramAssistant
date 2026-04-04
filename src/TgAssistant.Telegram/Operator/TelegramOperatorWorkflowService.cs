@@ -12,6 +12,9 @@ public sealed class TelegramOperatorWorkflowService
     private const string SessionAuthenticatedEventType = "session_authenticated";
     private const string ModeSwitchSessionEventType = "mode_switch";
     private const string TelegramAuthSource = "telegram_owner_allowlist";
+    private const string TrackedPersonCallbackPrefix = "tracked:";
+    private const string ResolutionActionCallbackPrefix = "ra:";
+    private const int MaxResolutionCards = 3;
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
     private readonly TelegramSettings _settings;
@@ -116,6 +119,7 @@ public sealed class TelegramOperatorWorkflowService
         if (string.Equals(callbackData, "mode:menu", StringComparison.Ordinal))
         {
             state.SurfaceMode = TelegramOperatorSurfaceModes.None;
+            state.ResolutionCardBindings.Clear();
             return CreateModeCard(state, note: null, callbackNotice: "Modes");
         }
 
@@ -130,7 +134,7 @@ public sealed class TelegramOperatorWorkflowService
         {
             return CreateModeCard(
                 state,
-                "Only Resolution mode is in scope for OPINT-004-A. Assistant, Offline Event, and Alerts stay deferred.",
+                "Only Resolution mode is in scope for the current OPINT-004 Telegram slice. Assistant, Offline Event, and Alerts stay deferred.",
                 callbackNotice: "Not in this slice");
         }
 
@@ -150,14 +154,24 @@ public sealed class TelegramOperatorWorkflowService
             return await RenderResolutionContextAsync(state, interaction, nowUtc, note: null, ct);
         }
 
-        if (callbackData.StartsWith("tracked:", StringComparison.Ordinal))
+        if (callbackData.StartsWith(TrackedPersonCallbackPrefix, StringComparison.Ordinal))
         {
-            return await SelectTrackedPersonAsync(state, interaction, callbackData["tracked:".Length..], nowUtc, ct);
+            return await SelectTrackedPersonAsync(state, interaction, callbackData[TrackedPersonCallbackPrefix.Length..], nowUtc, ct);
+        }
+
+        if (callbackData.StartsWith(ResolutionActionCallbackPrefix, StringComparison.Ordinal))
+        {
+            return await HandleResolutionActionCallbackAsync(
+                state,
+                interaction,
+                callbackData[ResolutionActionCallbackPrefix.Length..],
+                nowUtc,
+                ct);
         }
 
         return CreateModeCard(
             state,
-            "That control is not available in OPINT-004-A.",
+            "That control is not available in OPINT-004-B.",
             callbackNotice: "Unsupported");
     }
 
@@ -277,6 +291,123 @@ public sealed class TelegramOperatorWorkflowService
             ct);
     }
 
+    private async Task<TelegramOperatorResponse> HandleResolutionActionCallbackAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string actionPayload,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var separatorIndex = actionPayload.IndexOf(':', StringComparison.Ordinal);
+        if (separatorIndex <= 0 || separatorIndex == actionPayload.Length - 1)
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Resolution action callback was invalid. Refresh the queue and retry.",
+                ct);
+        }
+
+        var actionType = ResolutionActionTypes.Normalize(actionPayload[..separatorIndex]);
+        var cardToken = actionPayload[(separatorIndex + 1)..].Trim();
+        if (!ResolutionActionTypes.IsSupported(actionType))
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "That action is not supported by the bounded resolution contract.",
+                ct);
+        }
+
+        if (!state.ResolutionCardBindings.TryGetValue(cardToken, out var binding))
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "That card is no longer current. Refresh the queue and retry.",
+                ct);
+        }
+
+        if (!binding.AvailableActions.Contains(actionType, StringComparer.Ordinal))
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"{FormatActionLabel(actionType)} is not available for this resolution item.",
+                ct);
+        }
+
+        if (string.Equals(actionType, ResolutionActionTypes.Approve, StringComparison.Ordinal))
+        {
+            return await SubmitApproveActionAsync(state, interaction, binding, nowUtc, ct);
+        }
+
+        var deferredNote = ResolutionActionTypes.RequiresExplanation(actionType)
+            ? $"{FormatActionLabel(actionType)} requires operator explanation and stays deferred to OPINT-004-C."
+            : $"{FormatActionLabel(actionType)} stays deferred to OPINT-004-C.";
+        return await RenderResolutionContextAsync(state, interaction, nowUtc, deferredNote, ct);
+    }
+
+    private async Task<TelegramOperatorResponse> SubmitApproveActionAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        TelegramResolutionCardBinding binding,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var detail = await _operatorResolutionService.GetResolutionDetailAsync(
+            new OperatorResolutionDetailQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                EvidenceLimit = 1,
+                EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
+                EvidenceSortDirection = ResolutionSortDirections.Desc
+            },
+            ct);
+
+        state.Session = detail.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+        if (!detail.Accepted || detail.Detail.Item == null)
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Approve could not bind the current item: {detail.FailureReason ?? "resolution item unavailable"}.",
+                ct);
+        }
+
+        var action = await _operatorResolutionService.SubmitResolutionActionAsync(
+            new ResolutionActionRequest
+            {
+                RequestId = BuildActionRequestId(interaction.ChatId, ResolutionActionTypes.Approve),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                ActionType = ResolutionActionTypes.Approve,
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                SubmittedAtUtc = nowUtc
+            },
+            ct);
+
+        state.Session = action.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+
+        var note = action.Accepted
+            ? action.Action.Recompute?.Enqueued == true
+                ? $"Approve accepted for {binding.Title}. Bounded recompute was enqueued."
+                : $"Approve accepted for {binding.Title}."
+            : $"Approve failed for {binding.Title}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
+        return await RenderResolutionContextAsync(state, interaction, nowUtc, note, ct);
+    }
+
     private async Task<TelegramOperatorResponse> RenderTrackedPersonPickerAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -362,6 +493,7 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
+        var cardMessages = BuildResolutionCardMessages(state, queue.Queue.Items);
         var lines = new List<string>();
         if (!string.IsNullOrWhiteSpace(note))
         {
@@ -384,30 +516,150 @@ public sealed class TelegramOperatorWorkflowService
             lines.Add($"Runtime: {queue.Queue.RuntimeState.State}");
         }
 
-        lines.Add("Compact resolution cards and actions remain deferred to OPINT-004-B/C.");
+        if (queue.Queue.Items.Count == 0)
+        {
+            lines.Add("No open resolution items are currently projected for this bounded scope.");
+        }
+        else
+        {
+            lines.Add($"Showing compact cards: {cardMessages.Count} of {queue.Queue.Items.Count} visible items.");
+        }
+
+        var messages = new List<TelegramOperatorMessage>
+        {
+            new()
+            {
+                Text = string.Join(Environment.NewLine, lines),
+                Buttons =
+                [
+                    [
+                        new TelegramOperatorButton { Text = "Refresh", CallbackData = "resolution:refresh" },
+                        new TelegramOperatorButton { Text = "Switch Person", CallbackData = "resolution:switch-person" }
+                    ],
+                    [
+                        new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                    ]
+                ]
+            }
+        };
+        messages.AddRange(cardMessages);
 
         return new TelegramOperatorResponse
         {
             CallbackNotificationText = interaction.CallbackData == null ? null : "Resolution",
-            Messages =
-            [
-                new TelegramOperatorMessage
-                {
-                    Text = string.Join(Environment.NewLine, lines),
-                    Buttons =
-                    [
-                        [
-                            new TelegramOperatorButton { Text = "Refresh", CallbackData = "resolution:refresh" },
-                            new TelegramOperatorButton { Text = "Switch Person", CallbackData = "resolution:switch-person" }
-                        ],
-                        [
-                            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
-                        ]
-                    ]
-                }
-            ]
+            Messages = messages
         };
     }
+
+    private List<TelegramOperatorMessage> BuildResolutionCardMessages(
+        TelegramOperatorConversationState state,
+        IReadOnlyList<ResolutionItemSummary> items)
+    {
+        state.ResolutionCardBindings.Clear();
+        state.ResolutionCardGeneration++;
+
+        var messages = new List<TelegramOperatorMessage>();
+        var generation = state.ResolutionCardGeneration;
+        foreach (var (item, index) in items.Take(MaxResolutionCards).Select((item, index) => (item, index)))
+        {
+            var token = $"{generation:x}{index + 1:x}";
+            var binding = new TelegramResolutionCardBinding
+            {
+                Token = token,
+                ScopeItemKey = item.ScopeItemKey,
+                ItemType = item.ItemType,
+                Title = item.Title,
+                AvailableActions = [.. item.AvailableActions.Select(ResolutionActionTypes.Normalize)]
+            };
+            state.ResolutionCardBindings[token] = binding;
+            messages.Add(
+                new TelegramOperatorMessage
+                {
+                    Text = BuildResolutionCardText(item),
+                    Buttons = BuildResolutionCardButtons(binding)
+                });
+        }
+
+        return messages;
+    }
+
+    private static string BuildResolutionCardText(ResolutionItemSummary item)
+    {
+        var lines = new List<string>
+        {
+            item.Title,
+            $"Type: {item.ItemType}",
+            $"Summary: {item.Summary}",
+            $"Why: {item.WhyItMatters}",
+            $"Trust: {FormatTrust(item.TrustFactor)}",
+            $"Status: {item.Status}",
+            $"Evidence: {item.EvidenceCount}",
+            $"Updated: {FormatUtc(item.UpdatedAtUtc)}"
+        };
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static List<List<TelegramOperatorButton>> BuildResolutionCardButtons(TelegramResolutionCardBinding binding)
+    {
+        var buttons = new List<List<TelegramOperatorButton>>();
+        var available = binding.AvailableActions.ToHashSet(StringComparer.Ordinal);
+
+        var primaryRow = BuildActionRow(binding.Token, available, ResolutionActionTypes.Approve, ResolutionActionTypes.Reject, ResolutionActionTypes.Defer);
+        if (primaryRow.Count > 0)
+        {
+            buttons.Add(primaryRow);
+        }
+
+        var secondaryRow = BuildActionRow(binding.Token, available, ResolutionActionTypes.Clarify, ResolutionActionTypes.Evidence, ResolutionActionTypes.OpenWeb);
+        if (secondaryRow.Count > 0)
+        {
+            buttons.Add(secondaryRow);
+        }
+
+        return buttons;
+    }
+
+    private static List<TelegramOperatorButton> BuildActionRow(
+        string token,
+        IReadOnlySet<string> available,
+        params string[] actionTypes)
+    {
+        return actionTypes
+            .Where(available.Contains)
+            .Select(actionType => new TelegramOperatorButton
+            {
+                Text = FormatActionLabel(actionType),
+                CallbackData = $"{ResolutionActionCallbackPrefix}{actionType}:{token}"
+            })
+            .ToList();
+    }
+
+    private static string FormatActionLabel(string actionType)
+    {
+        return ResolutionActionTypes.Normalize(actionType) switch
+        {
+            ResolutionActionTypes.OpenWeb => "Open Web",
+            ResolutionActionTypes.Approve => "Approve",
+            ResolutionActionTypes.Reject => "Reject",
+            ResolutionActionTypes.Defer => "Defer",
+            ResolutionActionTypes.Clarify => "Clarify",
+            ResolutionActionTypes.Evidence => "Evidence",
+            _ => actionType
+        };
+    }
+
+    private static string FormatTrust(float trustFactor)
+    {
+        var percent = Math.Clamp((int)Math.Round(trustFactor * 100f, MidpointRounding.AwayFromZero), 0, 100);
+        return $"{percent}%";
+    }
+
+    private static string FormatUtc(DateTime value)
+        => value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");
+
+    private static string BuildActionRequestId(long chatId, string actionType)
+        => $"telegram:{chatId}:{ResolutionActionTypes.Normalize(actionType)}:{Guid.NewGuid():N}";
 
     private TelegramOperatorResponse BuildTrackedPersonPickerResponse(
         TelegramOperatorConversationState state,
@@ -434,7 +686,7 @@ public sealed class TelegramOperatorWorkflowService
                 new TelegramOperatorButton
                 {
                     Text = person.DisplayName,
-                    CallbackData = $"tracked:{person.TrackedPersonId:D}"
+                    CallbackData = $"{TrackedPersonCallbackPrefix}{person.TrackedPersonId:D}"
                 }
             ]);
         }

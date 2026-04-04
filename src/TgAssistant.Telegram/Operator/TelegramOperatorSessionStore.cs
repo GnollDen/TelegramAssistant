@@ -24,6 +24,7 @@ public sealed class TelegramOperatorSessionStore
     {
         state.ActiveTrackedPersonDisplayName = null;
         state.SurfaceMode = TelegramOperatorSurfaceModes.None;
+        state.ResolutionCardBindings.Clear();
         state.Session.ActiveTrackedPersonId = Guid.Empty;
         state.Session.ActiveScopeItemKey = null;
         state.Session.ActiveMode = string.Empty;
