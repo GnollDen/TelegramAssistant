@@ -1074,6 +1074,197 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceEvidenceQueryResult> QueryPersonWorkspaceEvidenceAsync(
+        OperatorPersonWorkspaceEvidenceQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceEvidenceQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceEvidenceQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceEvidenceQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var metadataRows = await db.DurableObjectMetadata
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.OwnerPersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus
+                && WorkspaceSummaryFamilies.Contains(x.ObjectFamily))
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(300)
+            .ToListAsync(ct);
+
+        var metadataById = metadataRows.ToDictionary(x => x.Id, x => x);
+        var metadataIds = metadataById.Keys.ToList();
+        var links = metadataIds.Count == 0
+            ? []
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == trackedPerson.ScopeKey && metadataIds.Contains(x.DurableObjectMetadataId))
+                .OrderByDescending(x => x.CreatedAt)
+                .Take(600)
+                .ToListAsync(ct);
+
+        var evidenceIds = links
+            .Select(x => x.EvidenceItemId)
+            .Distinct()
+            .ToList();
+        var evidenceById = evidenceIds.Count == 0
+            ? new Dictionary<Guid, DbEvidenceItem>()
+            : await db.EvidenceItems
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                    && evidenceIds.Contains(x.Id)
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var sourceIds = evidenceById.Values
+            .Select(x => x.SourceObjectId)
+            .Distinct()
+            .ToList();
+        var sourceById = sourceIds.Count == 0
+            ? new Dictionary<Guid, DbSourceObject>()
+            : await db.SourceObjects
+                .AsNoTracking()
+                .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                    && sourceIds.Contains(x.Id)
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var linksByMetadataId = links
+            .GroupBy(x => x.DurableObjectMetadataId)
+            .ToDictionary(x => x.Key, x => x.Count());
+
+        var linkViews = links
+            .Select(link =>
+            {
+                metadataById.TryGetValue(link.DurableObjectMetadataId, out var metadata);
+                evidenceById.TryGetValue(link.EvidenceItemId, out var evidence);
+                sourceById.TryGetValue(evidence?.SourceObjectId ?? Guid.Empty, out var source);
+                if (metadata == null || evidence == null || source == null)
+                {
+                    return null;
+                }
+
+                return new OperatorWorkspaceEvidenceLinkView
+                {
+                    DurableObjectMetadataId = metadata.Id,
+                    EvidenceItemId = evidence.Id,
+                    SourceObjectId = source.Id,
+                    LastModelPassRunId = metadata.CreatedByModelPassRunId,
+                    DurableObjectFamily = metadata.ObjectFamily,
+                    DurableObjectKey = metadata.ObjectKey,
+                    DurableTruthLayer = NormalizeOptional(metadata.TruthLayer) ?? "unknown",
+                    DurablePromotionState = NormalizeOptional(metadata.PromotionState) ?? "unknown",
+                    DurableConfidence = Clamp01(metadata.Confidence),
+                    EvidenceKind = NormalizeOptional(evidence.EvidenceKind) ?? "unknown",
+                    EvidenceTruthLayer = NormalizeOptional(evidence.TruthLayer) ?? "unknown",
+                    EvidenceConfidence = Clamp01(evidence.Confidence),
+                    LinkRole = NormalizeOptional(link.LinkRole) ?? "linked",
+                    EvidenceSummary = NormalizeOptional(evidence.SummaryText),
+                    SourceKind = NormalizeOptional(source.SourceKind) ?? "unknown",
+                    SourceRef = NormalizeOptional(source.SourceRef) ?? source.Id.ToString("D"),
+                    SourceDisplayLabel = NormalizeOptional(source.DisplayLabel) ?? NormalizeOptional(source.SourceRef) ?? source.Id.ToString("D"),
+                    ObservedAtUtc = NormalizeUtc(evidence.ObservedAt),
+                    SourceOccurredAtUtc = NormalizeUtc(source.OccurredAt),
+                    LinkedAtUtc = DateTime.SpecifyKind(link.CreatedAt, DateTimeKind.Utc)
+                };
+            })
+            .Where(x => x != null)
+            .Cast<OperatorWorkspaceEvidenceLinkView>()
+            .OrderByDescending(x => x.ObservedAtUtc ?? x.SourceOccurredAtUtc ?? x.LinkedAtUtc)
+            .ThenByDescending(x => x.EvidenceConfidence)
+            .ThenByDescending(x => x.DurableConfidence)
+            .Take(300)
+            .ToList();
+
+        var provenance = linkViews
+            .Select(link => new OperatorWorkspaceProvenanceItem
+            {
+                Family = link.DurableObjectFamily,
+                ObjectKey = link.DurableObjectKey,
+                DurableObjectMetadataId = link.DurableObjectMetadataId,
+                LastModelPassRunId = link.LastModelPassRunId,
+                EvidenceLinkCount = linksByMetadataId.GetValueOrDefault(link.DurableObjectMetadataId),
+                UpdatedAtUtc = link.LinkedAtUtc,
+                Summary = link.EvidenceSummary ?? "Evidence-linked durable object."
+            })
+            .DistinctBy(x => x.DurableObjectMetadataId)
+            .Take(48)
+            .ToList();
+
+        var averageTrust = linkViews.Count == 0
+            ? 0f
+            : Clamp01(linkViews.Average(x => (x.EvidenceConfidence + x.DurableConfidence) / 2f));
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceEvidenceQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Evidence = new OperatorPersonWorkspaceEvidenceSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurableObjectCount = metadataRows.Count,
+                EvidenceItemCount = linkViews.Select(x => x.EvidenceItemId).Distinct().Count(),
+                SourceObjectCount = linkViews.Select(x => x.SourceObjectId).Distinct().Count(),
+                TotalEvidenceLinkCount = links.Count,
+                OverallTrust = averageTrust,
+                OverallUncertainty = Clamp01(1f - averageTrust),
+                Links = linkViews,
+                Provenance = provenance
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -2287,7 +2478,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "pending", Available = false }
         ];

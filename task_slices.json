@@ -2496,12 +2496,12 @@
       "dependencies": [
         "OPINT-008-C2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Evidence section explains why durable objects exist with bounded provenance and confidence context.",
         "Evidence navigation keeps person workspace scope stable."
       ],
-      "notes": "Evidence-focused checkpoint separated from revision history."
+      "notes": "Completed 2026-04-04: enabled live Evidence tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/evidence/query`, joining durable metadata with durable-object evidence links, evidence items, and source-object provenance so operators can inspect why durable objects exist with explicit confidence/truth markers and drilldown seeds (durable metadata + evidence item + source object + model pass) while preserving person-scoped auth/session bounds."
     },
     {
       "id": "OPINT-008-D2",

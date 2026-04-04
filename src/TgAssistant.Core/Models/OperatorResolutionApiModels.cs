@@ -173,6 +173,11 @@ public class OperatorPersonWorkspaceTimelineQueryRequest : OperatorContractReque
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceEvidenceQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -211,6 +216,14 @@ public class OperatorPersonWorkspaceTimelineQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceTimelineSectionView Timeline { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceEvidenceQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceEvidenceSectionView Evidence { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -300,6 +313,43 @@ public class OperatorPersonWorkspaceTimelineSectionView
     public int TotalEvidenceLinkCount { get; set; }
     public List<OperatorWorkspaceTimelineShiftView> Shifts { get; set; } = [];
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorPersonWorkspaceEvidenceSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableObjectCount { get; set; }
+    public int EvidenceItemCount { get; set; }
+    public int SourceObjectCount { get; set; }
+    public int TotalEvidenceLinkCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public List<OperatorWorkspaceEvidenceLinkView> Links { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorWorkspaceEvidenceLinkView
+{
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid EvidenceItemId { get; set; }
+    public Guid SourceObjectId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public string DurableObjectFamily { get; set; } = string.Empty;
+    public string DurableObjectKey { get; set; } = string.Empty;
+    public string DurableTruthLayer { get; set; } = string.Empty;
+    public string DurablePromotionState { get; set; } = string.Empty;
+    public float DurableConfidence { get; set; }
+    public string EvidenceKind { get; set; } = string.Empty;
+    public string EvidenceTruthLayer { get; set; } = string.Empty;
+    public float EvidenceConfidence { get; set; }
+    public string LinkRole { get; set; } = string.Empty;
+    public string? EvidenceSummary { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string SourceDisplayLabel { get; set; } = string.Empty;
+    public DateTime? ObservedAtUtc { get; set; }
+    public DateTime? SourceOccurredAtUtc { get; set; }
+    public DateTime LinkedAtUtc { get; set; }
 }
 
 public class OperatorWorkspaceDossierFactView

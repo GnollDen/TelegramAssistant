@@ -730,7 +730,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, and Timeline are live while remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, and Evidence are live while remaining sections stay explicitly pending.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -753,6 +753,10 @@ public static class OperatorWebEndpointExtensions
       <h2>Timeline</h2>
       <div id="timeline-content" class="state empty">Timeline is waiting for workspace data.</div>
     </section>
+    <section id="tab-evidence" class="panel tab-panel">
+      <h2>Evidence</h2>
+      <div id="evidence-content" class="state empty">Evidence is waiting for workspace data.</div>
+    </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
       <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
@@ -770,11 +774,13 @@ public static class OperatorWebEndpointExtensions
     const profileContentNode = document.getElementById("profile-content");
     const pairDynamicsContentNode = document.getElementById("pair-dynamics-content");
     const timelineContentNode = document.getElementById("timeline-content");
+    const evidenceContentNode = document.getElementById("evidence-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
     const profilePanel = document.getElementById("tab-profile");
     const pairDynamicsPanel = document.getElementById("tab-pair-dynamics");
     const timelinePanel = document.getElementById("tab-timeline");
+    const evidencePanel = document.getElementById("tab-evidence");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -788,6 +794,7 @@ public static class OperatorWebEndpointExtensions
       profile: null,
       pairDynamics: null,
       timeline: null,
+      evidence: null,
       activeSection: "summary"
     };
 
@@ -1384,6 +1391,95 @@ public static class OperatorWebEndpointExtensions
       timelineContentNode.appendChild(updatedNote);
     }
 
+    function renderEvidenceSection() {
+      const evidence = state.evidence;
+      if (!evidence) {
+        evidenceContentNode.className = "state empty";
+        evidenceContentNode.textContent = "Evidence data is unavailable.";
+        return;
+      }
+
+      const links = Array.isArray(evidence.links) ? evidence.links : [];
+      const provenance = Array.isArray(evidence.provenance) ? evidence.provenance : [];
+
+      evidenceContentNode.className = "";
+      evidenceContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(evidence.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(evidence.overallUncertainty) },
+        { label: "Durable Objects", value: String(evidence.durableObjectCount || 0) },
+        { label: "Evidence Items", value: String(evidence.evidenceItemCount || 0) },
+        { label: "Source Objects", value: String(evidence.sourceObjectCount || 0) },
+        { label: "Evidence Links", value: String(evidence.totalEvidenceLinkCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      evidenceContentNode.appendChild(metrics);
+
+      const linkGrid = document.createElement("div");
+      linkGrid.className = "card-grid";
+      links.forEach(function(link) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize(link.durableObjectFamily || "durable") + " / " + (link.durableObjectKey || "n/a") + "</h3>" +
+          "<p><strong>Why this durable object exists:</strong> " + (link.evidenceSummary || "Evidence-backed durable conclusion.") + "</p>" +
+          "<p><strong>Link role:</strong> " + titleize(link.linkRole || "linked") + " | <strong>Evidence kind:</strong> " + titleize(link.evidenceKind || "unknown") + "</p>" +
+          "<p><strong>Durable trust:</strong> " + formatPercent(link.durableConfidence) + " | <strong>Evidence confidence:</strong> " + formatPercent(link.evidenceConfidence) + "</p>" +
+          "<p><strong>Durable truth:</strong> " + titleize(link.durableTruthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(link.durablePromotionState || "unknown") + "</p>" +
+          "<p><strong>Evidence truth:</strong> " + titleize(link.evidenceTruthLayer || "unknown") + " | <strong>Observed:</strong> " + formatUtc(link.observedAtUtc || link.sourceOccurredAtUtc) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (link.durableObjectMetadataId || "n/a") + ", evidence " + (link.evidenceItemId || "n/a") + ", source " + (link.sourceObjectId || "n/a") + ", model pass " + (link.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Source:</strong> " + titleize(link.sourceKind || "unknown") + " / " + (link.sourceDisplayLabel || "n/a") + " / ref " + (link.sourceRef || "n/a") + "</p>" +
+          "<p><strong>Linked:</strong> " + formatUtc(link.linkedAtUtc) + "</p>";
+        linkGrid.appendChild(node);
+      });
+      if (!linkGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No durable-object evidence links are available for this person scope yet.";
+        linkGrid.appendChild(empty);
+      }
+      evidenceContentNode.appendChild(linkGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Evidence Provenance Seeds";
+      evidenceContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Family:</strong> " + titleize(item.family || "unknown") + "</p>" +
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No evidence provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      evidenceContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(evidence.generatedAtUtc) + " from bounded operator evidence/read-model contracts.";
+      evidenceContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1476,18 +1572,37 @@ public static class OperatorWebEndpointExtensions
       renderTimelineSection();
     }
 
+    async function ensureEvidenceLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.evidence) {
+        return;
+      }
+
+      evidenceContentNode.className = "state loading";
+      evidenceContentNode.textContent = "Loading bounded evidence view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/evidence/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.evidence = result.evidence || null;
+      renderEvidenceSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
       const showProfile = state.activeSection === "profile";
       const showPairDynamics = state.activeSection === "pair_dynamics";
       const showTimeline = state.activeSection === "timeline";
+      const showEvidence = state.activeSection === "evidence";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
       profilePanel.classList.toggle("active", showProfile);
       pairDynamicsPanel.classList.toggle("active", showPairDynamics);
       timelinePanel.classList.toggle("active", showTimeline);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline);
+      evidencePanel.classList.toggle("active", showEvidence);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
@@ -1510,6 +1625,11 @@ public static class OperatorWebEndpointExtensions
           timelineContentNode.className = "state error";
           timelineContentNode.textContent = "Timeline load failed: " + (error.message || "unknown_error");
         });
+      } else if (showEvidence) {
+        ensureEvidenceLoaded(false).catch(function(error) {
+          evidenceContentNode.className = "state error";
+          evidenceContentNode.textContent = "Evidence load failed: " + (error.message || "unknown_error");
+        });
       } else {
         renderPlaceholderSection();
       }
@@ -1530,6 +1650,7 @@ public static class OperatorWebEndpointExtensions
       state.profile = null;
       state.pairDynamics = null;
       state.timeline = null;
+      state.evidence = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();
