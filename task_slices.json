@@ -1863,12 +1863,12 @@
       "dependencies": [
         "OPINT-002-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Resolution contract behavior is proven beyond unit-level assumptions.",
         "Failure and auth-boundary behavior are explicit before P0 surface rollout."
       ],
-      "notes": "Evidence-first gate into OPINT-003/004/005."
+      "notes": "Done on 2026-04-04: added bounded live-contract validator `scripts/opint-002-resolution-contract-validate.sh` plus evidence note `docs/planning/OPINT-002-D_VALIDATION_2026-04-04.md`. Validation ran against seeded scope `chat:885574984` after confirming and applying missing schema migration `0052_operator_resolution_actions.sql`, then exercised normal read/write flow, write-validation failure (`explanation_required`), and auth-denied read/write paths (`session_expired`, `session_active_tracked_person_mismatch`) through `/api/operator/*` endpoints. Latest run artifact saved to `logs/opint-002-d-validation-report.json`, and temporary seeded defect/audit/action rows were verified cleaned up after execution."
     },
     {
       "id": "OPINT-003-A",
