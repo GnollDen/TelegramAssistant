@@ -1574,12 +1574,12 @@
       "dependencies": [
         "GATEWAY-007-C"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Primary provider retryable failures are visible in provider-level error/request metrics.",
         "Successful fallback does not erase observability of the failed primary attempt."
       ],
-      "notes": "Close the undercount gap in bounded ops observability before claiming gateway metrics are production-grade."
+      "notes": "Close the undercount gap in bounded ops observability before claiming gateway metrics are production-grade. Done 2026-04-04: added explicit llm_gateway_failures_total emission for provider-attempt failures and strengthened analytics/transport validations so retryable primary failure visibility is required even when fallback succeeds."
     },
     {
       "id": "GATEWAY-008-B",
@@ -1591,12 +1591,12 @@
       "dependencies": [
         "GATEWAY-008-A"
       ],
-      "status": "pending",
+      "status": "blocked",
       "acceptance_focus": [
         "Readiness fails fast when active gateway routes or provider settings are incomplete.",
         "RouteOverride and model selection remain bounded by explicit governance rules."
       ],
-      "notes": "This slice should stay bounded: do not redesign the whole policy system, only close the known bypass/readiness gaps."
+      "notes": "This slice should stay bounded: do not redesign the whole policy system, only close the known bypass/readiness gaps. Blocked 2026-04-04 by operator decision: gate frozen after subsequent polishing/tuning; resume only if gate is explicitly reopened."
     },
     {
       "id": "GATEWAY-008-C",

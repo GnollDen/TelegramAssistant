@@ -1016,8 +1016,8 @@
       "dependencies": [
         "GATEWAY-007"
       ],
-      "status": "pending",
-      "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families."
+  "status": "blocked",
+  "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families. Progress 2026-04-04: GATEWAY-008-A completed (explicit provider failure counter + strengthened analytics/transport validation for retryable-primary failure visibility with fallback success). Blocked 2026-04-04 by operator decision: gate is intentionally frozen after subsequent polishing/tuning; do not continue rollout slices unless explicitly reopened."
     },
     {
       "id": "ALIGN-201",
