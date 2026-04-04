@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Host.BootstrapSeed;
 using TgAssistant.Host.Launch;
+using TgAssistant.Host.OperatorApi;
 using TgAssistant.Host.Stage5Repair;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.LlmGateway;
@@ -73,6 +74,8 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IResolutionActionService, ResolutionActionCommandService>();
         services.AddSingleton<IOperatorResolutionApplicationService, OperatorResolutionApplicationService>();
         services.AddSingleton<IOperatorSessionAuditService, OperatorSessionAuditService>();
+        services.AddSingleton<WebOperatorSessionStore>();
+        services.AddSingleton<WebOperatorAuthSessionResolver>();
         services.AddSingleton<TelegramOperatorSessionStore>();
         services.AddSingleton<TelegramOperatorWorkflowService>();
 

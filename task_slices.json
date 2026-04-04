@@ -2068,12 +2068,12 @@
       "dependencies": [
         "OPINT-005-A1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Web resolution requests include trusted operator/session context instead of free-form unauthenticated payload construction.",
         "Denied/expired session paths are deterministic and auditable for bounded operator flows."
       ],
-      "notes": "Hard prerequisite for safe web operator actions."
+      "notes": "2026-04-04: Completed web auth/session boundary by enforcing token-gated trusted web operator identity/session resolution at `/api/operator/*` (request-supplied identity/session payload is overridden server-side), persisting server-issued web session state via header/cookie for bounded progression, and auditing deterministic denied/expired session paths (`auth_denied`, `session_not_found`, `session_expired`) through operator session audit events."
     },
     {
       "id": "OPINT-005-B",

@@ -21,47 +21,103 @@ public static class OperatorApiEndpointExtensions
         var group = endpoints.MapGroup("/api/operator");
 
         group.MapPost("/tracked-persons/query", async (
+            HttpContext httpContext,
             OperatorTrackedPersonQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
             IOperatorResolutionApplicationService service,
             CancellationToken ct) =>
         {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
             var result = await service.QueryTrackedPersonsAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
         group.MapPost("/tracked-persons/select", async (
+            HttpContext httpContext,
             OperatorTrackedPersonSelectionRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
             IOperatorResolutionApplicationService service,
             CancellationToken ct) =>
         {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
             var result = await service.SelectTrackedPersonAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
         group.MapPost("/resolution/queue/query", async (
+            HttpContext httpContext,
             OperatorResolutionQueueQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
             IOperatorResolutionApplicationService service,
             CancellationToken ct) =>
         {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
             var result = await service.GetResolutionQueueAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
         group.MapPost("/resolution/detail/query", async (
+            HttpContext httpContext,
             OperatorResolutionDetailQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
             IOperatorResolutionApplicationService service,
             CancellationToken ct) =>
         {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionDetail, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
             var result = await service.GetResolutionDetailAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionDetail);
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
         group.MapPost("/resolution/actions", async (
+            HttpContext httpContext,
             ResolutionActionRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
             IOperatorResolutionApplicationService service,
             CancellationToken ct) =>
         {
+            var requestedMode = ResolveActionMode(request.ActionType);
+            var auth = await webAuthResolver.ResolveAsync(httpContext, requestedMode, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
             var result = await service.SubmitResolutionActionAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, requestedMode);
             return ToResult(result.Accepted, result.FailureReason ?? result.Action.FailureReason, result);
         });
 
@@ -99,6 +155,30 @@ public static class OperatorApiEndpointExtensions
             "session_active_tracked_person_not_available" => StatusCodes.Status404NotFound,
             "preferred_tracked_person_not_available" => StatusCodes.Status404NotFound,
             _ => StatusCodes.Status400BadRequest
+        };
+    }
+
+    private static IResult ToAuthFailureResult(WebOperatorAuthResult auth)
+    {
+        return Results.Json(
+            new
+            {
+                accepted = false,
+                failureReason = auth.FailureReason,
+                auditEventId = auth.AuditEventId,
+                session = auth.Session
+            },
+            statusCode: auth.StatusCode);
+    }
+
+    private static string ResolveActionMode(string? actionType)
+    {
+        var normalizedActionType = ResolutionActionTypes.Normalize(actionType);
+        return normalizedActionType switch
+        {
+            ResolutionActionTypes.Evidence => OperatorModeTypes.Evidence,
+            ResolutionActionTypes.Clarify => OperatorModeTypes.Clarification,
+            _ => OperatorModeTypes.ResolutionDetail
         };
     }
 }

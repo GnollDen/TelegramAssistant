@@ -33,10 +33,12 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<EmbeddingSettings>(config.GetSection(EmbeddingSettings.Section));
         services.Configure<BudgetGuardrailSettings>(config.GetSection(BudgetGuardrailSettings.Section));
         services.Configure<EvalHarnessSettings>(config.GetSection(EvalHarnessSettings.Section));
+        var legacyDiagnosticsSection = config.GetSection("LegacyDiagnostics");
+        var webSection = legacyDiagnosticsSection.GetSection(WebSettings.Section);
+        services.Configure<WebSettings>(webSection.Exists() ? webSection : config.GetSection(WebSettings.Section));
 
         if (includeLegacyStage6ClusterDiagnostics)
         {
-            var legacyDiagnosticsSection = config.GetSection("LegacyDiagnostics");
             var botChatSection = legacyDiagnosticsSection.GetSection(BotChatSettings.Section);
             var stage6AutoCaseSection = legacyDiagnosticsSection.GetSection(Stage6AutoCaseGenerationSettings.Section);
 

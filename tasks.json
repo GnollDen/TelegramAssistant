@@ -1217,7 +1217,7 @@
         "OPINT-004"
       ],
       "status": "pending",
-      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority. Progress 2026-04-04: OPINT-005-A1 completed by adding clean host-served operator web shell entry (`/operator`) and dedicated Resolution route bootstrap (`/operator/resolution`) with explicit loading/empty/error entry states, without using legacy Stage6 web pages. Remaining slices OPINT-005-A2+ are still pending."
+      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority. Progress 2026-04-04: OPINT-005-A1 completed by adding clean host-served operator web shell entry (`/operator`) and dedicated Resolution route bootstrap (`/operator/resolution`) with explicit loading/empty/error entry states, without using legacy Stage6 web pages. Progress 2026-04-04: OPINT-005-A2 completed by enforcing trusted token-gated web operator auth/session context at `/api/operator/*` with auditable denied/expired session handling. Remaining slices OPINT-005-B+ are still pending."
     },
     {
       "id": "OPINT-006",
