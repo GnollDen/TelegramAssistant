@@ -12,12 +12,16 @@ public sealed class TelegramOperatorWorkflowService
     private const string AuthDeniedSessionEventType = "auth_denied";
     private const string SessionAuthenticatedEventType = "session_authenticated";
     private const string ModeSwitchSessionEventType = "mode_switch";
+    private const string AlertAcknowledgedSessionEventType = "alert_acknowledged";
     private const string TelegramAuthSource = "telegram_owner_allowlist";
     private const string TrackedPersonCallbackPrefix = "tracked:";
     private const string AssistantTrackedPersonCallbackPrefix = "assistant:tracked:";
+    private const string AlertsTrackedPersonCallbackPrefix = "alerts:tracked:";
     private const string OfflineTrackedPersonCallbackPrefix = "offline:tracked:";
     private const string AssistantSwitchPersonCallback = "assistant:switch-person";
+    private const string AlertsSwitchPersonCallback = "alerts:switch-person";
     private const string OfflineSwitchPersonCallback = "offline:switch-person";
+    private const string AlertAcknowledgeCallbackPrefix = "alert:ack:";
     private const string OfflineCaptureSummaryCallback = "offline:capture-summary";
     private const string OfflineCaptureRecordingCallback = "offline:capture-recording";
     private const string OfflineClarifyNextCallback = "offline:clarify-next";
@@ -274,7 +278,21 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(callbackData, "mode:alerts", StringComparison.Ordinal))
         {
-            return CreateAlertsPolicyCard(state, callbackNotice: "Policy loaded");
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "A resolution action input is in progress. Send explanation text or choose Cancel.");
+            }
+
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "An offline-event input step is in progress. Send text or choose Cancel.");
+            }
+
+            return await EnterAlertsModeAsync(state, interaction, nowUtc, ct);
         }
 
         if (string.Equals(callbackData, "resolution:switch-person", StringComparison.Ordinal))
@@ -321,6 +339,31 @@ public sealed class TelegramOperatorWorkflowService
                 interaction,
                 nowUtc,
                 note: "Select the active tracked person for Assistant mode.",
+                callbackNotice: "Switch tracked person",
+                ct);
+        }
+
+        if (string.Equals(callbackData, AlertsSwitchPersonCallback, StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before switching tracked person.");
+            }
+
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "Finish or cancel the pending offline-event input before switching tracked person.");
+            }
+
+            return await RenderAlertsTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Select the active tracked person for Alerts mode.",
                 callbackNotice: "Switch tracked person",
                 ct);
         }
@@ -417,6 +460,30 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
+        if (callbackData.StartsWith(AlertsTrackedPersonCallbackPrefix, StringComparison.Ordinal))
+        {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before changing tracked person.");
+            }
+
+            if (state.PendingOfflineEventInput != null)
+            {
+                return CreatePendingOfflineEventInputPrompt(
+                    state,
+                    "Finish or cancel the pending offline-event input before changing tracked person.");
+            }
+
+            return await SelectTrackedPersonForAlertsAsync(
+                state,
+                interaction,
+                callbackData[AlertsTrackedPersonCallbackPrefix.Length..],
+                nowUtc,
+                ct);
+        }
+
         if (callbackData.StartsWith(OfflineTrackedPersonCallbackPrefix, StringComparison.Ordinal))
         {
             if (state.PendingOfflineEventInput != null)
@@ -440,6 +507,16 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 callbackData[ResolutionActionCallbackPrefix.Length..],
+                nowUtc,
+                ct);
+        }
+
+        if (callbackData.StartsWith(AlertAcknowledgeCallbackPrefix, StringComparison.Ordinal))
+        {
+            return await AcknowledgeAlertAsync(
+                state,
+                interaction,
+                callbackData[AlertAcknowledgeCallbackPrefix.Length..],
                 nowUtc,
                 ct);
         }
@@ -562,6 +639,65 @@ public sealed class TelegramOperatorWorkflowService
             state,
             query.TrackedPersons,
             "Assistant mode requires an explicit active tracked person.",
+            callbackNotice: "Pick tracked person");
+    }
+
+    private async Task<TelegramOperatorResponse> EnterAlertsModeAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var previousActiveMode = state.Session.ActiveMode;
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Alerts;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Alerts mode could not start: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Alerts unavailable");
+        }
+
+        if (query.ActiveTrackedPerson != null)
+        {
+            await AuditModeSwitchIfNeededAsync(
+                interaction,
+                state,
+                previousActiveMode,
+                selectionSource: query.SelectionSource,
+                nowUtc,
+                ct);
+            return await RenderAlertsContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: query.AutoSelected
+                    ? $"Alerts mode auto-selected {query.ActiveTrackedPerson.DisplayName}."
+                    : null,
+                ct);
+        }
+
+        return BuildAlertsTrackedPersonPickerResponse(
+            state,
+            query.TrackedPersons,
+            "Alerts mode requires an explicit active tracked person.",
             callbackNotice: "Pick tracked person");
     }
 
@@ -723,6 +859,58 @@ public sealed class TelegramOperatorWorkflowService
             state,
             note: $"Assistant mode active for {selection.ActiveTrackedPerson.DisplayName}.",
             callbackNotice: "Assistant");
+    }
+
+    private async Task<TelegramOperatorResponse> SelectTrackedPersonForAlertsAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string trackedPersonValue,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse(trackedPersonValue, out var trackedPersonId) || trackedPersonId == Guid.Empty)
+        {
+            return await RenderAlertsTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Tracked person selection was invalid. Choose a listed person.",
+                callbackNotice: "Invalid selection",
+                ct);
+        }
+
+        var selection = await _operatorResolutionService.SelectTrackedPersonAsync(
+            new OperatorTrackedPersonSelectionRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = trackedPersonId,
+                RequestedAtUtc = nowUtc
+            },
+            ct);
+
+        state.Session = selection.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Alerts;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        UpdateActiveTrackedPersonState(state, selection.ActiveTrackedPerson);
+
+        if (!selection.Accepted || selection.ActiveTrackedPerson == null)
+        {
+            return await RenderAlertsTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Tracked person switch failed: {selection.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Switch failed",
+                ct);
+        }
+
+        return await RenderAlertsContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"Alerts mode active for {selection.ActiveTrackedPerson.DisplayName}.",
+            ct);
     }
 
     private async Task<TelegramOperatorResponse> SelectTrackedPersonForOfflineAsync(
@@ -2164,6 +2352,43 @@ public sealed class TelegramOperatorWorkflowService
         return BuildAssistantTrackedPersonPickerResponse(state, query.TrackedPersons, note, callbackNotice);
     }
 
+    private async Task<TelegramOperatorResponse> RenderAlertsTrackedPersonPickerAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        string? note,
+        string? callbackNotice,
+        CancellationToken ct)
+    {
+        var query = await _operatorResolutionService.QueryTrackedPersonsAsync(
+            new OperatorTrackedPersonQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                PreferredTrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty
+                    ? null
+                    : state.Session.ActiveTrackedPersonId,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = query.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Alerts;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        UpdateActiveTrackedPersonState(state, query.ActiveTrackedPerson);
+
+        if (!query.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return CreateModeCard(
+                state,
+                $"Tracked person selection is unavailable: {query.FailureReason ?? "unknown error"}.",
+                callbackNotice: "Selection unavailable");
+        }
+
+        return BuildAlertsTrackedPersonPickerResponse(state, query.TrackedPersons, note, callbackNotice);
+    }
+
     private async Task<TelegramOperatorResponse> RenderResolutionContextAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -2278,6 +2503,172 @@ public sealed class TelegramOperatorWorkflowService
         };
     }
 
+    private async Task<TelegramOperatorResponse> RenderAlertsContextAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        string? note,
+        CancellationToken ct)
+    {
+        if (state.Session.ActiveTrackedPersonId == Guid.Empty)
+        {
+            return await RenderAlertsTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note ?? "Alerts mode requires an active tracked person.",
+                callbackNotice: "Pick tracked person",
+                ct);
+        }
+
+        var queue = await _operatorResolutionService.GetResolutionQueueAsync(
+            new OperatorResolutionQueueQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                SortBy = ResolutionQueueSortFields.Priority,
+                SortDirection = ResolutionSortDirections.Desc,
+                Limit = 25
+            },
+            ct);
+
+        state.Session = queue.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Alerts;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        if (!string.IsNullOrWhiteSpace(queue.Queue.TrackedPersonDisplayName))
+        {
+            state.ActiveTrackedPersonDisplayName = queue.Queue.TrackedPersonDisplayName;
+        }
+        if (!string.IsNullOrWhiteSpace(queue.Queue.ScopeKey))
+        {
+            state.ActiveTrackedPersonScopeKey = queue.Queue.ScopeKey;
+        }
+
+        if (!queue.Accepted)
+        {
+            TelegramOperatorSessionStore.ClearResolutionContext(state);
+            return await RenderAlertsTrackedPersonPickerAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Alerts context expired: {queue.FailureReason ?? "unknown error"}. Re-select the tracked person.",
+                callbackNotice: "Alerts reset",
+                ct);
+        }
+
+        var cardMessages = BuildAlertCardMessages(state, queue.Queue, nowUtc);
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Alerts Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "unknown"}");
+        lines.Add("Telegram shows only workflow-critical alerts that require acknowledgement.");
+        lines.Add($"Visible critical alerts: {cardMessages.Count}");
+        lines.Add($"Acknowledged this session: {state.AcknowledgedAlertScopeItemKeys.Count}");
+        if (queue.Queue.RuntimeState != null)
+        {
+            lines.Add($"Runtime: {queue.Queue.RuntimeState.State}");
+        }
+
+        if (cardMessages.Count == 0)
+        {
+            lines.Add("No Telegram-push critical alerts are currently projected for this bounded scope.");
+        }
+        else
+        {
+            lines.Add($"Showing compact alert cards: {cardMessages.Count}.");
+        }
+
+        var messages = new List<TelegramOperatorMessage>
+        {
+            new()
+            {
+                Text = string.Join(Environment.NewLine, lines),
+                Buttons =
+                [
+                    [
+                        new TelegramOperatorButton { Text = "Refresh", CallbackData = "mode:alerts" },
+                        new TelegramOperatorButton { Text = "Switch Person", CallbackData = AlertsSwitchPersonCallback }
+                    ],
+                    [
+                        new TelegramOperatorButton { Text = "Resolution", CallbackData = "mode:resolution" },
+                        new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+                    ]
+                ]
+            }
+        };
+        messages.AddRange(cardMessages);
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = interaction.CallbackData == null ? null : "Alerts",
+            Messages = messages
+        };
+    }
+
+    private async Task<TelegramOperatorResponse> AcknowledgeAlertAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string alertToken,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var normalizedToken = alertToken.Trim();
+        if (!state.AlertCardBindings.TryGetValue(normalizedToken, out var binding))
+        {
+            return await RenderAlertsContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "That alert card is no longer current. Refresh alerts and retry.",
+                ct);
+        }
+
+        if (!state.AcknowledgedAlertScopeItemKeys.Add(binding.ScopeItemKey))
+        {
+            return await RenderAlertsContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"Alert already acknowledged for {binding.Title}.",
+                ct);
+        }
+
+        await _auditService.RecordSessionEventAsync(
+            new OperatorSessionAuditRequest
+            {
+                RequestId = BuildRequestId("alert-ack", interaction.ChatId, nowUtc),
+                SessionEventType = AlertAcknowledgedSessionEventType,
+                DecisionOutcome = OperatorAuditDecisionOutcomes.Accepted,
+                ScopeKey = state.ActiveTrackedPersonScopeKey,
+                TrackedPersonId = state.Session.ActiveTrackedPersonId == Guid.Empty ? null : state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                ItemType = binding.ItemType,
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                Details =
+                {
+                    ["title"] = binding.Title,
+                    ["alert_rule_id"] = binding.AlertRuleId,
+                    ["alert_reason"] = binding.AlertReason
+                },
+                EventTimeUtc = nowUtc
+            },
+            ct);
+
+        return await RenderAlertsContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"Acknowledged alert for {binding.Title}.",
+            ct);
+    }
+
     private async Task<ResolutionQueueDeltaSnapshot?> TryCaptureQueueDeltaSnapshotAsync(
         TelegramOperatorConversationState state,
         TelegramOperatorInteraction interaction,
@@ -2371,6 +2762,52 @@ public sealed class TelegramOperatorWorkflowService
         lines.Add($"Newly-emerged since action: {newlyEmerged}");
     }
 
+    private List<TelegramOperatorMessage> BuildAlertCardMessages(
+        TelegramOperatorConversationState state,
+        ResolutionQueueResult queue,
+        DateTime nowUtc)
+    {
+        state.AlertCardBindings.Clear();
+        state.AlertCardGeneration++;
+
+        var messages = new List<TelegramOperatorMessage>();
+        var generation = state.AlertCardGeneration;
+        var alertItems = queue.Items
+            .Select(item => new
+            {
+                Item = item,
+                Decision = EvaluateTelegramAlertPolicy(item, queue)
+            })
+            .Where(entry => entry.Decision.PushTelegram && entry.Decision.RequiresAcknowledgement)
+            .Take(MaxResolutionCards)
+            .ToList();
+
+        foreach (var (entry, index) in alertItems.Select((entry, index) => (entry, index)))
+        {
+            var token = $"{generation:x}{index + 1:x}";
+            var openWebUrl = BuildResolutionOpenWebUrl(state.Session, entry.Item.ScopeItemKey, nowUtc);
+            var binding = new TelegramAlertCardBinding
+            {
+                Token = token,
+                ScopeItemKey = entry.Item.ScopeItemKey,
+                ItemType = entry.Item.ItemType,
+                Title = entry.Item.Title,
+                AlertRuleId = entry.Decision.RuleId,
+                AlertReason = entry.Decision.Reason,
+                OpenWebUrl = openWebUrl
+            };
+            state.AlertCardBindings[token] = binding;
+            messages.Add(
+                new TelegramOperatorMessage
+                {
+                    Text = BuildAlertCardText(entry.Item, binding, state.AcknowledgedAlertScopeItemKeys.Contains(entry.Item.ScopeItemKey)),
+                    Buttons = BuildAlertCardButtons(binding, state.AcknowledgedAlertScopeItemKeys.Contains(entry.Item.ScopeItemKey))
+                });
+        }
+
+        return messages;
+    }
+
     private List<TelegramOperatorMessage> BuildResolutionCardMessages(
         TelegramOperatorConversationState state,
         IReadOnlyList<ResolutionItemSummary> items)
@@ -2403,6 +2840,84 @@ public sealed class TelegramOperatorWorkflowService
         return messages;
     }
 
+    private OperatorAlertPolicyDecision EvaluateTelegramAlertPolicy(ResolutionItemSummary item, ResolutionQueueResult queue)
+    {
+        var sourceClass = ResolveAlertSourceClass(item);
+        return _operatorAlertPolicyService.Evaluate(new OperatorAlertPolicyInput
+        {
+            SourceClass = sourceClass,
+            ScopeKey = queue.ScopeKey,
+            TrackedPersonId = queue.TrackedPersonId,
+            ScopeItemKey = item.ScopeItemKey,
+            ItemType = item.ItemType,
+            Priority = item.Priority,
+            RuntimeState = sourceClass == OperatorAlertSourceClasses.RuntimeControlState ? queue.RuntimeState?.State : null,
+            RuntimeDefectClass = sourceClass == OperatorAlertSourceClasses.RuntimeDefect ? ResolveRuntimeDefectClass(item) : null,
+            RuntimeDefectSeverity = sourceClass == OperatorAlertSourceClasses.RuntimeDefect ? item.Priority : null,
+            IsBlockingWorkflow = IsBlockingAlertItem(item),
+            IsActiveTrackedPersonScope = queue.TrackedPersonId.HasValue && queue.TrackedPersonId.Value != Guid.Empty,
+            IsMaterializationFailure = sourceClass == OperatorAlertSourceClasses.MaterializationFailure,
+            IsStateTransitionOnly = false
+        });
+    }
+
+    private static string ResolveAlertSourceClass(ResolutionItemSummary item)
+    {
+        if (string.Equals(item.ItemType, ResolutionItemTypes.MissingData, StringComparison.Ordinal))
+        {
+            return OperatorAlertSourceClasses.MaterializationFailure;
+        }
+
+        if (string.Equals(item.ItemType, ResolutionItemTypes.Review, StringComparison.Ordinal))
+        {
+            if (string.Equals(item.AffectedFamily, "runtime_control", StringComparison.Ordinal)
+                || item.Title.StartsWith("Runtime operating in ", StringComparison.Ordinal))
+            {
+                return OperatorAlertSourceClasses.RuntimeControlState;
+            }
+
+            if (string.Equals(item.AffectedFamily, RuntimeDefectClasses.ControlPlane, StringComparison.OrdinalIgnoreCase)
+                || item.Title.Contains("runtime", StringComparison.OrdinalIgnoreCase))
+            {
+                return OperatorAlertSourceClasses.RuntimeDefect;
+            }
+        }
+
+        return OperatorAlertSourceClasses.ResolutionBlocker;
+    }
+
+    private static string? ResolveRuntimeDefectClass(ResolutionItemSummary item)
+    {
+        if (string.Equals(item.AffectedFamily, RuntimeDefectClasses.ControlPlane, StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeDefectClasses.ControlPlane;
+        }
+
+        if (item.Title.Contains("control plane", StringComparison.OrdinalIgnoreCase))
+        {
+            return RuntimeDefectClasses.ControlPlane;
+        }
+
+        return RuntimeDefectClasses.Data;
+    }
+
+    private static bool IsBlockingAlertItem(ResolutionItemSummary item)
+    {
+        if (string.Equals(item.Priority, ResolutionItemPriorities.Critical, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return item.Status switch
+        {
+            ResolutionItemStatuses.Blocked => true,
+            ResolutionItemStatuses.AttentionRequired => true,
+            ResolutionItemStatuses.Degraded => true,
+            _ => string.Equals(item.ItemType, ResolutionItemTypes.Clarification, StringComparison.Ordinal)
+                 || string.Equals(item.ItemType, ResolutionItemTypes.BlockedBranch, StringComparison.Ordinal)
+        };
+    }
+
     private static string BuildResolutionCardText(ResolutionItemSummary item)
     {
         var lines = new List<string>
@@ -2416,6 +2931,29 @@ public sealed class TelegramOperatorWorkflowService
             $"Evidence: {item.EvidenceCount}",
             $"Updated: {FormatUtc(item.UpdatedAtUtc)}"
         };
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildAlertCardText(ResolutionItemSummary item, TelegramAlertCardBinding binding, bool acknowledged)
+    {
+        var lines = new List<string>
+        {
+            item.Title,
+            $"Alert rule: {binding.AlertRuleId}",
+            $"Type: {item.ItemType}",
+            $"Priority: {item.Priority}",
+            $"Status: {item.Status}",
+            $"Summary: {item.Summary}",
+            $"Why: {item.WhyItMatters}",
+            $"Scope: {item.ScopeItemKey}",
+            $"Trust: {FormatTrust(item.TrustFactor)}",
+            $"Acknowledged: {(acknowledged ? "yes" : "no")}"
+        };
+        if (!string.IsNullOrWhiteSpace(binding.AlertReason))
+        {
+            lines.Add($"Reason: {binding.AlertReason}");
+        }
 
         return string.Join(Environment.NewLine, lines);
     }
@@ -2438,6 +2976,34 @@ public sealed class TelegramOperatorWorkflowService
         }
 
         return buttons;
+    }
+
+    private static List<List<TelegramOperatorButton>> BuildAlertCardButtons(TelegramAlertCardBinding binding, bool acknowledged)
+    {
+        var primaryRow = new List<TelegramOperatorButton>();
+        if (acknowledged)
+        {
+            primaryRow.Add(new TelegramOperatorButton { Text = "Acknowledged" });
+        }
+        else
+        {
+            primaryRow.Add(new TelegramOperatorButton
+            {
+                Text = "Acknowledge",
+                CallbackData = $"{AlertAcknowledgeCallbackPrefix}{binding.Token}"
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(binding.OpenWebUrl))
+        {
+            primaryRow.Add(new TelegramOperatorButton
+            {
+                Text = "Open in Web",
+                Url = binding.OpenWebUrl
+            });
+        }
+
+        return [primaryRow];
     }
 
     private static List<TelegramOperatorButton> BuildActionRow(
@@ -2542,6 +3108,67 @@ public sealed class TelegramOperatorWorkflowService
             session.ActiveTrackedPersonId,
             item.ScopeItemKey.Trim(),
             session.OperatorSessionId.Trim(),
+            signingSecret,
+            nowUtc);
+    }
+
+    private string? BuildResolutionOpenWebUrl(
+        OperatorSessionContext session,
+        string scopeItemKey,
+        DateTime nowUtc)
+    {
+        var trackedPersonId = session.ActiveTrackedPersonId;
+        var normalizedScopeItemKey = NormalizeOptional(scopeItemKey);
+        var operatorSessionId = NormalizeOptional(session.OperatorSessionId);
+        if (trackedPersonId == Guid.Empty
+            || string.IsNullOrWhiteSpace(normalizedScopeItemKey)
+            || string.IsNullOrWhiteSpace(operatorSessionId))
+        {
+            return null;
+        }
+
+        var webUrl = NormalizeOptional(_webSettings.Url);
+        if (!Uri.TryCreate(webUrl, UriKind.Absolute, out var baseUri))
+        {
+            return null;
+        }
+
+        var handoffToken = BuildResolutionOpenWebHandoffToken(trackedPersonId, normalizedScopeItemKey, operatorSessionId, nowUtc);
+        var queryParts = new List<string>
+        {
+            $"tracked_person_id={Uri.EscapeDataString(trackedPersonId.ToString("D"))}",
+            $"scope_item_key={Uri.EscapeDataString(normalizedScopeItemKey)}",
+            $"operator_session_id={Uri.EscapeDataString(operatorSessionId)}",
+            $"active_mode={Uri.EscapeDataString(OperatorModeTypes.ResolutionDetail)}",
+            $"handoff_token={Uri.EscapeDataString(handoffToken)}",
+            $"target_api={Uri.EscapeDataString("/api/operator/resolution/detail/query")}"
+        };
+
+        var builder = new UriBuilder(baseUri)
+        {
+            Path = "/operator/resolution",
+            Query = string.Join("&", queryParts)
+        };
+        return builder.Uri.ToString();
+    }
+
+    private string BuildResolutionOpenWebHandoffToken(
+        Guid trackedPersonId,
+        string scopeItemKey,
+        string operatorSessionId,
+        DateTime nowUtc)
+    {
+        var signingSecret = OperatorHandoffTokenCodec.ResolveSigningSecret(_webSettings);
+        if (string.IsNullOrWhiteSpace(signingSecret))
+        {
+            return string.Empty;
+        }
+
+        return OperatorHandoffTokenCodec.CreateToken(
+            OperatorHandoffTokenCodec.TelegramResolutionContext,
+            trackedPersonId,
+            scopeItemKey,
+            operatorSessionId,
             signingSecret,
             nowUtc);
     }
@@ -2652,6 +3279,55 @@ public sealed class TelegramOperatorWorkflowService
                 {
                     Text = person.DisplayName,
                     CallbackData = $"{AssistantTrackedPersonCallbackPrefix}{person.TrackedPersonId:D}"
+                }
+            ]);
+        }
+
+        buttons.Add(
+        [
+            new TelegramOperatorButton { Text = "Modes", CallbackData = "mode:menu" }
+        ]);
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = callbackNotice,
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons = buttons
+                }
+            ]
+        };
+    }
+
+    private TelegramOperatorResponse BuildAlertsTrackedPersonPickerResponse(
+        TelegramOperatorConversationState state,
+        IReadOnlyList<OperatorTrackedPersonScopeSummary> trackedPersons,
+        string? note,
+        string? callbackNotice)
+    {
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(note))
+        {
+            lines.Add(note.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Alerts Mode");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "none"}");
+        lines.Add("Select the tracked person for this bounded alerts session.");
+
+        var buttons = new List<List<TelegramOperatorButton>>();
+        foreach (var person in trackedPersons.Take(12))
+        {
+            buttons.Add(
+            [
+                new TelegramOperatorButton
+                {
+                    Text = person.DisplayName,
+                    CallbackData = $"{AlertsTrackedPersonCallbackPrefix}{person.TrackedPersonId:D}"
                 }
             ]);
         }

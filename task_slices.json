@@ -2566,12 +2566,12 @@
       "dependencies": [
         "OPINT-009-A"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Only critical workflow blockers are pushed by default.",
         "Acknowledgement and handoff preserve scope/person context."
       ],
-      "notes": "Telegram alert surface."
+      "notes": "Completed 2026-04-04: Telegram Alerts mode now renders compact workflow-critical alert cards only, supports in-session acknowledgement, and issues bounded Open-in-Web handoff URLs that preserve tracked-person/scope/session context; validated via --opint-009-b-smoke."
     },
     {
       "id": "OPINT-009-C1",

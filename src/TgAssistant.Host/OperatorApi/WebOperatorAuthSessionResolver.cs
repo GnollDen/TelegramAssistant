@@ -14,6 +14,8 @@ public sealed class WebOperatorAuthSessionResolver
     private const string AuthDeniedSessionEventType = "auth_denied";
     private const string SessionExpiredEventType = "session_expired";
     private const string SessionDeniedEventType = "session_denied";
+    private const string SessionAuthenticatedEventType = "session_authenticated";
+    private const string SessionRestoredEventType = "session_restored";
     private const string WebAuthSource = "web_access_token";
     private const int DefaultSessionTtlMinutes = 120;
 
@@ -42,7 +44,7 @@ public sealed class WebOperatorAuthSessionResolver
         var nowUtc = DateTime.UtcNow;
         var normalizedMode = NormalizeMode(requestedMode);
         var token = ResolveAccessToken(httpContext.Request);
-        var suppliedSessionId = NormalizeOptional(httpContext.Request.Headers[SessionHeaderName].FirstOrDefault());
+        var suppliedSessionId = ResolveSuppliedSessionId(httpContext.Request);
         var subject = ResolveSurfaceSubject(httpContext);
         var operatorId = ResolveOperatorId();
 
@@ -76,6 +78,8 @@ public sealed class WebOperatorAuthSessionResolver
         }
 
         OperatorSessionContext session;
+        var shouldAuditAuthenticated = false;
+        var shouldAuditRestored = false;
         if (string.IsNullOrWhiteSpace(suppliedSessionId))
         {
             session = new OperatorSessionContext
@@ -88,6 +92,7 @@ public sealed class WebOperatorAuthSessionResolver
                 ActiveMode = normalizedMode
             };
             _sessionStore.Upsert(session);
+            shouldAuditAuthenticated = true;
         }
         else
         {
@@ -120,6 +125,7 @@ public sealed class WebOperatorAuthSessionResolver
                     ct);
             }
 
+            shouldAuditRestored = session.LastSeenAtUtc <= session.AuthenticatedAtUtc;
             session.LastSeenAtUtc = nowUtc;
             session.ExpiresAtUtc = nowUtc.AddMinutes(DefaultSessionTtlMinutes);
             session.ActiveMode = normalizedMode;
@@ -136,6 +142,14 @@ public sealed class WebOperatorAuthSessionResolver
         };
 
         WriteSession(httpContext, session);
+        if (shouldAuditAuthenticated)
+        {
+            await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionAuthenticatedEventType, nowUtc, ct);
+        }
+        else if (shouldAuditRestored)
+        {
+            await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionRestoredEventType, nowUtc, ct);
+        }
 
         return WebOperatorAuthResult.Success(identity, session);
     }
@@ -227,6 +241,41 @@ public sealed class WebOperatorAuthSessionResolver
             identity);
     }
 
+    private async Task RecordAcceptedSessionEventAsync(
+        HttpContext httpContext,
+        OperatorIdentityContext identity,
+        OperatorSessionContext session,
+        string sessionEventType,
+        DateTime eventTimeUtc,
+        CancellationToken ct)
+    {
+        try
+        {
+            await _auditService.RecordSessionEventAsync(
+                new OperatorSessionAuditRequest
+                {
+                    RequestId = $"web-auth:{Guid.NewGuid():N}",
+                    SessionEventType = sessionEventType,
+                    DecisionOutcome = OperatorAuditDecisionOutcomes.Accepted,
+                    FailureReason = null,
+                    OperatorIdentity = identity,
+                    Session = session,
+                    EventTimeUtc = eventTimeUtc,
+                    Details = new Dictionary<string, object?>
+                    {
+                        ["surface"] = OperatorSurfaceTypes.Web,
+                        ["path"] = httpContext.Request.Path.Value,
+                        ["method"] = httpContext.Request.Method
+                    }
+                },
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Web operator auth/session accepted audit write failed: event={SessionEventType}", sessionEventType);
+        }
+    }
+
     private void WriteSession(HttpContext httpContext, OperatorSessionContext session)
     {
         httpContext.Response.Headers[SessionHeaderName] = session.OperatorSessionId;
@@ -241,6 +290,22 @@ public sealed class WebOperatorAuthSessionResolver
                 Secure = httpContext.Request.IsHttps,
                 Expires = session.ExpiresAtUtc
             });
+    }
+
+    private static string ResolveSuppliedSessionId(HttpRequest request)
+    {
+        var headerSessionId = NormalizeOptional(request.Headers[SessionHeaderName].FirstOrDefault());
+        if (!string.IsNullOrWhiteSpace(headerSessionId))
+        {
+            return headerSessionId;
+        }
+
+        if (request.Cookies.TryGetValue(SessionCookieName, out var cookieSessionId))
+        {
+            return NormalizeOptional(cookieSessionId);
+        }
+
+        return string.Empty;
     }
 
     private static string NormalizeOptional(string? value)

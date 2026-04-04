@@ -6,6 +6,7 @@ public static class TelegramOperatorSurfaceModes
 {
     public const string None = "none";
     public const string Assistant = "assistant";
+    public const string Alerts = "alerts";
     public const string OfflineEvent = "offline_event";
     public const string Resolution = "resolution";
 }
@@ -60,6 +61,9 @@ internal sealed class TelegramOperatorConversationState
     public string? ActiveTrackedPersonScopeKey { get; set; }
     public int ResolutionCardGeneration { get; set; }
     public Dictionary<string, TelegramResolutionCardBinding> ResolutionCardBindings { get; set; } = new(StringComparer.Ordinal);
+    public int AlertCardGeneration { get; set; }
+    public Dictionary<string, TelegramAlertCardBinding> AlertCardBindings { get; set; } = new(StringComparer.Ordinal);
+    public HashSet<string> AcknowledgedAlertScopeItemKeys { get; set; } = new(StringComparer.Ordinal);
     public TelegramPendingResolutionInput? PendingResolutionInput { get; set; }
     public TelegramOfflineEventDraft? OfflineEventDraft { get; set; }
     public TelegramPendingOfflineEventInput? PendingOfflineEventInput { get; set; }
@@ -87,6 +91,17 @@ internal sealed class TelegramResolutionCardBinding
     public string ItemType { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public List<string> AvailableActions { get; set; } = [];
+}
+
+internal sealed class TelegramAlertCardBinding
+{
+    public string Token { get; set; } = string.Empty;
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string AlertRuleId { get; set; } = string.Empty;
+    public string AlertReason { get; set; } = string.Empty;
+    public string? OpenWebUrl { get; set; }
 }
 
 internal sealed class TelegramPendingResolutionInput

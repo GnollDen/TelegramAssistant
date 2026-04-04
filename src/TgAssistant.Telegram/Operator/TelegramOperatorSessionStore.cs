@@ -26,6 +26,8 @@ public sealed class TelegramOperatorSessionStore
         state.ActiveTrackedPersonScopeKey = null;
         state.SurfaceMode = TelegramOperatorSurfaceModes.None;
         state.ResolutionCardBindings.Clear();
+        state.AlertCardBindings.Clear();
+        state.AcknowledgedAlertScopeItemKeys.Clear();
         state.PendingResolutionInput = null;
         state.OfflineEventDraft = null;
         state.PendingOfflineEventInput = null;

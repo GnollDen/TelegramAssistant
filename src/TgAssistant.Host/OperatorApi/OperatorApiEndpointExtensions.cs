@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Host.Startup;
 
 namespace TgAssistant.Host.OperatorApi;
@@ -58,6 +60,175 @@ public static class OperatorApiEndpointExtensions
             var result = await service.SelectTrackedPersonAsync(request, ct);
             webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
             return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/resolution/handoff/consume", async (
+            HttpContext httpContext,
+            OperatorResolutionHandoffConsumeRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOptions<WebSettings> webSettings,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var requestedMode = OperatorModeTypes.Normalize(request.ActiveMode);
+            var auth = await webAuthResolver.ResolveAsync(httpContext, requestedMode, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            var trackedPersonId = request.TrackedPersonId;
+            var scopeItemKey = NormalizeOptional(request.ScopeItemKey);
+            var sourceSessionId = NormalizeOptional(request.OperatorSessionId);
+            var handoffToken = NormalizeOptional(request.HandoffToken);
+            var signingSecret = OperatorHandoffTokenCodec.ResolveSigningSecret(webSettings.Value);
+            var ttlMinutes = Math.Clamp(webSettings.Value.HandoffTokenTtlMinutes, 1, 24 * 60);
+            if (trackedPersonId == Guid.Empty)
+            {
+                return Results.BadRequest(new OperatorResolutionHandoffConsumeResult
+                {
+                    Accepted = false,
+                    FailureReason = "tracked_person_id_required",
+                    Session = auth.Session,
+                    ActiveMode = requestedMode
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(scopeItemKey))
+            {
+                return Results.BadRequest(new OperatorResolutionHandoffConsumeResult
+                {
+                    Accepted = false,
+                    FailureReason = "scope_item_key_required",
+                    Session = auth.Session,
+                    ActiveMode = requestedMode
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceSessionId))
+            {
+                return Results.BadRequest(new OperatorResolutionHandoffConsumeResult
+                {
+                    Accepted = false,
+                    FailureReason = "operator_session_id_required",
+                    Session = auth.Session,
+                    ActiveMode = requestedMode
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(signingSecret))
+            {
+                return Results.Json(
+                    new OperatorResolutionHandoffConsumeResult
+                    {
+                        Accepted = false,
+                        FailureReason = "handoff_signing_secret_missing",
+                        Session = auth.Session,
+                        ActiveMode = requestedMode
+                    },
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var isValidTelegramToken = OperatorHandoffTokenCodec.TryValidateToken(
+                handoffToken,
+                OperatorHandoffTokenCodec.TelegramResolutionContext,
+                trackedPersonId,
+                scopeItemKey,
+                sourceSessionId,
+                signingSecret,
+                ttlMinutes);
+            var isValidAssistantToken = !isValidTelegramToken && OperatorHandoffTokenCodec.TryValidateToken(
+                handoffToken,
+                OperatorHandoffTokenCodec.AssistantResolutionContext,
+                trackedPersonId,
+                scopeItemKey,
+                sourceSessionId,
+                signingSecret,
+                ttlMinutes);
+            if (!isValidTelegramToken && !isValidAssistantToken)
+            {
+                return Results.Json(
+                    new OperatorResolutionHandoffConsumeResult
+                    {
+                        Accepted = false,
+                        FailureReason = "handoff_token_invalid",
+                        Session = auth.Session,
+                        ActiveMode = requestedMode
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var currentSession = auth.Session ?? new OperatorSessionContext();
+            if (currentSession.ActiveTrackedPersonId != Guid.Empty
+                && currentSession.ActiveTrackedPersonId != trackedPersonId)
+            {
+                return Results.Json(
+                    new OperatorResolutionHandoffConsumeResult
+                    {
+                        Accepted = false,
+                        FailureReason = "session_active_tracked_person_mismatch",
+                        Session = currentSession,
+                        ActiveMode = requestedMode
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentSession.ActiveScopeItemKey)
+                && !string.Equals(currentSession.ActiveScopeItemKey.Trim(), scopeItemKey, StringComparison.Ordinal))
+            {
+                return Results.Json(
+                    new OperatorResolutionHandoffConsumeResult
+                    {
+                        Accepted = false,
+                        FailureReason = "session_scope_item_mismatch",
+                        Session = currentSession,
+                        ActiveMode = requestedMode
+                    },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var session = currentSession;
+            if (session.ActiveTrackedPersonId == Guid.Empty)
+            {
+                var selectRequest = new OperatorTrackedPersonSelectionRequest
+                {
+                    TrackedPersonId = trackedPersonId,
+                    RequestedAtUtc = DateTime.UtcNow,
+                    OperatorIdentity = auth.OperatorIdentity,
+                    Session = auth.Session ?? new OperatorSessionContext()
+                };
+                var selection = await service.SelectTrackedPersonAsync(selectRequest, ct);
+                if (!selection.Accepted)
+                {
+                    return ToResult(selection.Accepted, selection.FailureReason, new OperatorResolutionHandoffConsumeResult
+                    {
+                        Accepted = false,
+                        FailureReason = selection.FailureReason,
+                        Session = selection.Session,
+                        ActiveMode = requestedMode
+                    });
+                }
+
+                session = selection.Session ?? currentSession;
+            }
+
+            session.ActiveTrackedPersonId = trackedPersonId;
+            session.ActiveScopeItemKey = scopeItemKey;
+            session.ActiveMode = OperatorModeTypes.IsSupported(requestedMode)
+                ? requestedMode
+                : OperatorModeTypes.ResolutionDetail;
+
+            var handoffResult = new OperatorResolutionHandoffConsumeResult
+            {
+                Accepted = true,
+                Session = session,
+                ActiveTrackedPersonId = session.ActiveTrackedPersonId,
+                ActiveScopeItemKey = session.ActiveScopeItemKey,
+                ActiveMode = session.ActiveMode
+            };
+
+            webAuthResolver.PersistSession(httpContext, handoffResult.Session, handoffResult.ActiveMode);
+            return Results.Ok(handoffResult);
         });
 
         group.MapPost("/persons/query", async (
@@ -410,6 +581,8 @@ public static class OperatorApiEndpointExtensions
             "unfinished_step_tracked_person_mismatch" => StatusCodes.Status403Forbidden,
             "unfinished_step_scope_item_mismatch" => StatusCodes.Status403Forbidden,
             "action_not_allowed_from_mode" => StatusCodes.Status403Forbidden,
+            "handoff_token_invalid" => StatusCodes.Status403Forbidden,
+            "handoff_signing_secret_missing" => StatusCodes.Status503ServiceUnavailable,
             "tracked_person_not_found_or_inactive" => StatusCodes.Status404NotFound,
             "scope_item_not_found" => StatusCodes.Status404NotFound,
             "session_active_tracked_person_not_available" => StatusCodes.Status404NotFound,
@@ -442,4 +615,8 @@ public static class OperatorApiEndpointExtensions
             _ => OperatorModeTypes.ResolutionDetail
         };
     }
+
+    private static string NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
 }

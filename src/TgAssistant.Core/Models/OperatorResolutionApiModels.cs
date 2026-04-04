@@ -588,6 +588,26 @@ public class OperatorResolutionDetailQueryResult
     public ResolutionDetailResult Detail { get; set; } = new();
 }
 
+public class OperatorResolutionHandoffConsumeRequest : OperatorContractRequestBase
+{
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string OperatorSessionId { get; set; } = string.Empty;
+    public string ActiveMode { get; set; } = OperatorModeTypes.ResolutionDetail;
+    public string HandoffToken { get; set; } = string.Empty;
+    public string? TargetApi { get; set; }
+}
+
+public class OperatorResolutionHandoffConsumeResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public Guid? ActiveTrackedPersonId { get; set; }
+    public string? ActiveScopeItemKey { get; set; }
+    public string ActiveMode { get; set; } = OperatorModeTypes.ResolutionDetail;
+}
+
 public class OperatorResolutionActionResultEnvelope
 {
     public bool Accepted { get; set; }

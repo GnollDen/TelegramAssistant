@@ -415,6 +415,8 @@ public class WebSettings
     public bool RequireOperatorAccessToken { get; set; } = true;
     public bool AllowSyntheticScopes { get; set; } = false;
     public string OperatorAccessToken { get; set; } = string.Empty;
+    public string HandoffSigningKey { get; set; } = string.Empty;
+    public int HandoffTokenTtlMinutes { get; set; } = 30;
     public string AccessHeaderName { get; set; } = "X-Tga-Operator-Key";
     public string AccessCookieName { get; set; } = "tga_operator_key";
     public string OperatorIdentity { get; set; } = "web-operator";
