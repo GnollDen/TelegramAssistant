@@ -561,7 +561,8 @@ run_iteration() {
   local slice_id="${CURRENT_SLICE}"
   local retry_before="${CURRENT_RETRY}"
 
-  local iteration_id started_at ended_at
+  # Keep explicit initialization for nounset safety in any future early/edge branch.
+  local iteration_id="" started_at="" ended_at=""
   local head_before head_after git_before git_after
   local task_status_before task_status_after
   local prompt_file prompt_log_file last_msg_file raw_log_file
