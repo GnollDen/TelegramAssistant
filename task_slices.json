@@ -2187,12 +2187,12 @@
       "dependencies": [
         "OPINT-005-E"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Web P0 resolution smoke path is reproducible and checks queue/detail/evidence/action/recompute transitions.",
         "Validation artifact captures normal path, denied-action path, and recompute-failure/degraded path."
       ],
-      "notes": "P0 surface validation checkpoint #2."
+      "notes": "P0 surface validation checkpoint #2. Completed 2026-04-04: added bounded web validator script (`scripts/opint-005-web-resolution-validate.sh`), captured OPINT-005-F execution artifact at `logs/opint-005-f-web-validation-report.json` (queue/detail/evidence + clarify/approve/reject/defer + denied-action path), captured degraded recompute evidence at `logs/opint-005-f-recompute-degraded-report.json`, and recorded validation summary in `docs/planning/OPINT-005-F_VALIDATION_2026-04-04.md`."
     },
     {
       "id": "OPINT-006-A",
