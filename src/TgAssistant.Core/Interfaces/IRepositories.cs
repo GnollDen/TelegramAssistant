@@ -338,6 +338,22 @@ public interface IOperatorResolutionApplicationService
     Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(
         ResolutionActionRequest request,
         CancellationToken ct = default);
+
+    Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(
+        OperatorOfflineEventQueryApiRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventDetailQueryResultEnvelope> GetOfflineEventDetailAsync(
+        OperatorOfflineEventDetailQueryRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventRefinementResult> SubmitOfflineEventRefinementAsync(
+        OperatorOfflineEventRefinementRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventTimelineLinkageUpdateResult> SubmitOfflineEventTimelineLinkageUpdateAsync(
+        OperatorOfflineEventTimelineLinkageUpdateRequest request,
+        CancellationToken ct = default);
 }
 
 public interface IOperatorAssistantResponseGenerationService
@@ -384,6 +400,31 @@ public interface IOperatorOfflineEventRepository
 
     Task<OperatorOfflineEventQueryResult> QueryAsync(
         OperatorOfflineEventQueryRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+        Guid offlineEventId,
+        string scopeKey,
+        Guid trackedPersonId,
+        string? summary,
+        string? recordingReference,
+        bool clearRecordingReference,
+        OperatorIdentityContext operatorIdentity,
+        OperatorSessionContext session,
+        DateTime refinedAtUtc,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventTimelineLinkageUpdateRecord?> UpdateTimelineLinkageWithinScopeAsync(
+        Guid offlineEventId,
+        string scopeKey,
+        Guid trackedPersonId,
+        string linkageStatus,
+        string? targetFamily,
+        string? targetRef,
+        string? linkageNote,
+        OperatorIdentityContext operatorIdentity,
+        OperatorSessionContext session,
+        DateTime updatedAtUtc,
         CancellationToken ct = default);
 }
 

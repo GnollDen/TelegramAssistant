@@ -146,3 +146,112 @@ public class OperatorOfflineEventQueryResult
     public int FilteredCount { get; set; }
     public List<OperatorOfflineEventReadSummary> Items { get; set; } = [];
 }
+
+public class OperatorOfflineEventClarificationQuestionSummary
+{
+    public string Key { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public float ExpectedInformationGain { get; set; }
+    public int PriorityRank { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class OperatorOfflineEventClarificationHistoryEntry
+{
+    public string QuestionKey { get; set; } = string.Empty;
+    public string Answer { get; set; } = string.Empty;
+    public bool UnknownPattern { get; set; }
+    public bool RepetitionDetected { get; set; }
+    public int NewTokenCount { get; set; }
+    public float InformationGain { get; set; }
+    public DateTime CapturedAtUtc { get; set; }
+}
+
+public class OperatorOfflineEventClarificationView
+{
+    public string LoopStatus { get; set; } = "unknown";
+    public string StopReason { get; set; } = "none";
+    public string? StopDetail { get; set; }
+    public DateTime? StoppedAtUtc { get; set; }
+    public float? PartialConfidence { get; set; }
+    public string? NextQuestionKey { get; set; }
+    public int QuestionCount { get; set; }
+    public int AnsweredCount { get; set; }
+    public int HistoryCount { get; set; }
+    public DateTime? LastAnsweredAtUtc { get; set; }
+    public List<OperatorOfflineEventClarificationQuestionSummary> Questions { get; set; } = [];
+    public List<OperatorOfflineEventClarificationHistoryEntry> History { get; set; } = [];
+}
+
+public class OperatorOfflineEventDetailView
+{
+    public bool ScopeBound { get; set; }
+    public bool Found { get; set; }
+    public string? ScopeFailureReason { get; set; }
+    public Guid OfflineEventId { get; set; }
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? RecordingReference { get; set; }
+    public string Status { get; set; } = OperatorOfflineEventStatuses.Draft;
+    public float? Confidence { get; set; }
+    public DateTime CapturedAtUtc { get; set; }
+    public DateTime? SavedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public string ExtractedInterpretation { get; set; } = string.Empty;
+    public string CapturePayloadJson { get; set; } = "{}";
+    public OperatorOfflineEventTimelineLinkageMetadata TimelineLinkage { get; set; } = new();
+    public OperatorOfflineEventClarificationView Clarification { get; set; } = new();
+}
+
+public class OperatorOfflineEventRefinementRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+    public Guid OfflineEventId { get; set; }
+    public string? Summary { get; set; }
+    public string? RecordingReference { get; set; }
+    public bool ClearRecordingReference { get; set; }
+    public string? RefinementNote { get; set; }
+    public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public static class OperatorOfflineEventTimelineLinkageStatuses
+{
+    public const string Unlinked = "unlinked";
+    public const string Linked = "linked";
+    public const string ReviewNeeded = "review_needed";
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        Unlinked,
+        Linked,
+        ReviewNeeded
+    };
+
+    public static string Normalize(string? status)
+    {
+        return string.IsNullOrWhiteSpace(status)
+            ? Unlinked
+            : status.Trim().ToLowerInvariant();
+    }
+
+    public static bool IsSupported(string? status)
+        => Supported.Contains(Normalize(status));
+}
+
+public class OperatorOfflineEventTimelineLinkageUpdateRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+    public Guid OfflineEventId { get; set; }
+    public string LinkageStatus { get; set; } = OperatorOfflineEventTimelineLinkageStatuses.Unlinked;
+    public string? TargetFamily { get; set; }
+    public string? TargetRef { get; set; }
+    public string? LinkageNote { get; set; }
+    public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class OperatorOfflineEventTimelineLinkageUpdateRecord
+{
+    public Guid AuditEventId { get; set; }
+    public OperatorOfflineEventRecord OfflineEvent { get; set; } = new();
+}

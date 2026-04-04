@@ -171,3 +171,51 @@ public class OperatorResolutionActionResultEnvelope
     public OperatorSessionContext Session { get; set; } = new();
     public ResolutionActionResult Action { get; set; } = new();
 }
+
+public class OperatorOfflineEventQueryApiRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+    public List<string> Statuses { get; set; } = [];
+    public string SortBy { get; set; } = OperatorOfflineEventSortFields.UpdatedAt;
+    public string SortDirection { get; set; } = ResolutionSortDirections.Desc;
+    public int Limit { get; set; } = 50;
+}
+
+public class OperatorOfflineEventQueryApiResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorOfflineEventQueryResult OfflineEvents { get; set; } = new();
+}
+
+public class OperatorOfflineEventDetailQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+    public Guid OfflineEventId { get; set; }
+}
+
+public class OperatorOfflineEventDetailQueryResultEnvelope
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+}
+
+public class OperatorOfflineEventRefinementResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+}
+
+public class OperatorOfflineEventTimelineLinkageUpdateResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public Guid? AuditEventId { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+}

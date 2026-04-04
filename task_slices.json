@@ -2360,12 +2360,12 @@
         "OPINT-005-E",
         "OPINT-007-B3"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Web exposes offline-event details needed for review/correction with confidence/trust and clarification history visibility.",
         "Refinement actions remain bounded to the selected offline event and operator session."
       ],
-      "notes": "Web refinement separated from timeline linkage mutation."
+      "notes": "Completed 2026-04-04: added dedicated web offline-events route (`/operator/offline-events`) and bounded operator API/application contracts for offline-event list/detail/refinement (`/api/operator/offline-events/query|detail|refine`) with tracked-person/session scope enforcement, confidence/trust visibility, clarification-history inspection, and selected-event/session-bounded refinement updates isolated from timeline-linkage mutation (deferred to OPINT-007-C2)."
     },
     {
       "id": "OPINT-007-C2",
@@ -2377,12 +2377,12 @@
       "dependencies": [
         "OPINT-007-C1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Operator-approved refinement can update offline-event timeline linkage in bounded scope.",
         "Linkage updates are auditable and do not mutate unrelated person/timeline objects."
       ],
-      "notes": "Dedicated write path for timeline-linkage mutations."
+      "notes": "Completed 2026-04-04: added dedicated bounded timeline-linkage mutation write path (`/api/operator/offline-events/timeline-linkage`) for offline-event refinement with strict tracked-person/scope/offline-event binding, auditable operator audit-event persistence (`action_type=timeline_linkage_update`), and no mutation of unrelated person/timeline objects."
     },
     {
       "id": "OPINT-008-A",

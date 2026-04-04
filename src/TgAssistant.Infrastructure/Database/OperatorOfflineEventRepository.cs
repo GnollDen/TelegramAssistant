@@ -9,6 +9,10 @@ namespace TgAssistant.Infrastructure.Database;
 public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventRepository
 {
     private const string ActivePersonStatus = "active";
+    private const string OfflineEventTimelineLinkageUpdateActionType = "timeline_linkage_update";
+    private const string OfflineEventTimelineLinkageUpdateSessionEventType = "offline_event_timeline_linkage_update";
+    private const string OfflineEventTimelineLinkageItemType = "offline_event_timeline_linkage";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
@@ -209,6 +213,196 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         };
     }
 
+    public async Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+        Guid offlineEventId,
+        string scopeKey,
+        Guid trackedPersonId,
+        string? summary,
+        string? recordingReference,
+        bool clearRecordingReference,
+        OperatorIdentityContext operatorIdentity,
+        OperatorSessionContext session,
+        DateTime refinedAtUtc,
+        CancellationToken ct = default)
+    {
+        if (offlineEventId == Guid.Empty || trackedPersonId == Guid.Empty || string.IsNullOrWhiteSpace(scopeKey))
+        {
+            return null;
+        }
+
+        var normalizedScopeKey = scopeKey.Trim();
+        var normalizedSummary = NormalizeOptional(summary);
+        var normalizedRecordingReference = NormalizeOptional(recordingReference);
+        var nowUtc = refinedAtUtc == default ? DateTime.UtcNow : refinedAtUtc;
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.OperatorOfflineEvents
+            .FirstOrDefaultAsync(x =>
+                x.Id == offlineEventId
+                && x.ScopeKey == normalizedScopeKey
+                && x.TrackedPersonId == trackedPersonId,
+                ct);
+        if (row == null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedSummary))
+        {
+            row.SummaryText = normalizedSummary!;
+        }
+
+        if (clearRecordingReference)
+        {
+            row.RecordingReference = null;
+        }
+        else if (recordingReference != null)
+        {
+            row.RecordingReference = normalizedRecordingReference;
+        }
+
+        row.OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown");
+        row.OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown");
+        row.SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown");
+        row.AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown");
+        row.AuthTimeUtc = operatorIdentity.AuthTimeUtc == default ? nowUtc : operatorIdentity.AuthTimeUtc;
+        row.OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown");
+        row.SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default ? nowUtc : session.AuthenticatedAtUtc;
+        row.SessionLastSeenAtUtc = session.LastSeenAtUtc == default ? nowUtc : session.LastSeenAtUtc;
+        row.SessionExpiresAtUtc = session.ExpiresAtUtc;
+        row.ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown");
+        row.UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind);
+        row.UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState);
+        row.UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc;
+        row.UpdatedAtUtc = nowUtc;
+
+        await db.SaveChangesAsync(ct);
+        return Map(row);
+    }
+
+    public async Task<OperatorOfflineEventTimelineLinkageUpdateRecord?> UpdateTimelineLinkageWithinScopeAsync(
+        Guid offlineEventId,
+        string scopeKey,
+        Guid trackedPersonId,
+        string linkageStatus,
+        string? targetFamily,
+        string? targetRef,
+        string? linkageNote,
+        OperatorIdentityContext operatorIdentity,
+        OperatorSessionContext session,
+        DateTime updatedAtUtc,
+        CancellationToken ct = default)
+    {
+        if (offlineEventId == Guid.Empty || trackedPersonId == Guid.Empty || string.IsNullOrWhiteSpace(scopeKey))
+        {
+            return null;
+        }
+
+        var normalizedScopeKey = scopeKey.Trim();
+        var normalizedLinkageStatus = OperatorOfflineEventTimelineLinkageStatuses.Normalize(linkageStatus);
+        if (!OperatorOfflineEventTimelineLinkageStatuses.IsSupported(normalizedLinkageStatus))
+        {
+            return null;
+        }
+
+        var normalizedTargetFamily = NormalizeOptional(targetFamily);
+        var normalizedTargetRef = NormalizeOptional(targetRef);
+        if (string.Equals(normalizedLinkageStatus, OperatorOfflineEventTimelineLinkageStatuses.Linked, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(normalizedTargetFamily)
+                || string.IsNullOrWhiteSpace(normalizedTargetRef))
+            {
+                return null;
+            }
+        }
+        else
+        {
+            normalizedTargetFamily = null;
+            normalizedTargetRef = null;
+        }
+
+        var normalizedLinkageNote = NormalizeOptional(linkageNote);
+        var nowUtc = updatedAtUtc == default ? DateTime.UtcNow : updatedAtUtc;
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.OperatorOfflineEvents
+            .FirstOrDefaultAsync(x =>
+                x.Id == offlineEventId
+                && x.ScopeKey == normalizedScopeKey
+                && x.TrackedPersonId == trackedPersonId,
+                ct);
+        if (row == null)
+        {
+            return null;
+        }
+
+        var previousLinkageJson = NormalizeJson(row.TimelineLinkageJson);
+        var normalizedSurface = OperatorSurfaceTypes.Normalize(session.Surface);
+        row.TimelineLinkageJson = BuildTimelineLinkageJson(
+            normalizedLinkageStatus,
+            normalizedTargetFamily,
+            normalizedTargetRef,
+            normalizedLinkageNote,
+            NormalizeRequired(operatorIdentity.OperatorId, "unknown"),
+            NormalizeRequired(session.OperatorSessionId, "unknown"),
+            nowUtc);
+        row.OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown");
+        row.OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown");
+        row.SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown");
+        row.AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown");
+        row.AuthTimeUtc = operatorIdentity.AuthTimeUtc == default ? nowUtc : operatorIdentity.AuthTimeUtc;
+        row.OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown");
+        row.Surface = OperatorSurfaceTypes.IsSupported(normalizedSurface)
+            ? normalizedSurface
+            : NormalizeRequired(normalizedSurface, "unknown");
+        row.SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default ? nowUtc : session.AuthenticatedAtUtc;
+        row.SessionLastSeenAtUtc = session.LastSeenAtUtc == default ? nowUtc : session.LastSeenAtUtc;
+        row.SessionExpiresAtUtc = session.ExpiresAtUtc;
+        row.ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown");
+        row.UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind);
+        row.UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState);
+        row.UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc;
+        row.UpdatedAtUtc = nowUtc;
+
+        var auditEventId = Guid.NewGuid();
+        db.OperatorAuditEvents.Add(new DbOperatorAuditEvent
+        {
+            AuditEventId = auditEventId,
+            RequestId = BuildTimelineLinkageRequestId(row.OperatorSessionId, row.Id, nowUtc),
+            ScopeKey = row.ScopeKey,
+            TrackedPersonId = row.TrackedPersonId,
+            ScopeItemKey = BuildOfflineEventScopeItemKey(row.Id),
+            ItemType = OfflineEventTimelineLinkageItemType,
+            OperatorId = row.OperatorId,
+            OperatorDisplay = row.OperatorDisplay,
+            OperatorSessionId = row.OperatorSessionId,
+            Surface = row.Surface,
+            SurfaceSubject = row.SurfaceSubject,
+            AuthSource = row.AuthSource,
+            ActiveMode = row.ActiveMode,
+            UnfinishedStepKind = row.UnfinishedStepKind,
+            ActionType = OfflineEventTimelineLinkageUpdateActionType,
+            SessionEventType = OfflineEventTimelineLinkageUpdateSessionEventType,
+            DecisionOutcome = OperatorAuditDecisionOutcomes.Accepted,
+            FailureReason = null,
+            DetailsJson = BuildTimelineLinkageAuditDetailsJson(
+                previousLinkageJson,
+                row.TimelineLinkageJson,
+                normalizedLinkageStatus,
+                normalizedTargetFamily,
+                normalizedTargetRef,
+                normalizedLinkageNote,
+                nowUtc),
+            EventTimeUtc = nowUtc
+        });
+
+        await db.SaveChangesAsync(ct);
+        return new OperatorOfflineEventTimelineLinkageUpdateRecord
+        {
+            AuditEventId = auditEventId,
+            OfflineEvent = Map(row)
+        };
+    }
+
     private static OperatorOfflineEventRecord Map(DbOperatorOfflineEvent row)
     {
         return new OperatorOfflineEventRecord
@@ -338,6 +532,67 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
     {
         return string.IsNullOrWhiteSpace(value) ? "{}" : value.Trim();
     }
+
+    private static string BuildTimelineLinkageJson(
+        string linkageStatus,
+        string? targetFamily,
+        string? targetRef,
+        string? linkageNote,
+        string operatorId,
+        string operatorSessionId,
+        DateTime updatedAtUtc)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                linkage_status = linkageStatus,
+                target_family = targetFamily,
+                target_ref = targetRef,
+                linked_at_utc = string.Equals(linkageStatus, OperatorOfflineEventTimelineLinkageStatuses.Linked, StringComparison.Ordinal)
+                    ? updatedAtUtc
+                    : (DateTime?)null,
+                updated_at_utc = updatedAtUtc,
+                linkage_note = linkageNote,
+                updated_by = new
+                {
+                    operator_id = operatorId,
+                    operator_session_id = operatorSessionId
+                }
+            },
+            JsonOptions);
+    }
+
+    private static string BuildTimelineLinkageAuditDetailsJson(
+        string previousTimelineLinkageJson,
+        string updatedTimelineLinkageJson,
+        string linkageStatus,
+        string? targetFamily,
+        string? targetRef,
+        string? linkageNote,
+        DateTime updatedAtUtc)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                linkage_update = new
+                {
+                    status = linkageStatus,
+                    target_family = targetFamily,
+                    target_ref = targetRef,
+                    linkage_note = linkageNote,
+                    updated_at_utc = updatedAtUtc
+                },
+                previous_timeline_linkage_json = previousTimelineLinkageJson,
+                updated_timeline_linkage_json = updatedTimelineLinkageJson
+            },
+            JsonOptions);
+    }
+
+    private static string BuildTimelineLinkageRequestId(string sessionId, Guid offlineEventId, DateTime updatedAtUtc)
+        => $"{OfflineEventTimelineLinkageUpdateSessionEventType}:{sessionId}:{offlineEventId:D}:{updatedAtUtc:yyyyMMddHHmmssfff}";
+
+    private static string BuildOfflineEventScopeItemKey(Guid offlineEventId)
+        => $"offline_event:{offlineEventId:D}";
 
     private static bool TryParseJsonObject(string json, out JsonElement root)
     {

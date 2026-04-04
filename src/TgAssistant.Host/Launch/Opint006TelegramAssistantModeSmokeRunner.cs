@@ -29,6 +29,7 @@ public static class Opint006TelegramAssistantModeSmokeRunner
             new OperatorAssistantResponseGenerationService(),
             assistantContextService,
             new NoopOperatorOfflineEventRepository(),
+            new OfflineEventClarificationPolicy(),
             new NoopOperatorSessionAuditService(),
             NullLogger<TelegramOperatorWorkflowService>.Instance);
 
@@ -234,6 +235,26 @@ public static class Opint006TelegramAssistantModeSmokeRunner
         public Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(ResolutionActionRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-006-C smoke should not submit resolution actions.");
 
+        public Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(
+            OperatorOfflineEventQueryApiRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not query offline events.");
+
+        public Task<OperatorOfflineEventDetailQueryResultEnvelope> GetOfflineEventDetailAsync(
+            OperatorOfflineEventDetailQueryRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not query offline-event detail.");
+
+        public Task<OperatorOfflineEventRefinementResult> SubmitOfflineEventRefinementAsync(
+            OperatorOfflineEventRefinementRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not submit offline-event refinement.");
+
+        public Task<OperatorOfflineEventTimelineLinkageUpdateResult> SubmitOfflineEventTimelineLinkageUpdateAsync(
+            OperatorOfflineEventTimelineLinkageUpdateRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not update offline-event timeline linkage.");
+
         private static OperatorSessionContext CloneSession(OperatorSessionContext session)
         {
             return new OperatorSessionContext
@@ -397,5 +418,32 @@ public static class Opint006TelegramAssistantModeSmokeRunner
             OperatorOfflineEventQueryRequest request,
             CancellationToken ct = default)
             => Task.FromResult(new OperatorOfflineEventQueryResult());
+
+        public Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+            Guid offlineEventId,
+            string scopeKey,
+            Guid trackedPersonId,
+            string? summary,
+            string? recordingReference,
+            bool clearRecordingReference,
+            OperatorIdentityContext operatorIdentity,
+            OperatorSessionContext session,
+            DateTime refinedAtUtc,
+            CancellationToken ct = default)
+            => Task.FromResult<OperatorOfflineEventRecord?>(null);
+
+        public Task<OperatorOfflineEventTimelineLinkageUpdateRecord?> UpdateTimelineLinkageWithinScopeAsync(
+            Guid offlineEventId,
+            string scopeKey,
+            Guid trackedPersonId,
+            string linkageStatus,
+            string? targetFamily,
+            string? targetRef,
+            string? linkageNote,
+            OperatorIdentityContext operatorIdentity,
+            OperatorSessionContext session,
+            DateTime updatedAtUtc,
+            CancellationToken ct = default)
+            => Task.FromResult<OperatorOfflineEventTimelineLinkageUpdateRecord?>(null);
     }
 }

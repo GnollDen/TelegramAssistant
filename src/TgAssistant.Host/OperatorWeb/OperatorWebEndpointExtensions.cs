@@ -19,6 +19,7 @@ public static class OperatorWebEndpointExtensions
         endpoints.MapGet("/", () => Results.Redirect("/operator"));
         endpoints.MapGet("/operator", () => Results.Content(OperatorHomeHtml, "text/html; charset=utf-8"));
         endpoints.MapGet("/operator/resolution", () => Results.Content(OperatorResolutionHtml, "text/html; charset=utf-8"));
+        endpoints.MapGet("/operator/offline-events", () => Results.Content(OperatorOfflineEventsHtml, "text/html; charset=utf-8"));
 
         endpoints.MapGet("/operator/resolution/bootstrap", (HttpRequest request) =>
         {
@@ -130,6 +131,10 @@ public static class OperatorWebEndpointExtensions
         <a class="nav-item primary" href="/operator/resolution">
           <strong>Resolution <span class="badge">P0</span></strong>
           <small>Enter the dedicated queue/detail workflow route.</small>
+        </a>
+        <a class="nav-item" href="/operator/offline-events">
+          <strong>Offline Events <span class="badge">P1</span></strong>
+          <small>Inspect and refine captured offline events with trust and clarification history.</small>
         </a>
         <span class="nav-item" aria-disabled="true">
           <strong>Persons</strong>
@@ -1910,6 +1915,835 @@ public static class OperatorWebEndpointExtensions
         node.addEventListener("change", loadQueue);
       });
 
+    refreshAll();
+  </script>
+</body>
+</html>
+""";
+
+    private const string OperatorOfflineEventsHtml = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operator Offline Events</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f8fb;
+      --panel: #ffffff;
+      --line: #d7e3ed;
+      --ink: #16324a;
+      --muted: #587188;
+      --accent: #0f5e87;
+      --warn: #a12222;
+      --ok: #177145;
+      --chip: #ecf3fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      background: linear-gradient(180deg, #e8f1f8, var(--bg) 220px);
+      color: var(--ink);
+    }
+    main {
+      max-width: 1220px;
+      margin: 24px auto;
+      padding: 0 14px;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 14px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 10px 22px rgba(17, 44, 68, 0.08);
+    }
+    .stack { display: grid; gap: 10px; }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row > * { flex: 1 1 140px; }
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    input, select, textarea, button, a {
+      font: inherit;
+      color: inherit;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+      text-decoration: none;
+    }
+    button { cursor: pointer; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .state {
+      border-left: 4px solid var(--accent);
+      background: #f7fbff;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+    }
+    .state.loading { border-left-color: var(--accent); }
+    .state.empty { border-left-color: var(--ok); }
+    .state.error { border-left-color: var(--warn); background: #fff5f5; }
+    .muted { color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .events-list {
+      max-height: 72vh;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      padding-right: 2px;
+    }
+    .event-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fcfeff;
+      cursor: pointer;
+    }
+    .event-card.active {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+      background: #f0f8ff;
+    }
+    .event-card h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    .meta span {
+      background: var(--chip);
+      border-radius: 999px;
+      padding: 3px 8px;
+    }
+    .detail-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .detail-block {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fcfeff;
+      padding: 10px;
+    }
+    .detail-block h3,
+    .detail-block h4 {
+      margin: 0 0 8px;
+    }
+    .detail-block p {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    .history-list {
+      max-height: 220px;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+    }
+    .history-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+      font-size: 13px;
+    }
+    .history-item p { margin: 4px 0; }
+    .refine-actions {
+      display: grid;
+      gap: 8px;
+    }
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; }
+      .layout { grid-template-columns: 1fr; }
+      .events-list { max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel stack">
+      <div>
+        <h1>Offline Events</h1>
+        <p class="muted">Web inspection and bounded refinement for Telegram-captured offline events.</p>
+      </div>
+
+      <label>
+        Operator access token
+        <input id="access-token" type="password" autocomplete="off" placeholder="X-Tga-Operator-Key">
+      </label>
+
+      <label>
+        Tracked person
+        <select id="tracked-person"></select>
+      </label>
+      <div class="row">
+        <button id="refresh-people" type="button">Refresh scope</button>
+        <button id="apply-person" type="button">Apply scope</button>
+      </div>
+
+      <label>
+        Status filter
+        <select id="status-filter">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="captured">Captured</option>
+          <option value="saved" selected>Saved</option>
+          <option value="archived">Archived</option>
+        </select>
+      </label>
+
+      <label>
+        Sort
+        <select id="sort-by">
+          <option value="updated_at" selected>Updated at</option>
+          <option value="captured_at">Captured at</option>
+          <option value="saved_at">Saved at</option>
+          <option value="created_at">Created at</option>
+        </select>
+      </label>
+
+      <div class="row">
+        <button id="refresh-events" class="primary" type="button">Refresh events</button>
+        <a href="/operator">Back to home</a>
+      </div>
+      <div id="state" class="state loading">Loading tracked person scope...</div>
+    </section>
+
+    <section class="panel stack">
+      <h2>Inspection + Refinement</h2>
+      <div class="layout">
+        <div class="stack">
+          <div id="counts" class="meta"></div>
+          <div id="events-list" class="events-list"></div>
+        </div>
+
+        <div class="detail-grid">
+          <div id="detail-state" class="state empty">Select an offline event to inspect detail.</div>
+          <section id="detail-content" class="detail-grid"></section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const stateNode = document.getElementById("state");
+    const countsNode = document.getElementById("counts");
+    const eventsListNode = document.getElementById("events-list");
+    const detailStateNode = document.getElementById("detail-state");
+    const detailContentNode = document.getElementById("detail-content");
+    const tokenInput = document.getElementById("access-token");
+    const trackedPersonSelect = document.getElementById("tracked-person");
+    const refreshPeopleButton = document.getElementById("refresh-people");
+    const applyPersonButton = document.getElementById("apply-person");
+    const refreshEventsButton = document.getElementById("refresh-events");
+    const statusFilterSelect = document.getElementById("status-filter");
+    const sortBySelect = document.getElementById("sort-by");
+
+    const appState = {
+      trackedPersons: [],
+      activeTrackedPersonId: null,
+      scopeKey: "",
+      items: [],
+      selectedOfflineEventId: null,
+      detail: null
+    };
+
+    function titleize(value) {
+      return String(value || "").replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
+    function formatUtc(value) {
+      if (!value) { return "n/a"; }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) { return value; }
+      return date.toLocaleString();
+    }
+
+    function formatPercent(value) {
+      const numeric = Number(value);
+      if (Number.isNaN(numeric)) { return "n/a"; }
+      return Math.round(numeric * 100) + "%";
+    }
+
+    function setState(kind, message) {
+      stateNode.className = "state " + kind;
+      stateNode.textContent = message;
+    }
+
+    function setDetailState(kind, message) {
+      detailStateNode.className = "state " + kind;
+      detailStateNode.textContent = message;
+    }
+
+    function readAccessToken() {
+      return window.localStorage.getItem("operator_web_access_token") || "";
+    }
+
+    function writeAccessToken(token) {
+      window.localStorage.setItem("operator_web_access_token", token);
+      document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
+    }
+
+    function resolveHeaders() {
+      const token = readAccessToken();
+      const headers = { "accept": "application/json", "content-type": "application/json" };
+      if (token) {
+        headers["X-Tga-Operator-Key"] = token;
+      }
+      return headers;
+    }
+
+    async function operatorPostJson(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: resolveHeaders(),
+        body: JSON.stringify(payload || {})
+      });
+
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (_) {
+        body = null;
+      }
+
+      if (!response.ok) {
+        const reason = body && (body.failureReason || body.reason || body.message)
+          ? (body.failureReason || body.reason || body.message)
+          : "request_failed";
+        const error = new Error(reason);
+        error.status = response.status;
+        throw error;
+      }
+
+      return body || {};
+    }
+
+    function renderTrackedPersons(result) {
+      const trackedPersons = Array.isArray(result.trackedPersons) ? result.trackedPersons : [];
+      appState.trackedPersons = trackedPersons;
+      appState.activeTrackedPersonId = result.activeTrackedPersonId || null;
+      trackedPersonSelect.innerHTML = "";
+
+      if (trackedPersons.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "No tracked persons available";
+        trackedPersonSelect.appendChild(option);
+        trackedPersonSelect.disabled = true;
+        return;
+      }
+
+      trackedPersonSelect.disabled = false;
+      trackedPersons.forEach(function(person) {
+        const option = document.createElement("option");
+        option.value = person.trackedPersonId;
+        option.textContent = (person.displayName || "Tracked person") + (person.scopeKey ? " | " + person.scopeKey : "");
+        if (appState.activeTrackedPersonId && person.trackedPersonId === appState.activeTrackedPersonId) {
+          option.selected = true;
+        }
+        trackedPersonSelect.appendChild(option);
+      });
+
+      if (!appState.activeTrackedPersonId && trackedPersonSelect.options.length > 0) {
+        trackedPersonSelect.selectedIndex = 0;
+      }
+    }
+
+    function renderCounts(result) {
+      countsNode.innerHTML = "";
+      [
+        "Total: " + (result.totalCount || 0),
+        "Filtered: " + (result.filteredCount || 0),
+        "Scope: " + (result.scopeKey || "n/a")
+      ].forEach(function(text) {
+        const chip = document.createElement("span");
+        chip.textContent = text;
+        countsNode.appendChild(chip);
+      });
+    }
+
+    function renderEvents(result) {
+      const items = Array.isArray(result.items) ? result.items : [];
+      appState.items = items;
+      appState.scopeKey = result.scopeKey || "";
+      eventsListNode.innerHTML = "";
+      if (items.length === 0) {
+        setState("empty", "No offline events match current filters.");
+        clearDetail("No offline event selected.");
+        return;
+      }
+
+      items.forEach(function(item) {
+        const card = document.createElement("article");
+        card.className = "event-card";
+        card.dataset.id = item.offlineEventId || "";
+        const summary = item.summary || "Offline event";
+        card.innerHTML =
+          "<h3>" + summary + "</h3>" +
+          "<p class='muted'>Status: " + titleize(item.status || "unknown")
+            + " | Trust: " + formatPercent(item.confidence)
+            + " | Updated: " + formatUtc(item.updatedAtUtc) + "</p>";
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        [
+          "Captured: " + formatUtc(item.capturedAtUtc),
+          "Saved: " + formatUtc(item.savedAtUtc),
+          "Linkage: " + titleize(item.timelineLinkage && item.timelineLinkage.linkageStatus ? item.timelineLinkage.linkageStatus : "unlinked")
+        ].forEach(function(text) {
+          const tag = document.createElement("span");
+          tag.textContent = text;
+          meta.appendChild(tag);
+        });
+        card.appendChild(meta);
+        card.addEventListener("click", function() {
+          if (!item.offlineEventId) {
+            return;
+          }
+          selectOfflineEvent(item.offlineEventId);
+        });
+        eventsListNode.appendChild(card);
+      });
+
+      if (!appState.selectedOfflineEventId && items[0] && items[0].offlineEventId) {
+        selectOfflineEvent(items[0].offlineEventId);
+      } else {
+        syncActiveCard();
+      }
+
+      setState("loading", "Offline-event list loaded.");
+    }
+
+    function clearDetail(message) {
+      appState.selectedOfflineEventId = null;
+      appState.detail = null;
+      detailContentNode.innerHTML = "";
+      setDetailState("empty", message || "Select an offline event to inspect detail.");
+      syncActiveCard();
+    }
+
+    function syncActiveCard() {
+      document.querySelectorAll("#events-list .event-card").forEach(function(node) {
+        const isActive = appState.selectedOfflineEventId
+          && node.dataset.id
+          && node.dataset.id === appState.selectedOfflineEventId;
+        node.classList.toggle("active", !!isActive);
+      });
+    }
+
+    function renderClarificationHistory(clarification) {
+      const wrapper = document.createElement("section");
+      wrapper.className = "detail-block";
+      wrapper.innerHTML = "<h4>Clarification History</h4>";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      [
+        "Loop: " + titleize(clarification.loopStatus || "unknown"),
+        "Stop: " + titleize(clarification.stopReason || "none"),
+        "Questions: " + (clarification.questionCount || 0),
+        "Answered: " + (clarification.answeredCount || 0),
+        "History: " + (clarification.historyCount || 0),
+        "Last answer: " + formatUtc(clarification.lastAnsweredAtUtc)
+      ].forEach(function(text) {
+        const tag = document.createElement("span");
+        tag.textContent = text;
+        meta.appendChild(tag);
+      });
+      wrapper.appendChild(meta);
+
+      const historyList = document.createElement("div");
+      historyList.className = "history-list";
+      const history = Array.isArray(clarification.history) ? clarification.history : [];
+      if (history.length === 0) {
+        historyList.innerHTML = "<p class='muted'>No clarification answers captured for this offline event.</p>";
+      } else {
+        history.forEach(function(entry) {
+          const item = document.createElement("article");
+          item.className = "history-item";
+          item.innerHTML =
+            "<p><strong>Question:</strong> " + (entry.questionKey || "n/a") + "</p>" +
+            "<p><strong>Answer:</strong> " + (entry.answer || "n/a") + "</p>" +
+            "<p class='muted'>Gain: " + formatPercent(entry.informationGain)
+              + " | New tokens: " + (entry.newTokenCount || 0)
+              + " | Unknown: " + (entry.unknownPattern ? "yes" : "no")
+              + " | Repeat: " + (entry.repetitionDetected ? "yes" : "no")
+              + " | Captured: " + formatUtc(entry.capturedAtUtc) + "</p>";
+          historyList.appendChild(item);
+        });
+      }
+      wrapper.appendChild(historyList);
+      return wrapper;
+    }
+
+    function renderRefinementForm(detail) {
+      const block = document.createElement("section");
+      block.className = "detail-block refine-actions";
+      block.innerHTML = "<h4>Refine Offline Event</h4>";
+
+      const summaryLabel = document.createElement("label");
+      summaryLabel.textContent = "Refined summary";
+      const summaryInput = document.createElement("textarea");
+      summaryInput.rows = 3;
+      summaryInput.maxLength = 2000;
+      summaryInput.value = detail.summary || "";
+      summaryLabel.appendChild(summaryInput);
+      block.appendChild(summaryLabel);
+
+      const recordingLabel = document.createElement("label");
+      recordingLabel.textContent = "Recording reference";
+      const recordingInput = document.createElement("input");
+      recordingInput.type = "text";
+      recordingInput.maxLength = 1000;
+      recordingInput.value = detail.recordingReference || "";
+      recordingLabel.appendChild(recordingInput);
+      block.appendChild(recordingLabel);
+
+      const noteLabel = document.createElement("label");
+      noteLabel.textContent = "Refinement note";
+      const noteInput = document.createElement("input");
+      noteInput.type = "text";
+      noteInput.maxLength = 280;
+      noteInput.placeholder = "Optional bounded context note";
+      noteLabel.appendChild(noteInput);
+      block.appendChild(noteLabel);
+
+      const linkage = detail.timelineLinkage || {};
+      const linkageLabel = document.createElement("label");
+      linkageLabel.textContent = "Timeline linkage status";
+      const linkageStatusSelect = document.createElement("select");
+      ["unlinked", "linked", "review_needed"].forEach(function(status) {
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = titleize(status);
+        if ((linkage.linkageStatus || "unlinked") === status) {
+          option.selected = true;
+        }
+        linkageStatusSelect.appendChild(option);
+      });
+      linkageLabel.appendChild(linkageStatusSelect);
+      block.appendChild(linkageLabel);
+
+      const linkageTargetFamilyLabel = document.createElement("label");
+      linkageTargetFamilyLabel.textContent = "Timeline target family";
+      const linkageTargetFamilyInput = document.createElement("input");
+      linkageTargetFamilyInput.type = "text";
+      linkageTargetFamilyInput.maxLength = 128;
+      linkageTargetFamilyInput.value = linkage.targetFamily || "";
+      linkageTargetFamilyLabel.appendChild(linkageTargetFamilyInput);
+      block.appendChild(linkageTargetFamilyLabel);
+
+      const linkageTargetRefLabel = document.createElement("label");
+      linkageTargetRefLabel.textContent = "Timeline target ref";
+      const linkageTargetRefInput = document.createElement("input");
+      linkageTargetRefInput.type = "text";
+      linkageTargetRefInput.maxLength = 256;
+      linkageTargetRefInput.value = linkage.targetRef || "";
+      linkageTargetRefLabel.appendChild(linkageTargetRefInput);
+      block.appendChild(linkageTargetRefLabel);
+
+      const feedback = document.createElement("div");
+      feedback.className = "state empty";
+      feedback.textContent = "Refinement is bounded to the selected offline event and active operator session.";
+      block.appendChild(feedback);
+
+      const saveButton = document.createElement("button");
+      saveButton.type = "button";
+      saveButton.className = "primary";
+      saveButton.textContent = "Save refinement";
+      saveButton.addEventListener("click", async function() {
+        if (!appState.selectedOfflineEventId || !appState.activeTrackedPersonId) {
+          feedback.className = "state error";
+          feedback.textContent = "Select tracked person and offline event before saving refinement.";
+          return;
+        }
+
+        saveButton.disabled = true;
+        feedback.className = "state loading";
+        feedback.textContent = "Saving refinement...";
+        try {
+          const refinedSummary = summaryInput.value.trim();
+          const refinedRecording = recordingInput.value.trim();
+          const clearRecordingReference = refinedRecording.length === 0;
+          const result = await operatorPostJson("/api/operator/offline-events/refine", {
+            trackedPersonId: appState.activeTrackedPersonId,
+            offlineEventId: appState.selectedOfflineEventId,
+            summary: refinedSummary.length > 0 ? refinedSummary : null,
+            recordingReference: clearRecordingReference ? null : refinedRecording,
+            clearRecordingReference: clearRecordingReference,
+            refinementNote: noteInput.value.trim() || null,
+            submittedAtUtc: new Date().toISOString()
+          });
+          if (!result.accepted || !result.offlineEvent || !result.offlineEvent.found) {
+            throw new Error(result.failureReason || "offline_event_refinement_rejected");
+          }
+
+          appState.detail = result.offlineEvent;
+          feedback.className = "state empty";
+          feedback.textContent = "Refinement saved. Event updated at " + formatUtc(result.offlineEvent.updatedAtUtc) + ".";
+          await loadEvents();
+          await loadSelectedDetail();
+        } catch (error) {
+          feedback.className = "state error";
+          feedback.textContent = "Refinement failed: " + (error && error.message ? error.message : "unknown_error");
+        } finally {
+          saveButton.disabled = false;
+        }
+      });
+      block.appendChild(saveButton);
+
+      const linkageButton = document.createElement("button");
+      linkageButton.type = "button";
+      linkageButton.textContent = "Update timeline linkage";
+      linkageButton.addEventListener("click", async function() {
+        if (!appState.selectedOfflineEventId || !appState.activeTrackedPersonId) {
+          feedback.className = "state error";
+          feedback.textContent = "Select tracked person and offline event before updating linkage.";
+          return;
+        }
+
+        const linkageStatus = (linkageStatusSelect.value || "unlinked").trim();
+        const targetFamily = linkageTargetFamilyInput.value.trim();
+        const targetRef = linkageTargetRefInput.value.trim();
+        if (linkageStatus === "linked" && (!targetFamily || !targetRef)) {
+          feedback.className = "state error";
+          feedback.textContent = "Target family and target ref are required for linked status.";
+          return;
+        }
+
+        linkageButton.disabled = true;
+        feedback.className = "state loading";
+        feedback.textContent = "Updating timeline linkage...";
+        try {
+          const result = await operatorPostJson("/api/operator/offline-events/timeline-linkage", {
+            trackedPersonId: appState.activeTrackedPersonId,
+            offlineEventId: appState.selectedOfflineEventId,
+            linkageStatus: linkageStatus,
+            targetFamily: linkageStatus === "linked" ? targetFamily : null,
+            targetRef: linkageStatus === "linked" ? targetRef : null,
+            linkageNote: noteInput.value.trim() || null,
+            submittedAtUtc: new Date().toISOString()
+          });
+          if (!result.accepted || !result.offlineEvent || !result.offlineEvent.found) {
+            throw new Error(result.failureReason || "offline_event_timeline_linkage_update_rejected");
+          }
+
+          appState.detail = result.offlineEvent;
+          feedback.className = "state empty";
+          feedback.textContent =
+            "Timeline linkage updated at " + formatUtc(result.offlineEvent.updatedAtUtc)
+            + (result.auditEventId ? " (audit " + result.auditEventId + ")." : ".");
+          await loadEvents();
+          await loadSelectedDetail();
+        } catch (error) {
+          feedback.className = "state error";
+          feedback.textContent = "Timeline linkage update failed: " + (error && error.message ? error.message : "unknown_error");
+        } finally {
+          linkageButton.disabled = false;
+        }
+      });
+      block.appendChild(linkageButton);
+      return block;
+    }
+
+    function renderDetail(detail) {
+      appState.detail = detail;
+      detailContentNode.innerHTML = "";
+
+      const summaryBlock = document.createElement("section");
+      summaryBlock.className = "detail-block";
+      summaryBlock.innerHTML =
+        "<h3>Offline Event Detail</h3>" +
+        "<p><strong>Summary:</strong> " + (detail.summary || "n/a") + "</p>" +
+        "<p><strong>Recording ref:</strong> " + (detail.recordingReference || "none") + "</p>" +
+        "<p><strong>Extracted interpretation:</strong> " + (detail.extractedInterpretation || "No extracted interpretation available.") + "</p>";
+      detailContentNode.appendChild(summaryBlock);
+
+      const statusBlock = document.createElement("section");
+      statusBlock.className = "detail-block";
+      const linkage = detail.timelineLinkage || {};
+      statusBlock.innerHTML = "<h4>Status + Linkage</h4>";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      [
+        "Status: " + titleize(detail.status || "unknown"),
+        "Trust: " + formatPercent(detail.confidence),
+        "Captured: " + formatUtc(detail.capturedAtUtc),
+        "Saved: " + formatUtc(detail.savedAtUtc),
+        "Updated: " + formatUtc(detail.updatedAtUtc),
+        "Linkage: " + titleize(linkage.linkageStatus || "unlinked"),
+        "Target family: " + (linkage.targetFamily || "n/a"),
+        "Target ref: " + (linkage.targetRef || "n/a"),
+        "Linked at: " + formatUtc(linkage.linkedAtUtc)
+      ].forEach(function(text) {
+        const tag = document.createElement("span");
+        tag.textContent = text;
+        meta.appendChild(tag);
+      });
+      statusBlock.appendChild(meta);
+      detailContentNode.appendChild(statusBlock);
+
+      detailContentNode.appendChild(renderClarificationHistory(detail.clarification || {}));
+      detailContentNode.appendChild(renderRefinementForm(detail));
+      setDetailState("loading", "Offline-event detail loaded.");
+      syncActiveCard();
+    }
+
+    async function loadTrackedPersons() {
+      setState("loading", "Loading tracked person scope...");
+      const result = await operatorPostJson("/api/operator/tracked-persons/query", { limit: 50 });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "tracked_person_query_rejected");
+      }
+
+      renderTrackedPersons(result);
+      if (!appState.activeTrackedPersonId && trackedPersonSelect.value) {
+        appState.activeTrackedPersonId = trackedPersonSelect.value;
+      }
+    }
+
+    async function applyTrackedPersonSelection() {
+      const selected = trackedPersonSelect.value;
+      if (!selected) {
+        throw new Error("tracked_person_selection_required");
+      }
+
+      const result = await operatorPostJson("/api/operator/tracked-persons/select", {
+        trackedPersonId: selected,
+        requestedAtUtc: new Date().toISOString()
+      });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "tracked_person_select_rejected");
+      }
+      appState.activeTrackedPersonId = result.activeTrackedPerson && result.activeTrackedPerson.trackedPersonId
+        ? result.activeTrackedPerson.trackedPersonId
+        : selected;
+    }
+
+    async function loadEvents() {
+      const trackedPersonId = appState.activeTrackedPersonId || trackedPersonSelect.value;
+      if (!trackedPersonId) {
+        setState("empty", "Select a tracked person before reading offline events.");
+        eventsListNode.innerHTML = "";
+        countsNode.innerHTML = "";
+        clearDetail("Select a tracked person to inspect offline-event detail.");
+        return;
+      }
+
+      setState("loading", "Loading offline events...");
+      const status = statusFilterSelect.value;
+      const result = await operatorPostJson("/api/operator/offline-events/query", {
+        trackedPersonId: trackedPersonId,
+        statuses: status ? [status] : [],
+        sortBy: sortBySelect.value,
+        sortDirection: "desc",
+        limit: 100
+      });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "offline_event_query_rejected");
+      }
+
+      renderCounts(result.offlineEvents || {});
+      renderEvents(result.offlineEvents || {});
+    }
+
+    async function loadSelectedDetail() {
+      if (!appState.selectedOfflineEventId) {
+        clearDetail("Select an offline event to inspect detail.");
+        return;
+      }
+      if (!appState.activeTrackedPersonId) {
+        clearDetail("Select tracked person before loading offline-event detail.");
+        return;
+      }
+
+      setDetailState("loading", "Loading offline-event detail...");
+      const result = await operatorPostJson("/api/operator/offline-events/detail", {
+        trackedPersonId: appState.activeTrackedPersonId,
+        offlineEventId: appState.selectedOfflineEventId
+      });
+      if (!result.accepted || !result.offlineEvent || !result.offlineEvent.found) {
+        throw new Error(result.failureReason || "offline_event_not_found");
+      }
+
+      renderDetail(result.offlineEvent);
+    }
+
+    async function selectOfflineEvent(offlineEventId) {
+      if (!offlineEventId) {
+        return;
+      }
+      appState.selectedOfflineEventId = offlineEventId;
+      syncActiveCard();
+      try {
+        await loadSelectedDetail();
+      } catch (error) {
+        setDetailState("error", "Offline-event detail load failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    async function refreshAll() {
+      try {
+        const token = tokenInput.value.trim();
+        if (token) {
+          writeAccessToken(token);
+        }
+        await loadTrackedPersons();
+        await loadEvents();
+      } catch (error) {
+        setState("error", "Offline-event load failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    async function onApplyScope() {
+      try {
+        const token = tokenInput.value.trim();
+        if (token) {
+          writeAccessToken(token);
+        }
+        await applyTrackedPersonSelection();
+        clearDetail("Tracked person scope updated. Select an offline event to inspect detail.");
+        await loadEvents();
+      } catch (error) {
+        setState("error", "Scope update failed: " + (error && error.message ? error.message : "unknown_error"));
+      }
+    }
+
+    tokenInput.value = readAccessToken();
+    refreshPeopleButton.addEventListener("click", refreshAll);
+    applyPersonButton.addEventListener("click", onApplyScope);
+    refreshEventsButton.addEventListener("click", loadEvents);
+    statusFilterSelect.addEventListener("change", loadEvents);
+    sortBySelect.addEventListener("change", loadEvents);
     refreshAll();
   </script>
 </body>

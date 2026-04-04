@@ -11,22 +11,26 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 {
     private const string ActiveStatus = "active";
     private const string TrackedPersonSwitchSessionEventType = "tracked_person_switch";
+    private const string OfflineEventScopeItemPrefix = "offline_event:";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
     private readonly IResolutionActionService _resolutionActionService;
+    private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
 
     public OperatorResolutionApplicationService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         IResolutionReadService resolutionReadService,
         IResolutionActionService resolutionActionService,
+        IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ILogger<OperatorResolutionApplicationService> logger)
     {
         _dbFactory = dbFactory;
         _resolutionReadService = resolutionReadService;
         _resolutionActionService = resolutionActionService;
+        _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _logger = logger;
     }
 
@@ -363,6 +367,359 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(
+        OperatorOfflineEventQueryApiRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: true,
+            requireSupportedMode: true,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: trackedPersonId,
+            expectedScopeItemKey: null,
+            nowUtc)
+            ?? ValidateOfflineEventQueryRequest(request);
+        if (validationFailure != null)
+        {
+            return new OperatorOfflineEventQueryApiResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId!.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorOfflineEventQueryApiResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var offlineEvents = await _operatorOfflineEventRepository.QueryAsync(
+            new OperatorOfflineEventQueryRequest
+            {
+                TrackedPersonId = trackedPersonId.Value,
+                ScopeKey = trackedPerson.ScopeKey,
+                Statuses = request.Statuses,
+                SortBy = OperatorOfflineEventSortFields.Normalize(request.SortBy),
+                SortDirection = ResolutionSortDirections.Normalize(request.SortDirection),
+                Limit = request.Limit
+            },
+            ct);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPersonId.Value;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        session.UnfinishedStep = null;
+
+        return new OperatorOfflineEventQueryApiResult
+        {
+            Accepted = offlineEvents.ScopeBound,
+            FailureReason = offlineEvents.ScopeBound ? null : offlineEvents.ScopeFailureReason,
+            Session = session,
+            OfflineEvents = offlineEvents
+        };
+    }
+
+    public async Task<OperatorOfflineEventDetailQueryResultEnvelope> GetOfflineEventDetailAsync(
+        OperatorOfflineEventDetailQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var expectedScopeItemKey = BuildOfflineEventScopeItemKey(request.OfflineEventId);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: true,
+            requireSupportedMode: true,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: trackedPersonId,
+            expectedScopeItemKey: expectedScopeItemKey,
+            nowUtc)
+            ?? ValidateOfflineEventDetailRequest(request);
+        if (validationFailure != null)
+        {
+            return new OperatorOfflineEventDetailQueryResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = validationFailure
+                }
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId!.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorOfflineEventDetailQueryResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                }
+            };
+        }
+
+        var record = await _operatorOfflineEventRepository.GetByIdWithinScopeAsync(
+            request.OfflineEventId,
+            trackedPerson.ScopeKey,
+            trackedPersonId.Value,
+            ct);
+        var detail = record == null
+            ? new OperatorOfflineEventDetailView
+            {
+                ScopeBound = true,
+                Found = false,
+                ScopeFailureReason = "offline_event_not_found"
+            }
+            : BuildOfflineEventDetailView(record);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPersonId.Value;
+        session.ActiveScopeItemKey = record == null ? null : expectedScopeItemKey;
+        session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        session.UnfinishedStep = null;
+
+        return new OperatorOfflineEventDetailQueryResultEnvelope
+        {
+            Accepted = detail.ScopeBound && detail.Found,
+            FailureReason = detail.ScopeBound
+                ? detail.Found ? null : "offline_event_not_found"
+                : detail.ScopeFailureReason,
+            Session = session,
+            OfflineEvent = detail
+        };
+    }
+
+    public async Task<OperatorOfflineEventRefinementResult> SubmitOfflineEventRefinementAsync(
+        OperatorOfflineEventRefinementRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var expectedScopeItemKey = BuildOfflineEventScopeItemKey(request.OfflineEventId);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: true,
+            requireSupportedMode: true,
+            requireActiveScopeItem: true,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: trackedPersonId,
+            expectedScopeItemKey: expectedScopeItemKey,
+            nowUtc)
+            ?? ValidateOfflineEventRefinementRequest(request);
+        if (validationFailure != null)
+        {
+            return new OperatorOfflineEventRefinementResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = validationFailure
+                }
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId!.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorOfflineEventRefinementResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                }
+            };
+        }
+
+        var record = await _operatorOfflineEventRepository.RefineWithinScopeAsync(
+            request.OfflineEventId,
+            trackedPerson.ScopeKey,
+            trackedPersonId.Value,
+            request.Summary,
+            request.RecordingReference,
+            request.ClearRecordingReference,
+            request.OperatorIdentity,
+            request.Session,
+            request.SubmittedAtUtc == default ? nowUtc : request.SubmittedAtUtc,
+            ct);
+        if (record == null)
+        {
+            return new OperatorOfflineEventRefinementResult
+            {
+                Accepted = false,
+                FailureReason = "offline_event_not_found",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = true,
+                    Found = false,
+                    ScopeFailureReason = "offline_event_not_found"
+                }
+            };
+        }
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPersonId.Value;
+        session.ActiveScopeItemKey = expectedScopeItemKey;
+        session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        session.UnfinishedStep = null;
+
+        return new OperatorOfflineEventRefinementResult
+        {
+            Accepted = true,
+            Session = session,
+            OfflineEvent = BuildOfflineEventDetailView(record)
+        };
+    }
+
+    public async Task<OperatorOfflineEventTimelineLinkageUpdateResult> SubmitOfflineEventTimelineLinkageUpdateAsync(
+        OperatorOfflineEventTimelineLinkageUpdateRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var expectedScopeItemKey = BuildOfflineEventScopeItemKey(request.OfflineEventId);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: true,
+            requireSupportedMode: true,
+            requireActiveScopeItem: true,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: trackedPersonId,
+            expectedScopeItemKey: expectedScopeItemKey,
+            nowUtc)
+            ?? ValidateOfflineEventTimelineLinkageUpdateRequest(request);
+        if (validationFailure != null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = validationFailure
+                }
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId!.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = false,
+                    Found = false,
+                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                }
+            };
+        }
+
+        var updateRecord = await _operatorOfflineEventRepository.UpdateTimelineLinkageWithinScopeAsync(
+            request.OfflineEventId,
+            trackedPerson.ScopeKey,
+            trackedPersonId.Value,
+            request.LinkageStatus,
+            request.TargetFamily,
+            request.TargetRef,
+            request.LinkageNote,
+            request.OperatorIdentity,
+            request.Session,
+            request.SubmittedAtUtc == default ? nowUtc : request.SubmittedAtUtc,
+            ct);
+        if (updateRecord == null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = "offline_event_not_found",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventDetailView
+                {
+                    ScopeBound = true,
+                    Found = false,
+                    ScopeFailureReason = "offline_event_not_found"
+                }
+            };
+        }
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPersonId.Value;
+        session.ActiveScopeItemKey = expectedScopeItemKey;
+        session.ActiveMode = OperatorModeTypes.OfflineEvent;
+        session.UnfinishedStep = null;
+
+        _logger.LogInformation(
+            "Offline-event timeline linkage updated: offline_event_id={OfflineEventId}, tracked_person_id={TrackedPersonId}, operator_id={OperatorId}, audit_event_id={AuditEventId}, linkage_status={LinkageStatus}",
+            updateRecord.OfflineEvent.OfflineEventId,
+            trackedPersonId.Value,
+            request.OperatorIdentity.OperatorId,
+            updateRecord.AuditEventId,
+            ParseTimelineLinkage(updateRecord.OfflineEvent.TimelineLinkageJson).LinkageStatus);
+
+        return new OperatorOfflineEventTimelineLinkageUpdateResult
+        {
+            Accepted = true,
+            AuditEventId = updateRecord.AuditEventId,
+            Session = session,
+            OfflineEvent = BuildOfflineEventDetailView(updateRecord.OfflineEvent)
+        };
+    }
+
     private static async Task<List<OperatorTrackedPersonScopeSummary>> LoadTrackedPersonsAsync(
         TgAssistantDbContext db,
         int limit,
@@ -504,6 +861,83 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         return null;
     }
 
+    private static string? ValidateOfflineEventQueryRequest(OperatorOfflineEventQueryApiRequest request)
+    {
+        if (!OperatorOfflineEventSortFields.IsSupported(request.SortBy))
+        {
+            return "unsupported_offline_event_sort";
+        }
+
+        if (!ResolutionSortDirections.IsSupported(request.SortDirection))
+        {
+            return "unsupported_sort_direction";
+        }
+
+        if ((request.Statuses ?? []).Any(x => !OperatorOfflineEventStatuses.IsSupported(x)))
+        {
+            return "unsupported_offline_event_status_filter";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateOfflineEventDetailRequest(OperatorOfflineEventDetailQueryRequest request)
+    {
+        return request.OfflineEventId == Guid.Empty
+            ? "offline_event_id_required"
+            : null;
+    }
+
+    private static string? ValidateOfflineEventRefinementRequest(OperatorOfflineEventRefinementRequest request)
+    {
+        if (request.OfflineEventId == Guid.Empty)
+        {
+            return "offline_event_id_required";
+        }
+
+        var summary = NormalizeOptional(request.Summary);
+        var recording = NormalizeOptional(request.RecordingReference);
+        if (string.IsNullOrWhiteSpace(summary)
+            && string.IsNullOrWhiteSpace(recording)
+            && !request.ClearRecordingReference)
+        {
+            return "offline_event_refinement_no_changes";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateOfflineEventTimelineLinkageUpdateRequest(OperatorOfflineEventTimelineLinkageUpdateRequest request)
+    {
+        if (request.OfflineEventId == Guid.Empty)
+        {
+            return "offline_event_id_required";
+        }
+
+        if (!OperatorOfflineEventTimelineLinkageStatuses.IsSupported(request.LinkageStatus))
+        {
+            return "unsupported_offline_event_timeline_linkage_status";
+        }
+
+        var normalizedLinkageStatus = OperatorOfflineEventTimelineLinkageStatuses.Normalize(request.LinkageStatus);
+        var targetFamily = NormalizeOptional(request.TargetFamily);
+        var targetRef = NormalizeOptional(request.TargetRef);
+        if (string.Equals(normalizedLinkageStatus, OperatorOfflineEventTimelineLinkageStatuses.Linked, StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(targetFamily))
+            {
+                return "offline_event_timeline_linkage_target_family_required";
+            }
+
+            if (string.IsNullOrWhiteSpace(targetRef))
+            {
+                return "offline_event_timeline_linkage_target_ref_required";
+            }
+        }
+
+        return null;
+    }
+
     private static string? ValidateResolutionDetailRequest(OperatorResolutionDetailQueryRequest request)
     {
         if (string.IsNullOrWhiteSpace(NormalizeOptional(request.ScopeItemKey)))
@@ -522,6 +956,163 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return null;
+    }
+
+    private static OperatorOfflineEventDetailView BuildOfflineEventDetailView(OperatorOfflineEventRecord record)
+    {
+        var clarification = ParseClarificationState(record.ClarificationStateJson);
+        var extractedInterpretation = ParseExtractedInterpretation(record.CapturePayloadJson);
+        return new OperatorOfflineEventDetailView
+        {
+            ScopeBound = true,
+            Found = true,
+            OfflineEventId = record.OfflineEventId,
+            TrackedPersonId = record.TrackedPersonId,
+            ScopeKey = record.ScopeKey,
+            Summary = record.Summary,
+            RecordingReference = record.RecordingReference,
+            Status = OperatorOfflineEventStatuses.Normalize(record.Status),
+            Confidence = record.Confidence,
+            CapturedAtUtc = record.CapturedAtUtc,
+            SavedAtUtc = record.SavedAtUtc,
+            UpdatedAtUtc = record.UpdatedAtUtc,
+            ExtractedInterpretation = extractedInterpretation,
+            CapturePayloadJson = string.IsNullOrWhiteSpace(record.CapturePayloadJson)
+                ? "{}"
+                : record.CapturePayloadJson,
+            TimelineLinkage = ParseTimelineLinkage(record.TimelineLinkageJson),
+            Clarification = clarification
+        };
+    }
+
+    private static OperatorOfflineEventTimelineLinkageMetadata ParseTimelineLinkage(string? timelineLinkageJson)
+    {
+        var rawJson = string.IsNullOrWhiteSpace(timelineLinkageJson) ? "{}" : timelineLinkageJson.Trim();
+        var metadata = new OperatorOfflineEventTimelineLinkageMetadata
+        {
+            RawJson = rawJson
+        };
+        if (!TryParseJsonObject(rawJson, out var root))
+        {
+            return metadata;
+        }
+
+        metadata.HasLinkage = root.EnumerateObject().Any();
+        metadata.LinkageStatus = NormalizeOptional(
+            GetString(root, "linkage_status")
+            ?? GetString(root, "status")
+            ?? GetString(root, "timeline_status")
+            ?? GetNestedString(root, "target", "linkage_status")
+            ?? GetNestedString(root, "target", "status"))
+            ?? (metadata.HasLinkage ? "linked" : "unlinked");
+        metadata.TargetFamily = NormalizeOptional(
+            GetString(root, "target_family")
+            ?? GetString(root, "object_family")
+            ?? GetString(root, "timeline_family")
+            ?? GetNestedString(root, "target", "family")
+            ?? GetNestedString(root, "target", "target_family"));
+        metadata.TargetRef = NormalizeOptional(
+            GetString(root, "target_ref")
+            ?? GetString(root, "object_ref")
+            ?? GetString(root, "timeline_ref")
+            ?? GetNestedString(root, "target", "ref")
+            ?? GetNestedString(root, "target", "target_ref"));
+        metadata.LinkedAtUtc = GetDateTime(root, "linked_at_utc")
+            ?? GetDateTime(root, "updated_at_utc")
+            ?? GetDateTime(root, "resolved_at_utc")
+            ?? GetNestedDateTime(root, "target", "linked_at_utc");
+        return metadata;
+    }
+
+    private static OperatorOfflineEventClarificationView ParseClarificationState(string? clarificationStateJson)
+    {
+        var view = new OperatorOfflineEventClarificationView();
+        if (!TryParseJsonObject(clarificationStateJson, out var root))
+        {
+            return view;
+        }
+
+        view.LoopStatus = NormalizeOptional(GetString(root, "loopStatus") ?? GetString(root, "LoopStatus")) ?? "unknown";
+        view.StopReason = NormalizeOptional(GetString(root, "stopReason") ?? GetString(root, "StopReason")) ?? "none";
+        view.StopDetail = NormalizeOptional(GetString(root, "stopDetail") ?? GetString(root, "StopDetail"));
+        view.StoppedAtUtc = GetDateTime(root, "stoppedAtUtc") ?? GetDateTime(root, "StoppedAtUtc");
+        view.PartialConfidence = GetSingle(root, "partialConfidence") ?? GetSingle(root, "PartialConfidence");
+        view.NextQuestionKey = NormalizeOptional(GetString(root, "nextQuestionKey") ?? GetString(root, "NextQuestionKey"));
+
+        if ((root.TryGetProperty("questions", out var questionsElement) || root.TryGetProperty("Questions", out questionsElement))
+            && questionsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var question in questionsElement.EnumerateArray())
+            {
+                if (question.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                view.Questions.Add(new OperatorOfflineEventClarificationQuestionSummary
+                {
+                    Key = NormalizeOptional(GetString(question, "key") ?? GetString(question, "Key")) ?? string.Empty,
+                    Text = NormalizeOptional(GetString(question, "text") ?? GetString(question, "Text")) ?? string.Empty,
+                    ExpectedInformationGain = GetSingle(question, "expectedInformationGain") ?? GetSingle(question, "ExpectedInformationGain") ?? 0f,
+                    PriorityRank = GetInt32(question, "priorityRank") ?? GetInt32(question, "PriorityRank") ?? 0,
+                    Status = NormalizeOptional(GetString(question, "status") ?? GetString(question, "Status")) ?? string.Empty
+                });
+            }
+        }
+
+        if ((root.TryGetProperty("history", out var historyElement) || root.TryGetProperty("History", out historyElement))
+            && historyElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var history in historyElement.EnumerateArray())
+            {
+                if (history.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                view.History.Add(new OperatorOfflineEventClarificationHistoryEntry
+                {
+                    QuestionKey = NormalizeOptional(GetString(history, "questionKey") ?? GetString(history, "QuestionKey")) ?? string.Empty,
+                    Answer = NormalizeOptional(GetString(history, "answer") ?? GetString(history, "Answer")) ?? string.Empty,
+                    UnknownPattern = GetBoolean(history, "unknownPattern") ?? GetBoolean(history, "UnknownPattern") ?? false,
+                    RepetitionDetected = GetBoolean(history, "repetitionDetected") ?? GetBoolean(history, "RepetitionDetected") ?? false,
+                    NewTokenCount = GetInt32(history, "newTokenCount") ?? GetInt32(history, "NewTokenCount") ?? 0,
+                    InformationGain = GetSingle(history, "informationGain") ?? GetSingle(history, "InformationGain") ?? 0f,
+                    CapturedAtUtc = GetDateTime(history, "capturedAtUtc") ?? GetDateTime(history, "CapturedAtUtc") ?? default
+                });
+            }
+        }
+
+        view.QuestionCount = view.Questions.Count;
+        view.AnsweredCount = view.Questions.Count(x => string.Equals(x.Status, "answered", StringComparison.OrdinalIgnoreCase));
+        view.HistoryCount = view.History.Count;
+        view.LastAnsweredAtUtc = view.History
+            .Where(x => x.CapturedAtUtc != default)
+            .OrderByDescending(x => x.CapturedAtUtc)
+            .Select(x => x.CapturedAtUtc)
+            .FirstOrDefault();
+        if (view.LastAnsweredAtUtc == default)
+        {
+            view.LastAnsweredAtUtc = null;
+        }
+
+        return view;
+    }
+
+    private static string ParseExtractedInterpretation(string? capturePayloadJson)
+    {
+        if (!TryParseJsonObject(capturePayloadJson, out var root))
+        {
+            return "No extracted interpretation available.";
+        }
+
+        var interpretation = NormalizeOptional(
+            GetString(root, "extracted_interpretation")
+            ?? GetString(root, "interpretation")
+            ?? GetString(root, "analysis")
+            ?? GetString(root, "model_interpretation")
+            ?? GetString(root, "summary"));
+        return interpretation ?? "No extracted interpretation available.";
     }
 
     private static string? ValidateOperatorIdentityAndSession(
@@ -746,6 +1337,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             : OperatorModeTypes.ResolutionQueue;
     }
 
+    private static string BuildOfflineEventScopeItemKey(Guid offlineEventId)
+        => offlineEventId == Guid.Empty
+            ? string.Empty
+            : $"{OfflineEventScopeItemPrefix}{offlineEventId:D}";
+
     private static Guid? ResolveTrackedPersonId(Guid? requestTrackedPersonId, OperatorSessionContext? session)
     {
         if (requestTrackedPersonId.HasValue && requestTrackedPersonId.Value != Guid.Empty)
@@ -772,5 +1368,155 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private static string NormalizeAuditValue(string? value, string fallback = "unknown")
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static async Task<OperatorTrackedPersonScopeSummary?> LoadTrackedPersonByIdAsync(
+        TgAssistantDbContext db,
+        Guid trackedPersonId,
+        CancellationToken ct)
+    {
+        return (await LoadTrackedPersonsAsync(db, 200, ct))
+            .FirstOrDefault(x => x.TrackedPersonId == trackedPersonId);
+    }
+
+    private static bool TryParseJsonObject(string? json, out JsonElement root)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            root = default;
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                root = document.RootElement.Clone();
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        root = default;
+        return false;
+    }
+
+    private static string? GetString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+    }
+
+    private static string? GetNestedString(JsonElement element, string objectPropertyName, string nestedPropertyName)
+    {
+        if (!element.TryGetProperty(objectPropertyName, out var nestedObject)
+            || nestedObject.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return GetString(nestedObject, nestedPropertyName);
+    }
+
+    private static DateTime? GetDateTime(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(property.GetString(), out var parsed))
+        {
+            return parsed.Kind == DateTimeKind.Utc
+                ? parsed
+                : parsed.ToUniversalTime();
+        }
+
+        return null;
+    }
+
+    private static DateTime? GetNestedDateTime(JsonElement element, string objectPropertyName, string nestedPropertyName)
+    {
+        if (!element.TryGetProperty(objectPropertyName, out var nestedObject)
+            || nestedObject.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return GetDateTime(nestedObject, nestedPropertyName);
+    }
+
+    private static float? GetSingle(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetSingle(out var value))
+        {
+            return value;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && float.TryParse(property.GetString(), out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private static int? GetInt32(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out var value))
+        {
+            return value;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && int.TryParse(property.GetString(), out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private static bool? GetBoolean(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.True)
+        {
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.False)
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.String
+            && bool.TryParse(property.GetString(), out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
     }
 }

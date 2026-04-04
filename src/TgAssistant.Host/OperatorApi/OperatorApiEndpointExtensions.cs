@@ -121,6 +121,86 @@ public static class OperatorApiEndpointExtensions
             return ToResult(result.Accepted, result.FailureReason ?? result.Action.FailureReason, result);
         });
 
+        group.MapPost("/offline-events/query", async (
+            HttpContext httpContext,
+            OperatorOfflineEventQueryApiRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.QueryOfflineEventsAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.OfflineEvent);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/offline-events/detail", async (
+            HttpContext httpContext,
+            OperatorOfflineEventDetailQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.GetOfflineEventDetailAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.OfflineEvent);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/offline-events/refine", async (
+            HttpContext httpContext,
+            OperatorOfflineEventRefinementRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.SubmitOfflineEventRefinementAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.OfflineEvent);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/offline-events/timeline-linkage", async (
+            HttpContext httpContext,
+            OperatorOfflineEventTimelineLinkageUpdateRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.SubmitOfflineEventTimelineLinkageUpdateAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.OfflineEvent);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
         return endpoints;
     }
 
@@ -154,6 +234,7 @@ public static class OperatorApiEndpointExtensions
             "scope_item_not_found" => StatusCodes.Status404NotFound,
             "session_active_tracked_person_not_available" => StatusCodes.Status404NotFound,
             "preferred_tracked_person_not_available" => StatusCodes.Status404NotFound,
+            "offline_event_not_found" => StatusCodes.Status404NotFound,
             _ => StatusCodes.Status400BadRequest
         };
     }
