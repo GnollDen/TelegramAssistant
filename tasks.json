@@ -1150,8 +1150,8 @@
       "dependencies": [
         "OPINT-001"
       ],
-      "status": "pending",
-      "notes": "This is the backend prerequisite for all operator surfaces."
+      "status": "done",
+      "notes": "Done 2026-04-04: OPINT-002-A/B/C/D delivered bounded operator resolution backend contracts end-to-end: clean queue/detail projections, auditable operator action persistence, role-gated operator API/application contracts, and bounded live validation evidence on seeded scope `chat:885574984` (normal/failure/auth-denied paths) recorded in docs/planning/OPINT-002-D_VALIDATION_2026-04-04.md."
     },
     {
       "id": "OPINT-003",
