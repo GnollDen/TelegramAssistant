@@ -191,5 +191,30 @@ public class ResolutionActionResult
     public string ScopeItemKey { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
     public string? ItemType { get; set; }
+    public ResolutionRecomputeContract? Recompute { get; set; }
     public DateTime ProcessedAtUtc { get; set; }
+}
+
+public static class ResolutionRecomputeMappingRules
+{
+    public const string AffectedFamilyExact = "affected_family_exact";
+    public const string RuntimeControlScopeBootstrap = "runtime_control_scope_bootstrap";
+    public const string RuntimeDefectScopeBootstrap = "runtime_defect_scope_bootstrap";
+}
+
+public class ResolutionRecomputeContract
+{
+    public bool Enqueued { get; set; }
+    public string TriggerKind { get; set; } = string.Empty;
+    public string TriggerRef { get; set; } = string.Empty;
+    public List<ResolutionRecomputeTarget> Targets { get; set; } = [];
+}
+
+public class ResolutionRecomputeTarget
+{
+    public Guid? QueueItemId { get; set; }
+    public string TargetFamily { get; set; } = string.Empty;
+    public string TargetRef { get; set; } = string.Empty;
+    public string MappingRule { get; set; } = string.Empty;
+    public int Priority { get; set; }
 }

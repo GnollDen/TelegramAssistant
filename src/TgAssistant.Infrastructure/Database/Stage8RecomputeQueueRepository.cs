@@ -3,7 +3,6 @@ using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -31,80 +30,18 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var normalized = NormalizeRequest(request);
-        var nowUtc = DateTime.UtcNow;
-        var dedupeKey = BuildDedupeKey(normalized.ScopeKey, normalized.TargetFamily, normalized.TargetRef);
-
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var existing = await db.Stage8RecomputeQueueItems.FirstOrDefaultAsync(
-            x => x.ActiveDedupeKey == dedupeKey,
-            ct);
-        if (existing != null)
-        {
-            if (string.Equals(existing.Status, Stage8RecomputeQueueStatuses.Pending, StringComparison.Ordinal))
-            {
-                existing.Priority = Math.Min(existing.Priority, normalized.Priority);
-                existing.AvailableAtUtc = existing.AvailableAtUtc <= normalized.AvailableAtUtc
-                    ? existing.AvailableAtUtc
-                    : normalized.AvailableAtUtc;
-                existing.UpdatedAtUtc = nowUtc;
-                await db.SaveChangesAsync(ct);
-            }
-
-            return MapQueueItem(existing);
-        }
-
-        var row = new DbStage8RecomputeQueueItem
-        {
-            Id = Guid.NewGuid(),
-            ScopeKey = normalized.ScopeKey,
-            PersonId = normalized.PersonId,
-            TargetFamily = normalized.TargetFamily,
-            TargetRef = normalized.TargetRef,
-            DedupeKey = dedupeKey,
-            ActiveDedupeKey = dedupeKey,
-            TriggerKind = normalized.TriggerKind,
-            TriggerRef = normalized.TriggerRef,
-            Status = Stage8RecomputeQueueStatuses.Pending,
-            Priority = normalized.Priority,
-            AttemptCount = 0,
-            MaxAttempts = normalized.MaxAttempts,
-            AvailableAtUtc = normalized.AvailableAtUtc,
-            CreatedAtUtc = nowUtc,
-            UpdatedAtUtc = nowUtc
-        };
-
-        db.Stage8RecomputeQueueItems.Add(row);
-
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-        {
-            var concurrent = await db.Stage8RecomputeQueueItems.AsNoTracking().FirstOrDefaultAsync(
-                x => x.ActiveDedupeKey == dedupeKey,
-                ct);
-            if (concurrent != null)
-            {
-                _logger.LogInformation(
-                    "Stage8 recompute queue dedupe hit after concurrent enqueue: scope_key={ScopeKey}, target_family={TargetFamily}, target_ref={TargetRef}",
-                    normalized.ScopeKey,
-                    normalized.TargetFamily,
-                    normalized.TargetRef);
-                return MapQueueItem(concurrent);
-            }
-
-            throw;
-        }
+        var enqueueResult = await Stage8RecomputeQueueStorage.EnqueueAsync(db, request, ct);
 
         _logger.LogInformation(
-            "Stage8 recompute queued: queue_item_id={QueueItemId}, scope_key={ScopeKey}, target_family={TargetFamily}, target_ref={TargetRef}",
-            row.Id,
-            row.ScopeKey,
-            row.TargetFamily,
-            row.TargetRef);
-        return MapQueueItem(row);
+            enqueueResult.Created
+                ? "Stage8 recompute queued: queue_item_id={QueueItemId}, scope_key={ScopeKey}, target_family={TargetFamily}, target_ref={TargetRef}"
+                : "Stage8 recompute deduped: queue_item_id={QueueItemId}, scope_key={ScopeKey}, target_family={TargetFamily}, target_ref={TargetRef}",
+            enqueueResult.Item.Id,
+            enqueueResult.Item.ScopeKey,
+            enqueueResult.Item.TargetFamily,
+            enqueueResult.Item.TargetRef);
+        return enqueueResult.Item;
     }
 
     public async Task<Stage8RecomputeQueueItem?> LeaseNextAsync(
@@ -401,12 +338,12 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
                     queue_item.updated_at_utc,
                     queue_item.completed_at_utc;
                 """;
-        AddParameter(command, "pending_status", Stage8RecomputeQueueStatuses.Pending);
-        AddParameter(command, "leased_status", Stage8RecomputeQueueStatuses.Leased);
-        AddParameter(command, "checkpoint_in_progress_status", Stage8BackfillCheckpointStatuses.InProgress);
-        AddParameter(command, "now_utc", nowUtc);
-        AddParameter(command, "leased_until_utc", leasedUntilUtc);
-        AddParameter(command, "lease_token", leaseToken);
+        Stage8RecomputeQueueStorage.AddParameter(command, "pending_status", Stage8RecomputeQueueStatuses.Pending);
+        Stage8RecomputeQueueStorage.AddParameter(command, "leased_status", Stage8RecomputeQueueStatuses.Leased);
+        Stage8RecomputeQueueStorage.AddParameter(command, "checkpoint_in_progress_status", Stage8BackfillCheckpointStatuses.InProgress);
+        Stage8RecomputeQueueStorage.AddParameter(command, "now_utc", nowUtc);
+        Stage8RecomputeQueueStorage.AddParameter(command, "leased_until_utc", leasedUntilUtc);
+        Stage8RecomputeQueueStorage.AddParameter(command, "lease_token", leaseToken);
 
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct))
@@ -414,7 +351,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
             return null;
         }
 
-        return MapQueueItem(reader);
+        return Stage8RecomputeQueueStorage.MapQueueItem(reader);
     }
 
     private async Task AcquireBackfillCoordinationLockAsync(
@@ -424,7 +361,7 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
         command.CommandText = "select pg_advisory_xact_lock(@lock_id);";
-        AddParameter(command, "lock_id", BackfillCoordinationLockId);
+        Stage8RecomputeQueueStorage.AddParameter(command, "lock_id", BackfillCoordinationLockId);
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -600,46 +537,6 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         await db.SaveChangesAsync(ct);
     }
 
-    private static (string ScopeKey, Guid? PersonId, string TargetFamily, string TargetRef, string TriggerKind, string? TriggerRef, int Priority, int MaxAttempts, DateTime AvailableAtUtc) NormalizeRequest(
-        Stage8RecomputeQueueRequest request)
-    {
-        var scopeKey = request.ScopeKey?.Trim();
-        if (string.IsNullOrWhiteSpace(scopeKey))
-        {
-            throw new InvalidOperationException("Stage8 recompute queue requires a non-empty scope_key.");
-        }
-
-        var targetFamily = request.TargetFamily?.Trim();
-        if (string.IsNullOrWhiteSpace(targetFamily) || !Stage8RecomputeTargetFamilies.All.Contains(targetFamily, StringComparer.Ordinal))
-        {
-            throw new InvalidOperationException($"Unsupported Stage8 recompute target family '{request.TargetFamily}'.");
-        }
-
-        var targetRef = request.PersonId != null
-            ? $"person:{request.PersonId:D}"
-            : $"scope:{scopeKey}";
-        var triggerKind = string.IsNullOrWhiteSpace(request.TriggerKind) ? "manual" : request.TriggerKind.Trim();
-        var triggerRef = string.IsNullOrWhiteSpace(request.TriggerRef) ? null : request.TriggerRef.Trim();
-        var priority = Math.Clamp(request.Priority, 0, 10_000);
-        var maxAttempts = Math.Clamp(request.MaxAttempts, 1, 25);
-        var availableAtUtc = request.AvailableAtUtc ?? DateTime.UtcNow;
-        return (scopeKey, request.PersonId, targetFamily, targetRef, triggerKind, triggerRef, priority, maxAttempts, availableAtUtc);
-    }
-
-    private static string BuildDedupeKey(string scopeKey, string targetFamily, string targetRef)
-        => $"{scopeKey}|{targetFamily}|{targetRef}";
-
-    private static void AddParameter(DbCommand command, string name, object? value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value ?? DBNull.Value;
-        command.Parameters.Add(parameter);
-    }
-
-    private static bool IsUniqueViolation(DbUpdateException ex)
-        => ex.InnerException is PostgresException postgres && string.Equals(postgres.SqlState, PostgresErrorCodes.UniqueViolation, StringComparison.Ordinal);
-
     private static Stage8RecomputeQueueItem MapQueueItem(DbStage8RecomputeQueueItem row)
     {
         return new Stage8RecomputeQueueItem
@@ -701,32 +598,4 @@ public class Stage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
         };
     }
 
-    private static Stage8RecomputeQueueItem MapQueueItem(DbDataReader reader)
-    {
-        return new Stage8RecomputeQueueItem
-        {
-            Id = reader.GetFieldValue<Guid>(reader.GetOrdinal("id")),
-            ScopeKey = reader.GetString(reader.GetOrdinal("scope_key")),
-            PersonId = reader.IsDBNull(reader.GetOrdinal("person_id")) ? null : reader.GetFieldValue<Guid>(reader.GetOrdinal("person_id")),
-            TargetFamily = reader.GetString(reader.GetOrdinal("target_family")),
-            TargetRef = reader.GetString(reader.GetOrdinal("target_ref")),
-            DedupeKey = reader.GetString(reader.GetOrdinal("dedupe_key")),
-            ActiveDedupeKey = reader.IsDBNull(reader.GetOrdinal("active_dedupe_key")) ? null : reader.GetString(reader.GetOrdinal("active_dedupe_key")),
-            TriggerKind = reader.GetString(reader.GetOrdinal("trigger_kind")),
-            TriggerRef = reader.IsDBNull(reader.GetOrdinal("trigger_ref")) ? null : reader.GetString(reader.GetOrdinal("trigger_ref")),
-            Status = reader.GetString(reader.GetOrdinal("status")),
-            Priority = reader.GetInt32(reader.GetOrdinal("priority")),
-            AttemptCount = reader.GetInt32(reader.GetOrdinal("attempt_count")),
-            MaxAttempts = reader.GetInt32(reader.GetOrdinal("max_attempts")),
-            AvailableAtUtc = reader.GetFieldValue<DateTime>(reader.GetOrdinal("available_at_utc")),
-            LeasedUntilUtc = reader.IsDBNull(reader.GetOrdinal("leased_until_utc")) ? null : reader.GetFieldValue<DateTime>(reader.GetOrdinal("leased_until_utc")),
-            LeaseToken = reader.IsDBNull(reader.GetOrdinal("lease_token")) ? null : reader.GetFieldValue<Guid>(reader.GetOrdinal("lease_token")),
-            LastError = reader.IsDBNull(reader.GetOrdinal("last_error")) ? null : reader.GetString(reader.GetOrdinal("last_error")),
-            LastResultStatus = reader.IsDBNull(reader.GetOrdinal("last_result_status")) ? null : reader.GetString(reader.GetOrdinal("last_result_status")),
-            LastModelPassRunId = reader.IsDBNull(reader.GetOrdinal("last_model_pass_run_id")) ? null : reader.GetFieldValue<Guid>(reader.GetOrdinal("last_model_pass_run_id")),
-            CreatedAtUtc = reader.GetFieldValue<DateTime>(reader.GetOrdinal("created_at_utc")),
-            UpdatedAtUtc = reader.GetFieldValue<DateTime>(reader.GetOrdinal("updated_at_utc")),
-            CompletedAtUtc = reader.IsDBNull(reader.GetOrdinal("completed_at_utc")) ? null : reader.GetFieldValue<DateTime>(reader.GetOrdinal("completed_at_utc"))
-        };
-    }
 }

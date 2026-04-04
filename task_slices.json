@@ -1880,12 +1880,12 @@
       "dependencies": [
         "OPINT-002-D"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Resolution actions enqueue bounded recompute without broad uncontrolled reruns.",
         "Target-family mapping is explicit and auditable."
       ],
-      "notes": "First recompute loop slice."
+      "notes": "Done on 2026-04-04: accepted resolution actions now compute explicit target-family mapping, enqueue bounded Stage8 recompute in the same transaction as action/audit persistence, and persist the trigger/targets in audit details plus the action result replay contract. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-recompute-contract-smoke`."
     },
     {
       "id": "OPINT-003-B",
