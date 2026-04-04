@@ -723,19 +723,23 @@ public static class OperatorWebEndpointExtensions
         </label>
       </div>
       <div class="row">
-        <button id="refresh" class="primary" type="button">Refresh Summary</button>
+        <button id="refresh" class="primary" type="button">Refresh Workspace</button>
         <a href="/operator/persons">Back to persons list</a>
       </div>
       <div id="state" class="state loading">Reading bounded person workspace summary...</div>
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary is live in this slice and remaining sections stay explicitly pending.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary and Dossier are live and remaining sections stay explicitly pending.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
       <h2>Summary</h2>
       <div id="summary-content" class="state empty">Summary is waiting for workspace data.</div>
+    </section>
+    <section id="tab-dossier" class="panel tab-panel">
+      <h2>Dossier</h2>
+      <div id="dossier-content" class="state empty">Dossier is waiting for workspace data.</div>
     </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
@@ -750,7 +754,9 @@ public static class OperatorWebEndpointExtensions
     const stateNode = document.getElementById("state");
     const tabsNode = document.getElementById("tabs");
     const summaryContentNode = document.getElementById("summary-content");
+    const dossierContentNode = document.getElementById("dossier-content");
     const summaryPanel = document.getElementById("tab-summary");
+    const dossierPanel = document.getElementById("tab-dossier");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -760,6 +766,7 @@ public static class OperatorWebEndpointExtensions
     const state = {
       trackedPersonId: query.get("trackedPersonId") || "",
       workspace: null,
+      dossier: null,
       activeSection: "summary"
     };
 
@@ -1001,6 +1008,92 @@ public static class OperatorWebEndpointExtensions
       summaryContentNode.appendChild(updatedNote);
     }
 
+    function renderDossierSection() {
+      const dossier = state.dossier;
+      if (!dossier) {
+        dossierContentNode.className = "state empty";
+        dossierContentNode.textContent = "Dossier data is unavailable.";
+        return;
+      }
+
+      const facts = Array.isArray(dossier.facts) ? dossier.facts : [];
+      const provenance = Array.isArray(dossier.provenance) ? dossier.provenance : [];
+
+      dossierContentNode.className = "";
+      dossierContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Overall Trust", value: formatPercent(dossier.overallTrust) },
+        { label: "Overall Uncertainty", value: formatPercent(dossier.overallUncertainty) },
+        { label: "Durable Dossiers", value: String(dossier.durableDossierCount || 0) },
+        { label: "Evidence Links", value: String(dossier.totalEvidenceLinkCount || 0) },
+        { label: "Approved Fields", value: String(dossier.durableFieldCount || 0) },
+        { label: "Proposal Fields", value: String(dossier.proposalOnlyFieldCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      dossierContentNode.appendChild(metrics);
+
+      const factGrid = document.createElement("div");
+      factGrid.className = "card-grid";
+      facts.forEach(function(fact) {
+        const node = document.createElement("article");
+        node.className = "family-card";
+        node.innerHTML =
+          "<h3>" + titleize((fact.category || "unknown") + " / " + (fact.key || "unknown")) + "</h3>" +
+          "<p><strong>Value:</strong> " + (fact.value || "n/a") + "</p>" +
+          "<p><strong>Confidence:</strong> " + formatPercent(fact.confidence) + " | <strong>Approval:</strong> " + titleize(fact.approvalState || "unknown") + "</p>" +
+          "<p><strong>Truth:</strong> " + titleize(fact.truthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(fact.promotionState || "unknown") + "</p>" +
+          "<p><strong>Evidence refs:</strong> " + (fact.evidenceRefCount || 0) + " | <strong>Revision:</strong> " + (fact.revisionNumber || 0) + "</p>" +
+          "<p><strong>Drilldown seeds:</strong> metadata " + (fact.durableObjectMetadataId || "n/a") + ", dossier " + (fact.durableDossierId || "n/a") + ", model pass " + (fact.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(fact.updatedAtUtc) + "</p>";
+        factGrid.appendChild(node);
+      });
+      if (!factGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No dossier facts are available for this person scope yet.";
+        factGrid.appendChild(empty);
+      }
+      dossierContentNode.appendChild(factGrid);
+
+      const provHeader = document.createElement("h3");
+      provHeader.textContent = "Dossier Provenance Seeds";
+      dossierContentNode.appendChild(provHeader);
+
+      const provList = document.createElement("div");
+      provList.className = "provenance-list";
+      provenance.forEach(function(item) {
+        const node = document.createElement("article");
+        node.className = "prov-item";
+        node.innerHTML =
+          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
+          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
+          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
+          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
+          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        provList.appendChild(node);
+      });
+      if (!provList.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No dossier provenance entries are available yet.";
+        provList.appendChild(empty);
+      }
+      dossierContentNode.appendChild(provList);
+
+      const updatedNote = document.createElement("p");
+      updatedNote.className = "muted";
+      updatedNote.textContent = "Generated at " + formatUtc(dossier.generatedAtUtc) + " from bounded operator dossier read models.";
+      dossierContentNode.appendChild(updatedNote);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -1025,12 +1118,36 @@ public static class OperatorWebEndpointExtensions
       });
     }
 
+    async function ensureDossierLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.dossier) {
+        return;
+      }
+
+      dossierContentNode.className = "state loading";
+      dossierContentNode.textContent = "Loading bounded dossier view...";
+      const result = await operatorPostJson("/api/operator/person-workspace/dossier/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.dossier = result.dossier || null;
+      renderDossierSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
+      const showDossier = state.activeSection === "dossier";
       summaryPanel.classList.toggle("active", showSummary);
-      placeholderPanel.classList.toggle("active", !showSummary);
+      dossierPanel.classList.toggle("active", showDossier);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier);
       if (showSummary) {
         renderSummarySection();
+      } else if (showDossier) {
+        ensureDossierLoaded(false).catch(function(error) {
+          dossierContentNode.className = "state error";
+          dossierContentNode.textContent = "Dossier load failed: " + (error.message || "unknown_error");
+        });
       } else {
         renderPlaceholderSection();
       }
@@ -1047,6 +1164,7 @@ public static class OperatorWebEndpointExtensions
         trackedPersonId: state.trackedPersonId
       });
       state.workspace = result.workspace || null;
+      state.dossier = null;
       renderPersonLine();
       renderTabs();
       renderActiveSection();

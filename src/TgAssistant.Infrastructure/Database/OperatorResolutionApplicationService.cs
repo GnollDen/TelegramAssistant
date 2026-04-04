@@ -469,6 +469,153 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorPersonWorkspaceDossierQueryResult> QueryPersonWorkspaceDossierAsync(
+        OperatorPersonWorkspaceDossierQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceDossierQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceDossierQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceDossierQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var dossiers = await db.DurableDossiers
+            .AsNoTracking()
+            .Where(x => x.ScopeKey == trackedPerson.ScopeKey
+                && x.PersonId == trackedPerson.TrackedPersonId
+                && x.Status == ActiveStatus)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ToListAsync(ct);
+
+        var metadataIds = dossiers
+            .Select(x => x.DurableObjectMetadataId)
+            .Distinct()
+            .ToList();
+        var metadataById = metadataIds.Count == 0
+            ? new Dictionary<Guid, DbDurableObjectMetadata>()
+            : await db.DurableObjectMetadata
+                .AsNoTracking()
+                .Where(x => metadataIds.Contains(x.Id)
+                    && x.ScopeKey == trackedPerson.ScopeKey
+                    && x.OwnerPersonId == trackedPerson.TrackedPersonId
+                    && x.ObjectFamily == Stage7DurableObjectFamilies.Dossier
+                    && x.Status == ActiveStatus)
+                .ToDictionaryAsync(x => x.Id, x => x, ct);
+
+        var metadataIdList = metadataById.Keys.ToList();
+        var evidenceCounts = metadataById.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await db.DurableObjectEvidenceLinks
+                .AsNoTracking()
+                .Where(x => metadataIdList.Contains(x.DurableObjectMetadataId))
+                .GroupBy(x => x.DurableObjectMetadataId)
+                .Select(x => new { x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+        var facts = dossiers
+            .SelectMany(dossier =>
+            {
+                metadataById.TryGetValue(dossier.DurableObjectMetadataId, out var metadata);
+                return BuildDossierFacts(dossier, metadata, evidenceCounts.GetValueOrDefault(dossier.DurableObjectMetadataId));
+            })
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.UpdatedAtUtc)
+            .ThenBy(x => x.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .Take(200)
+            .ToList();
+
+        var provenance = dossiers
+            .Take(24)
+            .Select(dossier =>
+            {
+                metadataById.TryGetValue(dossier.DurableObjectMetadataId, out var metadata);
+                var updatedAtUtc = DateTime.SpecifyKind(dossier.UpdatedAt, DateTimeKind.Utc);
+                return new OperatorWorkspaceProvenanceItem
+                {
+                    Family = Stage7DurableObjectFamilies.Dossier,
+                    ObjectKey = metadata?.ObjectKey ?? dossier.Id.ToString("D"),
+                    DurableObjectMetadataId = dossier.DurableObjectMetadataId,
+                    LastModelPassRunId = dossier.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                    EvidenceLinkCount = evidenceCounts.GetValueOrDefault(dossier.DurableObjectMetadataId),
+                    UpdatedAtUtc = updatedAtUtc,
+                    Summary = BuildSummarySnippet(dossier.SummaryJson)
+                };
+            })
+            .ToList();
+
+        var confidenceValues = metadataById.Values.Select(x => Clamp01(x.Confidence)).ToList();
+        var overallTrust = confidenceValues.Count == 0 ? 0f : confidenceValues.Average();
+        var durableFieldCount = facts.Count(x => !string.Equals(x.ApprovalState, DossierFieldApprovalStates.ProposalOnly, StringComparison.OrdinalIgnoreCase));
+        var proposalOnlyFieldCount = facts.Count(x => string.Equals(x.ApprovalState, DossierFieldApprovalStates.ProposalOnly, StringComparison.OrdinalIgnoreCase));
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceDossierQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            Dossier = new OperatorPersonWorkspaceDossierSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                DurableDossierCount = dossiers.Count,
+                DurableFieldCount = durableFieldCount,
+                ProposalOnlyFieldCount = proposalOnlyFieldCount,
+                OverallTrust = overallTrust,
+                OverallUncertainty = Clamp01(1f - overallTrust),
+                TotalEvidenceLinkCount = evidenceCounts.Values.Sum(),
+                Facts = facts,
+                Provenance = provenance
+            }
+        };
+    }
+
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default)
@@ -1678,7 +1825,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         return
         [
             new OperatorWorkspaceSectionState { SectionKey = "summary", Label = "Summary", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "dossier", Label = "Dossier", Status = "pending", Available = false },
+            new OperatorWorkspaceSectionState { SectionKey = "dossier", Label = "Dossier", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "profile", Label = "Profile", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "pair_dynamics", Label = "Pair Dynamics", Status = "pending", Available = false },
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "pending", Available = false },
@@ -1857,6 +2004,121 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         return parts.Count == 0
             ? "Summary available."
             : string.Join(" | ", parts);
+    }
+
+    private static List<OperatorWorkspaceDossierFactView> BuildDossierFacts(
+        DbDurableDossier dossier,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount)
+    {
+        var facts = new List<OperatorWorkspaceDossierFactView>();
+        if (!TryParseJsonObject(dossier.PayloadJson, out var payloadRoot))
+        {
+            return facts;
+        }
+
+        AddDossierFacts(
+            payloadRoot,
+            "fields",
+            defaultApprovalState: DossierFieldApprovalStates.Approved,
+            dossier,
+            metadata,
+            evidenceLinkCount,
+            facts);
+
+        AddDossierFacts(
+            payloadRoot,
+            "proposal_fields",
+            defaultApprovalState: DossierFieldApprovalStates.ProposalOnly,
+            dossier,
+            metadata,
+            evidenceLinkCount,
+            facts);
+
+        return facts;
+    }
+
+    private static void AddDossierFacts(
+        JsonElement payloadRoot,
+        string propertyName,
+        string defaultApprovalState,
+        DbDurableDossier dossier,
+        DbDurableObjectMetadata? metadata,
+        int evidenceLinkCount,
+        List<OperatorWorkspaceDossierFactView> target)
+    {
+        if (!payloadRoot.TryGetProperty(propertyName, out var factsArray)
+            || factsArray.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var factElement in factsArray.EnumerateArray())
+        {
+            if (factElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var category = NormalizeOptional(GetString(factElement, "category"))
+                ?? NormalizeOptional(GetString(factElement, "canonical_category"))
+                ?? "unknown";
+            var key = NormalizeOptional(GetString(factElement, "key"))
+                ?? NormalizeOptional(GetString(factElement, "canonical_key"))
+                ?? "unknown";
+            var value = RenderJsonValue(factElement, "value");
+            var confidence = Clamp01(GetSingle(factElement, "confidence") ?? metadata?.Confidence ?? 0f);
+            var approvalState = NormalizeOptional(GetString(factElement, "approval_state")) ?? defaultApprovalState;
+            var evidenceRefCount = GetArrayLength(factElement, "evidence_refs");
+            if (evidenceRefCount == 0)
+            {
+                evidenceRefCount = evidenceLinkCount;
+            }
+
+            target.Add(new OperatorWorkspaceDossierFactView
+            {
+                DurableDossierId = dossier.Id,
+                DurableObjectMetadataId = dossier.DurableObjectMetadataId,
+                LastModelPassRunId = dossier.LastModelPassRunId ?? metadata?.CreatedByModelPassRunId,
+                RevisionNumber = dossier.CurrentRevisionNumber,
+                DossierType = NormalizeOptional(dossier.DossierType) ?? "unknown",
+                Category = category,
+                Key = key,
+                Value = value,
+                ApprovalState = approvalState,
+                Confidence = confidence,
+                EvidenceRefCount = evidenceRefCount,
+                TruthLayer = NormalizeOptional(metadata?.TruthLayer) ?? "unknown",
+                PromotionState = NormalizeOptional(metadata?.PromotionState) ?? "unknown",
+                UpdatedAtUtc = DateTime.SpecifyKind(dossier.UpdatedAt, DateTimeKind.Utc)
+            });
+        }
+    }
+
+    private static string RenderJsonValue(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return "n/a";
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => NormalizeOptional(property.GetString()) ?? "n/a",
+            JsonValueKind.Number => property.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "n/a",
+            _ => property.GetRawText()
+        };
+    }
+
+    private static int GetArrayLength(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.Array
+                ? property.GetArrayLength()
+                : 0;
     }
 
     private static int CountJsonArray(string? json)

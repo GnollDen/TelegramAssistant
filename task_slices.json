@@ -2428,12 +2428,12 @@
       "dependencies": [
         "OPINT-008-B1"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Dossier section is readable from durable read models in person-scoped workspace context.",
         "Dossier facts expose provenance/trust markers and bounded drilldown entry points."
       ],
-      "notes": "Dossier separated from Profile and timeline-heavy sections."
+      "notes": "Completed 2026-04-04: implemented live Dossier tab rendering on `/operator/person-workspace` and bounded operator contract `/api/operator/person-workspace/dossier/query` backed by durable dossier/read-model data, exposing per-fact trust/provenance markers plus durable metadata/model-pass drilldown seeds while preserving person-scoped auth/session bounds."
     },
     {
       "id": "OPINT-008-B3",

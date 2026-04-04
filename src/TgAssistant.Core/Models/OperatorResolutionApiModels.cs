@@ -153,12 +153,25 @@ public class OperatorPersonWorkspaceSummaryQueryRequest : OperatorContractReques
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceDossierQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceView Workspace { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceDossierQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceDossierSectionView Dossier { get; set; } = new();
 }
 
 public class OperatorPersonWorkspaceView
@@ -187,6 +200,37 @@ public class OperatorPersonWorkspaceSummarySectionView
     public List<ResolutionFacetCount> PromotionStateCounts { get; set; } = [];
     public List<OperatorWorkspaceDurableFamilyCard> Families { get; set; } = [];
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorPersonWorkspaceDossierSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public int DurableDossierCount { get; set; }
+    public int DurableFieldCount { get; set; }
+    public int ProposalOnlyFieldCount { get; set; }
+    public float OverallTrust { get; set; }
+    public float OverallUncertainty { get; set; }
+    public int TotalEvidenceLinkCount { get; set; }
+    public List<OperatorWorkspaceDossierFactView> Facts { get; set; } = [];
+    public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorWorkspaceDossierFactView
+{
+    public Guid DurableDossierId { get; set; }
+    public Guid DurableObjectMetadataId { get; set; }
+    public Guid? LastModelPassRunId { get; set; }
+    public int RevisionNumber { get; set; }
+    public string DossierType { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Key { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string ApprovalState { get; set; } = string.Empty;
+    public float Confidence { get; set; }
+    public int EvidenceRefCount { get; set; }
+    public string TruthLayer { get; set; } = string.Empty;
+    public string PromotionState { get; set; } = string.Empty;
+    public DateTime UpdatedAtUtc { get; set; }
 }
 
 public class OperatorWorkspaceDurableFamilyCard
