@@ -2102,12 +2102,12 @@
       "dependencies": [
         "OPINT-005-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Detail view exposes item type, summary, why-it-matters, trust factor, affected objects, and bounded status metadata.",
         "Detail state transitions are deterministic across selection, refresh, and unavailable-item cases."
       ],
-      "notes": "Detail-view checkpoint isolated from evidence drawer and mutation paths."
+      "notes": "Detail-view checkpoint isolated from evidence drawer and mutation paths. Completed 2026-04-04: web resolution detail panel now supports deterministic selection, refresh, and unavailable-item handling with bounded item metadata and provenance visibility via /api/operator/resolution/detail/query."
     },
     {
       "id": "OPINT-005-C2",

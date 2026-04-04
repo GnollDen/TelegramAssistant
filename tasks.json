@@ -1016,8 +1016,8 @@
       "dependencies": [
         "GATEWAY-007"
       ],
-  "status": "blocked",
-  "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families. Progress 2026-04-04: GATEWAY-008-A completed (explicit provider failure counter + strengthened analytics/transport validation for retryable-primary failure visibility with fallback success). Blocked 2026-04-04 by operator decision: gate is intentionally frozen after subsequent polishing/tuning; do not continue rollout slices unless explicitly reopened."
+      "status": "blocked",
+      "notes": "Follow-up hardening after the bounded gateway rollout audit: close observability undercount, readiness gaps, route-governance bypasses, and synthetic-only validation limits before expanding to more families. Progress 2026-04-04: GATEWAY-008-A completed (explicit provider failure counter + strengthened analytics/transport validation for retryable-primary failure visibility with fallback success). Blocked 2026-04-04 by operator decision: gate is intentionally frozen after subsequent polishing/tuning; do not continue rollout slices unless explicitly reopened."
     },
     {
       "id": "ALIGN-201",
@@ -1217,7 +1217,7 @@
         "OPINT-004"
       ],
       "status": "pending",
-      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority. Progress 2026-04-04: OPINT-005-A1 completed by adding clean host-served operator web shell entry (`/operator`) and dedicated Resolution route bootstrap (`/operator/resolution`) with explicit loading/empty/error entry states, without using legacy Stage6 web pages. Progress 2026-04-04: OPINT-005-A2 completed by enforcing trusted token-gated web operator auth/session context at `/api/operator/*` with auditable denied/expired session handling. Progress 2026-04-04: OPINT-005-B completed by wiring the web resolution queue view to clean operator contracts with active tracked-person scope selection, priority/status/type filters, unresolved counters, and backend-projection sorting controls (priority and latest activity). Remaining slices OPINT-005-C1+ are pending."
+      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority. Progress 2026-04-04: OPINT-005-A1 completed by adding clean host-served operator web shell entry (`/operator`) and dedicated Resolution route bootstrap (`/operator/resolution`) with explicit loading/empty/error entry states, without using legacy Stage6 web pages. Progress 2026-04-04: OPINT-005-A2 completed by enforcing trusted token-gated web operator auth/session context at `/api/operator/*` with auditable denied/expired session handling. Progress 2026-04-04: OPINT-005-B completed by wiring the web resolution queue view to clean operator contracts with active tracked-person scope selection, priority/status/type filters, unresolved counters, and backend-projection sorting controls (priority and latest activity). Remaining slices OPINT-005-C1+ are pending. Progress 2026-04-04: OPINT-005-C1 completed by adding selected-item detail rendering on /operator/resolution with deterministic selection/refresh/unavailable transitions and bounded provenance/status metadata from /api/operator/resolution/detail/query. Remaining slices OPINT-005-C2+ are pending."
     },
     {
       "id": "OPINT-006",

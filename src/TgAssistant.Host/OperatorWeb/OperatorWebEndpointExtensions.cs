@@ -278,6 +278,17 @@ public static class OperatorWebEndpointExtensions
       border-radius: 10px;
       padding: 11px;
       background: #fcfdff;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .item:hover {
+      border-color: #b6c8e4;
+      background: #f9fbff;
+    }
+    .item.active {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+      background: #f2f8ff;
     }
     .item-top {
       display: flex;
@@ -342,12 +353,57 @@ public static class OperatorWebEndpointExtensions
       font-size: 12px;
       color: var(--muted);
     }
+    .workspace {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .detail-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfdff;
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .detail-panel h3 {
+      margin: 0;
+    }
+    .detail-content {
+      min-height: 120px;
+    }
+    .detail-block {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .detail-block h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+    .detail-block p {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    .detail-list {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .detail-list li {
+      margin: 6px 0;
+      font-size: 14px;
+    }
     @media (max-width: 920px) {
       main {
         grid-template-columns: 1fr;
       }
       .queue-list {
         max-height: none;
+      }
+      .workspace {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -411,10 +467,19 @@ public static class OperatorWebEndpointExtensions
     </section>
 
     <section class="panel stack">
-      <h2>Queue Projection</h2>
-      <div id="counts" class="chip-list"></div>
-      <div id="queue-list" class="queue-list"></div>
-      <p class="muted">This route uses <code>/api/operator/resolution/queue/query</code> and excludes legacy Stage6 queue/case pages.</p>
+      <h2>Queue + Detail</h2>
+      <div class="workspace">
+        <div class="stack">
+          <div id="counts" class="chip-list"></div>
+          <div id="queue-list" class="queue-list"></div>
+          <p class="muted">This route uses <code>/api/operator/resolution/queue/query</code> and <code>/api/operator/resolution/detail/query</code> with no legacy Stage6 queue/case pages.</p>
+        </div>
+        <aside class="detail-panel">
+          <h3>Selected Item Detail</h3>
+          <div id="detail-state" class="state empty">Select a queue item to inspect detail.</div>
+          <div id="detail-content" class="detail-content"></div>
+        </aside>
+      </div>
     </section>
   </main>
 
@@ -422,6 +487,8 @@ public static class OperatorWebEndpointExtensions
     const stateNode = document.getElementById("state");
     const queueNode = document.getElementById("queue-list");
     const countsNode = document.getElementById("counts");
+    const detailStateNode = document.getElementById("detail-state");
+    const detailContentNode = document.getElementById("detail-content");
     const tokenInput = document.getElementById("access-token");
     const trackedPersonSelect = document.getElementById("tracked-person");
     const refreshPeopleButton = document.getElementById("refresh-people");
@@ -437,12 +504,18 @@ public static class OperatorWebEndpointExtensions
     const state = {
       trackedPersons: [],
       activeTrackedPersonId: null,
-      queue: null
+      queue: null,
+      selectedScopeItemKey: null
     };
 
     function setState(kind, message) {
       stateNode.className = "state " + kind;
       stateNode.textContent = message;
+    }
+
+    function setDetailState(kind, message) {
+      detailStateNode.className = "state " + kind;
+      detailStateNode.textContent = message;
     }
 
     function titleize(value) {
@@ -611,12 +684,16 @@ public static class OperatorWebEndpointExtensions
       const items = Array.isArray(queue.items) ? queue.items : [];
       if (items.length === 0) {
         setState("empty", "No unresolved items match current filters.");
+        clearDetail("No unresolved item is available for detail.");
         return;
       }
 
       items.forEach(function(item) {
         const card = document.createElement("article");
         card.className = "item";
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
+        card.dataset.scopeItemKey = item.scopeItemKey || "";
 
         const top = document.createElement("div");
         top.className = "item-top";
@@ -662,10 +739,197 @@ public static class OperatorWebEndpointExtensions
         });
 
         card.appendChild(meta);
+        card.addEventListener("click", function() {
+          if (!item.scopeItemKey) {
+            return;
+          }
+
+          selectScopeItem(item.scopeItemKey);
+        });
+        card.addEventListener("keydown", function(event) {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          if (!item.scopeItemKey) {
+            return;
+          }
+
+          selectScopeItem(item.scopeItemKey);
+        });
         queueNode.appendChild(card);
       });
 
+      syncQueueSelection(items);
       setState("loading", "Queue loaded from bounded operator projection.");
+    }
+
+    function clearDetail(message) {
+      state.selectedScopeItemKey = null;
+      detailContentNode.innerHTML = "";
+      setDetailState("empty", message || "Select a queue item to inspect detail.");
+      updateQueueSelectionUi();
+    }
+
+    function updateQueueSelectionUi() {
+      document.querySelectorAll("#queue-list .item").forEach(function(node) {
+        const isActive = state.selectedScopeItemKey
+          && node.dataset.scopeItemKey
+          && node.dataset.scopeItemKey === state.selectedScopeItemKey;
+        node.classList.toggle("active", !!isActive);
+      });
+    }
+
+    function renderDetail(detail) {
+      detailContentNode.innerHTML = "";
+      const item = detail && detail.item ? detail.item : null;
+      if (!item) {
+        setDetailState("empty", "Detail payload is unavailable for this item.");
+        return;
+      }
+
+      const summaryBlock = document.createElement("section");
+      summaryBlock.className = "detail-block";
+      summaryBlock.innerHTML =
+        "<h4>" + (item.title || item.scopeItemKey || "Untitled item") + "</h4>" +
+        "<p><strong>Summary:</strong> " + (item.summary || "No summary.") + "</p>" +
+        "<p><strong>Why it matters:</strong> " + (item.whyItMatters || "Not provided.") + "</p>";
+      detailContentNode.appendChild(summaryBlock);
+
+      const statusBlock = document.createElement("section");
+      statusBlock.className = "detail-block";
+      const statusMeta = [
+        "Type: " + titleize(item.itemType || "unknown"),
+        "Status: " + titleize(item.status || "unknown"),
+        "Priority: " + titleize(item.priority || "unknown"),
+        "Trust: " + formatPercent(item.trustFactor),
+        "Evidence count: " + (item.evidenceCount || 0),
+        "Updated: " + formatUtc(item.updatedAtUtc),
+        "Family: " + (item.affectedFamily || "n/a"),
+        "Object: " + (item.affectedObjectRef || "n/a"),
+        "Scope item: " + (item.scopeItemKey || "n/a"),
+        "Recommended action: " + titleize(item.recommendedNextAction || "none")
+      ];
+      const statusMetaNode = document.createElement("div");
+      statusMetaNode.className = "meta";
+      statusMeta.forEach(function(value) {
+        const tag = document.createElement("span");
+        tag.textContent = value;
+        statusMetaNode.appendChild(tag);
+      });
+      statusBlock.appendChild(statusMetaNode);
+      detailContentNode.appendChild(statusBlock);
+
+      const provenanceBlock = document.createElement("section");
+      provenanceBlock.className = "detail-block";
+      provenanceBlock.innerHTML =
+        "<h4>Provenance</h4>" +
+        "<p><strong>Source kind:</strong> " + (item.sourceKind || "n/a") + "</p>" +
+        "<p><strong>Source ref:</strong> " + (item.sourceRef || "n/a") + "</p>" +
+        "<p><strong>Required action:</strong> " + titleize(item.requiredAction || "none") + "</p>";
+      detailContentNode.appendChild(provenanceBlock);
+
+      const notes = Array.isArray(item.notes) ? item.notes : [];
+      if (notes.length > 0) {
+        const notesBlock = document.createElement("section");
+        notesBlock.className = "detail-block";
+        const notesHeader = document.createElement("h4");
+        notesHeader.textContent = "Detail Notes";
+        const notesList = document.createElement("ul");
+        notesList.className = "detail-list";
+        notes.forEach(function(note) {
+          const li = document.createElement("li");
+          const noteKind = note && note.kind ? titleize(note.kind) : "Note";
+          const noteText = note && note.text ? note.text : "No details.";
+          li.textContent = noteKind + ": " + noteText;
+          notesList.appendChild(li);
+        });
+        notesBlock.appendChild(notesHeader);
+        notesBlock.appendChild(notesList);
+        detailContentNode.appendChild(notesBlock);
+      }
+
+      setDetailState("loading", "Detail loaded for selected queue item.");
+    }
+
+    function syncQueueSelection(items) {
+      const activeItems = Array.isArray(items) ? items : [];
+      if (activeItems.length === 0) {
+        clearDetail("No unresolved item is available for detail.");
+        return;
+      }
+
+      if (!state.selectedScopeItemKey) {
+        const firstKey = activeItems[0].scopeItemKey || null;
+        if (firstKey) {
+          selectScopeItem(firstKey);
+          return;
+        }
+      }
+
+      const selectedExists = activeItems.some(function(item) {
+        return item.scopeItemKey === state.selectedScopeItemKey;
+      });
+      if (!selectedExists) {
+        clearDetail("Previously selected item is no longer available in this queue projection.");
+        return;
+      }
+
+      updateQueueSelectionUi();
+      if (state.selectedScopeItemKey) {
+        loadDetail(state.selectedScopeItemKey);
+      }
+    }
+
+    async function selectScopeItem(scopeItemKey) {
+      if (!scopeItemKey) {
+        clearDetail("Scope item key is required for detail.");
+        return;
+      }
+
+      state.selectedScopeItemKey = scopeItemKey;
+      updateQueueSelectionUi();
+      await loadDetail(scopeItemKey);
+    }
+
+    async function loadDetail(scopeItemKey) {
+      const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+      if (!trackedPersonId || !scopeItemKey) {
+        clearDetail("Select tracked person and queue item before reading detail.");
+        return;
+      }
+
+      setDetailState("loading", "Loading selected item detail...");
+      try {
+        const result = await operatorPostJson("/api/operator/resolution/detail/query", {
+          trackedPersonId: trackedPersonId,
+          scopeItemKey: scopeItemKey,
+          evidenceLimit: 5
+        });
+
+        if (!result.accepted) {
+          throw new Error(result.failureReason || "detail_query_rejected");
+        }
+
+        const detail = result.detail || null;
+        if (!detail || !detail.itemFound || !detail.item) {
+          detailContentNode.innerHTML = "";
+          setDetailState("empty", "Selected item is not available for this tracked person.");
+          return;
+        }
+
+        renderDetail(detail);
+      } catch (error) {
+        const message = error && error.message ? error.message : "unknown_error";
+        if (message === "scope_item_not_found") {
+          detailContentNode.innerHTML = "";
+          setDetailState("empty", "Selected item is not available after refresh.");
+          return;
+        }
+
+        setDetailState("error", "Detail load failed: " + message);
+      }
     }
 
     async function loadTrackedPersons() {
@@ -709,6 +973,7 @@ public static class OperatorWebEndpointExtensions
         setState("empty", "Tracked person selection is required before queue read.");
         queueNode.innerHTML = "";
         countsNode.innerHTML = "";
+        clearDetail("Tracked person selection is required before detail view.");
         return;
       }
 
@@ -743,13 +1008,19 @@ public static class OperatorWebEndpointExtensions
           writeAccessToken(token);
         }
 
+        const previousTrackedPersonId = state.activeTrackedPersonId;
         await loadTrackedPersons();
+        if (previousTrackedPersonId && previousTrackedPersonId !== state.activeTrackedPersonId) {
+          clearDetail("Tracked person changed. Select an item to inspect detail.");
+        }
+
         if (state.activeTrackedPersonId) {
           await loadQueue();
         } else {
           setState("empty", "Select a tracked person to load queue data.");
           queueNode.innerHTML = "";
           countsNode.innerHTML = "";
+          clearDetail("Select a tracked person to inspect resolution detail.");
         }
       } catch (error) {
         setState("error", "Resolution queue load failed: " + (error && error.message ? error.message : "unknown_error"));
@@ -764,6 +1035,7 @@ public static class OperatorWebEndpointExtensions
         }
 
         await applyTrackedPersonSelection();
+        clearDetail("Tracked person scope updated. Select an item to inspect detail.");
         await loadQueue();
       } catch (error) {
         setState("error", "Scope update failed: " + (error && error.message ? error.message : "unknown_error"));
