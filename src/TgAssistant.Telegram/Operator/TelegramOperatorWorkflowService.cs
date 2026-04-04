@@ -14,7 +14,10 @@ public sealed class TelegramOperatorWorkflowService
     private const string TelegramAuthSource = "telegram_owner_allowlist";
     private const string TrackedPersonCallbackPrefix = "tracked:";
     private const string ResolutionActionCallbackPrefix = "ra:";
+    private const string ResolutionCancelInputCallback = "resolution:cancel-input";
+    private const string PendingActionInputStepKind = "resolution_action_input";
     private const int MaxResolutionCards = 3;
+    private const int MaxExplanationLength = 1000;
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
     private readonly TelegramSettings _settings;
@@ -86,12 +89,24 @@ public sealed class TelegramOperatorWorkflowService
             || string.Equals(text, "/menu", StringComparison.OrdinalIgnoreCase)
             || string.Equals(text, "/modes", StringComparison.OrdinalIgnoreCase))
         {
+            state.PendingResolutionInput = null;
+            state.Session.UnfinishedStep = null;
             return CreateModeCard(state, note: null);
         }
 
         if (string.Equals(text, "/resolution", StringComparison.OrdinalIgnoreCase))
         {
             return await EnterResolutionModeAsync(state, interaction, nowUtc, ct);
+        }
+
+        if (string.Equals(text, "/cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
+        }
+
+        if (state.PendingResolutionInput != null)
+        {
+            return await SubmitPendingResolutionInputAsync(state, interaction, text, nowUtc, ct);
         }
 
         if (state.SurfaceMode == TelegramOperatorSurfaceModes.Resolution)
@@ -120,11 +135,20 @@ public sealed class TelegramOperatorWorkflowService
         {
             state.SurfaceMode = TelegramOperatorSurfaceModes.None;
             state.ResolutionCardBindings.Clear();
+            state.PendingResolutionInput = null;
+            state.Session.UnfinishedStep = null;
             return CreateModeCard(state, note: null, callbackNotice: "Modes");
         }
 
         if (string.Equals(callbackData, "mode:resolution", StringComparison.Ordinal))
         {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "A resolution action input is in progress. Send explanation text or choose Cancel.");
+            }
+
             return await EnterResolutionModeAsync(state, interaction, nowUtc, ct);
         }
 
@@ -140,6 +164,13 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(callbackData, "resolution:switch-person", StringComparison.Ordinal))
         {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before switching tracked person.");
+            }
+
             return await RenderTrackedPersonPickerAsync(
                 state,
                 interaction,
@@ -151,11 +182,30 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(callbackData, "resolution:refresh", StringComparison.Ordinal))
         {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before refreshing the queue.");
+            }
+
             return await RenderResolutionContextAsync(state, interaction, nowUtc, note: null, ct);
+        }
+
+        if (string.Equals(callbackData, ResolutionCancelInputCallback, StringComparison.Ordinal))
+        {
+            return await CancelPendingResolutionInputAsync(state, interaction, nowUtc, ct);
         }
 
         if (callbackData.StartsWith(TrackedPersonCallbackPrefix, StringComparison.Ordinal))
         {
+            if (state.PendingResolutionInput != null)
+            {
+                return CreatePendingResolutionInputPrompt(
+                    state,
+                    "Finish or cancel the pending action input before changing tracked person.");
+            }
+
             return await SelectTrackedPersonAsync(state, interaction, callbackData[TrackedPersonCallbackPrefix.Length..], nowUtc, ct);
         }
 
@@ -298,6 +348,13 @@ public sealed class TelegramOperatorWorkflowService
         DateTime nowUtc,
         CancellationToken ct)
     {
+        if (state.PendingResolutionInput != null)
+        {
+            return CreatePendingResolutionInputPrompt(
+                state,
+                "A resolution action input is in progress. Send explanation text or choose Cancel.");
+        }
+
         var separatorIndex = actionPayload.IndexOf(':', StringComparison.Ordinal);
         if (separatorIndex <= 0 || separatorIndex == actionPayload.Length - 1)
         {
@@ -346,10 +403,241 @@ public sealed class TelegramOperatorWorkflowService
             return await SubmitApproveActionAsync(state, interaction, binding, nowUtc, ct);
         }
 
-        var deferredNote = ResolutionActionTypes.RequiresExplanation(actionType)
-            ? $"{FormatActionLabel(actionType)} requires operator explanation and stays deferred to OPINT-004-C."
-            : $"{FormatActionLabel(actionType)} stays deferred to OPINT-004-C.";
+        if (actionType is ResolutionActionTypes.Reject or ResolutionActionTypes.Defer or ResolutionActionTypes.Clarify)
+        {
+            return await StartPendingResolutionInputAsync(state, interaction, binding, actionType, nowUtc, ct);
+        }
+
+        var deferredNote = $"{FormatActionLabel(actionType)} stays deferred to a later Telegram slice.";
         return await RenderResolutionContextAsync(state, interaction, nowUtc, deferredNote, ct);
+    }
+
+    private async Task<TelegramOperatorResponse> StartPendingResolutionInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        TelegramResolutionCardBinding binding,
+        string actionType,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var detail = await _operatorResolutionService.GetResolutionDetailAsync(
+            new OperatorResolutionDetailQueryRequest
+            {
+                OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
+                Session = CloneSession(state.Session),
+                TrackedPersonId = state.Session.ActiveTrackedPersonId,
+                ScopeItemKey = binding.ScopeItemKey,
+                EvidenceLimit = 1,
+                EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
+                EvidenceSortDirection = ResolutionSortDirections.Desc
+            },
+            ct);
+
+        state.Session = detail.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+        if (!detail.Accepted || detail.Detail.Item == null)
+        {
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: $"{FormatActionLabel(actionType)} could not bind the current item: {detail.FailureReason ?? "resolution item unavailable"}.",
+                ct);
+        }
+
+        state.PendingResolutionInput = new TelegramPendingResolutionInput
+        {
+            ActionType = actionType,
+            ScopeItemKey = binding.ScopeItemKey,
+            ItemType = detail.Detail.Item.ItemType,
+            ItemTitle = detail.Detail.Item.Title,
+            StartedAtUtc = nowUtc,
+            BoundTrackedPersonId = state.Session.ActiveTrackedPersonId
+        };
+        state.Session.ActiveScopeItemKey = binding.ScopeItemKey;
+        state.Session.ActiveMode = OperatorModeTypes.Clarification;
+        state.Session.UnfinishedStep = new OperatorWorkflowStepContext
+        {
+            StepKind = PendingActionInputStepKind,
+            StepState = actionType,
+            StartedAtUtc = nowUtc,
+            BoundTrackedPersonId = state.Session.ActiveTrackedPersonId,
+            BoundScopeItemKey = binding.ScopeItemKey
+        };
+
+        return CreatePendingResolutionInputPrompt(
+            state,
+            $"Enter explanation for {FormatActionLabel(actionType)} on {binding.Title}. Send /cancel to abort.");
+    }
+
+    private async Task<TelegramOperatorResponse> SubmitPendingResolutionInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        string messageText,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var pending = state.PendingResolutionInput;
+        if (pending == null)
+        {
+            return await RenderResolutionContextAsync(state, interaction, nowUtc, note: null, ct);
+        }
+
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return CreatePendingResolutionInputPrompt(
+                state,
+                $"Explanation is required for {FormatActionLabel(pending.ActionType)}. Enter text or send /cancel.");
+        }
+
+        if (messageText.Length > MaxExplanationLength)
+        {
+            return CreatePendingResolutionInputPrompt(
+                state,
+                $"Explanation is too long ({messageText.Length} chars). Limit is {MaxExplanationLength}. Edit and resend or /cancel.");
+        }
+
+        var explanation = messageText.Trim();
+        var operatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc);
+        var actionRequest = new ResolutionActionRequest
+        {
+            RequestId = BuildActionRequestId(interaction.ChatId, pending.ActionType),
+            TrackedPersonId = pending.BoundTrackedPersonId,
+            ScopeItemKey = pending.ScopeItemKey,
+            ActionType = pending.ActionType,
+            Explanation = explanation,
+            ClarificationPayload = BuildClarificationPayload(pending, state, operatorIdentity, explanation, interaction, nowUtc),
+            OperatorIdentity = operatorIdentity,
+            Session = CloneSession(state.Session),
+            SubmittedAtUtc = nowUtc
+        };
+        var action = await _operatorResolutionService.SubmitResolutionActionAsync(actionRequest, ct);
+
+        state.Session = action.Session;
+        state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
+        state.PendingResolutionInput = null;
+        state.Session.UnfinishedStep = null;
+
+        var note = action.Accepted
+            ? action.Action.Recompute?.Enqueued == true
+                ? $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}. Bounded recompute was enqueued."
+                : $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}."
+            : $"{FormatActionLabel(pending.ActionType)} failed for {pending.ItemTitle}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
+        return await RenderResolutionContextAsync(state, interaction, nowUtc, note, ct);
+    }
+
+    private async Task<TelegramOperatorResponse> CancelPendingResolutionInputAsync(
+        TelegramOperatorConversationState state,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var pending = state.PendingResolutionInput;
+        if (pending == null)
+        {
+            if (state.SurfaceMode == TelegramOperatorSurfaceModes.Resolution)
+            {
+                return await RenderResolutionContextAsync(state, interaction, nowUtc, note: "No pending action input.", ct);
+            }
+
+            return CreateModeCard(state, note: "No pending action input.");
+        }
+
+        state.PendingResolutionInput = null;
+        state.Session.UnfinishedStep = null;
+        state.Session.ActiveMode = OperatorModeTypes.ResolutionDetail;
+        state.Session.ActiveScopeItemKey = pending.ScopeItemKey;
+
+        return await RenderResolutionContextAsync(
+            state,
+            interaction,
+            nowUtc,
+            note: $"{FormatActionLabel(pending.ActionType)} input canceled for {pending.ItemTitle}.",
+            ct);
+    }
+
+    private static ResolutionClarificationPayload BuildClarificationPayload(
+        TelegramPendingResolutionInput pending,
+        TelegramOperatorConversationState state,
+        OperatorIdentityContext operatorIdentity,
+        string explanation,
+        TelegramOperatorInteraction interaction,
+        DateTime nowUtc)
+    {
+        var payload = new ResolutionClarificationPayload
+        {
+            Summary = $"{FormatActionLabel(pending.ActionType)} explanation captured in Telegram resolution mode."
+        };
+        payload.Responses.Add(
+            new ResolutionClarificationResponse
+            {
+                QuestionKey = "operator_explanation",
+                QuestionText = $"Operator explanation for {pending.ActionType}",
+                AnswerValue = explanation,
+                AnswerKind = "free_text"
+            });
+        payload.Metadata["surface"] = OperatorSurfaceTypes.Telegram;
+        payload.Metadata["operator_id"] = operatorIdentity.OperatorId;
+        payload.Metadata["operator_display"] = operatorIdentity.OperatorDisplay;
+        payload.Metadata["operator_subject"] = $"telegram:{interaction.UserId}";
+        payload.Metadata["operator_session_id"] = state.Session.OperatorSessionId;
+        payload.Metadata["tracked_person_id"] = pending.BoundTrackedPersonId.ToString("D");
+        payload.Metadata["scope_item_key"] = pending.ScopeItemKey;
+        payload.Metadata["item_type"] = pending.ItemType;
+        payload.Metadata["action_type"] = pending.ActionType;
+        payload.Metadata["step_kind"] = PendingActionInputStepKind;
+        payload.Metadata["step_started_at_utc"] = pending.StartedAtUtc.ToString("O");
+        payload.Metadata["captured_at_utc"] = nowUtc.ToString("O");
+        return payload;
+    }
+
+    private static TelegramOperatorResponse CreatePendingResolutionInputPrompt(
+        TelegramOperatorConversationState state,
+        string note)
+    {
+        var pending = state.PendingResolutionInput;
+        if (pending == null)
+        {
+            return new TelegramOperatorResponse
+            {
+                CallbackNotificationText = "No pending input",
+                Messages =
+                [
+                    CreateMessage("No pending action input.")
+                ]
+            };
+        }
+
+        var lines = new List<string>
+        {
+            "Resolution Input",
+            $"Action: {FormatActionLabel(pending.ActionType)}",
+            $"Item: {pending.ItemTitle}",
+            $"Scope: {pending.ScopeItemKey}",
+            note
+        };
+
+        return new TelegramOperatorResponse
+        {
+            CallbackNotificationText = "Input required",
+            Messages =
+            [
+                new TelegramOperatorMessage
+                {
+                    Text = string.Join(Environment.NewLine, lines),
+                    Buttons =
+                    [
+                        [
+                            new TelegramOperatorButton
+                            {
+                                Text = "Cancel",
+                                CallbackData = ResolutionCancelInputCallback
+                            }
+                        ]
+                    ]
+                }
+            ]
+        };
     }
 
     private async Task<TelegramOperatorResponse> SubmitApproveActionAsync(

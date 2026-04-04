@@ -55,6 +55,7 @@ internal sealed class TelegramOperatorConversationState
     public string? ActiveTrackedPersonDisplayName { get; set; }
     public int ResolutionCardGeneration { get; set; }
     public Dictionary<string, TelegramResolutionCardBinding> ResolutionCardBindings { get; set; } = new(StringComparer.Ordinal);
+    public TelegramPendingResolutionInput? PendingResolutionInput { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
 
     public TelegramOperatorSessionSnapshot ToSnapshot()
@@ -78,4 +79,14 @@ internal sealed class TelegramResolutionCardBinding
     public string ItemType { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public List<string> AvailableActions { get; set; } = [];
+}
+
+internal sealed class TelegramPendingResolutionInput
+{
+    public string ActionType { get; set; } = string.Empty;
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string ItemTitle { get; set; } = string.Empty;
+    public DateTime StartedAtUtc { get; set; }
+    public Guid BoundTrackedPersonId { get; set; }
 }

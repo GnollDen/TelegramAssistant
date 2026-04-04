@@ -1982,12 +1982,12 @@
       "dependencies": [
         "OPINT-004-B"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Clarify/reject/defer actions require bounded explanation input when configured by the action contract.",
         "Submitted payload keeps operator/session/person/item scope and is auditable in persisted action data."
       ],
-      "notes": "Narrow write scope: Telegram action-input workflow and structured payload mapping."
+      "notes": "2026-04-04: Telegram resolution workflow now captures bounded explanation input for clarify/reject/defer with pending-step session binding and structured clarification payload metadata (operator/session/person/item/action/scope). Build passes; runtime OPINT smoke requires a real DB connection string in this environment."
     },
     {
       "id": "OPINT-004-C2",
