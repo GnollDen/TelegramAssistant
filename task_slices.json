@@ -2617,12 +2617,12 @@
       "dependencies": [
         "OPINT-009-C2"
       ],
-      "status": "pending",
+      "status": "done",
       "acceptance_focus": [
         "Validation artifact proves critical-only delivery, suppression behavior, and acknowledgment persistence.",
         "Deep-link handoff/recovery paths are verified for Telegram and web alert surfaces."
       ],
-      "notes": "Final P2 validation checkpoint."
+      "notes": "Completed 2026-04-04: added consolidated OPINT-009-D validation runner (`--opint-009-d-smoke`) that aggregates OPINT-009 A/B/C1/C2 contracts into a single bounded artifact (`logs/opint-009-d-alerts-validation-smoke-report.json`) and verifies delivery/suppression, acknowledgement continuity, deep-link handoff parameters, and bounded web alert/widget surfaces."
     }
   ]
 }

@@ -82,6 +82,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IOperatorSessionAuditService, OperatorSessionAuditService>();
         services.AddSingleton<WebOperatorSessionStore>();
         services.AddSingleton<WebOperatorAuthSessionResolver>();
+        services.AddSingleton<OperatorResolutionHandoffConsumeService>();
         services.AddSingleton<TelegramOperatorSessionStore>();
         services.AddSingleton<TelegramOperatorWorkflowService>();
 
