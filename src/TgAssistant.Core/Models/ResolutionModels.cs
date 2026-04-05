@@ -152,6 +152,7 @@ public class ResolutionDetailNote
 
 public static class ResolutionDecisionLinkTypes
 {
+    public const string DecisionUnit = "decision_unit";
     public const string Criterion = "criterion";
     public const string Claim = "claim";
     public const string ReviewQuestion = "review_question";

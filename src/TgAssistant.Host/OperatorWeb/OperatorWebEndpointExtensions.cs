@@ -2886,7 +2886,11 @@ public static class OperatorWebEndpointExtensions
       }
 
       const linkType = (linkage.linkType || "").toLowerCase();
-      const targetPrefix = linkType === "review_question" ? "вопросу" : "критерию";
+      const targetPrefix = linkType === "review_question"
+        ? "вопросу"
+        : linkType === "decision_unit"
+          ? "решению"
+          : "критерию";
       let text = verb + " " + targetPrefix + ": " + linkage.linkTarget + ".";
       if (linkage.reviewQuestion) {
         text += " Вопрос: " + linkage.reviewQuestion;

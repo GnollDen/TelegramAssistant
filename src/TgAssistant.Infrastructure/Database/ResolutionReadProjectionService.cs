@@ -1139,6 +1139,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         ProjectedResolutionItem item,
         ResolutionEvidenceSummary evidence)
     {
+        if (item.Summary.ItemType == ResolutionItemTypes.Review)
+        {
+            return BuildReviewEvidenceDecisionLinkage(item, evidence);
+        }
+
         var criterion = ResolveDecisionCriterion(item);
         var reviewQuestion = BuildOperatorDecisionFocus(item);
         var stance = ResolveDecisionStance(item, evidence);
@@ -1164,6 +1169,86 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             Summary = summary,
             IsHeuristic = true,
             HeuristicCalibration = heuristicCalibration
+        };
+    }
+
+    private static ResolutionEvidenceDecisionLinkage BuildReviewEvidenceDecisionLinkage(
+        ProjectedResolutionItem item,
+        ResolutionEvidenceSummary evidence)
+    {
+        var reviewQuestion = BuildOperatorDecisionFocus(item);
+        var decisionUnit = ResolveReviewDecisionUnit(item);
+        var hasDirectDurableLink = item.DurableMetadataIds.Count > 0;
+        var hasEvidenceProvenance = !string.IsNullOrWhiteSpace(evidence.SourceRef)
+            || !string.IsNullOrWhiteSpace(evidence.SourceLabel);
+
+        string stance;
+        string summary;
+        string calibration;
+
+        if (string.Equals(item.SourceKind, "runtime_defect", StringComparison.Ordinal))
+        {
+            if (hasDirectDurableLink && hasEvidenceProvenance)
+            {
+                stance = ResolutionDecisionStances.Supports;
+                calibration = ResolutionDecisionHeuristicCalibrations.Medium;
+                summary = $"Сообщение напрямую входит в evidence затронутого объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и поддерживает ручной разбор этого review item; само по себе оно не доказывает рантайм-сбой.";
+            }
+            else
+            {
+                stance = ResolutionDecisionStances.Ambiguous;
+                calibration = ResolutionDecisionHeuristicCalibrations.Low;
+                summary = "Сообщение помогает читать контекст вокруг runtime review item, но без прямой привязки к затронутому объекту не подтверждает и не опровергает сбой.";
+            }
+        }
+        else if (string.Equals(item.SourceKind, "durable_object_metadata", StringComparison.Ordinal))
+        {
+            if (hasDirectDurableLink && hasEvidenceProvenance)
+            {
+                stance = ResolutionDecisionStances.Supports;
+                calibration = ResolutionDecisionHeuristicCalibrations.Medium;
+                summary = $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и поддерживает решение держать его на ручной проверке до следующего шага.";
+            }
+            else
+            {
+                stance = ResolutionDecisionStances.Ambiguous;
+                calibration = ResolutionDecisionHeuristicCalibrations.Low;
+                summary = "Сообщение остается фоновым сигналом для review item и не дает достаточной опоры, чтобы снять ручную проверку автоматически.";
+            }
+        }
+        else if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
+        {
+            stance = ResolutionDecisionStances.Ambiguous;
+            calibration = ResolutionDecisionHeuristicCalibrations.Low;
+            summary = "Сообщение остается bounded-контекстом этого scope и не подтверждает причину режима рантайма само по себе.";
+        }
+        else if (hasDirectDurableLink && hasEvidenceProvenance)
+        {
+            stance = ResolutionDecisionStances.Supports;
+            calibration = ResolutionDecisionHeuristicCalibrations.Medium;
+            summary = "Сообщение связано с объектом на ручной проверке и поддерживает решение разобрать его вручную перед автоматическим продолжением.";
+        }
+        else
+        {
+            stance = ResolutionDecisionStances.Ambiguous;
+            calibration = ResolutionDecisionHeuristicCalibrations.Low;
+            summary = "Сообщение остается контекстным сигналом review item и не дает достаточной опоры для более сильного вывода.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(reviewQuestion))
+        {
+            summary += $" Вопрос оператора: {reviewQuestion}";
+        }
+
+        return new ResolutionEvidenceDecisionLinkage
+        {
+            LinkType = ResolutionDecisionLinkTypes.DecisionUnit,
+            LinkTarget = decisionUnit,
+            ReviewQuestion = reviewQuestion,
+            Stance = stance,
+            Summary = summary,
+            IsHeuristic = true,
+            HeuristicCalibration = calibration
         };
     }
 
@@ -1218,6 +1303,26 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             "open-web" => "Проверьте влияние на текущий контур и выберите безопасное ручное решение.",
             _ => "Примите bounded-решение по текущему review item и зафиксируйте объяснение."
         };
+    }
+
+    private static string ResolveReviewDecisionUnit(ProjectedResolutionItem item)
+    {
+        if (string.Equals(item.SourceKind, "runtime_defect", StringComparison.Ordinal))
+        {
+            return $"нужна ли ручная проверка «{DescribeFamilyRu(item.Summary.AffectedFamily)}» перед снятием runtime review";
+        }
+
+        if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
+        {
+            return $"оставлять ли контур в режиме «{DescribeRuntimeStateRu(item.SourceRef)}» для этого bounded scope";
+        }
+
+        if (string.Equals(item.SourceKind, "durable_object_metadata", StringComparison.Ordinal))
+        {
+            return $"можно ли продвигать «{DescribeFamilyRu(item.Summary.AffectedFamily)}» без дополнительной ручной блокировки";
+        }
+
+        return $"нужно ли ручное решение по item «{SanitizeVisibleCardText(item.Summary.HumanShortTitle ?? item.Summary.Title)}»";
     }
 
     private static string BuildEvidenceRelevanceHint(ProjectedResolutionItem item, ResolutionEvidenceSummary evidence)
