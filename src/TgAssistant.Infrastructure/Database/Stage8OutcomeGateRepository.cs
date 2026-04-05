@@ -9,6 +9,10 @@ namespace TgAssistant.Infrastructure.Database;
 
 public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
 {
+    private const string BoundedLowConfidenceScopeKey = "chat:885574984";
+    private const float BoundedLowConfidenceTrustThreshold = 0.85f;
+    private const string LowConfidencePromotionReason = "low_confidence_requires_operator_review";
+
     private static readonly IReadOnlyDictionary<string, string[]> TargetFamilyToObjectFamilies =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
@@ -42,13 +46,13 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         var scopeKey = request.ScopeKey.Trim();
         if (string.IsNullOrWhiteSpace(scopeKey))
         {
-            return BuildResult(request, 0, 0, 0, 0);
+            return BuildResult(request, 0, 0, 0, 0, 0);
         }
 
         if (!TargetFamilyToObjectFamilies.TryGetValue(request.TargetFamily, out var objectFamilies)
             || objectFamilies.Length == 0)
         {
-            return BuildResult(request, 0, 0, 0, 0);
+            return BuildResult(request, 0, 0, 0, 0, 0);
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -67,12 +71,13 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
 
         if (rows.Count == 0)
         {
-            return BuildResult(request, 0, 0, 0, 0);
+            return BuildResult(request, 0, 0, 0, 0, 0);
         }
 
         var now = DateTime.UtcNow;
         var promotedCount = 0;
         var promotionBlockedCount = 0;
+        var lowConfidencePromotionBlockedCount = 0;
         var clarificationBlockedCount = 0;
 
         foreach (var row in rows)
@@ -85,7 +90,14 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                 row.MetadataJson,
                 hasContradictions && isReadyResult,
                 now);
-            var decision = ResolveDecision(request.ResultStatus, hasContradictions, request.ForcePromotionBlocked, recencyAssessment);
+            var trustFactor = ComputeTrustFactor(row.Confidence, row.Freshness, row.Stability);
+            var decision = ResolveDecision(
+                request.ScopeKey,
+                request.ResultStatus,
+                hasContradictions,
+                request.ForcePromotionBlocked,
+                recencyAssessment,
+                trustFactor);
             row.PromotionState = decision.PromotionState;
             row.TruthLayer = decision.TruthLayer;
             if (recencyAssessment.FreshnessCap.HasValue)
@@ -111,6 +123,9 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                 request.ForcePromotionBlocked,
                 hasContradictions,
                 recencyAssessment,
+                trustFactor,
+                BoundedLowConfidenceTrustThreshold,
+                decision.Reason,
                 now);
             row.UpdatedAt = now;
 
@@ -124,45 +139,67 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
                     break;
                 default:
                     promotionBlockedCount += 1;
+                    if (string.Equals(decision.Reason, LowConfidencePromotionReason, StringComparison.Ordinal))
+                    {
+                        lowConfidencePromotionBlockedCount += 1;
+                    }
+
                     break;
             }
         }
 
         await db.SaveChangesAsync(ct);
-        return BuildResult(request, rows.Count, promotedCount, promotionBlockedCount, clarificationBlockedCount);
+        return BuildResult(
+            request,
+            rows.Count,
+            promotedCount,
+            promotionBlockedCount,
+            lowConfidencePromotionBlockedCount,
+            clarificationBlockedCount);
     }
 
-    private static (string PromotionState, string TruthLayer) ResolveDecision(
+    private static (string PromotionState, string TruthLayer, string? Reason) ResolveDecision(
+        string scopeKey,
         string resultStatus,
         bool hasContradictions,
         bool forcePromotionBlocked,
-        DurableRecencyAssessment recencyAssessment)
+        DurableRecencyAssessment recencyAssessment,
+        float trustFactor)
     {
         if (string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
             if (forcePromotionBlocked)
             {
-                return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer);
+                return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer, "forced_by_runtime_state");
             }
 
             if (recencyAssessment.ShouldDowngrade
                 && !string.IsNullOrWhiteSpace(recencyAssessment.RecommendedPromotionState)
                 && !string.IsNullOrWhiteSpace(recencyAssessment.RecommendedTruthLayer))
             {
-                return (recencyAssessment.RecommendedPromotionState, recencyAssessment.RecommendedTruthLayer);
+                return (recencyAssessment.RecommendedPromotionState, recencyAssessment.RecommendedTruthLayer, "recency_policy_downgrade");
             }
 
-            return hasContradictions
-                ? (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ConflictedOrObsolete)
-                : (Stage8PromotionStates.Promoted, ModelNormalizationTruthLayers.CanonicalTruth);
+            if (hasContradictions)
+            {
+                return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ConflictedOrObsolete, "contradiction_markers_present");
+            }
+
+            if (string.Equals(scopeKey, BoundedLowConfidenceScopeKey, StringComparison.Ordinal)
+                && trustFactor < BoundedLowConfidenceTrustThreshold)
+            {
+                return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.DerivedButDurable, LowConfidencePromotionReason);
+            }
+
+            return (Stage8PromotionStates.Promoted, ModelNormalizationTruthLayers.CanonicalTruth, null);
         }
 
         if (string.Equals(resultStatus, ModelPassResultStatuses.NeedOperatorClarification, StringComparison.Ordinal))
         {
-            return (Stage8PromotionStates.ClarificationBlocked, ModelNormalizationTruthLayers.DerivedButDurable);
+            return (Stage8PromotionStates.ClarificationBlocked, ModelNormalizationTruthLayers.DerivedButDurable, "need_operator_clarification");
         }
 
-        return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer);
+        return (Stage8PromotionStates.PromotionBlocked, ModelNormalizationTruthLayers.ProposalLayer, "non_ready_result_status");
     }
 
     private static bool HasNonEmptyJsonArray(string? json)
@@ -196,6 +233,9 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         bool forcedByRuntimeState,
         bool hasContradictions,
         DurableRecencyAssessment recencyAssessment,
+        float trustFactor,
+        float trustThreshold,
+        string? reason,
         DateTime appliedAtUtc)
     {
         JsonObject root;
@@ -227,6 +267,9 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
             ["runtime_control_state"] = string.IsNullOrWhiteSpace(runtimeControlState) ? null : runtimeControlState,
             ["forced_by_runtime_state"] = forcedByRuntimeState,
             ["has_contradictions"] = hasContradictions,
+            ["reason"] = string.IsNullOrWhiteSpace(reason) ? null : reason,
+            ["trust_factor"] = trustFactor,
+            ["trust_threshold"] = trustThreshold,
             ["recency_state"] = recencyAssessment.State,
             ["recency_age_days"] = recencyAssessment.AgeDays,
             ["recency_downgraded"] = recencyAssessment.ShouldDowngrade,
@@ -235,6 +278,13 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         };
 
         return root.ToJsonString();
+    }
+
+    private static float ComputeTrustFactor(float confidence, float freshness, float stability)
+    {
+        var aggregate = (confidence + freshness + stability) / 3f;
+        var rounded = (float)Math.Round(aggregate, 2, MidpointRounding.AwayFromZero);
+        return Math.Clamp(rounded, 0f, 1f);
     }
 
     private static Guid? ResolveTargetPersonId(Stage8OutcomeGateRequest request)
@@ -259,6 +309,7 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
         int affectedCount,
         int promotedCount,
         int promotionBlockedCount,
+        int lowConfidencePromotionBlockedCount,
         int clarificationBlockedCount)
     {
         return new Stage8OutcomeGateResult
@@ -269,6 +320,7 @@ public class Stage8OutcomeGateRepository : IStage8OutcomeGateRepository
             AffectedCount = affectedCount,
             PromotedCount = promotedCount,
             PromotionBlockedCount = promotionBlockedCount,
+            LowConfidencePromotionBlockedCount = lowConfidencePromotionBlockedCount,
             ClarificationBlockedCount = clarificationBlockedCount
         };
     }

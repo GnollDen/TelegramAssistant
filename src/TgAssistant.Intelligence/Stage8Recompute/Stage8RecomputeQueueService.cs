@@ -237,7 +237,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             leasedItem.CompletedAtUtc = DateTime.UtcNow;
 
             _logger.LogInformation(
-                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}, gate_affected={GateAffected}, gate_promoted={GatePromoted}, gate_promotion_blocked={GatePromotionBlocked}, gate_clarification_blocked={GateClarificationBlocked}, related_conflicts_applied={RelatedConflictsApplied}, related_conflicts_created={RelatedConflictCreated}, related_conflicts_refreshed={RelatedConflictRefreshed}, related_conflicts_resolved={RelatedConflictResolved}, related_conflicts_unchanged={RelatedConflictUnchanged}, related_conflicts_skip_reason={RelatedConflictSkipReason}",
+                "Stage8 recompute completed: queue_item_id={QueueItemId}, target_family={TargetFamily}, target_ref={TargetRef}, result_status={ResultStatus}, gate_affected={GateAffected}, gate_promoted={GatePromoted}, gate_promotion_blocked={GatePromotionBlocked}, gate_low_confidence_blocked={GateLowConfidenceBlocked}, gate_clarification_blocked={GateClarificationBlocked}, related_conflicts_applied={RelatedConflictsApplied}, related_conflicts_created={RelatedConflictCreated}, related_conflicts_refreshed={RelatedConflictRefreshed}, related_conflicts_resolved={RelatedConflictResolved}, related_conflicts_unchanged={RelatedConflictUnchanged}, related_conflicts_skip_reason={RelatedConflictSkipReason}",
                 leasedItem.Id,
                 leasedItem.TargetFamily,
                 leasedItem.TargetRef,
@@ -245,6 +245,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 gateResult.AffectedCount,
                 gateResult.PromotedCount,
                 gateResult.PromotionBlockedCount,
+                gateResult.LowConfidencePromotionBlockedCount,
                 gateResult.ClarificationBlockedCount,
                 relatedConflictResult.Applied,
                 relatedConflictResult.CreatedCount,
@@ -513,6 +514,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
 
         if (gateResult.PromotionBlockedCount > 0 && string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
+            var lowConfidenceBlocked = gateResult.LowConfidencePromotionBlockedCount > 0;
             await _runtimeDefectRepository.UpsertAsync(new RuntimeDefectUpsertRequest
             {
                 DefectClass = RuntimeDefectClasses.SemanticDrift,
@@ -522,8 +524,10 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
                 RunId = modelPassRunId,
                 ObjectType = queueItem.TargetFamily,
                 ObjectRef = queueItem.TargetRef,
-                Summary = "Crystallization produced result_ready output but promotion was blocked by truth-layer gate.",
-                DetailsJson = $$"""{"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"runtime_control_state":"{{runtimeControlState}}"}"""
+                Summary = lowConfidenceBlocked
+                    ? "Crystallization produced result_ready output but promotion was blocked for low-confidence operator review."
+                    : "Crystallization produced result_ready output but promotion was blocked by truth-layer gate.",
+                DetailsJson = $$"""{"result_status":"{{resultStatus}}","promotion_blocked":{{gateResult.PromotionBlockedCount}},"low_confidence_promotion_blocked":{{gateResult.LowConfidencePromotionBlockedCount}},"blocked_reason":"{{(lowConfidenceBlocked ? "low_confidence_requires_operator_review" : "truth_layer_gate")}}","runtime_control_state":"{{runtimeControlState}}"}"""
             }, ct);
             return;
         }

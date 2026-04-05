@@ -199,5 +199,6 @@ public class Stage8OutcomeGateResult
     public int AffectedCount { get; set; }
     public int PromotedCount { get; set; }
     public int PromotionBlockedCount { get; set; }
+    public int LowConfidencePromotionBlockedCount { get; set; }
     public int ClarificationBlockedCount { get; set; }
 }
