@@ -750,9 +750,9 @@ public static class OperatorWebEndpointExtensions
       <div id="state" class="state loading">Reading bounded person workspace summary...</div>
     </section>
     <section class="panel">
-      <h2>Operator ↔ Tracked Snapshot</h2>
-      <p class="muted">Bounded block from existing identity/session/read surfaces. Unknown stays unknown.</p>
-      <div id="snapshot-content" class="state empty">Snapshot is waiting for workspace data.</div>
+      <h2>Человек в фокусе</h2>
+      <p class="muted">Короткий срез по человеку, вашему контексту и рабочей версии взаимодействия. Если данных мало, вывод не форсируем.</p>
+      <div id="snapshot-content" class="state empty">Сводка появится после загрузки данных по человеку.</div>
     </section>
     <section class="panel">
       <h2>Sections</h2>
@@ -870,6 +870,145 @@ public static class OperatorWebEndpointExtensions
       return (value || "").replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
     }
 
+    function hasSnapshotText(value) {
+      if (typeof value !== "string") {
+        return false;
+      }
+
+      const normalized = value.trim();
+      if (normalized.length === 0) {
+        return false;
+      }
+
+      const lowered = normalized.toLowerCase();
+      return lowered !== "unknown"
+        && lowered !== "неизвестен"
+        && lowered !== "n/a"
+        && lowered !== "null";
+    }
+
+    function formatSnapshotText(value, fallback) {
+      return hasSnapshotText(value) ? value.trim() : fallback;
+    }
+
+    function appendSnapshotCard(parent, label, value, note) {
+      const card = document.createElement("article");
+      card.className = "snapshot-card";
+
+      const labelNode = document.createElement("small");
+      labelNode.textContent = label;
+      card.appendChild(labelNode);
+
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = value;
+      card.appendChild(valueNode);
+
+      const noteNode = document.createElement("span");
+      noteNode.textContent = note;
+      card.appendChild(noteNode);
+
+      parent.appendChild(card);
+    }
+
+    function appendSnapshotChip(parent, text) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = text;
+      parent.appendChild(chip);
+    }
+
+    function hasBoundedSnapshotData(snapshot) {
+      if (!snapshot) {
+        return false;
+      }
+
+      const tracked = snapshot.trackedPerson || {};
+      const operator = snapshot.operator || {};
+      const pair = snapshot.pair || {};
+      return hasSnapshotText(tracked.displayName)
+        || hasSnapshotText(tracked.scopeKey)
+        || tracked.trackedPersonId
+        || hasSnapshotText(operator.operatorDisplay)
+        || hasSnapshotText(operator.operatorSessionId)
+        || hasSnapshotText(operator.surface)
+        || hasSnapshotText(operator.activeMode)
+        || !!pair.available;
+    }
+
+    function mapSurfaceLabel(surface) {
+      const normalized = (surface || "").toString().trim().toLowerCase();
+      switch (normalized) {
+        case "web":
+          return "веб";
+        case "telegram":
+          return "telegram";
+        default:
+          return "канал не определен";
+      }
+    }
+
+    function mapModeLabel(mode) {
+      const normalized = (mode || "").toString().trim().toLowerCase();
+      switch (normalized) {
+        case "resolution_queue":
+          return "очередь решений";
+        case "resolution_detail":
+          return "разбор элемента";
+        case "assistant":
+          return "ассистент";
+        case "offline_event":
+          return "офлайн-события";
+        case "alerts":
+          return "алерты";
+        default:
+          return "режим не определен";
+      }
+    }
+
+    function buildOperatorSessionLabel(operator) {
+      if (operator.sessionExpiresAtUtc) {
+        return "сессия активна до " + formatUtc(operator.sessionExpiresAtUtc);
+      }
+      if (operator.sessionAuthenticatedAtUtc) {
+        return "сессия активна с " + formatUtc(operator.sessionAuthenticatedAtUtc);
+      }
+      return "время сессии не определено";
+    }
+
+    function buildPairAssessmentLabel(pair) {
+      if (!pair.available) {
+        return "Пока без версии";
+      }
+      if ((pair.contradictionCount || 0) > 0) {
+        return "Есть спорные сигналы";
+      }
+      if (typeof pair.uncertainty === "number" && pair.uncertainty >= 0.55) {
+        return "Версия требует проверки";
+      }
+      if (typeof pair.trust === "number"
+          && typeof pair.uncertainty === "number"
+          && pair.trust >= 0.70
+          && pair.uncertainty <= 0.30) {
+        return "Есть опора для рабочей версии";
+      }
+      return "Есть рабочая версия";
+    }
+
+    function buildPairAssessmentNote(pair) {
+      if (!pair.available) {
+        return "Отдельная версия взаимодействия пока не собрана";
+      }
+
+      const contradictions = Number(pair.contradictionCount || 0);
+      if (contradictions > 0) {
+        return "Есть спорные сигналы: " + contradictions;
+      }
+      if (typeof pair.uncertainty === "number" && pair.uncertainty >= 0.55) {
+        return "Неопределенность высокая, нужна проверка";
+      }
+      return "Признаки противоречий: " + contradictions;
+    }
+
     function buildResolutionDrilldownUrl(scopeItemKey) {
       const params = new URLSearchParams();
       params.set("trackedPersonId", state.trackedPersonId || "");
@@ -947,60 +1086,51 @@ public static class OperatorWebEndpointExtensions
         ? state.workspace.summary
         : null;
       const snapshot = summary && summary.snapshot ? summary.snapshot : null;
-      if (!snapshot) {
+      if (!hasBoundedSnapshotData(snapshot)) {
         snapshotContentNode.className = "state empty";
-        snapshotContentNode.textContent = "Snapshot data is unavailable.";
+        snapshotContentNode.textContent = "Сводка появится после загрузки данных по человеку.";
         return;
       }
 
       const tracked = snapshot.trackedPerson || {};
       const operator = snapshot.operator || {};
       const pair = snapshot.pair || {};
-      const trackedName = tracked.displayName || "без имени";
-      const operatorLine = ((operator.surface || "канал не указан") + " · " + (operator.activeMode || "режим не задан")).trim();
-      const pairDirection = pair.available ? (pair.contradictionCount > 0 ? "concerning" : "steady") : "unknown";
-      const pairSummary = pair.latestSummary || "нет оценки";
+      const trackedName = formatSnapshotText(tracked.displayName, "Имя пока не определено");
+      const operatorName = hasSnapshotText(operator.operatorDisplay)
+        ? operator.operatorDisplay.trim()
+        : formatSnapshotText(operator.operatorId, "Имя не задано");
+      const operatorContext = mapSurfaceLabel(operator.surface) + " · " + mapModeLabel(operator.activeMode);
+      const pairAssessment = buildPairAssessmentLabel(pair);
+      const pairSummary = formatSnapshotText(pair.latestSummary, "пока без формулировки");
+      const trackedUnresolved = tracked.unresolvedCount > 0 ? String(tracked.unresolvedCount) : "нет";
 
       snapshotContentNode.className = "";
       snapshotContentNode.innerHTML = "";
 
       const grid = document.createElement("div");
       grid.className = "snapshot-grid";
-      [
-        { label: "Оператор", value: operatorLine, note: "Сессия: " + (operator.sessionExpiresAtUtc ? ("до " + formatUtc(operator.sessionExpiresAtUtc)) : operator.sessionAuthenticatedAtUtc ? ("с " + formatUtc(operator.sessionAuthenticatedAtUtc)) : "нет данных") },
-        { label: "Связка", value: titleize(pairDirection), note: "Риск: " + String(pair.contradictionCount || 0) + " против." },
-        { label: "Персона", value: trackedName, note: "Нерешено: " + (tracked.unresolvedCount == null ? "н/д" : tracked.unresolvedCount) }
-      ].forEach(function(item) {
-        const card = document.createElement("article");
-        card.className = "snapshot-card";
-        card.innerHTML =
-          "<small>" + item.label + "</small>" +
-          "<strong>" + item.value + "</strong>" +
-          "<span>" + item.note + "</span>";
-        grid.appendChild(card);
-      });
+      appendSnapshotCard(
+        grid,
+        "Человек в фокусе",
+        trackedName,
+        tracked.unresolvedCount > 0 ? ("Открытые вопросы: " + tracked.unresolvedCount) : "Открытых вопросов сейчас нет");
+      appendSnapshotCard(grid, "Ваш контекст", operatorName, operatorContext + " · " + buildOperatorSessionLabel(operator));
+      appendSnapshotCard(grid, "Версия взаимодействия", pairAssessment, buildPairAssessmentNote(pair));
       snapshotContentNode.appendChild(grid);
 
       const chips = document.createElement("div");
       chips.className = "chip-list";
-      [
-        "Динамика: " + (pair.available ? titleize(pairDirection) : "нет оценки"),
-        "Траст пары: " + formatPercent(pair.trust),
-        "Неопределенность: " + formatPercent(pair.uncertainty),
-        "Сигнал: " + pairSummary,
-        "Апдейт: " + formatUtc(tracked.recentUpdateAtUtc || pair.latestUpdatedAtUtc || null),
-        "Оператор: " + (operator.operatorDisplay || "неизвестен")
-      ].forEach(function(text) {
-        const chip = document.createElement("span");
-        chip.className = "chip";
-        chip.textContent = text;
-        chips.appendChild(chip);
-      });
+      appendSnapshotChip(chips, "Открытые вопросы: " + trackedUnresolved);
+      appendSnapshotChip(chips, "Последнее обновление: " + formatUtc(tracked.recentUpdateAtUtc || pair.latestUpdatedAtUtc || null));
+      appendSnapshotChip(chips, "Опора сигнала: " + formatPercent(pair.trust));
+      appendSnapshotChip(chips, "Неопределенность: " + formatPercent(pair.uncertainty));
+      appendSnapshotChip(chips, "Короткая версия: " + pairSummary);
+      appendSnapshotChip(chips, "Вы вошли как: " + operatorName);
       snapshotContentNode.appendChild(chips);
 
       const note = document.createElement("p");
       note.className = "muted";
-      note.textContent = "Это ограниченный snapshot из существующих read/sessions источников; не полноценная OperatorModel.";
+      note.textContent = "Это ограниченный срез из read/session-источников. Он помогает сориентироваться, но не заменяет полный разбор.";
       snapshotContentNode.appendChild(note);
     }
 
