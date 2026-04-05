@@ -18,6 +18,7 @@ Top-level routing:
 - [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
 - [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
 - [OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md)
+- Active addendum: [AI_CENTRIC_CONTEXT_LOOP_ADDENDUM_2026-04-05.md](/home/codex/projects/TelegramAssistant/docs/planning/AI_CENTRIC_CONTEXT_LOOP_ADDENDUM_2026-04-05.md)
 
 ## Planning Doc Classification
 
@@ -26,6 +27,7 @@ Top-level routing:
 - Active: [PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md](/home/codex/projects/TelegramAssistant/docs/planning/PERSON_INTELLIGENCE_SYSTEM_PRD_2026-04-02.md)
 - Active: [LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_GATEWAY_PRD_2026-04-03.md)
 - Active: [OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/OPERATOR_INTERACTION_LAYER_PRD_2026-04-03.md)
+- Active addendum: [AI_CENTRIC_CONTEXT_LOOP_ADDENDUM_2026-04-05.md](/home/codex/projects/TelegramAssistant/docs/planning/AI_CENTRIC_CONTEXT_LOOP_ADDENDUM_2026-04-05.md)
 
 ### Gateway prep docs
 
