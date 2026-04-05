@@ -2586,6 +2586,26 @@ public static class OperatorWebEndpointExtensions
       handoffStateNode.textContent = message;
     }
 
+    function clearConsumedHandoffQuery() {
+      if (!window.history || typeof window.history.replaceState !== "function") {
+        return;
+      }
+
+      const sanitized = new URL(window.location.href);
+      sanitized.searchParams.delete("trackedPersonId");
+      sanitized.searchParams.delete("tracked_person_id");
+      sanitized.searchParams.delete("scopeItemKey");
+      sanitized.searchParams.delete("scope_item_key");
+      sanitized.searchParams.delete("operatorSessionId");
+      sanitized.searchParams.delete("operator_session_id");
+      sanitized.searchParams.delete("activeMode");
+      sanitized.searchParams.delete("active_mode");
+      sanitized.searchParams.delete("handoffToken");
+      sanitized.searchParams.delete("handoff_token");
+      sanitized.searchParams.delete("target_api");
+      window.history.replaceState({}, "", sanitized.toString());
+    }
+
     function titleize(value) {
       return value.replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
     }
@@ -3518,7 +3538,7 @@ public static class OperatorWebEndpointExtensions
         || !state.handoff.scopeItemKey
         || !state.handoff.operatorSessionId
         || !state.handoff.handoffToken) {
-        setHandoffState("empty", "Handoff: none.");
+        setHandoffState("empty", "Контекст handoff отсутствует.");
         return;
       }
 
@@ -3542,9 +3562,10 @@ public static class OperatorWebEndpointExtensions
       if (state.activeTrackedPersonId) {
         trackedPersonSelect.value = state.activeTrackedPersonId;
       }
+      clearConsumedHandoffQuery();
       setHandoffState(
         "success",
-        "Handoff restored from Telegram. Tracked person and scoped item were applied to this session.");
+        "Контекст из Telegram применен: выбран человек и нужная карточка.");
     }
 
     async function loadQueue() {
@@ -3588,6 +3609,8 @@ public static class OperatorWebEndpointExtensions
           writeAccessToken(token);
         }
 
+        await applyResolutionHandoffContextIfPresent();
+
         const previousTrackedPersonId = state.activeTrackedPersonId;
         await loadTrackedPersons();
         if (previousTrackedPersonId && previousTrackedPersonId !== state.activeTrackedPersonId) {
@@ -3595,8 +3618,6 @@ public static class OperatorWebEndpointExtensions
         }
 
         if (state.activeTrackedPersonId) {
-          await applyResolutionHandoffContextIfPresent();
-
           if (state.bootTrackedPersonId
             && !state.bootTrackedPersonApplied
             && state.activeTrackedPersonId === state.bootTrackedPersonId) {

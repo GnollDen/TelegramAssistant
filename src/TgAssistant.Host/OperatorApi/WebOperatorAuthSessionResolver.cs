@@ -17,6 +17,7 @@ public sealed class WebOperatorAuthSessionResolver
     private const string SessionAuthenticatedEventType = "session_authenticated";
     private const string SessionRestoredEventType = "session_restored";
     private const string WebAuthSource = "web_access_token";
+    private const string WebHandoffSource = "web_handoff_token";
     private const int DefaultSessionTtlMinutes = 120;
 
     private readonly WebOperatorSessionStore _sessionStore;
@@ -43,10 +44,35 @@ public sealed class WebOperatorAuthSessionResolver
     {
         var nowUtc = DateTime.UtcNow;
         var normalizedMode = NormalizeMode(requestedMode);
-        var token = ResolveAccessToken(httpContext.Request);
         var suppliedSessionId = ResolveSuppliedSessionId(httpContext.Request);
         var subject = ResolveSurfaceSubject(httpContext);
         var operatorId = ResolveOperatorId();
+        var restoredSessionAttempt = await TryRestoreSessionAsync(
+            httpContext,
+            normalizedMode,
+            suppliedSessionId,
+            operatorId,
+            subject,
+            nowUtc,
+            allowBootstrapOnMissingOrExpired: false,
+            ct);
+        if (restoredSessionAttempt.Failure != null)
+        {
+            return restoredSessionAttempt.Failure;
+        }
+
+        if (restoredSessionAttempt.Session != null)
+        {
+            var restoredIdentity = BuildIdentity(operatorId, subject, WebAuthSource, restoredSessionAttempt.Session.AuthenticatedAtUtc);
+            if (restoredSessionAttempt.ShouldAuditRestored)
+            {
+                await RecordAcceptedSessionEventAsync(httpContext, restoredIdentity, restoredSessionAttempt.Session, SessionRestoredEventType, nowUtc, ct);
+            }
+
+            return WebOperatorAuthResult.Success(restoredIdentity, restoredSessionAttempt.Session);
+        }
+
+        var token = ResolveAccessToken(httpContext.Request);
 
         if (_settings.RequireOperatorAccessToken && string.IsNullOrWhiteSpace(_settings.OperatorAccessToken))
         {
@@ -77,80 +103,54 @@ public sealed class WebOperatorAuthSessionResolver
                 ct);
         }
 
-        OperatorSessionContext session;
-        var shouldAuditAuthenticated = false;
-        var shouldAuditRestored = false;
-        if (string.IsNullOrWhiteSpace(suppliedSessionId))
-        {
-            session = new OperatorSessionContext
-            {
-                OperatorSessionId = $"web:{Guid.NewGuid():N}",
-                Surface = OperatorSurfaceTypes.Web,
-                AuthenticatedAtUtc = nowUtc,
-                LastSeenAtUtc = nowUtc,
-                ExpiresAtUtc = nowUtc.AddMinutes(DefaultSessionTtlMinutes),
-                ActiveMode = normalizedMode
-            };
-            _sessionStore.Upsert(session);
-            shouldAuditAuthenticated = true;
-        }
-        else
-        {
-            if (!_sessionStore.TryGet(suppliedSessionId, out session))
-            {
-                return await DenyAsync(
-                    httpContext,
-                    suppliedSessionId,
-                    operatorId,
-                    subject,
-                    SessionDeniedEventType,
-                    "session_not_found",
-                    StatusCodes.Status401Unauthorized,
-                    nowUtc,
-                    ct);
-            }
-
-            if (session.ExpiresAtUtc.HasValue && session.ExpiresAtUtc.Value <= nowUtc)
-            {
-                _sessionStore.Remove(suppliedSessionId);
-                return await DenyAsync(
-                    httpContext,
-                    suppliedSessionId,
-                    operatorId,
-                    subject,
-                    SessionExpiredEventType,
-                    "session_expired",
-                    StatusCodes.Status401Unauthorized,
-                    nowUtc,
-                    ct);
-            }
-
-            shouldAuditRestored = session.LastSeenAtUtc <= session.AuthenticatedAtUtc;
-            session.LastSeenAtUtc = nowUtc;
-            session.ExpiresAtUtc = nowUtc.AddMinutes(DefaultSessionTtlMinutes);
-            session.ActiveMode = normalizedMode;
-            _sessionStore.Upsert(session);
-        }
-
-        var identity = new OperatorIdentityContext
-        {
-            OperatorId = operatorId,
-            OperatorDisplay = operatorId,
-            SurfaceSubject = subject,
-            AuthSource = WebAuthSource,
-            AuthTimeUtc = session.AuthenticatedAtUtc
-        };
-
+        var session = CreateNewSession(normalizedMode, nowUtc);
+        var identity = BuildIdentity(operatorId, subject, WebAuthSource, session.AuthenticatedAtUtc);
+        _sessionStore.Upsert(session);
         WriteSession(httpContext, session);
-        if (shouldAuditAuthenticated)
+        await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionAuthenticatedEventType, nowUtc, ct);
+        return WebOperatorAuthResult.Success(identity, session);
+    }
+
+    public async Task<WebOperatorAuthResult> ResolveForHandoffAsync(
+        HttpContext httpContext,
+        string requestedMode,
+        CancellationToken ct = default)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var normalizedMode = NormalizeMode(requestedMode);
+        var suppliedSessionId = ResolveSuppliedSessionId(httpContext.Request);
+        var subject = ResolveSurfaceSubject(httpContext);
+        var operatorId = ResolveOperatorId();
+        var restoredSessionAttempt = await TryRestoreSessionAsync(
+            httpContext,
+            normalizedMode,
+            suppliedSessionId,
+            operatorId,
+            subject,
+            nowUtc,
+            allowBootstrapOnMissingOrExpired: true,
+            ct);
+        if (restoredSessionAttempt.Failure != null)
         {
-            await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionAuthenticatedEventType, nowUtc, ct);
-        }
-        else if (shouldAuditRestored)
-        {
-            await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionRestoredEventType, nowUtc, ct);
+            return restoredSessionAttempt.Failure;
         }
 
+        if (restoredSessionAttempt.Session != null)
+        {
+            var restoredIdentity = BuildIdentity(operatorId, subject, WebAuthSource, restoredSessionAttempt.Session.AuthenticatedAtUtc);
+            if (restoredSessionAttempt.ShouldAuditRestored)
+            {
+                await RecordAcceptedSessionEventAsync(httpContext, restoredIdentity, restoredSessionAttempt.Session, SessionRestoredEventType, nowUtc, ct);
+            }
+
+            return WebOperatorAuthResult.Success(restoredIdentity, restoredSessionAttempt.Session);
+        }
+
+        var session = CreateNewSession(normalizedMode, nowUtc);
+        var identity = BuildIdentity(operatorId, subject, WebHandoffSource, session.AuthenticatedAtUtc);
+        _sessionStore.Upsert(session);
+        WriteSession(httpContext, session);
+        await RecordAcceptedSessionEventAsync(httpContext, identity, session, SessionAuthenticatedEventType, nowUtc, ct);
         return WebOperatorAuthResult.Success(identity, session);
     }
 
@@ -276,6 +276,79 @@ public sealed class WebOperatorAuthSessionResolver
         }
     }
 
+    private async Task<SessionRestoreAttempt> TryRestoreSessionAsync(
+        HttpContext httpContext,
+        string normalizedMode,
+        string suppliedSessionId,
+        string operatorId,
+        string subject,
+        DateTime nowUtc,
+        bool allowBootstrapOnMissingOrExpired,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(suppliedSessionId))
+        {
+            return SessionRestoreAttempt.Empty;
+        }
+
+        if (!_sessionStore.TryGet(suppliedSessionId, out var session))
+        {
+            if (allowBootstrapOnMissingOrExpired)
+            {
+                return SessionRestoreAttempt.Empty;
+            }
+
+            return new SessionRestoreAttempt
+            {
+                Failure = await DenyAsync(
+                    httpContext,
+                    suppliedSessionId,
+                    operatorId,
+                    subject,
+                    SessionDeniedEventType,
+                    "session_not_found",
+                    StatusCodes.Status401Unauthorized,
+                    nowUtc,
+                    ct)
+            };
+        }
+
+        if (session.ExpiresAtUtc.HasValue && session.ExpiresAtUtc.Value <= nowUtc)
+        {
+            _sessionStore.Remove(suppliedSessionId);
+            if (allowBootstrapOnMissingOrExpired)
+            {
+                return SessionRestoreAttempt.Empty;
+            }
+
+            return new SessionRestoreAttempt
+            {
+                Failure = await DenyAsync(
+                    httpContext,
+                    suppliedSessionId,
+                    operatorId,
+                    subject,
+                    SessionExpiredEventType,
+                    "session_expired",
+                    StatusCodes.Status401Unauthorized,
+                    nowUtc,
+                    ct)
+            };
+        }
+
+        var shouldAuditRestored = session.LastSeenAtUtc <= session.AuthenticatedAtUtc;
+        session.LastSeenAtUtc = nowUtc;
+        session.ExpiresAtUtc = nowUtc.AddMinutes(DefaultSessionTtlMinutes);
+        session.ActiveMode = normalizedMode;
+        _sessionStore.Upsert(session);
+        WriteSession(httpContext, session);
+        return new SessionRestoreAttempt
+        {
+            Session = session,
+            ShouldAuditRestored = shouldAuditRestored
+        };
+    }
+
     private void WriteSession(HttpContext httpContext, OperatorSessionContext session)
     {
         httpContext.Response.Headers[SessionHeaderName] = session.OperatorSessionId;
@@ -310,6 +383,31 @@ public sealed class WebOperatorAuthSessionResolver
 
     private static string NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static OperatorSessionContext CreateNewSession(string normalizedMode, DateTime nowUtc)
+    {
+        return new OperatorSessionContext
+        {
+            OperatorSessionId = $"web:{Guid.NewGuid():N}",
+            Surface = OperatorSurfaceTypes.Web,
+            AuthenticatedAtUtc = nowUtc,
+            LastSeenAtUtc = nowUtc,
+            ExpiresAtUtc = nowUtc.AddMinutes(DefaultSessionTtlMinutes),
+            ActiveMode = normalizedMode
+        };
+    }
+
+    private static OperatorIdentityContext BuildIdentity(string operatorId, string subject, string authSource, DateTime authTimeUtc)
+    {
+        return new OperatorIdentityContext
+        {
+            OperatorId = operatorId,
+            OperatorDisplay = operatorId,
+            SurfaceSubject = subject,
+            AuthSource = authSource,
+            AuthTimeUtc = authTimeUtc
+        };
+    }
 
     private static string NormalizeMode(string? mode)
     {
@@ -360,6 +458,15 @@ public sealed class WebOperatorAuthSessionResolver
 
         var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return $"web:{remoteIp}";
+    }
+
+    private sealed class SessionRestoreAttempt
+    {
+        public static SessionRestoreAttempt Empty { get; } = new();
+
+        public OperatorSessionContext? Session { get; init; }
+        public bool ShouldAuditRestored { get; init; }
+        public WebOperatorAuthResult? Failure { get; init; }
     }
 }
 

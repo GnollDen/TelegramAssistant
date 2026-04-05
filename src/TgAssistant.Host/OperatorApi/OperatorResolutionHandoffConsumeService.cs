@@ -31,20 +31,6 @@ public sealed class OperatorResolutionHandoffConsumeService
         ArgumentNullException.ThrowIfNull(request);
 
         var requestedMode = OperatorModeTypes.Normalize(request.ActiveMode);
-        var auth = await _webAuthResolver.ResolveAsync(httpContext, requestedMode, ct);
-        if (!auth.Accepted)
-        {
-            return CreateResult(
-                auth.StatusCode,
-                new OperatorResolutionHandoffConsumeResult
-                {
-                    Accepted = false,
-                    FailureReason = auth.FailureReason,
-                    Session = auth.Session,
-                    ActiveMode = requestedMode
-                });
-        }
-
         var trackedPersonId = request.TrackedPersonId;
         var scopeItemKey = NormalizeOptional(request.ScopeItemKey);
         var sourceSessionId = NormalizeOptional(request.OperatorSessionId);
@@ -59,7 +45,7 @@ public sealed class OperatorResolutionHandoffConsumeService
                 {
                     Accepted = false,
                     FailureReason = "tracked_person_id_required",
-                    Session = auth.Session,
+                    Session = new OperatorSessionContext(),
                     ActiveMode = requestedMode
                 });
         }
@@ -72,7 +58,7 @@ public sealed class OperatorResolutionHandoffConsumeService
                 {
                     Accepted = false,
                     FailureReason = "scope_item_key_required",
-                    Session = auth.Session,
+                    Session = new OperatorSessionContext(),
                     ActiveMode = requestedMode
                 });
         }
@@ -85,7 +71,7 @@ public sealed class OperatorResolutionHandoffConsumeService
                 {
                     Accepted = false,
                     FailureReason = "operator_session_id_required",
-                    Session = auth.Session,
+                    Session = new OperatorSessionContext(),
                     ActiveMode = requestedMode
                 });
         }
@@ -98,7 +84,7 @@ public sealed class OperatorResolutionHandoffConsumeService
                 {
                     Accepted = false,
                     FailureReason = "handoff_signing_secret_missing",
-                    Session = auth.Session,
+                    Session = new OperatorSessionContext(),
                     ActiveMode = requestedMode
                 });
         }
@@ -127,6 +113,20 @@ public sealed class OperatorResolutionHandoffConsumeService
                 {
                     Accepted = false,
                     FailureReason = "handoff_token_invalid",
+                    Session = new OperatorSessionContext(),
+                    ActiveMode = requestedMode
+                });
+        }
+
+        var auth = await _webAuthResolver.ResolveForHandoffAsync(httpContext, requestedMode, ct);
+        if (!auth.Accepted)
+        {
+            return CreateResult(
+                auth.StatusCode,
+                new OperatorResolutionHandoffConsumeResult
+                {
+                    Accepted = false,
+                    FailureReason = auth.FailureReason,
                     Session = auth.Session,
                     ActiveMode = requestedMode
                 });

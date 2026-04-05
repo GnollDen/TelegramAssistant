@@ -2240,17 +2240,16 @@ public sealed class TelegramOperatorWorkflowService
         state.Session.UnfinishedStep = null;
 
         var handoffUrl = BuildResolutionOpenWebUrl(state.Session, item.ScopeItemKey, nowUtc);
-        var handoffToken = BuildOpenWebHandoffToken(state.Session, item, nowUtc);
         var lines = new List<string>
         {
             "Переход в веб",
             $"Карточка: {ResolveResolutionCardTitle(item)}",
-            "Откроется bounded detail-view по этой карточке с текущим контекстом сессии."
+            "Откроется экран решений с уже выбранной карточкой."
         };
         lines.Add(
             string.IsNullOrWhiteSpace(handoffUrl)
-                ? $"Ссылка не собрана. Проверьте конфигурацию Operator Web и handoff token ({(string.IsNullOrWhiteSpace(handoffToken) ? "не готов" : "готов")})."
-                : "Ссылка готова: в Operator Web сразу применятся активный человек, карточка и detail-режим.");
+                ? "Ссылка пока недоступна. Проверьте настройки веб-доступа и повторите."
+                : "Сразу применятся текущий человек и нужный контекст.");
 
         return new TelegramOperatorResponse
         {
@@ -2271,7 +2270,7 @@ public sealed class TelegramOperatorWorkflowService
                                 }
                                 : new TelegramOperatorButton
                                 {
-                                    Text = "Открыть в вебе",
+                                    Text = "Открыть в веб-интерфейсе",
                                     Url = handoffUrl
                                 }
                         ],

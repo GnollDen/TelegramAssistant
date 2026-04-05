@@ -7,6 +7,16 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class OperatorAssistantResponseGenerationService : IOperatorAssistantResponseGenerationService
 {
+    private static readonly string[] ForbiddenHandoffLeakMarkers =
+    [
+        "open_in_web",
+        "tracked_person_id",
+        "scope_item_key",
+        "operator_session_id",
+        "target_api",
+        "handoff_token"
+    ];
+
     private const string DefaultKnownFallback = "Recent bounded evidence is limited in the active tracked-person scope.";
     private const string DefaultMeansFallback = "Current interpretation remains uncertain due to limited bounded evidence.";
     private const string DefaultRecommendationFallback = "Ask one clarifying follow-up question before taking action.";
@@ -281,13 +291,29 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
         string truthLabel,
         string defaultText)
     {
+        var statementText = NormalizeOptional(input?.Text) ?? defaultText;
+        if (ContainsForbiddenHandoffLeak(statementText))
+        {
+            statementText = defaultText;
+        }
+
         return new OperatorAssistantStatement
         {
             TruthLabel = truthLabel,
-            Text = NormalizeOptional(input?.Text) ?? defaultText,
+            Text = statementText,
             TrustPercent = ClampPercent(input?.TrustPercent ?? 50),
             EvidenceRefs = [.. (input?.EvidenceRefs ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim())]
         };
+    }
+
+    private static bool ContainsForbiddenHandoffLeak(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return ForbiddenHandoffLeakMarkers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsPercent(int value)
