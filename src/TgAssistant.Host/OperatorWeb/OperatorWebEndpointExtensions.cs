@@ -1869,15 +1869,18 @@ public static class OperatorWebEndpointExtensions
       items.forEach(function(item) {
         const node = document.createElement("article");
         node.className = "family-card";
+        const trustLabel = formatItemTrustLabel(item);
+        const runtimeEvidenceCaveat = formatRuntimeEvidenceCaveat(item);
         node.innerHTML =
           "<h3>" + (item.title || item.scopeItemKey || "Untitled item") + "</h3>" +
           "<p><strong>Status:</strong> " + titleize(item.status || "unknown") + " | <strong>Priority:</strong> " + titleize(item.priority || "unknown") + "</p>" +
-          "<p><strong>Type:</strong> " + titleize(item.itemType || "unknown") + " | <strong>Trust:</strong> " + formatPercent(item.trustFactor) + "</p>" +
+          "<p><strong>Type:</strong> " + titleize(item.itemType || "unknown") + " | <strong>" + trustLabel + ":</strong> " + formatItemTrustValue(item) + "</p>" +
           "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>" +
           "<p><strong>Why it matters:</strong> " + (item.whyItMatters || "n/a") + "</p>" +
           "<p><strong>Affected:</strong> " + (item.affectedFamily || "n/a") + " / " + (item.affectedObjectRef || "n/a") + "</p>" +
           "<p><strong>Evidence count:</strong> " + (item.evidenceCount || 0) + " | <strong>Recommended action:</strong> " + titleize(item.recommendedNextAction || "none") + "</p>" +
-          "<p><strong>Drilldown seed:</strong> scope item " + (item.scopeItemKey || "n/a") + " | <strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>";
+          "<p><strong>Drilldown seed:</strong> scope item " + (item.scopeItemKey || "n/a") + " | <strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
+          (runtimeEvidenceCaveat ? "<p class='muted'>" + runtimeEvidenceCaveat + "</p>" : "");
 
         const actionRow = document.createElement("div");
         actionRow.className = "row";
@@ -2880,9 +2883,9 @@ public static class OperatorWebEndpointExtensions
       const stance = (linkage.stance || "").toLowerCase();
       let verb = "оставляет неопределенность по";
       if (stance === "supports") {
-        verb = "вероятно поддерживает";
+        verb = "может поддерживать";
       } else if (stance === "challenges") {
-        verb = "скорее оспаривает";
+        verb = "может оспаривать";
       }
 
       const linkType = (linkage.linkType || "").toLowerCase();
@@ -2898,10 +2901,51 @@ public static class OperatorWebEndpointExtensions
       if (linkage.isHeuristic !== false) {
         const calibration = (linkage.heuristicCalibration || "").toLowerCase();
         const calibrationLabel = calibration === "medium" ? "средняя" : "низкая";
-        text += " (эвристическая связь, калибровка: " + calibrationLabel + ")";
+        text += " (эвристическая связь; надежность: " + calibrationLabel + ")";
       }
 
       return text;
+    }
+
+    function formatEvidenceTrustCue(entry) {
+      const trust = formatPercent(entry && entry.trustFactor);
+      if (!entry || !entry.decisionLinkage || entry.decisionLinkage.isHeuristic === false) {
+        return trust;
+      }
+
+      const calibration = (entry.decisionLinkage.heuristicCalibration || "").toLowerCase();
+      const calibrationLabel = calibration === "medium"
+        ? "связь эвристическая, калибровка средняя"
+        : "связь эвристическая, калибровка низкая";
+      return trust + " (у источника; " + calibrationLabel + ")";
+    }
+
+    function isRuntimeReviewItem(item) {
+      if (!item) {
+        return false;
+      }
+
+      const itemType = (item.itemType || "").toLowerCase();
+      const scopeItemKey = (item.scopeItemKey || "").toLowerCase();
+      return itemType === "review" && scopeItemKey.indexOf("review:runtime_") === 0;
+    }
+
+    function formatItemTrustLabel(item) {
+      return isRuntimeReviewItem(item)
+        ? "Надежность проверки"
+        : "Trust";
+    }
+
+    function formatItemTrustValue(item) {
+      return formatPercent(item && item.trustFactor);
+    }
+
+    function formatRuntimeEvidenceCaveat(item) {
+      if (!isRuntimeReviewItem(item)) {
+        return "";
+      }
+
+      return "Семантика сообщений оценивается отдельно и остается эвристической.";
     }
 
     function snapshotQueueProjection(queue) {
@@ -3244,16 +3288,21 @@ public static class OperatorWebEndpointExtensions
 
         const meta = document.createElement("div");
         meta.className = "meta";
+        const trustLabel = formatItemTrustLabel(item);
+        const runtimeEvidenceCaveat = formatRuntimeEvidenceCaveat(item);
 
         const metaValues = [
           "Type: " + titleize(item.itemType || "unknown"),
           "Status: " + titleize(item.status || "unknown"),
-          "Trust: " + formatPercent(item.trustFactor),
+          trustLabel + ": " + formatItemTrustValue(item),
           "Evidence: " + (item.evidenceCount || 0),
           "Updated: " + formatUtc(item.updatedAtUtc),
           "Family: " + (item.affectedFamily || "n/a"),
           "Action: " + titleize(item.recommendedNextAction || "none")
         ];
+        if (runtimeEvidenceCaveat) {
+          metaValues.push("Оценка по эвристике");
+        }
 
         metaValues.forEach(function(value) {
           const tag = document.createElement("span");
@@ -3323,7 +3372,7 @@ public static class OperatorWebEndpointExtensions
       const operatorSummary = item.whatHappened || item.summary || "No summary.";
       const operatorWhy = item.whyOperatorAnswerNeeded || item.whyItMatters || "Not provided.";
       const operatorPrompt = item.whatToDoPrompt || "";
-      const evidenceRationaleSummary = item.evidenceRationaleSummary || "Система отобрала эти сообщения как опору для текущего review item.";
+      const evidenceRationaleSummary = item.evidenceRationaleSummary || "Система показала эти сообщения как эвристический контекст для текущей карточки.";
       const autoResolutionGap = item.autoResolutionGap || "Автоматический контур остановился и требует ручного решения.";
       const operatorDecisionFocus = item.operatorDecisionFocus || operatorPrompt || "Нужно bounded-решение оператора по текущему item.";
       const rationaleIsHeuristic = item.rationaleIsHeuristic !== false;
@@ -3340,20 +3389,22 @@ public static class OperatorWebEndpointExtensions
       const rationaleBlock = document.createElement("section");
       rationaleBlock.className = "detail-block";
       rationaleBlock.innerHTML =
-        "<h4>Как это связано с проблемой</h4>" +
-        "<p><strong>Что система видит в evidence:</strong> " + evidenceRationaleSummary + "</p>" +
-        "<p><strong>Почему не auto-resolved:</strong> " + autoResolutionGap + "</p>" +
+        "<h4>Что известно для решения</h4>" +
+        "<p><strong>Почему сообщения показаны:</strong> " + evidenceRationaleSummary + "</p>" +
+        "<p><strong>Что известно точно:</strong> " + autoResolutionGap + "</p>" +
         "<p><strong>Какое решение нужно сейчас:</strong> " + operatorDecisionFocus + "</p>" +
-        (rationaleIsHeuristic ? "<p class='muted'>Формулировки выше даны как bounded эвристика и не претендуют на полную семантическую интерпретацию.</p>" : "");
+        (rationaleIsHeuristic ? "<p class='muted'>Сообщения ниже подобраны эвристически и не доказывают сбой сами по себе.</p>" : "");
       detailContentNode.appendChild(rationaleBlock);
 
       const statusBlock = document.createElement("section");
       statusBlock.className = "detail-block";
+      const trustLabel = formatItemTrustLabel(item);
+      const runtimeEvidenceCaveat = formatRuntimeEvidenceCaveat(item);
       const statusMeta = [
         "Type: " + titleize(item.itemType || "unknown"),
         "Status: " + titleize(item.status || "unknown"),
         "Priority: " + titleize(item.priority || "unknown"),
-        "Trust: " + formatPercent(item.trustFactor),
+        trustLabel + ": " + formatItemTrustValue(item),
         "Evidence count: " + (item.evidenceCount || 0),
         "Updated: " + formatUtc(item.updatedAtUtc),
         "Family: " + (item.affectedFamily || "n/a"),
@@ -3361,6 +3412,9 @@ public static class OperatorWebEndpointExtensions
         "Scope item: " + (item.scopeItemKey || "n/a"),
         "Recommended action: " + titleize(item.recommendedNextAction || "none")
       ];
+      if (runtimeEvidenceCaveat) {
+        statusMeta.push("Оценка по эвристике");
+      }
       const statusMetaNode = document.createElement("div");
       statusMetaNode.className = "meta";
       statusMeta.forEach(function(value) {
@@ -3384,7 +3438,7 @@ public static class OperatorWebEndpointExtensions
 
       const evidenceSummary = document.createElement("p");
       evidenceSummary.className = "muted";
-      evidenceSummary.textContent = "Почему эти сообщения показаны: " + evidenceRationaleSummary;
+      evidenceSummary.textContent = "Почему система показала эти сообщения: " + evidenceRationaleSummary;
       evidenceBlock.appendChild(evidenceSummary);
 
       const evidenceButton = document.createElement("button");
@@ -3982,7 +4036,7 @@ public static class OperatorWebEndpointExtensions
       evidenceFocusNode.appendChild(summary);
 
       const trust = document.createElement("p");
-      trust.innerHTML = "<strong>Confidence cue:</strong> " + formatPercent(entry.trustFactor);
+      trust.innerHTML = "<strong>Сигнал уверенности:</strong> " + formatEvidenceTrustCue(entry);
       evidenceFocusNode.appendChild(trust);
 
       const observed = document.createElement("p");
@@ -4005,13 +4059,13 @@ public static class OperatorWebEndpointExtensions
       evidenceFocusNode.appendChild(evidenceId);
 
       const relevance = document.createElement("p");
-      relevance.innerHTML = "<strong>Почему важно:</strong> "
-        + (entry.relevanceHint || "Опорный сигнал для текущего review item.")
+      relevance.innerHTML = "<strong>Почему показано:</strong> "
+        + (entry.relevanceHint || "Контекстный сигнал для ручной проверки.")
         + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
       evidenceFocusNode.appendChild(relevance);
 
       const decisionLink = document.createElement("p");
-      decisionLink.innerHTML = "<strong>Связь с решением:</strong> " + formatDecisionLinkage(entry.decisionLinkage);
+      decisionLink.innerHTML = "<strong>Эвристическая связь с решением:</strong> " + formatDecisionLinkage(entry.decisionLinkage);
       evidenceFocusNode.appendChild(decisionLink);
 
       evidencePrevButton.disabled = index <= 0;
@@ -4057,7 +4111,7 @@ public static class OperatorWebEndpointExtensions
         summary.textContent = entry.summary || "No summary.";
         const meta = document.createElement("p");
         meta.className = "muted";
-        meta.textContent = "Trust " + formatPercent(entry.trustFactor) + " | " + formatUtc(entry.observedAtUtc);
+        meta.textContent = "Сигнал уверенности " + formatEvidenceTrustCue(entry) + " | " + formatUtc(entry.observedAtUtc);
         const prov = document.createElement("p");
         prov.className = "muted";
         prov.textContent = (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
@@ -4066,12 +4120,12 @@ public static class OperatorWebEndpointExtensions
         sender.textContent = "Отправитель: " + (entry.senderDisplay || "не определен");
         const relevance = document.createElement("p");
         relevance.className = "muted";
-        relevance.textContent = "Почему важно: "
-          + (entry.relevanceHint || "Опорный сигнал для текущего review item.")
+        relevance.textContent = "Почему показано: "
+          + (entry.relevanceHint || "Контекстный сигнал для ручной проверки.")
           + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
         const decisionLink = document.createElement("p");
         decisionLink.className = "muted";
-        decisionLink.textContent = "Связь с решением: " + formatDecisionLinkage(entry.decisionLinkage);
+        decisionLink.textContent = "Эвристическая связь с решением: " + formatDecisionLinkage(entry.decisionLinkage);
         card.appendChild(summary);
         card.appendChild(meta);
         card.appendChild(sender);

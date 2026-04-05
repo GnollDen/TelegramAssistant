@@ -781,6 +781,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         IReadOnlyList<DbRuntimeDefect> runtimeDefects)
     {
         var items = new List<ProjectedResolutionItem>();
+        var runtimeControlTrustFactor = ResolveRuntimeControlReviewTrustFactor(runtimeDefects, durableContexts);
 
         if (runtimeState != null && !string.Equals(runtimeState.State, RuntimeControlStates.Normal, StringComparison.Ordinal))
         {
@@ -794,7 +795,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 {
                     ScopeItemKey = BuildItemKey(ResolutionItemTypes.Review, "runtime_control_state", runtimeState.State),
                     ItemType = ResolutionItemTypes.Review,
-                    Title = $"Runtime operating in {runtimeState.State}",
+                    Title = $"Рантайм в режиме {DescribeRuntimeStateRu(runtimeState.State)}",
                     Summary = runtimeState.Reason,
                     WhyItMatters = "Runtime control state is directly affecting which Stage8 work can run or promote inside this tracked-person scope.",
                     HumanShortTitle = $"Рантайм: {DescribeRuntimeStateRu(runtimeState.State)}",
@@ -803,19 +804,19 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                             ? "Контур исполнения работает с ограничениями."
                             : runtimeState.Reason,
                         "Контур исполнения работает с ограничениями."),
-                    WhyOperatorAnswerNeeded = "Это влияет на то, какие ветки могут выполняться и продвигаться в текущем контексте.",
+                    WhyOperatorAnswerNeeded = "Режим ручной проверки задан явно, но связанные сообщения ниже показываются только как контекст этого scope.",
                     WhatToDoPrompt = "Нажмите «В веб» и проверьте, нужно ли снять ограничение или оставить его до стабилизации.",
                     EvidenceHint = runtimeDefects.Count > 0
                         ? $"Есть {FormatCountRu(runtimeDefects.Count, "открытый сбой", "открытых сбоя", "открытых сбоев")} рантайма в этом контексте."
                         : "Связанных открытых сбоев рантайма в этом контексте пока не видно.",
                     AffectedFamily = "runtime_control",
                     AffectedObjectRef = $"scope:{trackedPerson.ScopeKey}",
-                    TrustFactor = 1f,
+                    TrustFactor = runtimeControlTrustFactor,
                     Status = runtimeStatus,
                     EvidenceCount = runtimeDefects.Count,
                     UpdatedAtUtc = runtimeState.ActivatedAtUtc,
                     SecondaryText = BuildSecondaryText(
-                        1f,
+                        runtimeControlTrustFactor,
                         runtimeStatus,
                         runtimeState.ActivatedAtUtc),
                     Priority = priority,
@@ -849,6 +850,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 : ResolutionItemStatuses.AttentionRequired;
             var evidenceCount = ResolveEvidenceCount(trackedPerson, targetContexts);
             var priority = MapSeverityToPriority(defect.Severity);
+            var trustFactor = ResolveRuntimeDefectReviewTrustFactor(targetContexts);
             items.Add(new ProjectedResolutionItem
             {
                 Summary = new ResolutionItemSummary
@@ -859,20 +861,18 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     Summary = defect.Summary,
                     WhyItMatters = "Operator review is required because runtime defects are affecting data integrity, promotion safety, or bounded execution reliability.",
                     HumanShortTitle = $"Разбор рантайма: {DescribeRuntimeTargetRu(defect)}",
-                    WhatHappened = SanitizeVisibleCardTextOrDefault(
-                        defect.Summary,
-                        "Обнаружен сбой в рантайме, который требует операторского решения."),
-                    WhyOperatorAnswerNeeded = "Сбой влияет на целостность данных, безопасность продвижения или стабильность текущего контура обработки.",
+                    WhatHappened = $"Автоматика оставила «{DescribeRuntimeTargetRu(defect)}» на ручной проверке из-за риска ошибки в рантайме.",
+                    WhyOperatorAnswerNeeded = "Ручная проверка нужна точно, но связанные сообщения в карточке дают только ориентир и не доказывают сбой сами по себе.",
                     WhatToDoPrompt = "Нажмите «В веб» для детального разбора и решите, нужен ли фикс, ручное подтверждение или наблюдение.",
                     EvidenceHint = BuildEvidenceHint(evidenceCount),
                     AffectedFamily = defect.ObjectType ?? defect.DefectClass,
                     AffectedObjectRef = defect.ObjectRef ?? $"scope:{trackedPerson.ScopeKey}",
-                    TrustFactor = 1f,
+                    TrustFactor = trustFactor,
                     Status = status,
                     EvidenceCount = evidenceCount,
                     UpdatedAtUtc = defect.UpdatedAtUtc,
                     SecondaryText = BuildSecondaryText(
-                        1f,
+                        trustFactor,
                         status,
                         defect.UpdatedAtUtc),
                     Priority = priority,
@@ -1056,6 +1056,29 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         return Clamp01((float)Math.Round(trust, 2, MidpointRounding.AwayFromZero));
     }
 
+    private static float ResolveRuntimeControlReviewTrustFactor(
+        IReadOnlyList<DbRuntimeDefect> runtimeDefects,
+        IReadOnlyList<DurableContext> durableContexts)
+    {
+        var linkedContexts = runtimeDefects
+            .SelectMany(x => GetTargetContexts(x.ObjectType, durableContexts))
+            .GroupBy(x => x.MetadataId)
+            .Select(x => x.First())
+            .ToList();
+
+        if (linkedContexts.Count > 0)
+        {
+            return Math.Min(AverageTrust(linkedContexts), 0.65f);
+        }
+
+        return runtimeDefects.Count > 0 ? 0.55f : 0.45f;
+    }
+
+    private static float ResolveRuntimeDefectReviewTrustFactor(IReadOnlyList<DurableContext> targetContexts)
+        => targetContexts.Count == 0
+            ? 0.45f
+            : Math.Min(AverageTrust(targetContexts), 0.65f);
+
     private static int ResolveEvidenceCount(TrackedPersonScope trackedPerson, IReadOnlyList<DurableContext> contexts)
         => contexts.Count == 0
             ? trackedPerson.EvidenceCount
@@ -1195,16 +1218,16 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 calibration = reviewSignal.Calibration;
                 summary = reviewSignal.Role switch
                 {
-                    "contextual" => $"Сообщение напрямую связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}», но остается в основном контекстным сигналом: {reviewSignal.Reason}; само по себе оно не подтверждает и не опровергает рантайм-сбой.",
-                    "weak_support" => $"Сообщение напрямую связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и дает лишь слабую поддержку ручному разбору review item: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой.",
-                    _ => $"Сообщение напрямую входит в evidence затронутого объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и скорее поддерживает ручной разбор этого review item: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой."
+                    "contextual" => $"Сообщение связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}», но остается в основном контекстным сигналом: {reviewSignal.Reason}; само по себе оно не подтверждает и не опровергает рантайм-сбой.",
+                    "weak_support" => $"Сообщение связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и может лишь слабо поддерживать ручной разбор этой карточки: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой.",
+                    _ => $"Сообщение связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и может поддерживать ручной разбор этой карточки: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой."
                 };
             }
             else
             {
                 stance = ResolutionDecisionStances.Ambiguous;
                 calibration = ResolutionDecisionHeuristicCalibrations.Low;
-                summary = "Сообщение помогает читать контекст вокруг runtime review item, но без прямой привязки к затронутому объекту не подтверждает и не опровергает сбой.";
+                summary = "Сообщение помогает читать контекст вокруг карточки ручной проверки, но без прямой привязки к затронутому объекту не подтверждает и не опровергает сбой.";
             }
         }
         else if (string.Equals(item.SourceKind, "durable_object_metadata", StringComparison.Ordinal))
@@ -1216,15 +1239,15 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 summary = reviewSignal.Role switch
                 {
                     "contextual" => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}», но по форме остается скорее контекстным сигналом: {reviewSignal.Reason}; этого недостаточно для снятия ручной проверки.",
-                    "weak_support" => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и дает лишь слабую поддержку решению оставить его на ручной проверке: {reviewSignal.Reason}.",
-                    _ => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и скорее поддерживает решение держать его на ручной проверке: {reviewSignal.Reason}."
+                    "weak_support" => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и может лишь слабо поддерживать решение оставить его на ручной проверке: {reviewSignal.Reason}.",
+                    _ => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и может поддерживать решение держать его на ручной проверке: {reviewSignal.Reason}."
                 };
             }
             else
             {
                 stance = ResolutionDecisionStances.Ambiguous;
                 calibration = ResolutionDecisionHeuristicCalibrations.Low;
-                summary = "Сообщение остается фоновым сигналом для review item и не дает достаточной опоры, чтобы снять ручную проверку автоматически.";
+                summary = "Сообщение остается фоновым сигналом для карточки ручной проверки и не дает достаточной опоры, чтобы снять ее автоматически.";
             }
         }
         else if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
@@ -1240,15 +1263,15 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             summary = reviewSignal.Role switch
             {
                 "contextual" => $"Сообщение связано с объектом на ручной проверке, но остается скорее контекстным сигналом: {reviewSignal.Reason}.",
-                "weak_support" => $"Сообщение связано с объектом на ручной проверке и дает лишь слабую поддержку решению разобрать его вручную: {reviewSignal.Reason}.",
-                _ => $"Сообщение связано с объектом на ручной проверке и скорее поддерживает решение разобрать его вручную перед автоматическим продолжением: {reviewSignal.Reason}."
+                "weak_support" => $"Сообщение связано с объектом на ручной проверке и может лишь слабо поддерживать решение разобрать его вручную: {reviewSignal.Reason}.",
+                _ => $"Сообщение связано с объектом на ручной проверке и может поддерживать решение разобрать его вручную перед автоматическим продолжением: {reviewSignal.Reason}."
             };
         }
         else
         {
             stance = ResolutionDecisionStances.Ambiguous;
             calibration = ResolutionDecisionHeuristicCalibrations.Low;
-            summary = "Сообщение остается контекстным сигналом review item и не дает достаточной опоры для более сильного вывода.";
+            summary = "Сообщение остается контекстным сигналом карточки ручной проверки и не дает достаточной опоры для более сильного вывода.";
         }
 
         if (!string.IsNullOrWhiteSpace(reviewQuestion))
@@ -1281,7 +1304,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             _ => "система вероятно видит риск, который нельзя безопасно закрыть автоматически"
         };
         var countSummary = BuildEvidenceCountSummary(item, evidence);
-        return $"По теме «{familyRu}» {signalSummary}. {countSummary} Это эвристическое объяснение выбора evidence.";
+        return $"По теме «{familyRu}» {signalSummary}. {countSummary} Это объясняет, почему сообщения попали в карточку, но не доказывает сбой само по себе.";
     }
 
     private static string BuildEvidenceCountSummary(
@@ -1303,7 +1326,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
         if (supportsCount > 0 && ambiguousCount > 0)
         {
-            return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")}: {supportsCount} скорее поддерживают ручное решение, а {ambiguousCount} остаются контекстными или неоднозначными.";
+            return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")}: {supportsCount} могут слабо поддерживать ручной разбор, а {ambiguousCount} остаются контекстными или неоднозначными.";
         }
 
         if (ambiguousCount == evidence.Count)
@@ -1311,7 +1334,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")}, но они остаются в основном контекстными или неоднозначными.";
         }
 
-        return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как эвристические опорные сигналы для ручного решения.";
+        return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как эвристически подобранный контекст для ручного решения.";
     }
 
     private static string BuildAutoResolutionGap(ProjectedResolutionItem item)
@@ -1324,7 +1347,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 => "Авторазрешение остановлено: конфликтующие сигналы не удалось согласовать безопасно.",
             ResolutionItemTypes.MissingData
                 => "Авторазрешение остановлено: опоры недостаточно для устойчивого вывода.",
-            _ => "Авторазрешение остановлено: риск ошибки выше допустимого без ручной проверки."
+            _ => "Автоматическое продолжение остановлено: без ручной проверки риск ошибки выше допустимого."
         };
     }
 
@@ -1345,7 +1368,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             "clarify" => "Дайте bounded-уточнение и зафиксируйте, какой вариант считать корректным.",
             "evidence" => "Проверьте, достаточно ли опоры для решения: подтвердить, отклонить или отложить.",
             "open-web" => "Проверьте влияние на текущий контур и выберите безопасное ручное решение.",
-            _ => "Примите bounded-решение по текущему review item и зафиксируйте объяснение."
+            _ => "Примите bounded-решение по текущей карточке ручной проверки и зафиксируйте объяснение."
         };
     }
 
@@ -1353,7 +1376,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
     {
         if (string.Equals(item.SourceKind, "runtime_defect", StringComparison.Ordinal))
         {
-            return $"нужна ли ручная проверка «{DescribeFamilyRu(item.Summary.AffectedFamily)}» перед снятием runtime review";
+            return $"нужна ли ручная проверка «{DescribeFamilyRu(item.Summary.AffectedFamily)}» перед снятием пометки о ручной проверке";
         }
 
         if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
@@ -1409,7 +1432,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             return "Слабый поддерживающий сигнал: уверенность ограничена, поэтому решение оставлено оператору.";
         }
 
-        return "Опорный сигнал для текущего review item; используется как часть эвристической проверки.";
+        return "Контекстный сигнал для ручной проверки; показан как часть эвристического отбора.";
     }
 
     private static string ResolveDecisionCriterion(ProjectedResolutionItem item)
@@ -1762,10 +1785,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
     {
         if (!string.IsNullOrWhiteSpace(defect.ObjectType))
         {
-            return $"{DescribeFamily(defect.ObjectType)} runtime review";
+            return $"Ручная проверка рантайма: {DescribeFamilyRu(defect.ObjectType)}";
         }
 
-        return $"{defect.DefectClass} runtime review";
+        return $"Ручная проверка рантайма: {SanitizeVisibleCardText(defect.DefectClass)}";
     }
 
     private static string DescribeFamilyRu(string? family)
