@@ -2324,22 +2324,29 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             .ToListAsync(ct);
         var evidenceLookup = evidenceCounts.ToDictionary(x => x.PersonId, x => x.EvidenceCount);
 
-        var rows = await (from person in db.Persons.AsNoTracking()
-                          join link in db.PersonOperatorLinks.AsNoTracking()
-                              on person.Id equals link.PersonId
-                          where person.Status == ActiveStatus
-                              && person.PersonType == "tracked_person"
-                              && link.Status == ActiveStatus
-                          orderby person.DisplayName, person.CanonicalName, person.UpdatedAt descending
-                          select new
-                          {
-                              person.Id,
-                              person.ScopeKey,
-                              person.DisplayName,
-                              person.CanonicalName,
-                              person.UpdatedAt
-                          })
-            .Distinct()
+        var activePersonIds = db.PersonOperatorLinks
+            .AsNoTracking()
+            .Where(link => link.Status == ActiveStatus)
+            .Select(link => link.PersonId)
+            .Distinct();
+
+        var rows = await db.Persons
+            .AsNoTracking()
+            .Where(person =>
+                person.Status == ActiveStatus
+                && person.PersonType == "tracked_person"
+                && activePersonIds.Contains(person.Id))
+            .OrderBy(person => person.DisplayName)
+            .ThenBy(person => person.CanonicalName)
+            .ThenByDescending(person => person.UpdatedAt)
+            .Select(person => new
+            {
+                person.Id,
+                person.ScopeKey,
+                person.DisplayName,
+                person.CanonicalName,
+                person.UpdatedAt
+            })
             .Take(limit)
             .ToListAsync(ct);
 

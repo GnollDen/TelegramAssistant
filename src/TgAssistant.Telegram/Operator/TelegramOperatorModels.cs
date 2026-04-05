@@ -91,6 +91,7 @@ internal sealed class TelegramResolutionCardBinding
     public string ItemType { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public List<string> AvailableActions { get; set; } = [];
+    public string? OpenWebUrl { get; set; }
 }
 
 internal sealed class TelegramAlertCardBinding

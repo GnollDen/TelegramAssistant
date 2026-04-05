@@ -131,7 +131,27 @@ public sealed class TelegramBotApiClient
                 },
                 JsonOptions,
                 ct);
-            response.EnsureSuccessStatusCode();
+            if (response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<TelegramBotApiResponse<object>>(JsonOptions, ct);
+            var description = payload?.Description?.Trim() ?? string.Empty;
+            if ((int)response.StatusCode == 400 && IsIgnorableCallbackError(description))
+            {
+                _logger.LogInformation(
+                    "Telegram callback acknowledgment skipped: callback is stale or invalid. callback_id={CallbackQueryId}, description={Description}",
+                    callbackQueryId,
+                    description);
+                return;
+            }
+
+            _logger.LogWarning(
+                "Telegram answerCallbackQuery returned non-success status. callback_id={CallbackQueryId}, status_code={StatusCode}, description={Description}",
+                callbackQueryId,
+                (int)response.StatusCode,
+                string.IsNullOrWhiteSpace(description) ? "<empty>" : description);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -141,6 +161,18 @@ public sealed class TelegramBotApiClient
 
     private string BuildUrl(string method)
         => $"https://api.telegram.org/bot{_settings.BotToken.Trim()}/{method}";
+
+    private static bool IsIgnorableCallbackError(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return false;
+        }
+
+        return description.Contains("query is too old", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("query ID is invalid", StringComparison.OrdinalIgnoreCase)
+            || description.Contains("query_id_invalid", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class TelegramBotUpdate

@@ -623,6 +623,7 @@ public static class OperatorWebEndpointExtensions
       font-size: 14px;
     }
     .state.loading { border-left-color: var(--accent); }
+    .state.success { border-left-color: var(--ok); background: #ecf8f0; }
     .state.empty { border-left-color: var(--ok); }
     .state.error { border-left-color: var(--warn); background: #fff6f6; }
     .muted { color: var(--muted); }
@@ -2049,6 +2050,7 @@ public static class OperatorWebEndpointExtensions
       font-size: 14px;
     }
     .state.loading { border-left-color: var(--accent); }
+    .state.success { border-left-color: var(--ok); background: #ecf8f0; }
     .state.empty { border-left-color: var(--ok); }
     .state.error { border-left-color: var(--warn); background: #fff6f6; }
     .muted { color: var(--muted); }
@@ -2385,6 +2387,7 @@ public static class OperatorWebEndpointExtensions
       </div>
 
       <div id="state" class="state loading">Loading tracked person scope...</div>
+      <div id="handoff-state" class="state empty">Handoff: none.</div>
     </section>
 
     <section class="panel stack">
@@ -2491,6 +2494,7 @@ public static class OperatorWebEndpointExtensions
 
   <script>
     const stateNode = document.getElementById("state");
+    const handoffStateNode = document.getElementById("handoff-state");
     const queueNode = document.getElementById("queue-list");
     const countsNode = document.getElementById("counts");
     const detailStateNode = document.getElementById("detail-state");
@@ -2531,8 +2535,11 @@ public static class OperatorWebEndpointExtensions
     const statusValues = ["open", "blocked", "queued", "running", "attention_required", "degraded"];
     const typeValues = ["clarification", "review", "contradiction", "missing_data", "blocked_branch"];
     const query = new URLSearchParams(window.location.search);
-    const bootTrackedPersonId = query.get("trackedPersonId") || "";
-    const bootScopeItemKey = query.get("scopeItemKey") || "";
+    const bootTrackedPersonId = query.get("trackedPersonId") || query.get("tracked_person_id") || "";
+    const bootScopeItemKey = query.get("scopeItemKey") || query.get("scope_item_key") || "";
+    const bootOperatorSessionId = query.get("operatorSessionId") || query.get("operator_session_id") || "";
+    const bootActiveMode = query.get("activeMode") || query.get("active_mode") || "";
+    const bootHandoffToken = query.get("handoffToken") || query.get("handoff_token") || "";
 
     const state = {
       trackedPersons: [],
@@ -2549,7 +2556,15 @@ public static class OperatorWebEndpointExtensions
       lastActionFeedback: null,
       bootTrackedPersonId: bootTrackedPersonId || null,
       bootTrackedPersonApplied: false,
-      bootScopeItemKey: bootScopeItemKey || null
+      bootScopeItemKey: bootScopeItemKey || null,
+      handoff: {
+        trackedPersonId: bootTrackedPersonId || null,
+        scopeItemKey: bootScopeItemKey || null,
+        operatorSessionId: bootOperatorSessionId || null,
+        activeMode: bootActiveMode || "resolution_detail",
+        handoffToken: bootHandoffToken || null,
+        consumed: false
+      }
     };
 
     function setState(kind, message) {
@@ -2562,8 +2577,39 @@ public static class OperatorWebEndpointExtensions
       detailStateNode.textContent = message;
     }
 
+    function setHandoffState(kind, message) {
+      if (!handoffStateNode) {
+        return;
+      }
+
+      handoffStateNode.className = "state " + kind;
+      handoffStateNode.textContent = message;
+    }
+
     function titleize(value) {
       return value.replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    }
+
+    function describeFailureReason(reason) {
+      const normalized = (reason || "unknown_error").toLowerCase();
+      switch (normalized) {
+        case "auth_denied":
+          return "Access token is invalid. Enter a valid operator token and retry.";
+        case "session_expired":
+          return "Session expired. Refresh and authenticate again.";
+        case "handoff_token_invalid":
+          return "Open in Web handoff is invalid or expired. Return to Telegram and open the link again.";
+        case "session_active_tracked_person_mismatch":
+          return "Handoff tracked person differs from current session scope. Use Apply scope explicitly.";
+        case "session_scope_item_mismatch":
+          return "Handoff item differs from current session scope. Reopen from Telegram or change scope manually.";
+        case "tracked_person_not_found_or_inactive":
+          return "Tracked person is unavailable in the current bounded scope.";
+        case "scope_item_not_found":
+          return "Selected item is unavailable after refresh.";
+        default:
+          return reason || "unknown_error";
+      }
     }
 
     function formatUtc(value) {
@@ -2643,7 +2689,15 @@ public static class OperatorWebEndpointExtensions
         return "loading";
       }
 
-      return "empty";
+      if (normalizedLifecycle === "clarification_blocked") {
+        return "error";
+      }
+
+      if (normalizedLifecycle === "done") {
+        return "success";
+      }
+
+      return "success";
     }
 
     function formatTargetLifecycleSummary(recompute) {
@@ -2957,7 +3011,7 @@ public static class OperatorWebEndpointExtensions
       });
 
       syncQueueSelection(items);
-      setState("loading", "Queue loaded from bounded operator projection.");
+      setState("success", "Queue loaded from bounded operator projection.");
     }
 
     function clearDetail(message) {
@@ -3187,7 +3241,7 @@ public static class OperatorWebEndpointExtensions
         resetEvidenceState();
       }
 
-      setDetailState("loading", "Detail loaded for selected queue item.");
+      setDetailState("success", "Detail loaded for selected queue item.");
     }
 
     function setClarificationState(kind, message) {
@@ -3416,7 +3470,7 @@ public static class OperatorWebEndpointExtensions
           return;
         }
 
-        setDetailState("error", "Detail load failed: " + message);
+        setDetailState("error", "Detail load failed: " + describeFailureReason(message));
       }
     }
 
@@ -3453,6 +3507,44 @@ public static class OperatorWebEndpointExtensions
       } else {
         state.activeTrackedPersonId = selected;
       }
+    }
+
+    async function applyResolutionHandoffContextIfPresent() {
+      if (state.handoff.consumed) {
+        return;
+      }
+
+      if (!state.handoff.trackedPersonId
+        || !state.handoff.scopeItemKey
+        || !state.handoff.operatorSessionId
+        || !state.handoff.handoffToken) {
+        setHandoffState("empty", "Handoff: none.");
+        return;
+      }
+
+      const result = await operatorPostJson("/api/operator/resolution/handoff/consume", {
+        trackedPersonId: state.handoff.trackedPersonId,
+        scopeItemKey: state.handoff.scopeItemKey,
+        operatorSessionId: state.handoff.operatorSessionId,
+        activeMode: state.handoff.activeMode || "resolution_detail",
+        handoffToken: state.handoff.handoffToken,
+        targetApi: query.get("target_api") || null
+      });
+      if (!result.accepted) {
+        throw new Error(result.failureReason || "handoff_consume_rejected");
+      }
+
+      state.handoff.consumed = true;
+      state.bootTrackedPersonApplied = true;
+      state.activeTrackedPersonId = result.activeTrackedPersonId || state.handoff.trackedPersonId;
+      state.bootTrackedPersonId = state.activeTrackedPersonId || null;
+      state.bootScopeItemKey = result.activeScopeItemKey || state.handoff.scopeItemKey;
+      if (state.activeTrackedPersonId) {
+        trackedPersonSelect.value = state.activeTrackedPersonId;
+      }
+      setHandoffState(
+        "success",
+        "Handoff restored from Telegram. Tracked person and scoped item were applied to this session.");
     }
 
     async function loadQueue() {
@@ -3503,6 +3595,8 @@ public static class OperatorWebEndpointExtensions
         }
 
         if (state.activeTrackedPersonId) {
+          await applyResolutionHandoffContextIfPresent();
+
           if (state.bootTrackedPersonId
             && !state.bootTrackedPersonApplied
             && state.activeTrackedPersonId === state.bootTrackedPersonId) {
@@ -3518,7 +3612,7 @@ public static class OperatorWebEndpointExtensions
             if (bootstrapItem && bootstrapItem.scopeItemKey) {
               await selectScopeItem(bootstrapItem.scopeItemKey);
               state.bootScopeItemKey = null;
-              setState("empty", "Queue loaded and drilldown focused on scoped resolution item.");
+              setState("success", "Queue loaded and drilldown focused on scoped resolution item.");
             }
           }
         } else {
@@ -3528,7 +3622,9 @@ public static class OperatorWebEndpointExtensions
           clearDetail("Select a tracked person to inspect resolution detail.");
         }
       } catch (error) {
-        setState("error", "Resolution queue load failed: " + (error && error.message ? error.message : "unknown_error"));
+        const reason = error && error.message ? error.message : "unknown_error";
+        setHandoffState("error", "Handoff not applied: " + describeFailureReason(reason));
+        setState("error", "Resolution queue load failed: " + describeFailureReason(reason));
       }
     }
 
@@ -3543,7 +3639,8 @@ public static class OperatorWebEndpointExtensions
         clearDetail("Tracked person scope updated. Select an item to inspect detail.");
         await loadQueue();
       } catch (error) {
-        setState("error", "Scope update failed: " + (error && error.message ? error.message : "unknown_error"));
+        const reason = error && error.message ? error.message : "unknown_error";
+        setState("error", "Scope update failed: " + describeFailureReason(reason));
       }
     }
 
@@ -4119,6 +4216,8 @@ public static class OperatorWebEndpointExtensions
       items.forEach(function(item) {
         const card = document.createElement("article");
         card.className = "event-card";
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
         card.dataset.id = item.offlineEventId || "";
         const summary = item.summary || "Offline event";
         card.innerHTML =
@@ -4144,6 +4243,18 @@ public static class OperatorWebEndpointExtensions
           }
           selectOfflineEvent(item.offlineEventId);
         });
+        card.addEventListener("keydown", function(event) {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          if (!item.offlineEventId) {
+            return;
+          }
+
+          selectOfflineEvent(item.offlineEventId);
+        });
         eventsListNode.appendChild(card);
       });
 
@@ -4153,7 +4264,7 @@ public static class OperatorWebEndpointExtensions
         syncActiveCard();
       }
 
-      setState("loading", "Offline-event list loaded.");
+      setState("success", "Offline-event list loaded.");
     }
 
     function clearDetail(message) {
@@ -4321,8 +4432,10 @@ public static class OperatorWebEndpointExtensions
           }
 
           appState.detail = result.offlineEvent;
-          feedback.className = "state empty";
-          feedback.textContent = "Refinement saved. Event updated at " + formatUtc(result.offlineEvent.updatedAtUtc) + ".";
+          feedback.className = "state success";
+          feedback.textContent =
+            "Refinement saved. Event updated at " + formatUtc(result.offlineEvent.updatedAtUtc)
+            + (result.auditEventId ? " (audit " + result.auditEventId + ")." : ".");
           await loadEvents();
           await loadSelectedDetail();
         } catch (error) {
@@ -4371,7 +4484,7 @@ public static class OperatorWebEndpointExtensions
           }
 
           appState.detail = result.offlineEvent;
-          feedback.className = "state empty";
+          feedback.className = "state success";
           feedback.textContent =
             "Timeline linkage updated at " + formatUtc(result.offlineEvent.updatedAtUtc)
             + (result.auditEventId ? " (audit " + result.auditEventId + ")." : ".");
@@ -4427,7 +4540,7 @@ public static class OperatorWebEndpointExtensions
 
       detailContentNode.appendChild(renderClarificationHistory(detail.clarification || {}));
       detailContentNode.appendChild(renderRefinementForm(detail));
-      setDetailState("loading", "Offline-event detail loaded.");
+      setDetailState("success", "Offline-event detail loaded.");
       syncActiveCard();
     }
 
@@ -4520,7 +4633,8 @@ public static class OperatorWebEndpointExtensions
       try {
         await loadSelectedDetail();
       } catch (error) {
-        setDetailState("error", "Offline-event detail load failed: " + (error && error.message ? error.message : "unknown_error"));
+        const reason = error && error.message ? error.message : "unknown_error";
+        setDetailState("error", "Offline-event detail load failed: " + describeFailureReason(reason));
       }
     }
 
@@ -4533,7 +4647,8 @@ public static class OperatorWebEndpointExtensions
         await loadTrackedPersons();
         await loadEvents();
       } catch (error) {
-        setState("error", "Offline-event load failed: " + (error && error.message ? error.message : "unknown_error"));
+        const reason = error && error.message ? error.message : "unknown_error";
+        setState("error", "Offline-event load failed: " + describeFailureReason(reason));
       }
     }
 
@@ -4547,7 +4662,8 @@ public static class OperatorWebEndpointExtensions
         clearDetail("Tracked person scope updated. Select an offline event to inspect detail.");
         await loadEvents();
       } catch (error) {
-        setState("error", "Scope update failed: " + (error && error.message ? error.message : "unknown_error"));
+        const reason = error && error.message ? error.message : "unknown_error";
+        setState("error", "Scope update failed: " + describeFailureReason(reason));
       }
     }
 

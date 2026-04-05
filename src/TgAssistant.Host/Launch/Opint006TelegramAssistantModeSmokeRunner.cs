@@ -23,10 +23,11 @@ public static class Opint006TelegramAssistantModeSmokeRunner
         var assistantContextService = new StubAssistantContextAssemblyService(trackedPersonId, scopeKey, scopeItemKey);
         var workflow = new TelegramOperatorWorkflowService(
             Options.Create(new TelegramSettings { OwnerUserId = ownerUserId }),
-            Options.Create(new WebSettings { Url = "https://operator.example.test" }),
+            Options.Create(new WebSettings { Url = "https://operator.example.test", OperatorAccessToken = "opint-006-c-smoke-token" }),
             sessionStore,
             resolutionService,
-            new OperatorAssistantResponseGenerationService(),
+            new OperatorAlertPolicyService(),
+            new OperatorAssistantResponseGenerationService(Options.Create(new WebSettings { Url = "https://operator.example.test", OperatorAccessToken = "opint-006-c-smoke-token" })),
             assistantContextService,
             new NoopOperatorOfflineEventRepository(),
             new OfflineEventClarificationPolicy(),
@@ -331,7 +332,8 @@ public static class Opint006TelegramAssistantModeSmokeRunner
         private readonly Guid _trackedPersonId;
         private readonly string _scopeKey;
         private readonly string _scopeItemKey;
-        private readonly OperatorAssistantResponseGenerationService _responseGenerationService = new();
+        private readonly OperatorAssistantResponseGenerationService _responseGenerationService =
+            new(Options.Create(new WebSettings { Url = "https://operator.example.test", OperatorAccessToken = "opint-006-c-smoke-token" }));
 
         public StubAssistantContextAssemblyService(Guid trackedPersonId, string scopeKey, string scopeItemKey)
         {
@@ -464,18 +466,19 @@ public static class Opint006TelegramAssistantModeSmokeRunner
             CancellationToken ct = default)
             => Task.FromResult(new OperatorOfflineEventQueryResult());
 
-        public Task<OperatorOfflineEventRecord?> RefineWithinScopeAsync(
+        public Task<OperatorOfflineEventRefinementRecord?> RefineWithinScopeAsync(
             Guid offlineEventId,
             string scopeKey,
             Guid trackedPersonId,
             string? summary,
             string? recordingReference,
             bool clearRecordingReference,
+            string? refinementNote,
             OperatorIdentityContext operatorIdentity,
             OperatorSessionContext session,
             DateTime refinedAtUtc,
             CancellationToken ct = default)
-            => Task.FromResult<OperatorOfflineEventRecord?>(null);
+            => Task.FromResult<OperatorOfflineEventRefinementRecord?>(null);
 
         public Task<OperatorOfflineEventTimelineLinkageUpdateRecord?> UpdateTimelineLinkageWithinScopeAsync(
             Guid offlineEventId,

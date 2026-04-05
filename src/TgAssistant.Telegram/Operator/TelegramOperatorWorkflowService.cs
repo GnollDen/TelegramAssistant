@@ -981,7 +981,7 @@ public sealed class TelegramOperatorWorkflowService
         {
             return CreatePendingResolutionInputPrompt(
                 state,
-                "A resolution action input is in progress. Send explanation text or choose Cancel.");
+                "Пояснение к действию уже запрошено. Отправьте текст или нажмите «Отмена».");
         }
 
         var separatorIndex = actionPayload.IndexOf(':', StringComparison.Ordinal);
@@ -991,7 +991,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "Resolution action callback was invalid. Refresh the queue and retry.",
+                note: "Действие по карточке не распознано. Обновите очередь и попробуйте снова.",
                 ct);
         }
 
@@ -1003,7 +1003,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "That action is not supported by the bounded resolution contract.",
+                note: "Это действие недоступно в текущем bounded resolution contract.",
                 ct);
         }
 
@@ -1013,7 +1013,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "That card is no longer current. Refresh the queue and retry.",
+                note: "Эта карточка уже устарела. Обновите очередь и попробуйте снова.",
                 ct);
         }
 
@@ -1023,7 +1023,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: $"{FormatActionLabel(actionType)} is not available for this resolution item.",
+                note: $"Действие «{FormatActionLabel(actionType)}» недоступно для этой карточки.",
                 ct);
         }
 
@@ -1051,7 +1051,7 @@ public sealed class TelegramOperatorWorkflowService
             state,
             interaction,
             nowUtc,
-            note: $"{FormatActionLabel(actionType)} is not currently available in Telegram resolution mode.",
+            note: $"Действие «{FormatActionLabel(actionType)}» сейчас недоступно в Telegram-режиме решений.",
             ct);
     }
 
@@ -1084,7 +1084,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: $"{FormatActionLabel(actionType)} could not bind the current item: {detail.FailureReason ?? "resolution item unavailable"}.",
+                note: $"Не удалось привязать карточку для действия «{FormatActionLabel(actionType)}»: {FormatTelegramFailureReason(detail.FailureReason, "карточка недоступна")}.",
                 ct);
         }
 
@@ -1110,7 +1110,7 @@ public sealed class TelegramOperatorWorkflowService
 
         return CreatePendingResolutionInputPrompt(
             state,
-            $"Enter explanation for {FormatActionLabel(actionType)} on {binding.Title}. Send /cancel to abort.");
+            $"Отправьте короткое пояснение для действия «{FormatActionLabel(actionType)}» по карточке «{binding.Title}». /cancel отменяет ввод.");
     }
 
     private async Task<TelegramOperatorResponse> SubmitPendingResolutionInputAsync(
@@ -1130,14 +1130,14 @@ public sealed class TelegramOperatorWorkflowService
         {
             return CreatePendingResolutionInputPrompt(
                 state,
-                $"Explanation is required for {FormatActionLabel(pending.ActionType)}. Enter text or send /cancel.");
+                $"Для действия «{FormatActionLabel(pending.ActionType)}» нужно пояснение. Отправьте текст или /cancel.");
         }
 
         if (messageText.Length > MaxExplanationLength)
         {
             return CreatePendingResolutionInputPrompt(
                 state,
-                $"Explanation is too long ({messageText.Length} chars). Limit is {MaxExplanationLength}. Edit and resend or /cancel.");
+                $"Пояснение слишком длинное: {messageText.Length} символов. Лимит {MaxExplanationLength}. Сократите текст или /cancel.");
         }
 
         var explanation = messageText.Trim();
@@ -1162,11 +1162,12 @@ public sealed class TelegramOperatorWorkflowService
         state.PendingResolutionInput = null;
         state.Session.UnfinishedStep = null;
 
-        var note = action.Accepted
-            ? action.Action.Recompute?.Enqueued == true
-                ? $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}. Bounded recompute was enqueued."
-                : $"{FormatActionLabel(pending.ActionType)} accepted for {pending.ItemTitle}."
-            : $"{FormatActionLabel(pending.ActionType)} failed for {pending.ItemTitle}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
+        var note = BuildResolutionActionNote(
+            pending.ActionType,
+            pending.ItemTitle,
+            action.Accepted,
+            action.Action.Recompute?.Enqueued == true,
+            action.FailureReason ?? action.Action.FailureReason);
         return await RenderResolutionContextAsync(
             state,
             interaction,
@@ -1177,6 +1178,7 @@ public sealed class TelegramOperatorWorkflowService
             {
                 ActionType = pending.ActionType,
                 ItemTitle = pending.ItemTitle,
+                ScopeItemKey = pending.ScopeItemKey,
                 Accepted = action.Accepted,
                 Recompute = action.Action.Recompute,
                 BaselineQueueSnapshot = baselineQueueSnapshot
@@ -2085,11 +2087,12 @@ public sealed class TelegramOperatorWorkflowService
         state.Session = action.Session;
         state.SurfaceMode = TelegramOperatorSurfaceModes.Resolution;
 
-        var note = action.Accepted
-            ? action.Action.Recompute?.Enqueued == true
-                ? $"Approve accepted for {binding.Title}. Bounded recompute was enqueued."
-                : $"Approve accepted for {binding.Title}."
-            : $"Approve failed for {binding.Title}: {action.FailureReason ?? action.Action.FailureReason ?? "unknown error"}.";
+        var note = BuildResolutionActionNote(
+            ResolutionActionTypes.Approve,
+            binding.Title,
+            action.Accepted,
+            action.Action.Recompute?.Enqueued == true,
+            action.FailureReason ?? action.Action.FailureReason);
         return await RenderResolutionContextAsync(
             state,
             interaction,
@@ -2100,6 +2103,7 @@ public sealed class TelegramOperatorWorkflowService
             {
                 ActionType = ResolutionActionTypes.Approve,
                 ItemTitle = binding.Title,
+                ScopeItemKey = binding.ScopeItemKey,
                 Accepted = action.Accepted,
                 Recompute = action.Action.Recompute,
                 BaselineQueueSnapshot = baselineQueueSnapshot
@@ -2134,7 +2138,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: $"Evidence preview unavailable for {binding.Title}: {detail.FailureReason ?? "resolution item unavailable"}.",
+                note: $"Не удалось показать факты по карточке «{binding.Title}»: {FormatTelegramFailureReason(detail.FailureReason, "карточка недоступна")}.",
                 ct);
         }
 
@@ -2160,7 +2164,7 @@ public sealed class TelegramOperatorWorkflowService
             lines.Add("Связанные факты для этой карточки пока не спроецированы.");
         }
 
-        lines.Add("Для деталей: в веб.");
+        lines.Add("Подробнее: в веб.");
 
         return new TelegramOperatorResponse
         {
@@ -2217,7 +2221,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: $"Open Web handoff unavailable for {binding.Title}: {detail.FailureReason ?? "resolution item unavailable"}.",
+                note: $"Не удалось подготовить переход в веб для «{binding.Title}»: {FormatTelegramFailureReason(detail.FailureReason, "карточка недоступна")}.",
                 ct);
         }
 
@@ -2226,19 +2230,18 @@ public sealed class TelegramOperatorWorkflowService
         state.Session.ActiveScopeItemKey = binding.ScopeItemKey;
         state.Session.UnfinishedStep = null;
 
+        var handoffUrl = BuildResolutionOpenWebUrl(state.Session, item.ScopeItemKey, nowUtc);
         var handoffToken = BuildOpenWebHandoffToken(state.Session, item, nowUtc);
         var lines = new List<string>
         {
-            "Open Web Handoff",
-            "Use this bounded context in the web operator surface.",
-            $"tracked_person_id={state.Session.ActiveTrackedPersonId:D}",
-            $"scope_item_key={item.ScopeItemKey}",
-            $"operator_session_id={state.Session.OperatorSessionId}",
-            $"active_mode={OperatorModeTypes.ResolutionDetail}",
-            "target_api=/api/operator/resolution/detail/query",
-            $"handoff_token={handoffToken}",
-            "Legacy web routes are not used for this handoff."
+            "Переход в веб",
+            $"Карточка: {ResolveResolutionCardTitle(item)}",
+            "Откроется bounded detail-view по этой карточке с текущим контекстом сессии."
         };
+        lines.Add(
+            string.IsNullOrWhiteSpace(handoffUrl)
+                ? $"Ссылка не собрана. Проверьте конфигурацию Operator Web и handoff token ({(string.IsNullOrWhiteSpace(handoffToken) ? "не готов" : "готов")})."
+                : "Ссылка готова: в Operator Web сразу применятся активный человек, карточка и detail-режим.");
 
         return new TelegramOperatorResponse
         {
@@ -2250,6 +2253,19 @@ public sealed class TelegramOperatorWorkflowService
                     Text = string.Join(Environment.NewLine, lines),
                     Buttons =
                     [
+                        [
+                            string.IsNullOrWhiteSpace(handoffUrl)
+                                ? new TelegramOperatorButton
+                                {
+                                    Text = "Факты",
+                                    CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
+                                }
+                                : new TelegramOperatorButton
+                                {
+                                    Text = "Открыть в вебе",
+                                    Url = handoffUrl
+                                }
+                        ],
                         [
                             new TelegramOperatorButton
                             {
@@ -2391,7 +2407,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note ?? "Resolution mode requires an active tracked person.",
+                note ?? "Для режима решений нужен активный человек.",
                 callbackNotice: "Pick tracked person",
                 ct);
         }
@@ -2426,12 +2442,12 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: $"Resolution context expired: {queue.FailureReason ?? "unknown error"}. Re-select the tracked person.",
+                note: $"Контекст решений сброшен: {FormatTelegramFailureReason(queue.FailureReason, "неизвестная ошибка")}. Выберите человека заново.",
                 callbackNotice: "Resolution reset",
                 ct);
         }
 
-        var cardMessages = BuildResolutionCardMessages(state, queue.Queue.Items);
+        var cardMessages = BuildResolutionCardMessages(state, queue.Queue.Items, nowUtc);
         var lines = new List<string>();
         if (!string.IsNullOrWhiteSpace(note))
         {
@@ -2439,14 +2455,13 @@ public sealed class TelegramOperatorWorkflowService
             lines.Add(string.Empty);
         }
 
-        lines.Add("Resolution Mode");
-        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "unknown"}");
-        lines.Add($"Open items: {queue.Queue.TotalOpenCount}");
-        lines.Add($"Visible in current summary: {queue.Queue.FilteredCount}");
+        lines.Add("Режим решений");
+        lines.Add($"Активный человек: {state.ActiveTrackedPersonDisplayName ?? "не выбран"}");
+        lines.Add($"Открыто: {queue.Queue.TotalOpenCount} · Показано: {queue.Queue.FilteredCount}");
 
         if (queue.Queue.ItemTypeCounts.Count > 0)
         {
-            lines.Add($"Top item types: {FormatFacetCounts(queue.Queue.ItemTypeCounts)}");
+            lines.Add($"Типы: {FormatFacetCounts(queue.Queue.ItemTypeCounts)}");
         }
 
         if (queue.Queue.RuntimeState != null)
@@ -2458,11 +2473,11 @@ public sealed class TelegramOperatorWorkflowService
 
         if (queue.Queue.Items.Count == 0)
         {
-            lines.Add("No open resolution items are currently projected for this bounded scope.");
+            lines.Add("В этой bounded области открытых карточек сейчас нет.");
         }
         else
         {
-            lines.Add($"Showing compact cards: {cardMessages.Count} of {queue.Queue.Items.Count} visible items.");
+            lines.Add($"Карточек: {cardMessages.Count} из {queue.Queue.Items.Count}.");
         }
 
         var messages = new List<TelegramOperatorMessage>
@@ -2696,43 +2711,51 @@ public sealed class TelegramOperatorWorkflowService
         }
 
         lines.Add(string.Empty);
-        lines.Add($"Post-action feedback: {FormatActionLabel(actionFeedback.ActionType)} on {actionFeedback.ItemTitle}");
+        lines.Add($"После действия: {FormatActionLabel(actionFeedback.ActionType)} · {TrimForInline(actionFeedback.ItemTitle, 84)}");
         if (!actionFeedback.Accepted)
         {
-            lines.Add("Recompute lifecycle: not started (action was not accepted).");
+            lines.Add("Результат: действие не принято.");
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(actionFeedback.ScopeItemKey))
+        {
+            var stillVisible = queue.Items.Any(item => string.Equals(item.ScopeItemKey, actionFeedback.ScopeItemKey, StringComparison.Ordinal));
+            lines.Add(stillVisible
+                ? "Карточка осталась в очереди: нужен дополнительный разбор."
+                : "Карточка ушла из текущей очереди.");
         }
 
         var recompute = actionFeedback.Recompute;
         if (recompute == null)
         {
-            lines.Add("Recompute lifecycle: unavailable.");
+            lines.Add("Пересчет: статус недоступен.");
             return;
         }
 
         lines.Add(
-            $"Recompute lifecycle: {FormatRecomputeLifecycleLabel(recompute.LifecycleStatus)}"
+            $"Пересчет: {FormatRecomputeLifecycleLabel(recompute.LifecycleStatus)}"
             + (recompute.LifecycleUpdatedAtUtc.HasValue
-                ? $" (updated {FormatUtc(recompute.LifecycleUpdatedAtUtc.Value)})"
+                ? $" ({FormatUtc(recompute.LifecycleUpdatedAtUtc.Value)})"
                 : string.Empty));
         if (recompute.CompletedAtUtc.HasValue)
         {
-            lines.Add($"Recompute completed: {FormatUtc(recompute.CompletedAtUtc.Value)}");
+            lines.Add($"Завершен: {FormatUtc(recompute.CompletedAtUtc.Value)}");
         }
 
         if (!string.IsNullOrWhiteSpace(recompute.LastResultStatus))
         {
-            lines.Add($"Recompute result: {recompute.LastResultStatus}");
+            lines.Add($"Итог пересчета: {TrimForInline(recompute.LastResultStatus, 96)}");
         }
 
         if (!string.IsNullOrWhiteSpace(recompute.FailureReason))
         {
-            lines.Add($"Recompute failure: {recompute.FailureReason}");
+            lines.Add($"Сбой пересчета: {FormatTelegramFailureReason(recompute.FailureReason, "неизвестная ошибка")}");
         }
 
         if (actionFeedback.BaselineQueueSnapshot == null)
         {
-            lines.Add("Related-conflict delta: unavailable.");
+            lines.Add("Связанные конфликты: дельта недоступна.");
             return;
         }
 
@@ -2745,9 +2768,7 @@ public sealed class TelegramOperatorWorkflowService
             .Except(actionFeedback.BaselineQueueSnapshot.RelatedConflictKeys, StringComparer.Ordinal)
             .Count();
 
-        lines.Add($"Related conflicts: unresolved {unresolved}");
-        lines.Add($"Auto-resolved since action: {autoResolved}");
-        lines.Add($"Newly-emerged since action: {newlyEmerged}");
+        lines.Add($"Связанные конфликты: осталось {unresolved}, закрыто {autoResolved}, новых {newlyEmerged}");
     }
 
     private List<TelegramOperatorMessage> BuildAlertCardMessages(
@@ -2798,7 +2819,8 @@ public sealed class TelegramOperatorWorkflowService
 
     private List<TelegramOperatorMessage> BuildResolutionCardMessages(
         TelegramOperatorConversationState state,
-        IReadOnlyList<ResolutionItemSummary> items)
+        IReadOnlyList<ResolutionItemSummary> items,
+        DateTime nowUtc)
     {
         state.ResolutionCardBindings.Clear();
         state.ResolutionCardGeneration++;
@@ -2814,7 +2836,8 @@ public sealed class TelegramOperatorWorkflowService
                 ScopeItemKey = item.ScopeItemKey,
                 ItemType = item.ItemType,
                 Title = ResolveResolutionCardTitle(item),
-                AvailableActions = [.. item.AvailableActions.Select(ResolutionActionTypes.Normalize)]
+                AvailableActions = [.. item.AvailableActions.Select(ResolutionActionTypes.Normalize)],
+                OpenWebUrl = BuildResolutionOpenWebUrl(state.Session, item.ScopeItemKey, nowUtc)
             };
             state.ResolutionCardBindings[token] = binding;
             messages.Add(
@@ -3214,13 +3237,25 @@ public sealed class TelegramOperatorWorkflowService
         var buttons = new List<List<TelegramOperatorButton>>();
         var available = binding.AvailableActions.ToHashSet(StringComparer.Ordinal);
 
-        var primaryRow = BuildActionRow(binding.Token, available, ResolutionActionTypes.Approve, ResolutionActionTypes.Reject, ResolutionActionTypes.Defer);
+        var primaryRow = BuildActionRow(
+            binding.Token,
+            available,
+            binding.OpenWebUrl,
+            ResolutionActionTypes.Approve,
+            ResolutionActionTypes.Reject,
+            ResolutionActionTypes.Defer);
         if (primaryRow.Count > 0)
         {
             buttons.Add(primaryRow);
         }
 
-        var secondaryRow = BuildActionRow(binding.Token, available, ResolutionActionTypes.Clarify, ResolutionActionTypes.Evidence, ResolutionActionTypes.OpenWeb);
+        var secondaryRow = BuildActionRow(
+            binding.Token,
+            available,
+            binding.OpenWebUrl,
+            ResolutionActionTypes.Clarify,
+            ResolutionActionTypes.Evidence,
+            ResolutionActionTypes.OpenWeb);
         if (secondaryRow.Count > 0)
         {
             buttons.Add(secondaryRow);
@@ -3260,14 +3295,29 @@ public sealed class TelegramOperatorWorkflowService
     private static List<TelegramOperatorButton> BuildActionRow(
         string token,
         IReadOnlySet<string> available,
+        string? openWebUrl,
         params string[] actionTypes)
     {
         return actionTypes
             .Where(available.Contains)
-            .Select(actionType => new TelegramOperatorButton
+            .Select(actionType =>
             {
-                Text = FormatActionLabel(actionType),
-                CallbackData = $"{ResolutionActionCallbackPrefix}{actionType}:{token}"
+                var normalizedAction = ResolutionActionTypes.Normalize(actionType);
+                if (string.Equals(normalizedAction, ResolutionActionTypes.OpenWeb, StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(openWebUrl))
+                {
+                    return new TelegramOperatorButton
+                    {
+                        Text = FormatActionLabel(actionType),
+                        Url = openWebUrl
+                    };
+                }
+
+                return new TelegramOperatorButton
+                {
+                    Text = FormatActionLabel(actionType),
+                    CallbackData = $"{ResolutionActionCallbackPrefix}{actionType}:{token}"
+                };
             })
             .ToList();
     }
@@ -3319,6 +3369,35 @@ public sealed class TelegramOperatorWorkflowService
 
     private static string FormatUtc(DateTime value)
         => value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'");
+
+    private static string BuildResolutionActionNote(
+        string actionType,
+        string itemTitle,
+        bool accepted,
+        bool recomputeEnqueued,
+        string? failureReason)
+    {
+        var normalizedTitle = TrimForInline(itemTitle, 84);
+        if (!accepted)
+        {
+            return $"Действие «{FormatActionLabel(actionType)}» по «{normalizedTitle}» не принято: {FormatTelegramFailureReason(failureReason, "неизвестная ошибка")}.";
+        }
+
+        return recomputeEnqueued
+            ? $"Действие «{FormatActionLabel(actionType)}» по «{normalizedTitle}» принято. Пересчет поставлен в очередь."
+            : $"Действие «{FormatActionLabel(actionType)}» по «{normalizedTitle}» принято.";
+    }
+
+    private static string FormatTelegramFailureReason(string? failureReason, string fallback)
+    {
+        var normalized = NormalizeOptional(failureReason);
+        if (normalized == null)
+        {
+            return fallback;
+        }
+
+        return TrimForInline(normalized.Replace('_', ' '), 96);
+    }
 
     private static string BuildActionRequestId(long chatId, string actionType)
         => $"telegram:{chatId}:{ResolutionActionTypes.Normalize(actionType)}:{Guid.NewGuid():N}";
@@ -4133,6 +4212,7 @@ public sealed class TelegramOperatorWorkflowService
     {
         public string ActionType { get; init; } = string.Empty;
         public string ItemTitle { get; init; } = string.Empty;
+        public string ScopeItemKey { get; init; } = string.Empty;
         public bool Accepted { get; init; }
         public ResolutionRecomputeContract? Recompute { get; init; }
         public ResolutionQueueDeltaSnapshot? BaselineQueueSnapshot { get; init; }

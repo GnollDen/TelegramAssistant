@@ -66,6 +66,7 @@ services:
       Telegram__ApiId: ${TG_API_ID}
       Telegram__ApiHash: ${TG_API_HASH}
       Telegram__PhoneNumber: ${TG_PHONE}
+      Telegram__BotToken: ${TG_BOT_TOKEN}
       Telegram__OwnerUserId: ${TG_OWNER_ID:?TG_OWNER_ID is required for ingest runtime role}
       Telegram__MonitoredChats: ${TG_MONITORED_CHATS}
       Gemini__ApiKey: ${GEMINI_API_KEY}

@@ -1,4 +1,5 @@
-using System.Text;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -10,6 +11,13 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
     private const string DefaultMeansFallback = "Current interpretation remains uncertain due to limited bounded evidence.";
     private const string DefaultRecommendationFallback = "Ask one clarifying follow-up question before taking action.";
     private const string DefaultShortAnswerFallback = "Available bounded evidence is limited for a high-confidence answer.";
+
+    private readonly WebSettings _webSettings;
+
+    public OperatorAssistantResponseGenerationService(IOptions<WebSettings> webSettings)
+    {
+        _webSettings = webSettings.Value ?? new WebSettings();
+    }
 
     public OperatorAssistantResponseEnvelope BuildResponse(
         OperatorAssistantResponseGenerationRequest request,
@@ -70,7 +78,7 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
                 ScopeItemKey = scopeItemKey,
                 ActiveMode = NormalizeOptional(request.OpenInWebActiveMode) ?? OperatorModeTypes.ResolutionDetail,
                 HandoffToken = NormalizeOptional(request.OpenInWebHandoffToken)
-                    ?? BuildHandoffToken(request.TrackedPersonId, scopeItemKey, operatorSessionId)
+                    ?? BuildHandoffToken(request.TrackedPersonId, scopeItemKey, operatorSessionId, generatedAt)
             },
             Guardrails = new OperatorAssistantGuardrailContract
             {
@@ -294,16 +302,21 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string BuildHandoffToken(Guid trackedPersonId, string scopeItemKey, string operatorSessionId)
+    private string BuildHandoffToken(Guid trackedPersonId, string scopeItemKey, string operatorSessionId, DateTime generatedAtUtc)
     {
-        var payload = string.Join(
-            "|",
-            "opint_assistant",
-            trackedPersonId.ToString("D"),
+        var signingSecret = OperatorHandoffTokenCodec.ResolveSigningSecret(_webSettings);
+        if (string.IsNullOrWhiteSpace(signingSecret))
+        {
+            return string.Empty;
+        }
+
+        return OperatorHandoffTokenCodec.CreateToken(
+            OperatorHandoffTokenCodec.AssistantResolutionContext,
+            trackedPersonId,
             scopeItemKey,
-            operatorSessionId);
-        var bytes = Encoding.UTF8.GetBytes(payload);
-        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            operatorSessionId,
+            signingSecret,
+            generatedAtUtc);
     }
 
     private static string FormatLine(OperatorAssistantStatement statement)

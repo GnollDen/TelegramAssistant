@@ -10,7 +10,7 @@ services:
     network_mode: "host"
     env_file:
       - ../.env
-    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=ingest,ops"]
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=ingest"]
     restart: unless-stopped
 
   tga-stage5:
@@ -30,7 +30,7 @@ services:
     network_mode: "host"
     env_file:
       - ../.env
-    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=stage6"]
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=ops"]
     restart: unless-stopped
 
   tga-web:
@@ -49,7 +49,7 @@ services:
       Web__OperatorIdentity: ${WEB_OPERATOR_IDENTITY:-web-operator}
       Web__DefaultCaseId: ${WEB_DEFAULT_CASE_ID:-0}
       Web__DefaultChatId: ${WEB_DEFAULT_CHAT_ID:-0}
-    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=web,ops"]
+    command: ["dotnet", "TgAssistant.Host.dll", "--runtime-role=ops"]
     restart: unless-stopped
 
   tga-mcp:

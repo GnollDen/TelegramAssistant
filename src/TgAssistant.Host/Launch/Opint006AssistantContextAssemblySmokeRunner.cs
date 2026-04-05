@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
@@ -9,9 +11,10 @@ public static class Opint006AssistantContextAssemblySmokeRunner
     public static async Task RunAsync(CancellationToken ct = default)
     {
         var trackedPersonId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var responseService = new OperatorAssistantResponseGenerationService(Options.Create(new WebSettings()));
         var service = new OperatorAssistantContextAssemblyService(
             new StubResolutionReadService(trackedPersonId),
-            new OperatorAssistantResponseGenerationService());
+            responseService);
 
         var session = new OperatorSessionContext
         {
@@ -50,7 +53,7 @@ public static class Opint006AssistantContextAssemblySmokeRunner
             throw new InvalidOperationException("OPINT-006-B2 smoke failed: read-model audit entries are missing or not scope-bounded.");
         }
 
-        var rendered = new OperatorAssistantResponseGenerationService().RenderTelegram(response);
+        var rendered = responseService.RenderTelegram(response);
         if (!rendered.Contains("Trust: ", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("OPINT-006-B2 smoke failed: rendered output missing terminal trust line.");

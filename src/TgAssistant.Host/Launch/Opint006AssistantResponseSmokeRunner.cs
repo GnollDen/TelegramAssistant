@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
 
@@ -7,7 +9,7 @@ public static class Opint006AssistantResponseSmokeRunner
 {
     public static void Run()
     {
-        var service = new OperatorAssistantResponseGenerationService();
+        var service = new OperatorAssistantResponseGenerationService(Options.Create(new WebSettings()));
         var trackedPersonId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var request = new OperatorAssistantResponseGenerationRequest
         {
