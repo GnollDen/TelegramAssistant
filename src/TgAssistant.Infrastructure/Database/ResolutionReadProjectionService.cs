@@ -235,6 +235,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             request.EvidenceSortDirection,
             request.EvidenceLimit,
             ct);
+        ApplyEvidenceRelevanceHints(match, evidence);
+        var evidenceRationaleSummary = BuildEvidenceRationaleSummary(match, evidence);
+        var autoResolutionGap = BuildAutoResolutionGap(match);
+        var operatorDecisionFocus = BuildOperatorDecisionFocus(match);
 
         return new ResolutionDetailResult
         {
@@ -265,6 +269,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 SourceKind = match.SourceKind,
                 SourceRef = match.SourceRef,
                 RequiredAction = match.RequiredAction,
+                EvidenceRationaleSummary = evidenceRationaleSummary,
+                AutoResolutionGap = autoResolutionGap,
+                OperatorDecisionFocus = operatorDecisionFocus,
+                RationaleIsHeuristic = true,
                 Notes = match.Notes,
                 Evidence = evidence
             }
@@ -1113,6 +1121,133 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private static string BuildContradictionEvidenceHint(int contradictionCount, int evidenceCount)
         => $"Есть {FormatCountRu(contradictionCount, "маркер противоречия", "маркера противоречия", "маркеров противоречия")} и {FormatCountRu(evidenceCount, "связанный факт", "связанных факта", "связанных фактов")}.";
+
+    private static void ApplyEvidenceRelevanceHints(
+        ProjectedResolutionItem item,
+        List<ResolutionEvidenceSummary> evidence)
+    {
+        for (var index = 0; index < evidence.Count; index++)
+        {
+            var entry = evidence[index];
+            entry.RelevanceHint = BuildEvidenceRelevanceHint(item, entry);
+            entry.RelevanceHintIsHeuristic = true;
+        }
+    }
+
+    private static string BuildEvidenceRationaleSummary(
+        ProjectedResolutionItem item,
+        IReadOnlyList<ResolutionEvidenceSummary> evidence)
+    {
+        var familyRu = DescribeFamilyRu(item.Summary.AffectedFamily);
+        var signalSummary = item.Summary.ItemType switch
+        {
+            ResolutionItemTypes.Contradiction => "система вероятно видит конфликтующие сигналы",
+            ResolutionItemTypes.Clarification or ResolutionItemTypes.BlockedBranch => "система вероятно видит неоднозначность и зависимость от уточнения",
+            ResolutionItemTypes.MissingData => "система вероятно видит недостаточную или неполную опору",
+            _ => "система вероятно видит риск, который нельзя безопасно закрыть автоматически"
+        };
+        var countSummary = evidence.Count > 0
+            ? $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как опорные сигналы."
+            : "Опорные сообщения в текущей выдаче не выделились.";
+        return $"По теме «{familyRu}» {signalSummary}. {countSummary} Это эвристическое объяснение выбора evidence.";
+    }
+
+    private static string BuildAutoResolutionGap(ProjectedResolutionItem item)
+    {
+        return item.Summary.ItemType switch
+        {
+            ResolutionItemTypes.Clarification or ResolutionItemTypes.BlockedBranch
+                => "Авторазрешение остановлено: не хватает однозначного ответа для продолжения ветки.",
+            ResolutionItemTypes.Contradiction
+                => "Авторазрешение остановлено: конфликтующие сигналы не удалось согласовать безопасно.",
+            ResolutionItemTypes.MissingData
+                => "Авторазрешение остановлено: опоры недостаточно для устойчивого вывода.",
+            _ => "Авторазрешение остановлено: риск ошибки выше допустимого без ручной проверки."
+        };
+    }
+
+    private static string BuildOperatorDecisionFocus(ProjectedResolutionItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Summary.WhatToDoPrompt))
+        {
+            return EnsureSentence(item.Summary.WhatToDoPrompt);
+        }
+
+        if (string.Equals(item.RequiredAction, "clarify", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Дайте короткое уточнение, чтобы снять блокировку ветки.";
+        }
+
+        return item.Summary.RecommendedNextAction switch
+        {
+            "clarify" => "Дайте bounded-уточнение и зафиксируйте, какой вариант считать корректным.",
+            "evidence" => "Проверьте, достаточно ли опоры для решения: подтвердить, отклонить или отложить.",
+            "open-web" => "Проверьте влияние на текущий контур и выберите безопасное ручное решение.",
+            _ => "Примите bounded-решение по текущему review item и зафиксируйте объяснение."
+        };
+    }
+
+    private static string BuildEvidenceRelevanceHint(ProjectedResolutionItem item, ResolutionEvidenceSummary evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence.SenderDisplay))
+        {
+            return "Индикатор нехватки контекста: не удалось надежно привязать отправителя.";
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.Contradiction)
+        {
+            return "Может поддерживать конфликт: версия из этого сообщения расходится с другими сигналами.";
+        }
+
+        if (HasNoteKind(item, "normalization_issue"))
+        {
+            return "Фраза чувствительна к нормализации: трактовка может меняться после уточнения формулировки.";
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.Clarification
+            || item.Summary.ItemType == ResolutionItemTypes.BlockedBranch)
+        {
+            return "Индикатор неоднозначности: без дополнительного контекста смысл остается неустойчивым.";
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.MissingData)
+        {
+            return evidence.TrustFactor <= 0.45f
+                ? "Слабый поддерживающий сигнал: одного сообщения недостаточно для автоматического вывода."
+                : "Индикатор неполного контекста: сигнал есть, но опоры для авто-решения недостаточно.";
+        }
+
+        if (ContainsEmotionalCue(evidence.Summary))
+        {
+            return "Эмоциональный сигнал без стабильного контекста: нужен ручной разбор перед решением.";
+        }
+
+        if (evidence.TrustFactor <= 0.45f)
+        {
+            return "Слабый поддерживающий сигнал: уверенность ограничена, поэтому решение оставлено оператору.";
+        }
+
+        return "Опорный сигнал для текущего review item; используется как часть эвристической проверки.";
+    }
+
+    private static bool HasNoteKind(ProjectedResolutionItem item, string kind)
+        => item.Notes.Any(x => string.Equals(x.Kind, kind, StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsEmotionalCue(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        var text = summary.Trim();
+        return text.Contains("любл", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("обид", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("зл", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("страш", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("рад", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("трев", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string BuildSecondaryText(float trustFactor, string status, DateTime updatedAtUtc)
         => $"Доверие {FormatTrustPercentRu(trustFactor)} · {DescribeStatusRu(status)} · обновлено {updatedAtUtc:yyyy-MM-dd HH:mm} UTC";

@@ -136,6 +136,10 @@ public class ResolutionItemDetail : ResolutionItemSummary
     public string SourceKind { get; set; } = string.Empty;
     public string SourceRef { get; set; } = string.Empty;
     public string? RequiredAction { get; set; }
+    public string EvidenceRationaleSummary { get; set; } = string.Empty;
+    public string AutoResolutionGap { get; set; } = string.Empty;
+    public string OperatorDecisionFocus { get; set; } = string.Empty;
+    public bool RationaleIsHeuristic { get; set; } = true;
     public List<ResolutionDetailNote> Notes { get; set; } = [];
     public List<ResolutionEvidenceSummary> Evidence { get; set; } = [];
 }
@@ -155,4 +159,6 @@ public class ResolutionEvidenceSummary
     public string? SenderDisplay { get; set; }
     public string? SourceRef { get; set; }
     public string? SourceLabel { get; set; }
+    public string RelevanceHint { get; set; } = string.Empty;
+    public bool RelevanceHintIsHeuristic { get; set; } = true;
 }

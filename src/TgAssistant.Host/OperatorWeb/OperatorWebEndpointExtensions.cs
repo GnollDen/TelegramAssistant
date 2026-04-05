@@ -3073,6 +3073,10 @@ public static class OperatorWebEndpointExtensions
       const operatorSummary = item.whatHappened || item.summary || "No summary.";
       const operatorWhy = item.whyOperatorAnswerNeeded || item.whyItMatters || "Not provided.";
       const operatorPrompt = item.whatToDoPrompt || "";
+      const evidenceRationaleSummary = item.evidenceRationaleSummary || "Система отобрала эти сообщения как опору для текущего review item.";
+      const autoResolutionGap = item.autoResolutionGap || "Автоматический контур остановился и требует ручного решения.";
+      const operatorDecisionFocus = item.operatorDecisionFocus || operatorPrompt || "Нужно bounded-решение оператора по текущему item.";
+      const rationaleIsHeuristic = item.rationaleIsHeuristic !== false;
 
       const summaryBlock = document.createElement("section");
       summaryBlock.className = "detail-block";
@@ -3082,6 +3086,16 @@ public static class OperatorWebEndpointExtensions
         "<p><strong>Почему нужен ответ оператора:</strong> " + operatorWhy + "</p>" +
         (operatorPrompt ? "<p><strong>Что сделать:</strong> " + operatorPrompt + "</p>" : "");
       detailContentNode.appendChild(summaryBlock);
+
+      const rationaleBlock = document.createElement("section");
+      rationaleBlock.className = "detail-block";
+      rationaleBlock.innerHTML =
+        "<h4>Как это связано с проблемой</h4>" +
+        "<p><strong>Что система видит в evidence:</strong> " + evidenceRationaleSummary + "</p>" +
+        "<p><strong>Почему не auto-resolved:</strong> " + autoResolutionGap + "</p>" +
+        "<p><strong>Какое решение нужно сейчас:</strong> " + operatorDecisionFocus + "</p>" +
+        (rationaleIsHeuristic ? "<p class='muted'>Формулировки выше даны как bounded эвристика и не претендуют на полную семантическую интерпретацию.</p>" : "");
+      detailContentNode.appendChild(rationaleBlock);
 
       const statusBlock = document.createElement("section");
       statusBlock.className = "detail-block";
@@ -3117,6 +3131,11 @@ public static class OperatorWebEndpointExtensions
       evidenceChip.className = "chip";
       evidenceChip.textContent = "Bounded summaries: " + ((Array.isArray(item.evidence) ? item.evidence.length : 0) || 0);
       evidenceInline.appendChild(evidenceChip);
+
+      const evidenceSummary = document.createElement("p");
+      evidenceSummary.className = "muted";
+      evidenceSummary.textContent = "Почему эти сообщения показаны: " + evidenceRationaleSummary;
+      evidenceBlock.appendChild(evidenceSummary);
 
       const evidenceButton = document.createElement("button");
       evidenceButton.type = "button";
@@ -3735,6 +3754,12 @@ public static class OperatorWebEndpointExtensions
       evidenceId.innerHTML = "<strong>Evidence ID:</strong> " + (entry.evidenceItemId || "n/a");
       evidenceFocusNode.appendChild(evidenceId);
 
+      const relevance = document.createElement("p");
+      relevance.innerHTML = "<strong>Почему важно:</strong> "
+        + (entry.relevanceHint || "Опорный сигнал для текущего review item.")
+        + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
+      evidenceFocusNode.appendChild(relevance);
+
       evidencePrevButton.disabled = index <= 0;
       evidenceNextButton.disabled = index >= entries.length - 1;
     }
@@ -3785,9 +3810,15 @@ public static class OperatorWebEndpointExtensions
         const sender = document.createElement("p");
         sender.className = "muted";
         sender.textContent = "Отправитель: " + (entry.senderDisplay || "не определен");
+        const relevance = document.createElement("p");
+        relevance.className = "muted";
+        relevance.textContent = "Почему важно: "
+          + (entry.relevanceHint || "Опорный сигнал для текущего review item.")
+          + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
         card.appendChild(summary);
         card.appendChild(meta);
         card.appendChild(sender);
+        card.appendChild(relevance);
         card.appendChild(prov);
         card.addEventListener("click", function() {
           selectEvidence(index);
