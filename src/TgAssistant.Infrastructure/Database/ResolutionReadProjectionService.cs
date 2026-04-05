@@ -1553,6 +1553,9 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                         join sourceObject in db.SourceObjects.AsNoTracking()
                             on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
                         from sourceObject in sourceObjects.DefaultIfEmpty()
+                        join message in db.Messages.AsNoTracking()
+                            on sourceObject != null ? sourceObject.SourceMessageId : null equals (long?)message.Id into messages
+                        from message in messages.DefaultIfEmpty()
                         where durableMetadataIds.Contains(link.DurableObjectMetadataId)
                         select new EvidenceProjectionRow
                         {
@@ -1561,6 +1564,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                             Confidence = evidence.Confidence,
                             ObservedAt = evidence.ObservedAt,
                             CreatedAt = evidence.CreatedAt,
+                            SenderDisplay = message != null ? message.SenderName : null,
                             SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
                             SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
                         };
@@ -1575,6 +1579,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 Summary = string.IsNullOrWhiteSpace(x.SummaryText) ? x.Id.ToString("D") : x.SummaryText.Trim(),
                 TrustFactor = Clamp01(x.Confidence),
                 ObservedAtUtc = x.ObservedAt?.ToUniversalTime(),
+                SenderDisplay = NormalizeSenderDisplay(x.SenderDisplay),
                 SourceRef = x.SourceRef,
                 SourceLabel = x.SourceLabel
             }).ToList();
@@ -1591,6 +1596,9 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                           join sourceObject in db.SourceObjects.AsNoTracking()
                               on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
                           from sourceObject in sourceObjects.DefaultIfEmpty()
+                          join message in db.Messages.AsNoTracking()
+                              on sourceObject != null ? sourceObject.SourceMessageId : null equals (long?)message.Id into messages
+                          from message in messages.DefaultIfEmpty()
                           where personLink.ScopeKey == trackedPerson.ScopeKey
                               && personLink.PersonId == trackedPerson.PersonId
                           select new EvidenceProjectionRow
@@ -1600,6 +1608,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                               Confidence = evidence.Confidence,
                               ObservedAt = evidence.ObservedAt,
                               CreatedAt = evidence.CreatedAt,
+                              SenderDisplay = message != null ? message.SenderName : null,
                               SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
                               SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
                           };
@@ -1614,9 +1623,17 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             Summary = string.IsNullOrWhiteSpace(x.SummaryText) ? x.Id.ToString("D") : x.SummaryText.Trim(),
             TrustFactor = Clamp01(x.Confidence),
             ObservedAtUtc = x.ObservedAt?.ToUniversalTime(),
+            SenderDisplay = NormalizeSenderDisplay(x.SenderDisplay),
             SourceRef = x.SourceRef,
             SourceLabel = x.SourceLabel
         }).ToList();
+    }
+
+    private static string? NormalizeSenderDisplay(string? senderDisplay)
+    {
+        return string.IsNullOrWhiteSpace(senderDisplay)
+            ? null
+            : senderDisplay.Trim();
     }
 
     private static IQueryable<EvidenceProjectionRow> ApplyEvidenceOrdering(
@@ -1751,6 +1768,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         public float Confidence { get; set; }
         public DateTime? ObservedAt { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string? SenderDisplay { get; set; }
         public string? SourceRef { get; set; }
         public string? SourceLabel { get; set; }
     }

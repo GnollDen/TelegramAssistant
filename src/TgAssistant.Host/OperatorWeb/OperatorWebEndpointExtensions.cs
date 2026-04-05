@@ -2967,8 +2967,12 @@ public static class OperatorWebEndpointExtensions
         const top = document.createElement("div");
         top.className = "item-top";
 
+        const operatorTitle = item.humanShortTitle || item.title || item.scopeItemKey;
+        const operatorSummary = item.whatHappened || item.summary || "No summary.";
+        const operatorWhy = item.whyOperatorAnswerNeeded || item.whyItMatters || "Not provided.";
+
         const title = document.createElement("h3");
-        title.textContent = item.title || item.scopeItemKey;
+        title.textContent = operatorTitle;
 
         const priority = document.createElement("strong");
         const priorityValue = (item.priority || "unknown").toLowerCase();
@@ -2980,12 +2984,12 @@ public static class OperatorWebEndpointExtensions
         card.appendChild(top);
 
         const summary = document.createElement("p");
-        summary.textContent = item.summary || "No summary.";
+        summary.textContent = operatorSummary;
         card.appendChild(summary);
 
         const why = document.createElement("p");
         why.className = "muted";
-        why.textContent = "Why it matters: " + (item.whyItMatters || "Not provided.");
+        why.textContent = "Почему нужен ответ оператора: " + operatorWhy;
         card.appendChild(why);
 
         const meta = document.createElement("div");
@@ -3065,12 +3069,18 @@ public static class OperatorWebEndpointExtensions
       }
       state.selectedDetailItem = item;
 
+      const operatorTitle = item.humanShortTitle || item.title || item.scopeItemKey || "Untitled item";
+      const operatorSummary = item.whatHappened || item.summary || "No summary.";
+      const operatorWhy = item.whyOperatorAnswerNeeded || item.whyItMatters || "Not provided.";
+      const operatorPrompt = item.whatToDoPrompt || "";
+
       const summaryBlock = document.createElement("section");
       summaryBlock.className = "detail-block";
       summaryBlock.innerHTML =
-        "<h4>" + (item.title || item.scopeItemKey || "Untitled item") + "</h4>" +
-        "<p><strong>Summary:</strong> " + (item.summary || "No summary.") + "</p>" +
-        "<p><strong>Why it matters:</strong> " + (item.whyItMatters || "Not provided.") + "</p>";
+        "<h4>" + operatorTitle + "</h4>" +
+        "<p><strong>Что произошло:</strong> " + operatorSummary + "</p>" +
+        "<p><strong>Почему нужен ответ оператора:</strong> " + operatorWhy + "</p>" +
+        (operatorPrompt ? "<p><strong>Что сделать:</strong> " + operatorPrompt + "</p>" : "");
       detailContentNode.appendChild(summaryBlock);
 
       const statusBlock = document.createElement("section");
@@ -3710,6 +3720,13 @@ public static class OperatorWebEndpointExtensions
       observed.innerHTML = "<strong>Observed:</strong> " + formatUtc(entry.observedAtUtc);
       evidenceFocusNode.appendChild(observed);
 
+      const sender = document.createElement("p");
+      const senderLabel = document.createElement("strong");
+      senderLabel.textContent = "Отправитель:";
+      sender.appendChild(senderLabel);
+      sender.appendChild(document.createTextNode(" " + (entry.senderDisplay || "не определен")));
+      evidenceFocusNode.appendChild(sender);
+
       const source = document.createElement("p");
       source.innerHTML = "<strong>Provenance:</strong> " + (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
       evidenceFocusNode.appendChild(source);
@@ -3765,8 +3782,12 @@ public static class OperatorWebEndpointExtensions
         const prov = document.createElement("p");
         prov.className = "muted";
         prov.textContent = (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
+        const sender = document.createElement("p");
+        sender.className = "muted";
+        sender.textContent = "Отправитель: " + (entry.senderDisplay || "не определен");
         card.appendChild(summary);
         card.appendChild(meta);
+        card.appendChild(sender);
         card.appendChild(prov);
         card.addEventListener("click", function() {
           selectEvidence(index);

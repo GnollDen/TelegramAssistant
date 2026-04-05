@@ -152,6 +152,7 @@ public class ResolutionEvidenceSummary
     public string Summary { get; set; } = string.Empty;
     public float TrustFactor { get; set; }
     public DateTime? ObservedAtUtc { get; set; }
+    public string? SenderDisplay { get; set; }
     public string? SourceRef { get; set; }
     public string? SourceLabel { get; set; }
 }
