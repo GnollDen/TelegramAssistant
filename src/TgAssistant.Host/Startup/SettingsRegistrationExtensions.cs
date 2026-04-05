@@ -25,6 +25,7 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<ChatCoordinationSettings>(config.GetSection(ChatCoordinationSettings.Section));
         services.Configure<RiskyOperationSafetySettings>(config.GetSection(RiskyOperationSafetySettings.Section));
         services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
+        services.Configure<ResolutionInterpretationLoopSettings>(config.GetSection(ResolutionInterpretationLoopSettings.Section));
         services.Configure<AggregationSettings>(config.GetSection(AggregationSettings.Section));
         services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
         services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));

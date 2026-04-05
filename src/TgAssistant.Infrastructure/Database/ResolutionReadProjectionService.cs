@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -9,6 +10,7 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class ResolutionReadProjectionService : IResolutionReadService
 {
+    private const string ResolutionInterpretationCanonicalScopeKey = "chat:885574984";
     private const string ActiveStatus = "active";
     private static readonly Regex GuidRegex = new(
         @"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
@@ -41,10 +43,17 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         };
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly IResolutionInterpretationLoopService _interpretationLoopService;
+    private readonly ILogger<ResolutionReadProjectionService> _logger;
 
-    public ResolutionReadProjectionService(IDbContextFactory<TgAssistantDbContext> dbFactory)
+    public ResolutionReadProjectionService(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IResolutionInterpretationLoopService interpretationLoopService,
+        ILogger<ResolutionReadProjectionService> logger)
     {
         _dbFactory = dbFactory;
+        _interpretationLoopService = interpretationLoopService;
+        _logger = logger;
     }
 
     public async Task<ResolutionQueueResult> GetQueueAsync(
@@ -239,6 +248,101 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         var evidenceRationaleSummary = BuildEvidenceRationaleSummary(match, evidence);
         var autoResolutionGap = BuildAutoResolutionGap(match);
         var operatorDecisionFocus = BuildOperatorDecisionFocus(match);
+        ResolutionInterpretationLoopResult? interpretationLoop = null;
+        var rationaleIsHeuristic = true;
+
+        if (request.IncludeInterpretation
+            && string.Equals(trackedPerson.ScopeKey, ResolutionInterpretationCanonicalScopeKey, StringComparison.Ordinal))
+        {
+            try
+            {
+                interpretationLoop = await _interpretationLoopService.InterpretAsync(
+                    new ResolutionInterpretationLoopRequest
+                    {
+                        TrackedPersonId = trackedPerson.PersonId,
+                        ScopeKey = trackedPerson.ScopeKey,
+                        ScopeItemKey = match.Summary.ScopeItemKey,
+                        Item = match.Summary,
+                        SourceKind = match.SourceKind,
+                        SourceRef = match.SourceRef,
+                        RequiredAction = match.RequiredAction,
+                        Notes = [.. match.Notes],
+                        Evidence = [.. evidence],
+                        DurableContextSummaries = durableContexts
+                            .Where(x => match.DurableMetadataIds.Contains(x.MetadataId))
+                            .OrderByDescending(x => x.UpdatedAtUtc)
+                            .Select(x => x.MetadataSummary)
+                            .Take(3)
+                            .ToList()
+                    },
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Resolution interpretation loop failed unexpectedly; using deterministic projection fallback. scope_key={ScopeKey}, scope_item_key={ScopeItemKey}",
+                    trackedPerson.ScopeKey,
+                    match.Summary.ScopeItemKey);
+
+                interpretationLoop = new ResolutionInterpretationLoopResult
+                {
+                    Applied = true,
+                    UsedFallback = true,
+                    FailureReason = "projection_loop_exception",
+                    ContextSufficient = evidence.Count > 0,
+                    RequestedContextType = ResolutionInterpretationContextTypes.None,
+                    InterpretationSummary = evidenceRationaleSummary,
+                    ExplicitUncertainties =
+                    [
+                        "Deterministic projection fallback was used because the interpretation loop raised an unexpected exception."
+                    ],
+                    ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
+                    {
+                        Decision = ResolutionInterpretationReviewRecommendations.Review,
+                        Reason = "Existing deterministic projection keeps this item in operator review."
+                    },
+                    EvidenceRefsUsed = evidence
+                        .Select(BuildEvidenceRefForInterpretation)
+                        .Take(2)
+                        .ToList(),
+                    AuditTrail =
+                    [
+                        new ResolutionInterpretationAuditEntry
+                        {
+                            Step = "fallback",
+                            RetrievalRound = 0,
+                            RequestedContextType = ResolutionInterpretationContextTypes.None,
+                            Status = "projection_exception",
+                            Details = ex.Message,
+                            ObservedAtUtc = DateTime.UtcNow
+                        }
+                    ]
+                };
+            }
+
+            if (interpretationLoop.Applied && !string.IsNullOrWhiteSpace(interpretationLoop.InterpretationSummary))
+            {
+                evidenceRationaleSummary = interpretationLoop.InterpretationSummary;
+            }
+
+            if (interpretationLoop.Applied && interpretationLoop.ExplicitUncertainties.Count > 0)
+            {
+                autoResolutionGap = string.Join(" ", interpretationLoop.ExplicitUncertainties);
+            }
+
+            if (interpretationLoop.Applied)
+            {
+                operatorDecisionFocus = interpretationLoop.ReviewRecommendation.Decision switch
+                {
+                    ResolutionInterpretationReviewRecommendations.Review => interpretationLoop.ReviewRecommendation.Reason,
+                    ResolutionInterpretationReviewRecommendations.NoReview => interpretationLoop.ReviewRecommendation.Reason,
+                    _ => operatorDecisionFocus
+                };
+            }
+
+            rationaleIsHeuristic = interpretationLoop.UsedFallback;
+        }
 
         return new ResolutionDetailResult
         {
@@ -272,7 +376,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 EvidenceRationaleSummary = evidenceRationaleSummary,
                 AutoResolutionGap = autoResolutionGap,
                 OperatorDecisionFocus = operatorDecisionFocus,
-                RationaleIsHeuristic = true,
+                RationaleIsHeuristic = rationaleIsHeuristic,
+                InterpretationLoop = interpretationLoop,
                 Notes = match.Notes,
                 Evidence = evidence
             }
@@ -2080,6 +2185,9 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                             on sourceObject != null ? sourceObject.SourceMessageId : null equals (long?)message.Id into messages
                         from message in messages.DefaultIfEmpty()
                         where durableMetadataIds.Contains(link.DurableObjectMetadataId)
+                            && link.ScopeKey == trackedPerson.ScopeKey
+                            && evidence.ScopeKey == trackedPerson.ScopeKey
+                            && sourceObject.ScopeKey == trackedPerson.ScopeKey
                         select new EvidenceProjectionRow
                         {
                             Id = evidence.Id,
@@ -2157,6 +2265,13 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         return string.IsNullOrWhiteSpace(senderDisplay)
             ? null
             : senderDisplay.Trim();
+    }
+
+    private static string BuildEvidenceRefForInterpretation(ResolutionEvidenceSummary evidence)
+    {
+        return string.IsNullOrWhiteSpace(evidence.SourceRef)
+            ? $"evidence:{evidence.EvidenceItemId:D}"
+            : evidence.SourceRef.Trim();
     }
 
     private static IQueryable<EvidenceProjectionRow> ApplyEvidenceOrdering(

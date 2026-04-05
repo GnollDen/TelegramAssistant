@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TgAssistant.Core.Models;
 
 public static class ResolutionItemTypes
@@ -73,6 +75,7 @@ public class ResolutionDetailRequest
     public int EvidenceLimit { get; set; } = 5;
     public string EvidenceSortBy { get; set; } = ResolutionEvidenceSortFields.ObservedAt;
     public string EvidenceSortDirection { get; set; } = ResolutionSortDirections.Desc;
+    public bool IncludeInterpretation { get; set; } = true;
 }
 
 public class ResolutionRuntimeStateSummary
@@ -140,8 +143,191 @@ public class ResolutionItemDetail : ResolutionItemSummary
     public string AutoResolutionGap { get; set; } = string.Empty;
     public string OperatorDecisionFocus { get; set; } = string.Empty;
     public bool RationaleIsHeuristic { get; set; } = true;
+    public ResolutionInterpretationLoopResult? InterpretationLoop { get; set; }
     public List<ResolutionDetailNote> Notes { get; set; } = [];
     public List<ResolutionEvidenceSummary> Evidence { get; set; } = [];
+}
+
+public static class ResolutionInterpretationContextTypes
+{
+    public const string None = "none";
+    public const string AdditionalEvidence = "additional_evidence";
+    public const string DurableContext = "durable_context";
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        None,
+        AdditionalEvidence,
+        DurableContext
+    };
+
+    public static IReadOnlyCollection<string> All => Supported;
+
+    public static bool IsSupported(string? value)
+        => Supported.Contains(Normalize(value));
+
+    public static string Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? None : value.Trim().ToLowerInvariant();
+}
+
+public static class ResolutionInterpretationReviewRecommendations
+{
+    public const string Review = "review";
+    public const string NoReview = "no_review";
+}
+
+public class ResolutionInterpretationLoopRequest
+{
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public ResolutionItemSummary Item { get; set; } = new();
+    public string SourceKind { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string? RequiredAction { get; set; }
+    public List<ResolutionDetailNote> Notes { get; set; } = [];
+    public List<ResolutionEvidenceSummary> Evidence { get; set; } = [];
+    public List<string> DurableContextSummaries { get; set; } = [];
+}
+
+public class ResolutionInterpretationLoopResult
+{
+    public bool Applied { get; set; }
+    public bool UsedFallback { get; set; }
+
+    [JsonPropertyName("context_sufficient")]
+    public bool ContextSufficient { get; set; } = true;
+
+    [JsonPropertyName("requested_context_type")]
+    public string RequestedContextType { get; set; } = ResolutionInterpretationContextTypes.None;
+
+    [JsonPropertyName("interpretation_summary")]
+    public string InterpretationSummary { get; set; } = string.Empty;
+
+    [JsonPropertyName("key_claims")]
+    public List<ResolutionInterpretationClaim> KeyClaims { get; set; } = [];
+
+    [JsonPropertyName("explicit_uncertainties")]
+    public List<string> ExplicitUncertainties { get; set; } = [];
+
+    [JsonPropertyName("review_recommendation")]
+    public ResolutionInterpretationReviewRecommendation ReviewRecommendation { get; set; } = new();
+
+    [JsonPropertyName("evidence_refs_used")]
+    public List<string> EvidenceRefsUsed { get; set; } = [];
+
+    public string? FailureReason { get; set; }
+    public List<ResolutionInterpretationAuditEntry> AuditTrail { get; set; } = [];
+}
+
+public class ResolutionInterpretationClaim
+{
+    [JsonPropertyName("claim_type")]
+    public string ClaimType { get; set; } = ResolutionInterpretationClaimTypes.Hypothesis;
+
+    [JsonPropertyName("summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+}
+
+public static class ResolutionInterpretationClaimTypes
+{
+    public const string Fact = "fact";
+    public const string Inference = "inference";
+    public const string Hypothesis = "hypothesis";
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        Fact,
+        Inference,
+        Hypothesis
+    };
+
+    public static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Hypothesis;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        return Supported.Contains(normalized)
+            ? normalized
+            : Hypothesis;
+    }
+}
+
+public class ResolutionInterpretationReviewRecommendation
+{
+    [JsonPropertyName("decision")]
+    public string Decision { get; set; } = ResolutionInterpretationReviewRecommendations.Review;
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class ResolutionInterpretationAuditEntry
+{
+    [JsonPropertyName("step")]
+    public string Step { get; set; } = string.Empty;
+
+    [JsonPropertyName("retrieval_round")]
+    public int RetrievalRound { get; set; }
+
+    [JsonPropertyName("requested_context_type")]
+    public string RequestedContextType { get; set; } = ResolutionInterpretationContextTypes.None;
+
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
+
+    [JsonPropertyName("details")]
+    public string Details { get; set; } = string.Empty;
+
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+
+    [JsonPropertyName("model")]
+    public string? Model { get; set; }
+
+    [JsonPropertyName("request_id")]
+    public string? RequestId { get; set; }
+
+    [JsonPropertyName("latency_ms")]
+    public int? LatencyMs { get; set; }
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("observed_at_utc")]
+    public DateTime ObservedAtUtc { get; set; }
+}
+
+public class ResolutionInterpretationModelRequest
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public int RetrievalRound { get; set; }
+    public IReadOnlyCollection<string> AllowedContextTypes { get; set; } = [];
+    public ResolutionInterpretationLoopRequest Context { get; set; } = new();
+    public ResolutionInterpretationAdditionalContext AdditionalContext { get; set; } = new();
+}
+
+public class ResolutionInterpretationAdditionalContext
+{
+    public List<ResolutionEvidenceSummary> Evidence { get; set; } = [];
+    public List<string> DurableContextSummaries { get; set; } = [];
+}
+
+public class ResolutionInterpretationModelResponse
+{
+    public ResolutionInterpretationLoopResult Interpretation { get; set; } = new();
+    public string Provider { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string? RequestId { get; set; }
+    public int LatencyMs { get; set; }
+    public int TotalTokens { get; set; }
 }
 
 public class ResolutionDetailNote

@@ -113,7 +113,8 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             {
                 TrackedPersonId = trackedPerson.PersonId,
                 ScopeItemKey = normalizedScopeItemKey,
-                EvidenceLimit = 1
+                EvidenceLimit = 1,
+                IncludeInterpretation = false
             },
             ct);
 

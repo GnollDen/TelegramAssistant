@@ -310,6 +310,20 @@ public interface IResolutionReadService
         CancellationToken ct = default);
 }
 
+public interface IResolutionInterpretationLoopService
+{
+    Task<ResolutionInterpretationLoopResult> InterpretAsync(
+        ResolutionInterpretationLoopRequest request,
+        CancellationToken ct = default);
+}
+
+public interface IResolutionInterpretationModel
+{
+    Task<ResolutionInterpretationModelResponse> InterpretAsync(
+        ResolutionInterpretationModelRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IResolutionActionService
 {
     Task<ResolutionActionResult> SubmitAsync(

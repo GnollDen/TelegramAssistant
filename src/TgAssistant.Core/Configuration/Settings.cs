@@ -337,6 +337,24 @@ public class AnalysisSettings
     public int CheapChunkPauseGapMinutes { get; set; } = 20;
 }
 
+public class ResolutionInterpretationLoopSettings
+{
+    public const string Section = "ResolutionInterpretationLoop";
+    public bool Enabled { get; set; } = true;
+    public bool CanonicalScopeOnly { get; set; } = true;
+    public string CanonicalScopeKey { get; set; } = "chat:885574984";
+    public int MaxAdditionalRetrievalRounds { get; set; } = 1;
+    public int MaxInitialEvidenceItems { get; set; } = 3;
+    public int MaxRequestedContextItems { get; set; } = 3;
+    public int MaxInputTokens { get; set; } = 4000;
+    public int MaxOutputTokens { get; set; } = 800;
+    public int MaxTotalTokens { get; set; } = 4800;
+    public decimal MaxCostUsdPerLoop { get; set; } = 0.20m;
+    public int RequestTimeoutMs { get; set; } = 15000;
+    public string TaskKey { get; set; } = "resolution_interpretation_loop_v1";
+    public string? ModelHint { get; set; }
+}
+
 public class AggregationSettings
 {
     public const string Section = "Aggregation";

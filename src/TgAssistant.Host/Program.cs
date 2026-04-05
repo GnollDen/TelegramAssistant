@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -187,6 +188,10 @@ try
     var opint009DSmokeOutput = opint009DSmokeOutputArg is null
         ? null
         : opint009DSmokeOutputArg["--opint-009-d-smoke-output=".Length..];
+    var resolutionInterpretationLoopValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--resolution-interpretation-loop-v1-validate-output=", StringComparison.OrdinalIgnoreCase));
+    var resolutionInterpretationLoopValidateOutput = resolutionInterpretationLoopValidateOutputArg is null
+        ? null
+        : resolutionInterpretationLoopValidateOutputArg["--resolution-interpretation-loop-v1-validate-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -207,6 +212,7 @@ try
     var runOpint009C1Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c1-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009C2Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c2-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009DSmoke = args.Any(arg => string.Equals(arg, "--opint-009-d-smoke", StringComparison.OrdinalIgnoreCase));
+    var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -294,6 +300,7 @@ try
         "--opint-009-c1-smoke",
         "--opint-009-c2-smoke",
         "--opint-009-d-smoke",
+        "--resolution-interpretation-loop-v1-validate",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -583,6 +590,24 @@ try
             report.AllChecksPassed,
             report.DeepLinkRecoveryValidated,
             report.AcknowledgementValidated);
+        return;
+    }
+
+    if (runResolutionInterpretationLoopValidate)
+    {
+        var report = await ResolutionInterpretationLoopValidationRunner.RunAsync(
+            new ServiceCollection().BuildServiceProvider(),
+            resolutionInterpretationLoopValidateOutput,
+            CancellationToken.None);
+        Log.Information(
+            "Resolution interpretation loop V1 validation requested via --resolution-interpretation-loop-v1-validate. output={OutputPath}, passed={Passed}, tracked_person_id={TrackedPersonId}, scope_item_key={ScopeItemKey}, requested_context_type={RequestedContextType}, audit_entries={AuditEntryCount}, used_fallback={UsedFallback}. Exiting after successful verification.",
+            report.OutputPath,
+            report.Passed,
+            report.TrackedPersonId,
+            report.ScopeItemKey,
+            report.RequestedContextType,
+            report.AuditTrail.Count,
+            report.UsedFallback);
         return;
     }
 

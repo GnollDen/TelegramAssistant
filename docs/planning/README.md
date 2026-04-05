@@ -48,6 +48,10 @@ Top-level routing:
 
 - Historical/archive-only (merged into gateway PRD): [LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md](/home/codex/projects/TelegramAssistant/docs/planning/LLM_PROVIDER_EXTENSION_OPTION_2026-04-03.md)
 
+### Implementation runbooks
+
+- Active bounded slice runbook: [RESOLUTION_INTERPRETATION_LOOP_V1_RUNBOOK_2026-04-05.md](/home/codex/projects/TelegramAssistant/docs/planning/RESOLUTION_INTERPRETATION_LOOP_V1_RUNBOOK_2026-04-05.md)
+
 ## Backlog Authority
 
 - [tasks.json](/home/codex/projects/TelegramAssistant/tasks.json)
