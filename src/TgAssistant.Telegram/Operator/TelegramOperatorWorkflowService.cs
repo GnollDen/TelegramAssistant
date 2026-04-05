@@ -41,6 +41,15 @@ public sealed class TelegramOperatorWorkflowService
     private const int MaxOfflineEventSummaryLength = 2000;
     private const int MaxOfflineEventRecordingReferenceLength = 1000;
     private const int EvidencePreviewLimit = 3;
+    private static readonly string[] ResolutionCardActionOrder =
+    [
+        ResolutionActionTypes.Approve,
+        ResolutionActionTypes.Reject,
+        ResolutionActionTypes.Defer,
+        ResolutionActionTypes.Clarify,
+        ResolutionActionTypes.Evidence,
+        ResolutionActionTypes.OpenWeb
+    ];
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(8);
 
     private readonly TelegramSettings _settings;
@@ -2830,13 +2839,17 @@ public sealed class TelegramOperatorWorkflowService
         foreach (var (item, index) in items.Take(MaxResolutionCards).Select((item, index) => (item, index)))
         {
             var token = $"{generation:x}{index + 1:x}";
+            var availableActions = item.AvailableActions
+                .Select(ResolutionActionTypes.Normalize)
+                .ToList();
             var binding = new TelegramResolutionCardBinding
             {
                 Token = token,
                 ScopeItemKey = item.ScopeItemKey,
                 ItemType = item.ItemType,
                 Title = ResolveResolutionCardTitle(item),
-                AvailableActions = [.. item.AvailableActions.Select(ResolutionActionTypes.Normalize)],
+                AvailableActions = availableActions,
+                RecommendedAction = ResolveRecommendedResolutionAction(item.RecommendedNextAction, availableActions),
                 OpenWebUrl = BuildResolutionOpenWebUrl(state.Session, item.ScopeItemKey, nowUtc)
             };
             state.ResolutionCardBindings[token] = binding;
@@ -3235,30 +3248,17 @@ public sealed class TelegramOperatorWorkflowService
     private static List<List<TelegramOperatorButton>> BuildResolutionCardButtons(TelegramResolutionCardBinding binding)
     {
         var buttons = new List<List<TelegramOperatorButton>>();
-        var available = binding.AvailableActions.ToHashSet(StringComparer.Ordinal);
-
-        var primaryRow = BuildActionRow(
-            binding.Token,
-            available,
-            binding.OpenWebUrl,
-            ResolutionActionTypes.Approve,
-            ResolutionActionTypes.Reject,
-            ResolutionActionTypes.Defer);
-        if (primaryRow.Count > 0)
+        foreach (var rowActions in BuildResolutionCardActionDisplayOrder(binding).Chunk(3))
         {
-            buttons.Add(primaryRow);
-        }
-
-        var secondaryRow = BuildActionRow(
-            binding.Token,
-            available,
-            binding.OpenWebUrl,
-            ResolutionActionTypes.Clarify,
-            ResolutionActionTypes.Evidence,
-            ResolutionActionTypes.OpenWeb);
-        if (secondaryRow.Count > 0)
-        {
-            buttons.Add(secondaryRow);
+            var row = BuildActionRow(
+                binding.Token,
+                binding.OpenWebUrl,
+                binding.RecommendedAction,
+                rowActions);
+            if (row.Count > 0)
+            {
+                buttons.Add(row);
+            }
         }
 
         return buttons;
@@ -3294,12 +3294,11 @@ public sealed class TelegramOperatorWorkflowService
 
     private static List<TelegramOperatorButton> BuildActionRow(
         string token,
-        IReadOnlySet<string> available,
         string? openWebUrl,
-        params string[] actionTypes)
+        string? recommendedAction,
+        IEnumerable<string> actionTypes)
     {
         return actionTypes
-            .Where(available.Contains)
             .Select(actionType =>
             {
                 var normalizedAction = ResolutionActionTypes.Normalize(actionType);
@@ -3308,23 +3307,64 @@ public sealed class TelegramOperatorWorkflowService
                 {
                     return new TelegramOperatorButton
                     {
-                        Text = FormatActionLabel(actionType),
+                        Text = FormatActionLabel(
+                            actionType,
+                            isRecommended: string.Equals(normalizedAction, recommendedAction, StringComparison.Ordinal)),
                         Url = openWebUrl
                     };
                 }
 
                 return new TelegramOperatorButton
                 {
-                    Text = FormatActionLabel(actionType),
-                    CallbackData = $"{ResolutionActionCallbackPrefix}{actionType}:{token}"
+                    Text = FormatActionLabel(
+                        actionType,
+                        isRecommended: string.Equals(normalizedAction, recommendedAction, StringComparison.Ordinal)),
+                    CallbackData = $"{ResolutionActionCallbackPrefix}{normalizedAction}:{token}"
                 };
             })
             .ToList();
     }
 
-    private static string FormatActionLabel(string actionType)
+    private static List<string> BuildResolutionCardActionDisplayOrder(TelegramResolutionCardBinding binding)
     {
-        return ResolutionActionTypes.Normalize(actionType) switch
+        var available = binding.AvailableActions.ToHashSet(StringComparer.Ordinal);
+        var ordered = ResolutionCardActionOrder
+            .Where(available.Contains)
+            .ToList();
+
+        if (string.IsNullOrWhiteSpace(binding.RecommendedAction)
+            || !available.Contains(binding.RecommendedAction))
+        {
+            return ordered;
+        }
+
+        ordered.RemoveAll(action => string.Equals(action, binding.RecommendedAction, StringComparison.Ordinal));
+        ordered.Insert(0, binding.RecommendedAction);
+        return ordered;
+    }
+
+    private static string? ResolveRecommendedResolutionAction(string? recommendedAction, IEnumerable<string> availableActions)
+    {
+        var normalized = NormalizeOptional(recommendedAction);
+        if (normalized == null)
+        {
+            return null;
+        }
+
+        normalized = ResolutionActionTypes.Normalize(normalized);
+        if (!ResolutionActionTypes.IsSupported(normalized))
+        {
+            return null;
+        }
+
+        return availableActions.Contains(normalized, StringComparer.Ordinal)
+            ? normalized
+            : null;
+    }
+
+    private static string FormatActionLabel(string actionType, bool isRecommended = false)
+    {
+        var label = ResolutionActionTypes.Normalize(actionType) switch
         {
             ResolutionActionTypes.OpenWeb => "В веб",
             ResolutionActionTypes.Approve => "Подтвердить",
@@ -3334,6 +3374,8 @@ public sealed class TelegramOperatorWorkflowService
             ResolutionActionTypes.Evidence => "Факты",
             _ => actionType
         };
+
+        return isRecommended ? $"• {label}" : label;
     }
 
     private static string FormatRecomputeLifecycleLabel(string? lifecycleStatus)
