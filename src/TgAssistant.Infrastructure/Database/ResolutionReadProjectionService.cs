@@ -1181,6 +1181,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         var hasDirectDurableLink = item.DurableMetadataIds.Count > 0;
         var hasEvidenceProvenance = !string.IsNullOrWhiteSpace(evidence.SourceRef)
             || !string.IsNullOrWhiteSpace(evidence.SourceLabel);
+        var reviewSignal = ResolveReviewEvidenceSignalHeuristic(evidence);
 
         string stance;
         string summary;
@@ -1190,9 +1191,14 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             if (hasDirectDurableLink && hasEvidenceProvenance)
             {
-                stance = ResolutionDecisionStances.Supports;
-                calibration = ResolutionDecisionHeuristicCalibrations.Medium;
-                summary = $"Сообщение напрямую входит в evidence затронутого объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и поддерживает ручной разбор этого review item; само по себе оно не доказывает рантайм-сбой.";
+                stance = reviewSignal.Stance;
+                calibration = reviewSignal.Calibration;
+                summary = reviewSignal.Role switch
+                {
+                    "contextual" => $"Сообщение напрямую связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}», но остается в основном контекстным сигналом: {reviewSignal.Reason}; само по себе оно не подтверждает и не опровергает рантайм-сбой.",
+                    "weak_support" => $"Сообщение напрямую связано с evidence объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и дает лишь слабую поддержку ручному разбору review item: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой.",
+                    _ => $"Сообщение напрямую входит в evidence затронутого объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и скорее поддерживает ручной разбор этого review item: {reviewSignal.Reason}; само по себе оно не доказывает рантайм-сбой."
+                };
             }
             else
             {
@@ -1205,9 +1211,14 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             if (hasDirectDurableLink && hasEvidenceProvenance)
             {
-                stance = ResolutionDecisionStances.Supports;
-                calibration = ResolutionDecisionHeuristicCalibrations.Medium;
-                summary = $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и поддерживает решение держать его на ручной проверке до следующего шага.";
+                stance = reviewSignal.Stance;
+                calibration = reviewSignal.Calibration;
+                summary = reviewSignal.Role switch
+                {
+                    "contextual" => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}», но по форме остается скорее контекстным сигналом: {reviewSignal.Reason}; этого недостаточно для снятия ручной проверки.",
+                    "weak_support" => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и дает лишь слабую поддержку решению оставить его на ручной проверке: {reviewSignal.Reason}.",
+                    _ => $"Сообщение входит в доказательную базу объекта «{DescribeFamilyRu(item.Summary.AffectedFamily)}» и скорее поддерживает решение держать его на ручной проверке: {reviewSignal.Reason}."
+                };
             }
             else
             {
@@ -1224,9 +1235,14 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         }
         else if (hasDirectDurableLink && hasEvidenceProvenance)
         {
-            stance = ResolutionDecisionStances.Supports;
-            calibration = ResolutionDecisionHeuristicCalibrations.Medium;
-            summary = "Сообщение связано с объектом на ручной проверке и поддерживает решение разобрать его вручную перед автоматическим продолжением.";
+            stance = reviewSignal.Stance;
+            calibration = reviewSignal.Calibration;
+            summary = reviewSignal.Role switch
+            {
+                "contextual" => $"Сообщение связано с объектом на ручной проверке, но остается скорее контекстным сигналом: {reviewSignal.Reason}.",
+                "weak_support" => $"Сообщение связано с объектом на ручной проверке и дает лишь слабую поддержку решению разобрать его вручную: {reviewSignal.Reason}.",
+                _ => $"Сообщение связано с объектом на ручной проверке и скорее поддерживает решение разобрать его вручную перед автоматическим продолжением: {reviewSignal.Reason}."
+            };
         }
         else
         {
@@ -1264,10 +1280,38 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             ResolutionItemTypes.MissingData => "система вероятно видит недостаточную или неполную опору",
             _ => "система вероятно видит риск, который нельзя безопасно закрыть автоматически"
         };
-        var countSummary = evidence.Count > 0
-            ? $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как опорные сигналы."
-            : "Опорные сообщения в текущей выдаче не выделились.";
+        var countSummary = BuildEvidenceCountSummary(item, evidence);
         return $"По теме «{familyRu}» {signalSummary}. {countSummary} Это эвристическое объяснение выбора evidence.";
+    }
+
+    private static string BuildEvidenceCountSummary(
+        ProjectedResolutionItem item,
+        IReadOnlyList<ResolutionEvidenceSummary> evidence)
+    {
+        if (evidence.Count == 0)
+        {
+            return "Опорные сообщения в текущей выдаче не выделились.";
+        }
+
+        if (item.Summary.ItemType != ResolutionItemTypes.Review)
+        {
+            return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как опорные сигналы.";
+        }
+
+        var supportsCount = evidence.Count(x => x.DecisionLinkage?.Stance == ResolutionDecisionStances.Supports);
+        var ambiguousCount = evidence.Count(x => x.DecisionLinkage?.Stance == ResolutionDecisionStances.Ambiguous);
+
+        if (supportsCount > 0 && ambiguousCount > 0)
+        {
+            return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")}: {supportsCount} скорее поддерживают ручное решение, а {ambiguousCount} остаются контекстными или неоднозначными.";
+        }
+
+        if (ambiguousCount == evidence.Count)
+        {
+            return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")}, но они остаются в основном контекстными или неоднозначными.";
+        }
+
+        return $"Показано {FormatCountRu(evidence.Count, "сообщение", "сообщения", "сообщений")} как эвристические опорные сигналы для ручного решения.";
     }
 
     private static string BuildAutoResolutionGap(ProjectedResolutionItem item)
@@ -1453,6 +1497,62 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private static bool HasNoteKind(ProjectedResolutionItem item, string kind)
         => item.Notes.Any(x => string.Equals(x.Kind, kind, StringComparison.OrdinalIgnoreCase));
+
+    private static (string Stance, string Calibration, string Role, string Reason) ResolveReviewEvidenceSignalHeuristic(
+        ResolutionEvidenceSummary evidence)
+    {
+        var summary = evidence.Summary?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return (
+                ResolutionDecisionStances.Ambiguous,
+                ResolutionDecisionHeuristicCalibrations.Low,
+                "contextual",
+                "текст слишком пустой для более сильного вывода");
+        }
+
+        var letterCount = summary.Count(char.IsLetter);
+        var digitCount = summary.Count(char.IsDigit);
+        var tokenCount = summary
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Length;
+        var symbolCount = summary.Count(x => !char.IsWhiteSpace(x) && !char.IsLetterOrDigit(x));
+        var mostlySymbolic = letterCount == 0 && symbolCount > 0;
+        var timingFragment = letterCount == 0 && digitCount > 0;
+        if (mostlySymbolic || timingFragment)
+        {
+            return (
+                ResolutionDecisionStances.Ambiguous,
+                ResolutionDecisionHeuristicCalibrations.Low,
+                "contextual",
+                "сообщение выглядит как реакция, эмодзи или короткий временной фрагмент");
+        }
+
+        if (ContainsUncertaintyCue(summary))
+        {
+            return (
+                ResolutionDecisionStances.Ambiguous,
+                ResolutionDecisionHeuristicCalibrations.Low,
+                "contextual",
+                "в самой формулировке остается заметная неопределенность");
+        }
+
+        var weakLexicalSignal = tokenCount <= 5 || letterCount < 18 || summary.Length < 28;
+        if (weakLexicalSignal || ContainsEmotionalCue(summary))
+        {
+            return (
+                ResolutionDecisionStances.Supports,
+                ResolutionDecisionHeuristicCalibrations.Low,
+                "weak_support",
+                "это короткий или локальный фрагмент контекста, поэтому опора на него ограничена");
+        }
+
+        return (
+            ResolutionDecisionStances.Supports,
+            ResolutionDecisionHeuristicCalibrations.Medium,
+            "support",
+            "сигнал достаточно содержательный, чтобы быть одной из bounded-опор ручного решения");
+    }
 
     private static bool ContainsContradictionCue(string? summary)
     {
