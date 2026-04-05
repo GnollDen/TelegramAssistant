@@ -41,7 +41,7 @@ services:
     env_file:
       - ../.env
     environment:
-      Web__Url: ${WEB_URL:-http://127.0.0.1:5078}
+      Web__Url: ${WEB_URL:-http://127.0.0.1:5091}
       Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
       Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}
       Web__AccessHeaderName: ${WEB_ACCESS_HEADER_NAME:-X-Tga-Operator-Key}
