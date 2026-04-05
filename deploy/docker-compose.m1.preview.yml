@@ -41,8 +41,10 @@ services:
     env_file:
       - ../.env
     environment:
+      ASPNETCORE_URLS: ${WEB_BIND_URL:-http://0.0.0.0:5091}
       Web__Url: ${WEB_URL:-http://127.0.0.1:5091}
       Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
+      Web__AllowSyntheticScopes: ${WEB_ALLOW_SYNTHETIC_SCOPES:-false}
       Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}
       Web__AccessHeaderName: ${WEB_ACCESS_HEADER_NAME:-X-Tga-Operator-Key}
       Web__AccessCookieName: ${WEB_ACCESS_COOKIE_NAME:-tga_operator_key}
