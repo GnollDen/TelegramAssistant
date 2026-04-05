@@ -1131,7 +1131,40 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             var entry = evidence[index];
             entry.RelevanceHint = BuildEvidenceRelevanceHint(item, entry);
             entry.RelevanceHintIsHeuristic = true;
+            entry.DecisionLinkage = BuildEvidenceDecisionLinkage(item, entry);
         }
+    }
+
+    private static ResolutionEvidenceDecisionLinkage BuildEvidenceDecisionLinkage(
+        ProjectedResolutionItem item,
+        ResolutionEvidenceSummary evidence)
+    {
+        var criterion = ResolveDecisionCriterion(item);
+        var reviewQuestion = BuildOperatorDecisionFocus(item);
+        var stance = ResolveDecisionStance(item, evidence);
+        var heuristicCalibration = ResolveLinkageHeuristicCalibration(item, evidence, stance);
+        var stanceText = stance switch
+        {
+            ResolutionDecisionStances.Supports => "вероятно поддерживает",
+            ResolutionDecisionStances.Challenges => "скорее оспаривает",
+            _ => "оставляет неопределенность по"
+        };
+        var summary = $"{stanceText} критерию: {criterion}.";
+        if (!string.IsNullOrWhiteSpace(reviewQuestion))
+        {
+            summary += $" Связан с вопросом: {reviewQuestion}";
+        }
+
+        return new ResolutionEvidenceDecisionLinkage
+        {
+            LinkType = ResolutionDecisionLinkTypes.Criterion,
+            LinkTarget = criterion,
+            ReviewQuestion = reviewQuestion,
+            Stance = stance,
+            Summary = summary,
+            IsHeuristic = true,
+            HeuristicCalibration = heuristicCalibration
+        };
     }
 
     private static string BuildEvidenceRationaleSummary(
@@ -1230,8 +1263,135 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         return "Опорный сигнал для текущего review item; используется как часть эвристической проверки.";
     }
 
+    private static string ResolveDecisionCriterion(ProjectedResolutionItem item)
+    {
+        return item.Summary.ItemType switch
+        {
+            ResolutionItemTypes.Contradiction => "сигнал противоречий требует ручного согласования",
+            ResolutionItemTypes.Clarification or ResolutionItemTypes.BlockedBranch => "без уточнения ветка не может быть безопасно продолжена",
+            ResolutionItemTypes.MissingData => "опоры недостаточно для устойчивого авто-решения",
+            _ => "риск ошибки остается выше порога для auto-resolution"
+        };
+    }
+
+    private static string ResolveDecisionStance(ProjectedResolutionItem item, ResolutionEvidenceSummary evidence)
+    {
+        if (string.IsNullOrWhiteSpace(evidence.SenderDisplay))
+        {
+            return ResolutionDecisionStances.Ambiguous;
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.Contradiction)
+        {
+            return ContainsContradictionCue(evidence.Summary)
+                ? ResolutionDecisionStances.Supports
+                : ResolutionDecisionStances.Ambiguous;
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.MissingData)
+        {
+            if (evidence.TrustFactor <= 0.45f)
+            {
+                return ResolutionDecisionStances.Supports;
+            }
+
+            return evidence.TrustFactor >= 0.78f
+                ? ResolutionDecisionStances.Challenges
+                : ResolutionDecisionStances.Ambiguous;
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.Clarification
+            || item.Summary.ItemType == ResolutionItemTypes.BlockedBranch)
+        {
+            return ContainsUncertaintyCue(evidence.Summary)
+                ? ResolutionDecisionStances.Supports
+                : ResolutionDecisionStances.Ambiguous;
+        }
+
+        if (ContainsStabilityCue(evidence.Summary) && evidence.TrustFactor >= 0.78f)
+        {
+            return ResolutionDecisionStances.Challenges;
+        }
+
+        return evidence.TrustFactor <= 0.45f
+            ? ResolutionDecisionStances.Supports
+            : ResolutionDecisionStances.Ambiguous;
+    }
+
+    private static string ResolveLinkageHeuristicCalibration(
+        ProjectedResolutionItem item,
+        ResolutionEvidenceSummary evidence,
+        string stance)
+    {
+        if (string.IsNullOrWhiteSpace(evidence.SenderDisplay))
+        {
+            return ResolutionDecisionHeuristicCalibrations.Low;
+        }
+
+        if (stance == ResolutionDecisionStances.Ambiguous)
+        {
+            return ResolutionDecisionHeuristicCalibrations.Low;
+        }
+
+        if (item.Summary.ItemType == ResolutionItemTypes.Contradiction
+            || item.Summary.ItemType == ResolutionItemTypes.MissingData
+            || item.Summary.ItemType == ResolutionItemTypes.Clarification
+            || item.Summary.ItemType == ResolutionItemTypes.BlockedBranch)
+        {
+            return ResolutionDecisionHeuristicCalibrations.Medium;
+        }
+
+        return evidence.TrustFactor <= 0.45f
+            ? ResolutionDecisionHeuristicCalibrations.Low
+            : ResolutionDecisionHeuristicCalibrations.Medium;
+    }
+
     private static bool HasNoteKind(ProjectedResolutionItem item, string kind)
         => item.Notes.Any(x => string.Equals(x.Kind, kind, StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsContradictionCue(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        var text = summary.Trim();
+        return text.Contains("но", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("однако", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("противореч", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("не совп", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("расход", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsUncertaintyCue(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        var text = summary.Trim();
+        return text.Contains("неяс", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("непонят", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("возможно", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("кажется", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("сомнен", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsStabilityCue(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        var text = summary.Trim();
+        return text.Contains("стабиль", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("подтвержден", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("однознач", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("регуляр", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool ContainsEmotionalCue(string? summary)
     {

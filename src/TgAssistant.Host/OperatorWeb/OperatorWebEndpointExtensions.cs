@@ -2872,6 +2872,34 @@ public static class OperatorWebEndpointExtensions
       return Math.round(numeric * 100) + "%";
     }
 
+    function formatDecisionLinkage(linkage) {
+      if (!linkage || !linkage.linkTarget) {
+        return "Связь с выводом не определена; evidence остается контекстным сигналом.";
+      }
+
+      const stance = (linkage.stance || "").toLowerCase();
+      let verb = "оставляет неопределенность по";
+      if (stance === "supports") {
+        verb = "вероятно поддерживает";
+      } else if (stance === "challenges") {
+        verb = "скорее оспаривает";
+      }
+
+      const linkType = (linkage.linkType || "").toLowerCase();
+      const targetPrefix = linkType === "review_question" ? "вопросу" : "критерию";
+      let text = verb + " " + targetPrefix + ": " + linkage.linkTarget + ".";
+      if (linkage.reviewQuestion) {
+        text += " Вопрос: " + linkage.reviewQuestion;
+      }
+      if (linkage.isHeuristic !== false) {
+        const calibration = (linkage.heuristicCalibration || "").toLowerCase();
+        const calibrationLabel = calibration === "medium" ? "средняя" : "низкая";
+        text += " (эвристическая связь, калибровка: " + calibrationLabel + ")";
+      }
+
+      return text;
+    }
+
     function snapshotQueueProjection(queue) {
       if (!queue || !Array.isArray(queue.items)) {
         return null;
@@ -3978,6 +4006,10 @@ public static class OperatorWebEndpointExtensions
         + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
       evidenceFocusNode.appendChild(relevance);
 
+      const decisionLink = document.createElement("p");
+      decisionLink.innerHTML = "<strong>Связь с решением:</strong> " + formatDecisionLinkage(entry.decisionLinkage);
+      evidenceFocusNode.appendChild(decisionLink);
+
       evidencePrevButton.disabled = index <= 0;
       evidenceNextButton.disabled = index >= entries.length - 1;
     }
@@ -4033,10 +4065,14 @@ public static class OperatorWebEndpointExtensions
         relevance.textContent = "Почему важно: "
           + (entry.relevanceHint || "Опорный сигнал для текущего review item.")
           + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
+        const decisionLink = document.createElement("p");
+        decisionLink.className = "muted";
+        decisionLink.textContent = "Связь с решением: " + formatDecisionLinkage(entry.decisionLinkage);
         card.appendChild(summary);
         card.appendChild(meta);
         card.appendChild(sender);
         card.appendChild(relevance);
+        card.appendChild(decisionLink);
         card.appendChild(prov);
         card.addEventListener("click", function() {
           selectEvidence(index);

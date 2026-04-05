@@ -150,6 +150,37 @@ public class ResolutionDetailNote
     public string Text { get; set; } = string.Empty;
 }
 
+public static class ResolutionDecisionLinkTypes
+{
+    public const string Criterion = "criterion";
+    public const string Claim = "claim";
+    public const string ReviewQuestion = "review_question";
+}
+
+public static class ResolutionDecisionStances
+{
+    public const string Supports = "supports";
+    public const string Challenges = "challenges";
+    public const string Ambiguous = "ambiguous";
+}
+
+public static class ResolutionDecisionHeuristicCalibrations
+{
+    public const string Low = "low";
+    public const string Medium = "medium";
+}
+
+public class ResolutionEvidenceDecisionLinkage
+{
+    public string LinkType { get; set; } = ResolutionDecisionLinkTypes.Criterion;
+    public string LinkTarget { get; set; } = string.Empty;
+    public string? ReviewQuestion { get; set; }
+    public string Stance { get; set; } = ResolutionDecisionStances.Ambiguous;
+    public string Summary { get; set; } = string.Empty;
+    public bool IsHeuristic { get; set; } = true;
+    public string? HeuristicCalibration { get; set; }
+}
+
 public class ResolutionEvidenceSummary
 {
     public Guid EvidenceItemId { get; set; }
@@ -161,4 +192,5 @@ public class ResolutionEvidenceSummary
     public string? SourceLabel { get; set; }
     public string RelevanceHint { get; set; } = string.Empty;
     public bool RelevanceHintIsHeuristic { get; set; } = true;
+    public ResolutionEvidenceDecisionLinkage? DecisionLinkage { get; set; }
 }
