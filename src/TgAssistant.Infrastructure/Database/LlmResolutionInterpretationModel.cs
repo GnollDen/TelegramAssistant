@@ -9,7 +9,6 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
 {
     private const string TaskKey = "resolution_interpretation_loop_v1";
     private const string SchemaName = "resolution_interpretation_loop_v1";
-    private const string DefaultModelHint = "openai/gpt-4.1-mini";
     private const string SchemaJson = """
         {
           "type": "object",
@@ -173,7 +172,6 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
         {
             Modality = LlmModality.TextChat,
             TaskKey = TaskKey,
-            ModelHint = DefaultModelHint,
             ResponseMode = LlmResponseMode.JsonObject,
             StructuredOutputSchema = new LlmStructuredOutputSchema
             {
