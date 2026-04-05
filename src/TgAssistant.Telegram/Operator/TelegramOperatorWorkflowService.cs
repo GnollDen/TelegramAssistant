@@ -2249,7 +2249,20 @@ public sealed class TelegramOperatorWorkflowService
         lines.Add(
             string.IsNullOrWhiteSpace(handoffUrl)
                 ? "Ссылка пока недоступна. Проверьте настройки веб-доступа и повторите."
-                : "Сразу применятся текущий человек и нужный контекст.");
+                : "Контекст карточки и человека будет применен автоматически.");
+
+        var buttons = new List<List<TelegramOperatorButton>>();
+        if (!string.IsNullOrWhiteSpace(handoffUrl))
+        {
+            buttons.Add(
+            [
+                new TelegramOperatorButton
+                {
+                    Text = "Открыть в веб-интерфейсе",
+                    Url = handoffUrl
+                }
+            ]);
+        }
 
         return new TelegramOperatorResponse
         {
@@ -2259,33 +2272,7 @@ public sealed class TelegramOperatorWorkflowService
                 new TelegramOperatorMessage
                 {
                     Text = string.Join(Environment.NewLine, lines),
-                    Buttons =
-                    [
-                        [
-                            string.IsNullOrWhiteSpace(handoffUrl)
-                                ? new TelegramOperatorButton
-                                {
-                                    Text = "Факты",
-                                    CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
-                                }
-                                : new TelegramOperatorButton
-                                {
-                                    Text = "Открыть в веб-интерфейсе",
-                                    Url = handoffUrl
-                                }
-                        ],
-                        [
-                            new TelegramOperatorButton
-                            {
-                                Text = "Факты",
-                                CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
-                            }
-                        ],
-                        [
-                            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
-                            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
-                        ]
-                    ]
+                    Buttons = BuildOpenWebHandoffButtons(buttons, binding)
                 }
             ]
         };
@@ -2455,7 +2442,16 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
-        var cardMessages = BuildResolutionCardMessages(state, queue.Queue.Items, nowUtc);
+        var compactPostActionResponse = actionFeedback != null && interaction.CallbackData != null;
+        if (compactPostActionResponse)
+        {
+            state.ResolutionCardBindings.Clear();
+            state.ResolutionCardGeneration++;
+        }
+
+        var cardMessages = compactPostActionResponse
+            ? new List<TelegramOperatorMessage>()
+            : BuildResolutionCardMessages(state, queue.Queue.Items, nowUtc);
         var lines = new List<string>();
         if (!string.IsNullOrWhiteSpace(note))
         {
@@ -2482,6 +2478,11 @@ public sealed class TelegramOperatorWorkflowService
         if (queue.Queue.Items.Count == 0)
         {
             lines.Add("В этой bounded области открытых карточек сейчас нет.");
+        }
+        else if (compactPostActionResponse)
+        {
+            lines.Add($"В очереди сейчас {queue.Queue.Items.Count} карточек.");
+            lines.Add("Нажмите Refresh, чтобы показать актуальные карточки.");
         }
         else
         {
@@ -2510,6 +2511,7 @@ public sealed class TelegramOperatorWorkflowService
         return new TelegramOperatorResponse
         {
             CallbackNotificationText = interaction.CallbackData == null ? null : "Resolution",
+            TrackMessagesForSurfaceMode = TelegramOperatorSurfaceModes.Resolution,
             Messages = messages
         };
     }
@@ -2618,6 +2620,7 @@ public sealed class TelegramOperatorWorkflowService
         return new TelegramOperatorResponse
         {
             CallbackNotificationText = interaction.CallbackData == null ? null : "Alerts",
+            TrackMessagesForSurfaceMode = TelegramOperatorSurfaceModes.Alerts,
             Messages = messages
         };
     }
@@ -3242,6 +3245,26 @@ public sealed class TelegramOperatorWorkflowService
         }
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static List<List<TelegramOperatorButton>> BuildOpenWebHandoffButtons(
+        List<List<TelegramOperatorButton>> buttons,
+        TelegramResolutionCardBinding binding)
+    {
+        buttons.Add(
+        [
+            new TelegramOperatorButton
+            {
+                Text = "Факты",
+                CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.Evidence}:{binding.Token}"
+            }
+        ]);
+        buttons.Add(
+        [
+            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
+            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
+        ]);
+        return buttons;
     }
 
     private static List<List<TelegramOperatorButton>> BuildResolutionCardButtons(TelegramResolutionCardBinding binding)

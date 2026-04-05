@@ -15,6 +15,7 @@ public sealed class TelegramOperatorInteraction
 {
     public long ChatId { get; set; }
     public long UserId { get; set; }
+    public long? SourceMessageId { get; set; }
     public bool IsPrivateChat { get; set; }
     public string? UserDisplayName { get; set; }
     public string? MessageText { get; set; }
@@ -38,7 +39,16 @@ public sealed class TelegramOperatorMessage
 public sealed class TelegramOperatorResponse
 {
     public string? CallbackNotificationText { get; set; }
+    public string? TrackMessagesForSurfaceMode { get; set; }
+    public List<TelegramOperatorMessageEdit> MessageEdits { get; set; } = [];
     public List<TelegramOperatorMessage> Messages { get; set; } = [];
+}
+
+public sealed class TelegramOperatorMessageEdit
+{
+    public long MessageId { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public List<List<TelegramOperatorButton>> Buttons { get; set; } = [];
 }
 
 public sealed class TelegramOperatorSessionSnapshot
@@ -64,6 +74,8 @@ internal sealed class TelegramOperatorConversationState
     public int AlertCardGeneration { get; set; }
     public Dictionary<string, TelegramAlertCardBinding> AlertCardBindings { get; set; } = new(StringComparer.Ordinal);
     public HashSet<string> AcknowledgedAlertScopeItemKeys { get; set; } = new(StringComparer.Ordinal);
+    public List<long> ActiveResolutionMessageIds { get; set; } = [];
+    public List<long> ActiveAlertMessageIds { get; set; } = [];
     public TelegramPendingResolutionInput? PendingResolutionInput { get; set; }
     public TelegramOfflineEventDraft? OfflineEventDraft { get; set; }
     public TelegramPendingOfflineEventInput? PendingOfflineEventInput { get; set; }

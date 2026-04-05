@@ -9,17 +9,20 @@ public sealed class TelegramOperatorBotHostedService : BackgroundService
 {
     private readonly TelegramSettings _settings;
     private readonly TelegramBotApiClient _botApiClient;
+    private readonly TelegramOperatorSessionStore _sessionStore;
     private readonly TelegramOperatorWorkflowService _workflowService;
     private readonly ILogger<TelegramOperatorBotHostedService> _logger;
 
     public TelegramOperatorBotHostedService(
         IOptions<TelegramSettings> settings,
         TelegramBotApiClient botApiClient,
+        TelegramOperatorSessionStore sessionStore,
         TelegramOperatorWorkflowService workflowService,
         ILogger<TelegramOperatorBotHostedService> logger)
     {
         _settings = settings.Value;
         _botApiClient = botApiClient;
+        _sessionStore = sessionStore;
         _workflowService = workflowService;
         _logger = logger;
     }
@@ -64,9 +67,61 @@ public sealed class TelegramOperatorBotHostedService : BackgroundService
                             stoppingToken);
                     }
 
-                    foreach (var message in response.Messages)
+                    if (!string.IsNullOrWhiteSpace(response.TrackMessagesForSurfaceMode))
                     {
-                        await _botApiClient.SendMessageAsync(interaction.ChatId, message, stoppingToken);
+                        foreach (var messageId in _sessionStore.GetTrackedMessageIds(interaction.ChatId, response.TrackMessagesForSurfaceMode!))
+                        {
+                            await _botApiClient.ClearMessageButtonsAsync(interaction.ChatId, messageId, stoppingToken);
+                        }
+                    }
+
+                    foreach (var edit in response.MessageEdits)
+                    {
+                        await _botApiClient.EditMessageAsync(
+                            interaction.ChatId,
+                            edit.MessageId,
+                            new TelegramOperatorMessage
+                            {
+                                Text = edit.Text,
+                                Buttons = edit.Buttons
+                            },
+                            stoppingToken);
+                    }
+
+                    var startIndex = 0;
+                    var trackedMessageIds = new List<long>();
+                    if (response.MessageEdits.Count == 0
+                        && !string.IsNullOrWhiteSpace(interaction.CallbackQueryId)
+                        && interaction.SourceMessageId.HasValue
+                        && response.Messages.Count > 0)
+                    {
+                        var edited = await _botApiClient.EditMessageAsync(
+                            interaction.ChatId,
+                            interaction.SourceMessageId.Value,
+                            response.Messages[0],
+                            stoppingToken);
+                        if (edited)
+                        {
+                            startIndex = 1;
+                            trackedMessageIds.Add(interaction.SourceMessageId.Value);
+                        }
+                    }
+
+                    foreach (var message in response.Messages.Skip(startIndex))
+                    {
+                        var messageId = await _botApiClient.SendMessageAsync(interaction.ChatId, message, stoppingToken);
+                        if (messageId.HasValue)
+                        {
+                            trackedMessageIds.Add(messageId.Value);
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(response.TrackMessagesForSurfaceMode))
+                    {
+                        _sessionStore.ReplaceTrackedMessageIds(
+                            interaction.ChatId,
+                            response.TrackMessagesForSurfaceMode!,
+                            trackedMessageIds);
                     }
                 }
             }
@@ -90,6 +145,7 @@ public sealed class TelegramOperatorBotHostedService : BackgroundService
             {
                 ChatId = update.CallbackQuery.Message.Chat.Id,
                 UserId = update.CallbackQuery.From.Id,
+                SourceMessageId = update.CallbackQuery.Message.MessageId,
                 IsPrivateChat = string.Equals(update.CallbackQuery.Message.Chat.Type, "private", StringComparison.OrdinalIgnoreCase),
                 UserDisplayName = BuildUserDisplayName(update.CallbackQuery.From),
                 CallbackData = update.CallbackQuery.Data,
@@ -106,6 +162,7 @@ public sealed class TelegramOperatorBotHostedService : BackgroundService
         {
             ChatId = update.Message.Chat.Id,
             UserId = update.Message.From.Id,
+            SourceMessageId = update.Message.MessageId,
             IsPrivateChat = string.Equals(update.Message.Chat.Type, "private", StringComparison.OrdinalIgnoreCase),
             UserDisplayName = BuildUserDisplayName(update.Message.From),
             MessageText = update.Message.Text
