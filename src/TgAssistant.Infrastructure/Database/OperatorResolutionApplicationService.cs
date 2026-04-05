@@ -437,6 +437,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         var overallTrust = durableSources.Count == 0
             ? 0f
             : Clamp01(durableSources.Average(x => x.Metadata.Confidence));
+        var pairCard = cards.FirstOrDefault(x => string.Equals(x.Family, Stage7DurableObjectFamilies.PairDynamics, StringComparison.Ordinal));
 
         var session = CloneSession(request.Session, nowUtc);
         session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
@@ -460,6 +461,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                     UnresolvedCount = trackedPerson.UnresolvedCount,
                     OverallTrust = overallTrust,
                     OverallUncertainty = Clamp01(1f - overallTrust),
+                    Snapshot = BuildBoundedWorkspaceSnapshot(request.OperatorIdentity, session, trackedPerson, pairCard),
                     TruthLayerCounts = truthLayerCounts,
                     PromotionStateCounts = promotionStateCounts,
                     Families = cards,
@@ -3198,6 +3200,95 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         return parts.Count == 0
             ? "Summary available."
             : string.Join(" | ", parts);
+    }
+
+    private static OperatorWorkspaceBoundedSnapshotView BuildBoundedWorkspaceSnapshot(
+        OperatorIdentityContext? operatorIdentity,
+        OperatorSessionContext? session,
+        OperatorTrackedPersonScopeSummary? trackedPerson,
+        OperatorWorkspaceDurableFamilyCard? pairCard)
+    {
+        return new OperatorWorkspaceBoundedSnapshotView
+        {
+            Operator = BuildOperatorSnapshot(operatorIdentity, session),
+            TrackedPerson = BuildTrackedPersonSnapshot(trackedPerson),
+            Pair = BuildPairSnapshot(pairCard)
+        };
+    }
+
+    private static OperatorWorkspaceOperatorIdentitySnapshotView BuildOperatorSnapshot(
+        OperatorIdentityContext? operatorIdentity,
+        OperatorSessionContext? session)
+    {
+        return new OperatorWorkspaceOperatorIdentitySnapshotView
+        {
+            OperatorId = NormalizeAuditValue(operatorIdentity?.OperatorId),
+            OperatorDisplay = NormalizeAuditValue(operatorIdentity?.OperatorDisplay),
+            SurfaceSubject = NormalizeAuditValue(operatorIdentity?.SurfaceSubject),
+            AuthSource = NormalizeAuditValue(operatorIdentity?.AuthSource),
+            AuthTimeUtc = operatorIdentity?.AuthTimeUtc == default ? null : operatorIdentity?.AuthTimeUtc,
+            OperatorSessionId = NormalizeAuditValue(session?.OperatorSessionId),
+            Surface = NormalizeAuditValue(OperatorSurfaceTypes.Normalize(session?.Surface)),
+            ActiveMode = NormalizeAuditValue(OperatorModeTypes.Normalize(session?.ActiveMode)),
+            SessionAuthenticatedAtUtc = session?.AuthenticatedAtUtc == default ? null : session?.AuthenticatedAtUtc,
+            SessionLastSeenAtUtc = session?.LastSeenAtUtc == default ? null : session?.LastSeenAtUtc,
+            SessionExpiresAtUtc = session?.ExpiresAtUtc
+        };
+    }
+
+    private static OperatorWorkspaceTrackedIdentitySnapshotView BuildTrackedPersonSnapshot(
+        OperatorTrackedPersonScopeSummary? trackedPerson)
+    {
+        if (trackedPerson == null)
+        {
+            return new OperatorWorkspaceTrackedIdentitySnapshotView();
+        }
+
+        return new OperatorWorkspaceTrackedIdentitySnapshotView
+        {
+            TrackedPersonId = trackedPerson.TrackedPersonId == Guid.Empty ? null : trackedPerson.TrackedPersonId,
+            ScopeKey = NormalizeAuditValue(trackedPerson.ScopeKey),
+            DisplayName = NormalizeAuditValue(trackedPerson.DisplayName),
+            EvidenceCount = trackedPerson.EvidenceCount,
+            UnresolvedCount = trackedPerson.UnresolvedCount,
+            HasUnresolved = trackedPerson.HasUnresolved,
+            RecentUpdateAtUtc = trackedPerson.RecentUpdateAtUtc == default ? null : trackedPerson.RecentUpdateAtUtc,
+            LastUnresolvedAtUtc = trackedPerson.LastUnresolvedAtUtc
+        };
+    }
+
+    private static OperatorWorkspacePairSnapshotView BuildPairSnapshot(
+        OperatorWorkspaceDurableFamilyCard? pairCard)
+    {
+        if (pairCard == null)
+        {
+            return new OperatorWorkspacePairSnapshotView
+            {
+                Available = false,
+                TruthLayer = "unknown",
+                PromotionState = "unknown",
+                LatestSummary = null
+            };
+        }
+
+        return new OperatorWorkspacePairSnapshotView
+        {
+            Family = NormalizeAuditValue(pairCard.Family, Stage7DurableObjectFamilies.PairDynamics),
+            Label = NormalizeAuditValue(pairCard.Label, "Pair Dynamics"),
+            Available = true,
+            ObjectCount = pairCard.ObjectCount,
+            Trust = Clamp01(pairCard.Trust),
+            Uncertainty = Clamp01(pairCard.Uncertainty),
+            Coverage = Clamp01(pairCard.Coverage),
+            Freshness = Clamp01(pairCard.Freshness),
+            Stability = Clamp01(pairCard.Stability),
+            ContradictionCount = pairCard.ContradictionCount,
+            EvidenceLinkCount = pairCard.EvidenceLinkCount,
+            LatestUpdatedAtUtc = pairCard.LatestUpdatedAtUtc,
+            TruthLayer = NormalizeAuditValue(pairCard.TruthLayer),
+            PromotionState = NormalizeAuditValue(pairCard.PromotionState),
+            LatestSummary = NormalizeOptional(pairCard.LatestSummary)
+        };
     }
 
     private static List<OperatorWorkspaceDossierFactView> BuildDossierFacts(

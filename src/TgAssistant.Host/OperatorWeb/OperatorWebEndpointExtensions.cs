@@ -711,6 +711,25 @@ public static class OperatorWebEndpointExtensions
       padding: 9px;
       font-size: 13px;
     }
+    .snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .snapshot-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+      font-size: 13px;
+      display: grid;
+      gap: 5px;
+    }
+    .snapshot-card strong {
+      font-size: 15px;
+      color: var(--ink);
+    }
   </style>
 </head>
 <body>
@@ -729,6 +748,11 @@ public static class OperatorWebEndpointExtensions
         <a href="/operator/persons">Back to persons list</a>
       </div>
       <div id="state" class="state loading">Reading bounded person workspace summary...</div>
+    </section>
+    <section class="panel">
+      <h2>Operator ↔ Tracked Snapshot</h2>
+      <p class="muted">Bounded block from existing identity/session/read surfaces. Unknown stays unknown.</p>
+      <div id="snapshot-content" class="state empty">Snapshot is waiting for workspace data.</div>
     </section>
     <section class="panel">
       <h2>Sections</h2>
@@ -779,6 +803,7 @@ public static class OperatorWebEndpointExtensions
     const personLine = document.getElementById("person-line");
     const stateNode = document.getElementById("state");
     const tabsNode = document.getElementById("tabs");
+    const snapshotContentNode = document.getElementById("snapshot-content");
     const summaryContentNode = document.getElementById("summary-content");
     const dossierContentNode = document.getElementById("dossier-content");
     const profileContentNode = document.getElementById("profile-content");
@@ -915,6 +940,68 @@ public static class OperatorWebEndpointExtensions
 
       personLine.textContent =
         "Active tracked person: " + trackedPerson.displayName + " (" + trackedPerson.trackedPersonId + ") | scope " + trackedPerson.scopeKey + ".";
+    }
+
+    function renderSnapshotBlock() {
+      const summary = state.workspace && state.workspace.summary
+        ? state.workspace.summary
+        : null;
+      const snapshot = summary && summary.snapshot ? summary.snapshot : null;
+      if (!snapshot) {
+        snapshotContentNode.className = "state empty";
+        snapshotContentNode.textContent = "Snapshot data is unavailable.";
+        return;
+      }
+
+      const tracked = snapshot.trackedPerson || {};
+      const operator = snapshot.operator || {};
+      const pair = snapshot.pair || {};
+      const trackedName = tracked.displayName || "без имени";
+      const operatorLine = ((operator.surface || "канал не указан") + " · " + (operator.activeMode || "режим не задан")).trim();
+      const pairDirection = pair.available ? (pair.contradictionCount > 0 ? "concerning" : "steady") : "unknown";
+      const pairSummary = pair.latestSummary || "нет оценки";
+
+      snapshotContentNode.className = "";
+      snapshotContentNode.innerHTML = "";
+
+      const grid = document.createElement("div");
+      grid.className = "snapshot-grid";
+      [
+        { label: "Оператор", value: operatorLine, note: "Сессия: " + (operator.sessionExpiresAtUtc ? ("до " + formatUtc(operator.sessionExpiresAtUtc)) : operator.sessionAuthenticatedAtUtc ? ("с " + formatUtc(operator.sessionAuthenticatedAtUtc)) : "нет данных") },
+        { label: "Связка", value: titleize(pairDirection), note: "Риск: " + String(pair.contradictionCount || 0) + " против." },
+        { label: "Персона", value: trackedName, note: "Нерешено: " + (tracked.unresolvedCount == null ? "н/д" : tracked.unresolvedCount) }
+      ].forEach(function(item) {
+        const card = document.createElement("article");
+        card.className = "snapshot-card";
+        card.innerHTML =
+          "<small>" + item.label + "</small>" +
+          "<strong>" + item.value + "</strong>" +
+          "<span>" + item.note + "</span>";
+        grid.appendChild(card);
+      });
+      snapshotContentNode.appendChild(grid);
+
+      const chips = document.createElement("div");
+      chips.className = "chip-list";
+      [
+        "Динамика: " + (pair.available ? titleize(pairDirection) : "нет оценки"),
+        "Траст пары: " + formatPercent(pair.trust),
+        "Неопределенность: " + formatPercent(pair.uncertainty),
+        "Сигнал: " + pairSummary,
+        "Апдейт: " + formatUtc(tracked.recentUpdateAtUtc || pair.latestUpdatedAtUtc || null),
+        "Оператор: " + (operator.operatorDisplay || "неизвестен")
+      ].forEach(function(text) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = text;
+        chips.appendChild(chip);
+      });
+      snapshotContentNode.appendChild(chips);
+
+      const note = document.createElement("p");
+      note.className = "muted";
+      note.textContent = "Это ограниченный snapshot из существующих read/sessions источников; не полноценная OperatorModel.";
+      snapshotContentNode.appendChild(note);
     }
 
     function renderTabs() {
@@ -1907,6 +1994,7 @@ public static class OperatorWebEndpointExtensions
       state.revisions = null;
       state.resolution = null;
       renderPersonLine();
+      renderSnapshotBlock();
       renderTabs();
       renderActiveSection();
       setState("empty", "Workspace summary loaded from durable/read-model contracts.");

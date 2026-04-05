@@ -274,10 +274,64 @@ public class OperatorPersonWorkspaceSummarySectionView
     public int UnresolvedCount { get; set; }
     public float OverallTrust { get; set; }
     public float OverallUncertainty { get; set; }
+    public OperatorWorkspaceBoundedSnapshotView Snapshot { get; set; } = new();
     public List<ResolutionFacetCount> TruthLayerCounts { get; set; } = [];
     public List<ResolutionFacetCount> PromotionStateCounts { get; set; } = [];
     public List<OperatorWorkspaceDurableFamilyCard> Families { get; set; } = [];
     public List<OperatorWorkspaceProvenanceItem> Provenance { get; set; } = [];
+}
+
+public class OperatorWorkspaceBoundedSnapshotView
+{
+    public OperatorWorkspaceOperatorIdentitySnapshotView Operator { get; set; } = new();
+    public OperatorWorkspaceTrackedIdentitySnapshotView TrackedPerson { get; set; } = new();
+    public OperatorWorkspacePairSnapshotView Pair { get; set; } = new();
+}
+
+public class OperatorWorkspaceOperatorIdentitySnapshotView
+{
+    public string OperatorId { get; set; } = "unknown";
+    public string OperatorDisplay { get; set; } = "unknown";
+    public string SurfaceSubject { get; set; } = "unknown";
+    public string AuthSource { get; set; } = "unknown";
+    public DateTime? AuthTimeUtc { get; set; }
+    public string OperatorSessionId { get; set; } = "unknown";
+    public string Surface { get; set; } = "unknown";
+    public string ActiveMode { get; set; } = "unknown";
+    public DateTime? SessionAuthenticatedAtUtc { get; set; }
+    public DateTime? SessionLastSeenAtUtc { get; set; }
+    public DateTime? SessionExpiresAtUtc { get; set; }
+}
+
+public class OperatorWorkspaceTrackedIdentitySnapshotView
+{
+    public Guid? TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = "unknown";
+    public string DisplayName { get; set; } = "unknown";
+    public int EvidenceCount { get; set; }
+    public int UnresolvedCount { get; set; }
+    public bool HasUnresolved { get; set; }
+    public DateTime? RecentUpdateAtUtc { get; set; }
+    public DateTime? LastUnresolvedAtUtc { get; set; }
+}
+
+public class OperatorWorkspacePairSnapshotView
+{
+    public string Family { get; set; } = "pair_dynamics";
+    public string Label { get; set; } = "Pair Dynamics";
+    public bool Available { get; set; }
+    public int ObjectCount { get; set; }
+    public float Trust { get; set; }
+    public float Uncertainty { get; set; }
+    public float Coverage { get; set; }
+    public float Freshness { get; set; }
+    public float Stability { get; set; }
+    public int ContradictionCount { get; set; }
+    public int EvidenceLinkCount { get; set; }
+    public DateTime? LatestUpdatedAtUtc { get; set; }
+    public string TruthLayer { get; set; } = "unknown";
+    public string PromotionState { get; set; } = "unknown";
+    public string? LatestSummary { get; set; }
 }
 
 public class OperatorPersonWorkspaceDossierSectionView
