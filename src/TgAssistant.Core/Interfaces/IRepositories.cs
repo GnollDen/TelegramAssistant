@@ -331,6 +331,13 @@ public interface IResolutionActionService
         CancellationToken ct = default);
 }
 
+public interface IConflictResolutionSessionModel
+{
+    Task<ResolutionConflictSessionModelResult> ResolveAsync(
+        ResolutionConflictSessionModelRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IOperatorResolutionApplicationService
 {
     Task<OperatorTrackedPersonQueryResult> QueryTrackedPersonsAsync(
@@ -387,6 +394,18 @@ public interface IOperatorResolutionApplicationService
 
     Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(
         ResolutionActionRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorConflictResolutionSessionResultEnvelope> StartConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionStartRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorConflictResolutionSessionResultEnvelope> RespondConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionRespondRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorConflictResolutionSessionResultEnvelope> QueryConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionQueryRequest request,
         CancellationToken ct = default);
 
     Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(

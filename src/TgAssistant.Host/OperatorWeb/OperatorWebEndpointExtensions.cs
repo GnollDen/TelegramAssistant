@@ -2768,6 +2768,7 @@ public static class OperatorWebEndpointExtensions
       queue: null,
       selectedScopeItemKey: bootScopeItemKey || null,
       selectedDetailItem: null,
+      activeConflictSession: null,
       evidenceIndex: -1,
       evidenceDrawerOpen: false,
       clarificationDrawerOpen: false,
@@ -3340,6 +3341,7 @@ public static class OperatorWebEndpointExtensions
     function clearDetail(message) {
       state.selectedScopeItemKey = null;
       state.selectedDetailItem = null;
+      state.activeConflictSession = null;
       state.toggleDetailActionButtons = null;
       detailContentNode.innerHTML = "";
       resetEvidenceState();
@@ -3355,6 +3357,19 @@ public static class OperatorWebEndpointExtensions
           && node.dataset.scopeItemKey === state.selectedScopeItemKey;
         node.classList.toggle("active", !!isActive);
       });
+    }
+
+    function isConflictSessionEligible(item) {
+      if (!item) {
+        return false;
+      }
+
+      if ((item.itemType || "") === "contradiction") {
+        return true;
+      }
+
+      return (item.itemType || "") === "review"
+        && (item.sourceKind || "") === "durable_object_metadata";
     }
 
     function renderDetail(detail) {
@@ -3567,6 +3582,196 @@ public static class OperatorWebEndpointExtensions
       actionsBlock.appendChild(actionGrid);
       actionsBlock.appendChild(actionFeedback);
       detailContentNode.appendChild(actionsBlock);
+
+      const conflictSessionBlock = document.createElement("section");
+      conflictSessionBlock.className = "detail-block";
+      conflictSessionBlock.innerHTML = "<h4>AI Conflict Session (V1)</h4>";
+
+      const conflictSessionState = document.createElement("div");
+      conflictSessionState.className = "state empty";
+      conflictSessionState.textContent = "AI session is available for contradiction/review pilot items only.";
+      conflictSessionBlock.appendChild(conflictSessionState);
+
+      const conflictQuestionWrap = document.createElement("div");
+      const conflictQuestionText = document.createElement("p");
+      const conflictAnswerLabel = document.createElement("label");
+      conflictAnswerLabel.textContent = "Operator answer";
+      const conflictAnswerInput = document.createElement("textarea");
+      conflictAnswerInput.rows = 2;
+      conflictAnswerInput.placeholder = "Provide one bounded answer for AI follow-up.";
+      conflictAnswerLabel.appendChild(conflictAnswerInput);
+      const conflictAnswerButton = document.createElement("button");
+      conflictAnswerButton.type = "button";
+      conflictAnswerButton.textContent = "Submit Answer";
+      conflictQuestionWrap.appendChild(conflictQuestionText);
+      conflictQuestionWrap.appendChild(conflictAnswerLabel);
+      conflictQuestionWrap.appendChild(conflictAnswerButton);
+      conflictQuestionWrap.style.display = "none";
+      conflictSessionBlock.appendChild(conflictQuestionWrap);
+
+      const conflictVerdictNode = document.createElement("pre");
+      conflictVerdictNode.className = "muted";
+      conflictVerdictNode.style.whiteSpace = "pre-wrap";
+      conflictVerdictNode.textContent = "";
+      conflictSessionBlock.appendChild(conflictVerdictNode);
+
+      const conflictApplyButton = document.createElement("button");
+      conflictApplyButton.type = "button";
+      conflictApplyButton.textContent = "Apply AI Proposal";
+      conflictApplyButton.style.display = "none";
+      conflictSessionBlock.appendChild(conflictApplyButton);
+      detailContentNode.appendChild(conflictSessionBlock);
+
+      function setConflictSessionState(kind, message) {
+        conflictSessionState.className = "state " + kind;
+        conflictSessionState.textContent = message;
+      }
+
+      function renderConflictSession(sessionPayload) {
+        state.activeConflictSession = sessionPayload || null;
+        conflictAnswerInput.value = "";
+        conflictQuestionWrap.style.display = "none";
+        conflictApplyButton.style.display = "none";
+        conflictVerdictNode.textContent = "";
+        if (!sessionPayload) {
+          setConflictSessionState("empty", "No active AI conflict session.");
+          return;
+        }
+
+        const sessionState = sessionPayload.state || "unknown";
+        const verdict = sessionPayload.finalVerdict || null;
+        if (sessionState === "awaiting_operator_answer" && sessionPayload.operatorQuestion) {
+          conflictQuestionWrap.style.display = "";
+          conflictQuestionText.innerHTML = "<strong>AI follow-up:</strong> " + (sessionPayload.operatorQuestion.questionText || "No question text.");
+          setConflictSessionState("success", "AI asked one bounded follow-up question.");
+          return;
+        }
+
+        if (verdict) {
+          conflictVerdictNode.textContent = JSON.stringify(verdict, null, 2);
+          if (sessionState === "ready_for_commit") {
+            conflictApplyButton.style.display = "";
+            setConflictSessionState("success", "Final AI verdict is ready for deterministic apply handoff.");
+          } else if (sessionState === "needs_web_review" || sessionState === "fallback") {
+            setConflictSessionState("empty", "AI returned unresolved/fallback verdict; continue with manual bounded action.");
+          } else {
+            setConflictSessionState("empty", "AI session completed with non-apply state: " + sessionState + ".");
+          }
+          return;
+        }
+
+        setConflictSessionState("loading", "AI session is running...");
+      }
+
+      async function startConflictSessionIfEligible() {
+        if (!isConflictSessionEligible(item)) {
+          setConflictSessionState("empty", "AI session is disabled for this item type/source.");
+          return;
+        }
+
+        const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+        const scopeItemKey = item.scopeItemKey || state.selectedScopeItemKey;
+        if (!trackedPersonId || !scopeItemKey) {
+          setConflictSessionState("error", "Tracked person and scope item are required for AI session.");
+          return;
+        }
+
+        setConflictSessionState("loading", "Starting AI conflict session...");
+        try {
+          const result = await operatorPostJson("/api/operator/resolution/conflict-session/start", {
+            requestId: createActionRequestId("conflict-session-start"),
+            trackedPersonId: trackedPersonId,
+            scopeItemKey: scopeItemKey
+          });
+          if (!result.accepted || !result.conflictSession) {
+            throw new Error(result.failureReason || "conflict_session_start_rejected");
+          }
+
+          renderConflictSession(result.conflictSession);
+        } catch (error) {
+          setConflictSessionState("error", "AI session start failed: " + (error && error.message ? error.message : "unknown_error"));
+        }
+      }
+
+      async function submitConflictAnswer() {
+        const active = state.activeConflictSession;
+        if (!active || !active.conflictSessionId || !active.operatorQuestion) {
+          setConflictSessionState("error", "No active AI question is available.");
+          return;
+        }
+
+        const answerValue = conflictAnswerInput.value.trim();
+        if (!answerValue) {
+          setConflictSessionState("error", "One operator answer is required.");
+          return;
+        }
+
+        setConflictSessionState("loading", "Submitting operator answer to AI session...");
+        try {
+          const result = await operatorPostJson("/api/operator/resolution/conflict-session/respond", {
+            requestId: createActionRequestId("conflict-session-respond"),
+            conflictSessionId: active.conflictSessionId,
+            questionKey: active.operatorQuestion.questionKey || "q1",
+            answerValue: answerValue,
+            answerKind: active.operatorQuestion.answerKind || "free_text"
+          });
+          if (!result.accepted || !result.conflictSession) {
+            throw new Error(result.failureReason || "conflict_session_respond_rejected");
+          }
+
+          renderConflictSession(result.conflictSession);
+        } catch (error) {
+          setConflictSessionState("error", "AI session answer submit failed: " + (error && error.message ? error.message : "unknown_error"));
+        }
+      }
+
+      async function applyConflictProposal() {
+        const active = state.activeConflictSession;
+        if (!active || !active.finalVerdict || !active.finalVerdict.normalizationProposal) {
+          setConflictSessionState("error", "No final AI proposal is available.");
+          return;
+        }
+
+        const trackedPersonId = state.activeTrackedPersonId || trackedPersonSelect.value;
+        const scopeItemKey = item.scopeItemKey || state.selectedScopeItemKey;
+        const proposal = active.finalVerdict.normalizationProposal;
+        const actionType = (proposal.recommendedAction || "").toLowerCase();
+        if (!trackedPersonId || !scopeItemKey || !actionType) {
+          setConflictSessionState("error", "Conflict proposal is incomplete.");
+          return;
+        }
+
+        setConflictSessionState("loading", "Applying AI proposal through deterministic action path...");
+        try {
+          const beforeSnapshot = snapshotQueueProjection(state.queue);
+          const result = await operatorPostJson("/api/operator/resolution/actions", {
+            requestId: createActionRequestId("conflict-session-apply"),
+            trackedPersonId: trackedPersonId,
+            scopeItemKey: scopeItemKey,
+            actionType: actionType,
+            explanation: proposal.explanation || null,
+            clarificationPayload: proposal.clarificationPayload || null,
+            conflictResolutionSessionId: active.conflictSessionId,
+            conflictVerdictRevision: active.revision,
+            conflictVerdict: active.finalVerdict,
+            submittedAtUtc: new Date().toISOString()
+          });
+
+          const action = result && result.action ? result.action : null;
+          if (!result.accepted || !action || !action.accepted) {
+            throw new Error(result.failureReason || (action && action.failureReason) || "action_submit_rejected");
+          }
+
+          const feedback = await refreshQueueForActionFeedback(actionType, action, beforeSnapshot, scopeItemKey);
+          setConflictSessionState(feedback.kind, "AI proposal applied via deterministic path. " + feedback.message);
+        } catch (error) {
+          setConflictSessionState("error", "AI proposal apply failed: " + (error && error.message ? error.message : "unknown_error"));
+        }
+      }
+
+      conflictAnswerButton.addEventListener("click", submitConflictAnswer);
+      conflictApplyButton.addEventListener("click", applyConflictProposal);
+      startConflictSessionIfEligible();
 
       const notes = Array.isArray(item.notes) ? item.notes : [];
       if (notes.length > 0) {

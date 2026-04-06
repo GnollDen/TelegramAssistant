@@ -330,6 +330,29 @@ public class ResolutionInterpretationModelResponse
     public int TotalTokens { get; set; }
 }
 
+public class ResolutionConflictSessionModelRequest
+{
+    public string Stage { get; set; } = "initial";
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public ResolutionConflictSessionCasePacket CasePacket { get; set; } = new();
+    public ResolutionConflictSessionQuestion? OperatorQuestion { get; set; }
+    public ResolutionConflictSessionOperatorInput? OperatorInput { get; set; }
+}
+
+public class ResolutionConflictSessionModelResult
+{
+    public bool AskFollowUpQuestion { get; set; }
+    public ResolutionConflictSessionQuestion? FollowUpQuestion { get; set; }
+    public ResolutionConflictSessionVerdict FinalVerdict { get; set; } = new();
+    public string Provider { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string? RequestId { get; set; }
+    public int LatencyMs { get; set; }
+    public int TotalTokens { get; set; }
+}
+
 public class ResolutionDetailNote
 {
     public string Kind { get; set; } = string.Empty;

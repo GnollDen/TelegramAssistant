@@ -670,6 +670,36 @@ public class OperatorResolutionActionResultEnvelope
     public ResolutionActionResult Action { get; set; } = new();
 }
 
+public class OperatorConflictResolutionSessionStartRequest : OperatorContractRequestBase
+{
+    public string RequestId { get; set; } = string.Empty;
+    public Guid? TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+}
+
+public class OperatorConflictResolutionSessionRespondRequest : OperatorContractRequestBase
+{
+    public string RequestId { get; set; } = string.Empty;
+    public Guid ConflictSessionId { get; set; }
+    public string QuestionKey { get; set; } = string.Empty;
+    public string AnswerValue { get; set; } = string.Empty;
+    public string AnswerKind { get; set; } = "free_text";
+    public string? Notes { get; set; }
+}
+
+public class OperatorConflictResolutionSessionQueryRequest : OperatorContractRequestBase
+{
+    public Guid ConflictSessionId { get; set; }
+}
+
+public class OperatorConflictResolutionSessionResultEnvelope
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public ResolutionConflictSessionView? ConflictSession { get; set; }
+}
+
 public class OperatorOfflineEventQueryApiRequest : OperatorContractRequestBase
 {
     public Guid? TrackedPersonId { get; set; }

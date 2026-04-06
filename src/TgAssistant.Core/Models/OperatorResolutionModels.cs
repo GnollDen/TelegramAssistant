@@ -179,6 +179,9 @@ public class ResolutionActionRequest
     public string ActionType { get; set; } = string.Empty;
     public string? Explanation { get; set; }
     public ResolutionClarificationPayload? ClarificationPayload { get; set; }
+    public Guid? ConflictResolutionSessionId { get; set; }
+    public int? ConflictVerdictRevision { get; set; }
+    public ResolutionConflictSessionVerdict? ConflictVerdict { get; set; }
     public OperatorIdentityContext OperatorIdentity { get; set; } = new();
     public OperatorSessionContext Session { get; set; } = new();
     public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
@@ -195,8 +198,132 @@ public class ResolutionActionResult
     public string ScopeItemKey { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
     public string? ItemType { get; set; }
+    public Guid? ConflictResolutionSessionId { get; set; }
     public ResolutionRecomputeContract? Recompute { get; set; }
     public DateTime ProcessedAtUtc { get; set; }
+}
+
+public static class ResolutionConflictSessionStates
+{
+    public const string RunningInitial = "running_initial";
+    public const string AwaitingOperatorAnswer = "awaiting_operator_answer";
+    public const string RunningFinal = "running_final";
+    public const string ReadyForCommit = "ready_for_commit";
+    public const string NeedsWebReview = "needs_web_review";
+    public const string Fallback = "fallback";
+    public const string HandedOff = "handed_off";
+    public const string Expired = "expired";
+    public const string Failed = "failed";
+}
+
+public static class ResolutionConflictSessionContract
+{
+    public const string Version = "ai_conflict_resolution_session_v1";
+    public const string StepKind = "resolution_conflict_session_v1";
+}
+
+public class ResolutionConflictSessionBudget
+{
+    public int MaxModelCalls { get; set; } = 2;
+    public int UsedModelCalls { get; set; }
+    public int MaxOperatorQuestions { get; set; } = 1;
+    public int UsedOperatorQuestions { get; set; }
+    public int MaxOperatorAnswers { get; set; } = 1;
+    public int UsedOperatorAnswers { get; set; }
+    public int MaxRetrievalRounds { get; set; } = 0;
+    public int UsedRetrievalRounds { get; set; }
+    public int TtlSeconds { get; set; } = 1800;
+}
+
+public class ResolutionConflictSessionQuestion
+{
+    public string QuestionKey { get; set; } = string.Empty;
+    public string QuestionText { get; set; } = string.Empty;
+    public string AnswerKind { get; set; } = "free_text";
+    public string? Notes { get; set; }
+}
+
+public class ResolutionConflictSessionOperatorInput
+{
+    public string QuestionKey { get; set; } = string.Empty;
+    public string AnswerValue { get; set; } = string.Empty;
+    public string AnswerKind { get; set; } = "free_text";
+    public string? Notes { get; set; }
+    public DateTime AnsweredAtUtc { get; set; }
+}
+
+public class ResolutionConflictSessionClaim
+{
+    public string ClaimType { get; set; } = ResolutionInterpretationClaimTypes.Hypothesis;
+    public string Summary { get; set; } = string.Empty;
+    public List<string> EvidenceRefs { get; set; } = [];
+    public List<string> OperatorInputRefs { get; set; } = [];
+}
+
+public class ResolutionConflictSessionRejectedClaim
+{
+    public string Summary { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class ResolutionConflictNormalizationProposal
+{
+    public string RecommendedAction { get; set; } = ResolutionActionTypes.Clarify;
+    public string Explanation { get; set; } = string.Empty;
+    public ResolutionClarificationPayload? ClarificationPayload { get; set; }
+}
+
+public class ResolutionConflictConfidenceCalibration
+{
+    public float ConfidenceScore { get; set; }
+    public string Rationale { get; set; } = string.Empty;
+}
+
+public class ResolutionConflictSessionVerdict
+{
+    public string ResolutionVerdict { get; set; } = ResolutionConflictSessionStates.NeedsWebReview;
+    public List<ResolutionConflictSessionClaim> ResolvedClaims { get; set; } = [];
+    public List<ResolutionConflictSessionRejectedClaim> RejectedClaims { get; set; } = [];
+    public List<string> EvidenceRefsUsed { get; set; } = [];
+    public List<string> OperatorInputsUsed { get; set; } = [];
+    public List<string> RemainingUncertainties { get; set; } = [];
+    public ResolutionConflictNormalizationProposal NormalizationProposal { get; set; } = new();
+    public ResolutionConflictConfidenceCalibration ConfidenceCalibration { get; set; } = new();
+}
+
+public class ResolutionConflictSessionCasePacket
+{
+    public ResolutionItemDetail Item { get; set; } = new();
+    public ResolutionInterpretationLoopResult? InterpretationLoop { get; set; }
+    public List<ResolutionEvidenceSummary> Evidence { get; set; } = [];
+    public List<ResolutionDetailNote> Notes { get; set; } = [];
+    public List<string> DurableContextSummaries { get; set; } = [];
+}
+
+public class ResolutionConflictSessionView
+{
+    public Guid ConflictSessionId { get; set; }
+    public string ContractVersion { get; set; } = ResolutionConflictSessionContract.Version;
+    public string State { get; set; } = ResolutionConflictSessionStates.RunningInitial;
+    public string? StateReason { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
+    public string Surface { get; set; } = OperatorSurfaceTypes.Web;
+    public int Revision { get; set; } = 1;
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public ResolutionConflictSessionBudget Budgets { get; set; } = new();
+    public ResolutionConflictSessionCasePacket? InitialCasePacket { get; set; }
+    public ResolutionConflictSessionQuestion? OperatorQuestion { get; set; }
+    public ResolutionConflictSessionOperatorInput? OperatorAnswer { get; set; }
+    public ResolutionConflictSessionVerdict? FinalVerdict { get; set; }
+    public List<ResolutionInterpretationAuditEntry> AuditTrail { get; set; } = [];
+    public string? FailureReason { get; set; }
 }
 
 public static class ResolutionRecomputeLifecycleStatuses

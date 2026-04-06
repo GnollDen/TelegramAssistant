@@ -196,6 +196,10 @@ try
     var runtimeControlDetailProofOutput = runtimeControlDetailProofOutputArg is null
         ? null
         : runtimeControlDetailProofOutputArg["--runtime-control-detail-proof-output=".Length..];
+    var aiConflictSessionV1ProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--ai-conflict-session-v1-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var aiConflictSessionV1ProofOutput = aiConflictSessionV1ProofOutputArg is null
+        ? null
+        : aiConflictSessionV1ProofOutputArg["--ai-conflict-session-v1-proof-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -218,6 +222,7 @@ try
     var runOpint009DSmoke = args.Any(arg => string.Equals(arg, "--opint-009-d-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
+    var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -306,6 +311,7 @@ try
         "--opint-009-c2-smoke",
         "--opint-009-d-smoke",
         "--resolution-interpretation-loop-v1-validate",
+        "--ai-conflict-session-v1-proof",
         "--launch-smoke",
         "--external-archive-smoke"
     };
@@ -673,6 +679,24 @@ try
                 report.ActiveRuntimeControlState,
                 report.ReviewOnly.ClaimsAndEvidenceEmpty,
                 report.PromotionBlocked.LiveItemPresent);
+            return;
+        }
+
+        if (runAiConflictSessionV1Proof)
+        {
+            var report = await AiConflictResolutionSessionV1ProofRunner.RunAsync(
+                host.Services,
+                aiConflictSessionV1ProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "AI conflict session V1 proof requested via --ai-conflict-session-v1-proof. output={OutputPath}, passed={Passed}, scope_item_key={ScopeItemKey}, start_state={StartState}, final_state={FinalState}, action_applied={ApplyAccepted}, deterministic_apply_path_confirmed={DeterministicApplyPathConfirmed}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.ScopeItemKey,
+                report.StartState,
+                report.FinalState,
+                report.ApplyAccepted,
+                report.DeterministicApplyPathConfirmed);
             return;
         }
 

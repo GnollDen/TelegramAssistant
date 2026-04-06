@@ -1035,6 +1035,9 @@ public class DbOperatorResolutionAction
     public string Decision { get; set; } = string.Empty;
     public string? Explanation { get; set; }
     public string? ClarificationPayloadJson { get; set; }
+    public Guid? ConflictResolutionSessionId { get; set; }
+    public int? ConflictVerdictRevision { get; set; }
+    public string? ConflictVerdictJson { get; set; }
     public string OperatorId { get; set; } = string.Empty;
     public string OperatorDisplay { get; set; } = string.Empty;
     public string OperatorSessionId { get; set; } = string.Empty;
@@ -1056,6 +1059,40 @@ public class DbOperatorResolutionAction
     public string? RecomputeLastError { get; set; }
     public DateTime SubmittedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+}
+
+public class DbOperatorResolutionConflictSession
+{
+    public Guid Id { get; set; }
+    public string RequestId { get; set; } = string.Empty;
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeItemKey { get; set; } = string.Empty;
+    public string ItemType { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
+    public string SourceRef { get; set; } = string.Empty;
+    public string OperatorId { get; set; } = string.Empty;
+    public string OperatorSessionId { get; set; } = string.Empty;
+    public string Surface { get; set; } = string.Empty;
+    public string Status { get; set; } = ResolutionConflictSessionStates.RunningInitial;
+    public string? StateReason { get; set; }
+    public int Revision { get; set; } = 1;
+    public int QuestionCount { get; set; }
+    public int AnswerCount { get; set; }
+    public int ModelCallCount { get; set; }
+    public string CasePacketJson { get; set; } = "{}";
+    public string? QuestionJson { get; set; }
+    public string? AnswerJson { get; set; }
+    public string? VerdictJson { get; set; }
+    public string? NormalizationProposalJson { get; set; }
+    public string AuditTrailJson { get; set; } = "[]";
+    public string? FailureReason { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public Guid? FinalActionId { get; set; }
+    public string? FinalActionRequestId { get; set; }
 }
 
 public class DbOperatorAuditEvent

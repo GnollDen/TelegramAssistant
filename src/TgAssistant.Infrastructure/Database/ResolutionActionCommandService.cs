@@ -39,6 +39,8 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
         var normalizedRequestId = NormalizeRequired(request.RequestId);
         var normalizedScopeItemKey = NormalizeRequired(request.ScopeItemKey);
         var normalizedExplanation = NormalizeOptional(request.Explanation);
+        var conflictSessionId = request.ConflictResolutionSessionId;
+        var conflictVerdictRevision = request.ConflictVerdictRevision;
         var normalizedSurface = OperatorSurfaceTypes.Normalize(request.Session.Surface);
         var normalizedMode = OperatorModeTypes.Normalize(request.Session.ActiveMode);
 
@@ -137,6 +139,92 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                 ct);
         }
 
+        DbOperatorResolutionConflictSession? linkedConflictSession = null;
+        ResolutionConflictNormalizationProposal? linkedNormalizationProposal = null;
+        ResolutionConflictSessionVerdict? linkedVerdict = null;
+        if (conflictSessionId.HasValue || conflictVerdictRevision.HasValue)
+        {
+            var conflictFailure = string.Empty;
+            if (!conflictSessionId.HasValue || !conflictVerdictRevision.HasValue)
+            {
+                conflictFailure = "conflict_session_linkage_incomplete";
+            }
+            else
+            {
+                linkedConflictSession = await db.OperatorResolutionConflictSessions
+                    .FirstOrDefaultAsync(x => x.Id == conflictSessionId.Value, ct);
+                if (linkedConflictSession == null)
+                {
+                    conflictFailure = "conflict_session_not_found";
+                }
+                else if (!string.Equals(linkedConflictSession.OperatorSessionId, request.Session.OperatorSessionId, StringComparison.Ordinal))
+                {
+                    conflictFailure = "session_scope_item_mismatch";
+                }
+                else if (linkedConflictSession.TrackedPersonId != trackedPerson.PersonId
+                         || !string.Equals(linkedConflictSession.ScopeItemKey, normalizedScopeItemKey, StringComparison.Ordinal))
+                {
+                    conflictFailure = "session_scope_item_mismatch";
+                }
+                else if (linkedConflictSession.ExpiresAtUtc <= nowUtc)
+                {
+                    conflictFailure = "session_expired";
+                }
+                else if (!IsConflictSessionHandoffReady(linkedConflictSession.Status))
+                {
+                    conflictFailure = "conflict_session_not_ready_for_commit";
+                }
+                else if (linkedConflictSession.Revision != conflictVerdictRevision.Value)
+                {
+                    conflictFailure = "conflict_verdict_revision_mismatch";
+                }
+                else
+                {
+                    linkedNormalizationProposal = DeserializeOrDefault<ResolutionConflictNormalizationProposal>(linkedConflictSession.NormalizationProposalJson);
+                    linkedVerdict = DeserializeOrDefault<ResolutionConflictSessionVerdict>(linkedConflictSession.VerdictJson);
+                    if (linkedNormalizationProposal == null || string.IsNullOrWhiteSpace(linkedNormalizationProposal.RecommendedAction))
+                    {
+                        conflictFailure = "conflict_session_handoff_mismatch";
+                    }
+                    else if (!string.Equals(ResolutionActionTypes.Normalize(linkedNormalizationProposal.RecommendedAction), normalizedAction, StringComparison.Ordinal))
+                    {
+                        conflictFailure = "conflict_session_handoff_mismatch";
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(conflictFailure))
+            {
+                return await PersistDeniedAuditAsync(
+                    db,
+                    request,
+                    trackedPerson,
+                    normalizedRequestId,
+                    normalizedScopeItemKey,
+                    normalizedAction,
+                    normalizedExplanation,
+                    detail.Item.ItemType,
+                    conflictFailure,
+                    nowUtc,
+                    ct);
+            }
+
+            if (linkedNormalizationProposal != null)
+            {
+                if (string.IsNullOrWhiteSpace(normalizedExplanation) && !string.IsNullOrWhiteSpace(linkedNormalizationProposal.Explanation))
+                {
+                    normalizedExplanation = linkedNormalizationProposal.Explanation.Trim();
+                }
+
+                if (request.ClarificationPayload == null
+                    && string.Equals(normalizedAction, ResolutionActionTypes.Clarify, StringComparison.Ordinal)
+                    && linkedNormalizationProposal.ClarificationPayload != null)
+                {
+                    request.ClarificationPayload = linkedNormalizationProposal.ClarificationPayload;
+                }
+            }
+        }
+
         var clarificationPayloadJson = request.ClarificationPayload == null
             ? null
             : JsonSerializer.Serialize(request.ClarificationPayload, JsonOptions);
@@ -150,6 +238,9 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             normalizedAction,
             normalizedExplanation,
             clarificationPayloadJson,
+            conflictSessionId,
+            conflictVerdictRevision,
+            linkedVerdict,
             nowUtc);
         var recomputeContract = ResolutionRecomputePlanner.BuildContract(
             actionRow.Id,
@@ -219,6 +310,15 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                     nowUtc,
                     recomputeContract));
             db.OperatorAuditEvents.Add(auditRow);
+            if (linkedConflictSession != null)
+            {
+                linkedConflictSession.Status = ResolutionConflictSessionStates.HandedOff;
+                linkedConflictSession.StateReason = "action_handoff_completed";
+                linkedConflictSession.UpdatedAtUtc = nowUtc;
+                linkedConflictSession.CompletedAtUtc = nowUtc;
+                linkedConflictSession.FinalActionId = actionRow.Id;
+                linkedConflictSession.FinalActionRequestId = actionRow.RequestId;
+            }
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
         }
@@ -511,6 +611,9 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
         string normalizedAction,
         string? normalizedExplanation,
         string? clarificationPayloadJson,
+        Guid? conflictSessionId,
+        int? conflictVerdictRevision,
+        ResolutionConflictSessionVerdict? conflictVerdict,
         DateTime nowUtc)
     {
         return new DbOperatorResolutionAction
@@ -528,6 +631,9 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             Decision = normalizedAction,
             Explanation = normalizedExplanation,
             ClarificationPayloadJson = clarificationPayloadJson,
+            ConflictResolutionSessionId = conflictSessionId,
+            ConflictVerdictRevision = conflictVerdictRevision,
+            ConflictVerdictJson = conflictVerdict == null ? null : JsonSerializer.Serialize(conflictVerdict, JsonOptions),
             OperatorId = request.OperatorIdentity.OperatorId.Trim(),
             OperatorDisplay = request.OperatorIdentity.OperatorDisplay.Trim(),
             OperatorSessionId = request.Session.OperatorSessionId.Trim(),
@@ -669,6 +775,7 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             ScopeItemKey = row.ScopeItemKey,
             ActionType = row.Decision,
             ItemType = row.ItemType,
+            ConflictResolutionSessionId = row.ConflictResolutionSessionId,
             Recompute = recomputeContract,
             ProcessedAtUtc = row.CreatedAtUtc
         };
@@ -847,6 +954,35 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static bool IsConflictSessionHandoffReady(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return false;
+        }
+
+        return string.Equals(status, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal)
+            || string.Equals(status, ResolutionConflictSessionStates.NeedsWebReview, StringComparison.Ordinal)
+            || string.Equals(status, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal);
+    }
+
+    private static T? DeserializeOrDefault<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     private static string NormalizeAuditValue(string? value, string fallback = "unknown")

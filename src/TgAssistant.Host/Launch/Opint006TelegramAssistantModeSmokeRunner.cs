@@ -281,6 +281,21 @@ public static class Opint006TelegramAssistantModeSmokeRunner
         public Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(ResolutionActionRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-006-C smoke should not submit resolution actions.");
 
+        public Task<OperatorConflictResolutionSessionResultEnvelope> StartConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionStartRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not start AI conflict sessions.");
+
+        public Task<OperatorConflictResolutionSessionResultEnvelope> RespondConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionRespondRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not respond to AI conflict sessions.");
+
+        public Task<OperatorConflictResolutionSessionResultEnvelope> QueryConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionQueryRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-006-C smoke should not query AI conflict sessions.");
+
         public Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(
             OperatorOfflineEventQueryApiRequest request,
             CancellationToken ct = default)

@@ -12,6 +12,12 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private const string ActiveStatus = "active";
     private const string TrackedPersonSwitchSessionEventType = "tracked_person_switch";
     private const string OfflineEventScopeItemPrefix = "offline_event:";
+    private const string ConflictSessionCanonicalScopeKey = "chat:885574984";
+    private const int ConflictSessionTtlMinutes = 30;
+    private static readonly HashSet<string> ConflictSessionEligibleReviewSourceKinds = new(StringComparer.Ordinal)
+    {
+        "durable_object_metadata"
+    };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> WorkspaceSummaryFamilies = new(StringComparer.Ordinal)
     {
@@ -26,6 +32,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
     private readonly IResolutionActionService _resolutionActionService;
+    private readonly IConflictResolutionSessionModel _conflictResolutionSessionModel;
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
 
@@ -33,12 +40,14 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         IResolutionReadService resolutionReadService,
         IResolutionActionService resolutionActionService,
+        IConflictResolutionSessionModel conflictResolutionSessionModel,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ILogger<OperatorResolutionApplicationService> logger)
     {
         _dbFactory = dbFactory;
         _resolutionReadService = resolutionReadService;
         _resolutionActionService = resolutionActionService;
+        _conflictResolutionSessionModel = conflictResolutionSessionModel;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _logger = logger;
     }
@@ -1948,6 +1957,431 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
+    public async Task<OperatorConflictResolutionSessionResultEnvelope> StartConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionStartRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var scopeItemKey = NormalizeOptional(request.ScopeItemKey);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+                request.OperatorIdentity,
+                request.Session,
+                requireActiveTrackedPerson: true,
+                requireSupportedMode: true,
+                requireActiveScopeItem: false,
+                requireMatchingUnfinishedStep: true,
+                expectedTrackedPersonId: trackedPersonId,
+                expectedScopeItemKey: scopeItemKey,
+                nowUtc)
+            ?? ValidateConflictSessionStartRequest(request, scopeItemKey);
+        if (validationFailure != null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId!.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!string.Equals(trackedPerson.ScopeKey, ConflictSessionCanonicalScopeKey, StringComparison.Ordinal))
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "scope_not_enabled",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var existing = await db.OperatorResolutionConflictSessions
+            .AsNoTracking()
+            .Where(x =>
+                x.OperatorSessionId == request.Session.OperatorSessionId
+                && x.TrackedPersonId == trackedPerson.TrackedPersonId
+                && x.ScopeItemKey == scopeItemKey
+                && (x.Status == ResolutionConflictSessionStates.AwaitingOperatorAnswer
+                    || x.Status == ResolutionConflictSessionStates.ReadyForCommit))
+            .OrderByDescending(x => x.UpdatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+        if (existing != null && existing.ExpiresAtUtc > nowUtc)
+        {
+            var existingSession = CloneSession(request.Session, nowUtc);
+            existingSession.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+            existingSession.ActiveScopeItemKey = scopeItemKey;
+            existingSession.ActiveMode = OperatorModeTypes.ResolutionDetail;
+            existingSession.UnfinishedStep = BuildConflictSessionStep(existing);
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = true,
+                Session = existingSession,
+                ConflictSession = MapConflictSession(existing)
+            };
+        }
+
+        var detail = await _resolutionReadService.GetDetailAsync(
+            new ResolutionDetailRequest
+            {
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                ScopeItemKey = scopeItemKey!,
+                EvidenceLimit = Math.Clamp(request.Session.ActiveMode == OperatorModeTypes.ResolutionDetail ? 8 : 5, 1, 8),
+                IncludeInterpretation = true
+            },
+            ct);
+
+        if (!detail.ScopeBound || !detail.ItemFound || detail.Item == null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = detail.ScopeBound ? "scope_item_not_found" : detail.ScopeFailureReason ?? "scope_item_not_found",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!IsEligibleForConflictSession(detail.Item))
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "unsupported_resolution_item",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var casePacket = BuildCasePacket(detail.Item);
+        var auditTrail = new List<ResolutionInterpretationAuditEntry>();
+        ResolutionConflictSessionModelResult? modelResult = null;
+        ResolutionConflictSessionVerdict verdict;
+        ResolutionConflictSessionQuestion? question = null;
+        string state;
+        string stateReason;
+
+        try
+        {
+            modelResult = await _conflictResolutionSessionModel.ResolveAsync(
+                new ResolutionConflictSessionModelRequest
+                {
+                    Stage = "initial",
+                    ScopeKey = trackedPerson.ScopeKey,
+                    TrackedPersonId = trackedPerson.TrackedPersonId,
+                    ScopeItemKey = scopeItemKey!,
+                    CasePacket = casePacket
+                },
+                ct);
+
+            verdict = NormalizeConflictVerdict(modelResult.FinalVerdict, casePacket);
+            question = modelResult.AskFollowUpQuestion ? NormalizeQuestion(modelResult.FollowUpQuestion) : null;
+            if (question != null)
+            {
+                state = ResolutionConflictSessionStates.AwaitingOperatorAnswer;
+                stateReason = "operator_question_requested";
+            }
+            else
+            {
+                state = NormalizeVerdictState(verdict.ResolutionVerdict);
+                stateReason = "initial_verdict_ready";
+            }
+
+            auditTrail.Add(new ResolutionInterpretationAuditEntry
+            {
+                Step = "model_round",
+                RetrievalRound = 0,
+                RequestedContextType = ResolutionInterpretationContextTypes.None,
+                Status = "completed",
+                Details = $"Initial conflict-session model call completed. total_tokens={modelResult.TotalTokens}.",
+                Provider = modelResult.Provider,
+                Model = modelResult.Model,
+                RequestId = modelResult.RequestId,
+                LatencyMs = modelResult.LatencyMs,
+                ObservedAtUtc = nowUtc
+            });
+        }
+        catch (Exception ex)
+        {
+            verdict = BuildFallbackVerdict("initial_model_error");
+            state = ResolutionConflictSessionStates.Fallback;
+            stateReason = "initial_model_error";
+            auditTrail.Add(new ResolutionInterpretationAuditEntry
+            {
+                Step = "model_round",
+                RetrievalRound = 0,
+                RequestedContextType = ResolutionInterpretationContextTypes.None,
+                Status = "model_error",
+                Details = ex.Message,
+                ObservedAtUtc = nowUtc
+            });
+        }
+
+        var row = new DbOperatorResolutionConflictSession
+        {
+            Id = Guid.NewGuid(),
+            RequestId = string.IsNullOrWhiteSpace(request.RequestId) ? $"conflict-session:start:{Guid.NewGuid():N}" : request.RequestId.Trim(),
+            ScopeKey = trackedPerson.ScopeKey,
+            TrackedPersonId = trackedPerson.TrackedPersonId,
+            ScopeItemKey = scopeItemKey!,
+            ItemType = detail.Item.ItemType,
+            SourceKind = detail.Item.SourceKind,
+            SourceRef = detail.Item.SourceRef,
+            OperatorId = request.OperatorIdentity.OperatorId.Trim(),
+            OperatorSessionId = request.Session.OperatorSessionId.Trim(),
+            Surface = OperatorSurfaceTypes.Web,
+            Status = state,
+            StateReason = stateReason,
+            Revision = 1,
+            QuestionCount = question == null ? 0 : 1,
+            AnswerCount = 0,
+            ModelCallCount = modelResult == null ? 0 : 1,
+            CasePacketJson = JsonSerializer.Serialize(casePacket, JsonOptions),
+            QuestionJson = question == null ? null : JsonSerializer.Serialize(question, JsonOptions),
+            VerdictJson = JsonSerializer.Serialize(verdict, JsonOptions),
+            NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal, JsonOptions),
+            AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions),
+            StartedAtUtc = nowUtc,
+            ExpiresAtUtc = nowUtc.AddMinutes(ConflictSessionTtlMinutes),
+            UpdatedAtUtc = nowUtc,
+            CompletedAtUtc = state == ResolutionConflictSessionStates.AwaitingOperatorAnswer ? null : nowUtc
+        };
+        db.OperatorResolutionConflictSessions.Add(row);
+        await db.SaveChangesAsync(ct);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = scopeItemKey;
+        session.ActiveMode = OperatorModeTypes.ResolutionDetail;
+        session.UnfinishedStep = BuildConflictSessionStep(row);
+
+        return new OperatorConflictResolutionSessionResultEnvelope
+        {
+            Accepted = true,
+            Session = session,
+            ConflictSession = MapConflictSession(row)
+        };
+    }
+
+    public async Task<OperatorConflictResolutionSessionResultEnvelope> RespondConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionRespondRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var validationFailure = ValidateOperatorIdentityAndSession(
+                request.OperatorIdentity,
+                request.Session,
+                requireActiveTrackedPerson: true,
+                requireSupportedMode: true,
+                requireActiveScopeItem: true,
+                requireMatchingUnfinishedStep: false,
+                expectedTrackedPersonId: request.Session.ActiveTrackedPersonId == Guid.Empty ? null : request.Session.ActiveTrackedPersonId,
+                expectedScopeItemKey: request.Session.ActiveScopeItemKey,
+                nowUtc)
+            ?? ValidateConflictSessionRespondRequest(request);
+        if (validationFailure != null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var sessionRow = await db.OperatorResolutionConflictSessions
+            .FirstOrDefaultAsync(x => x.Id == request.ConflictSessionId, ct);
+        if (sessionRow == null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "conflict_session_not_found",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!string.Equals(sessionRow.OperatorSessionId, request.Session.OperatorSessionId, StringComparison.Ordinal))
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "session_scope_item_mismatch",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (sessionRow.ExpiresAtUtc <= nowUtc)
+        {
+            sessionRow.Status = ResolutionConflictSessionStates.Expired;
+            sessionRow.StateReason = "session_expired";
+            sessionRow.UpdatedAtUtc = nowUtc;
+            sessionRow.CompletedAtUtc = nowUtc;
+            await db.SaveChangesAsync(ct);
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "session_expired",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!string.Equals(sessionRow.Status, ResolutionConflictSessionStates.AwaitingOperatorAnswer, StringComparison.Ordinal))
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "conflict_session_not_waiting_for_answer",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (sessionRow.AnswerCount >= 1)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "answer_budget_exceeded",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var question = DeserializeOrDefault<ResolutionConflictSessionQuestion>(sessionRow.QuestionJson);
+        if (question == null || !string.Equals(question.QuestionKey, request.QuestionKey.Trim(), StringComparison.Ordinal))
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "question_mismatch",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var casePacket = DeserializeOrDefault<ResolutionConflictSessionCasePacket>(sessionRow.CasePacketJson)
+            ?? new ResolutionConflictSessionCasePacket();
+        var operatorInput = new ResolutionConflictSessionOperatorInput
+        {
+            QuestionKey = question.QuestionKey,
+            AnswerValue = request.AnswerValue.Trim(),
+            AnswerKind = string.IsNullOrWhiteSpace(request.AnswerKind) ? "free_text" : request.AnswerKind.Trim(),
+            Notes = NormalizeOptional(request.Notes),
+            AnsweredAtUtc = nowUtc
+        };
+
+        ResolutionConflictSessionModelResult? modelResult = null;
+        ResolutionConflictSessionVerdict verdict;
+        try
+        {
+            modelResult = await _conflictResolutionSessionModel.ResolveAsync(
+                new ResolutionConflictSessionModelRequest
+                {
+                    Stage = "final",
+                    ScopeKey = sessionRow.ScopeKey,
+                    TrackedPersonId = sessionRow.TrackedPersonId,
+                    ScopeItemKey = sessionRow.ScopeItemKey,
+                    CasePacket = casePacket,
+                    OperatorQuestion = question,
+                    OperatorInput = operatorInput
+                },
+                ct);
+            verdict = NormalizeConflictVerdict(modelResult.FinalVerdict, casePacket);
+        }
+        catch (Exception ex)
+        {
+            verdict = BuildFallbackVerdict("final_model_error");
+            sessionRow.FailureReason = ex.Message;
+        }
+
+        sessionRow.AnswerCount = 1;
+        sessionRow.AnswerJson = JsonSerializer.Serialize(operatorInput, JsonOptions);
+        sessionRow.ModelCallCount = Math.Clamp(sessionRow.ModelCallCount + 1, 0, 2);
+        sessionRow.VerdictJson = JsonSerializer.Serialize(verdict, JsonOptions);
+        sessionRow.NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal, JsonOptions);
+        sessionRow.Revision += 1;
+        sessionRow.Status = NormalizeVerdictState(verdict.ResolutionVerdict);
+        sessionRow.StateReason = "final_verdict_ready";
+        sessionRow.UpdatedAtUtc = nowUtc;
+        sessionRow.CompletedAtUtc = nowUtc;
+        await db.SaveChangesAsync(ct);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveMode = OperatorModeTypes.ResolutionDetail;
+        session.UnfinishedStep = BuildConflictSessionStep(sessionRow);
+
+        return new OperatorConflictResolutionSessionResultEnvelope
+        {
+            Accepted = true,
+            Session = session,
+            ConflictSession = MapConflictSession(sessionRow)
+        };
+    }
+
+    public async Task<OperatorConflictResolutionSessionResultEnvelope> QueryConflictResolutionSessionAsync(
+        OperatorConflictResolutionSessionQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var nowUtc = DateTime.UtcNow;
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: true,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var row = await db.OperatorResolutionConflictSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x =>
+                x.Id == request.ConflictSessionId
+                && x.OperatorSessionId == request.Session.OperatorSessionId, ct);
+        if (row == null)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "conflict_session_not_found",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.UnfinishedStep = BuildConflictSessionStep(row);
+        return new OperatorConflictResolutionSessionResultEnvelope
+        {
+            Accepted = true,
+            Session = session,
+            ConflictSession = MapConflictSession(row)
+        };
+    }
+
     public async Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(
         OperatorOfflineEventQueryApiRequest request,
         CancellationToken ct = default)
@@ -2919,6 +3353,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             ActionType = request.ActionType,
             Explanation = request.Explanation,
             ClarificationPayload = request.ClarificationPayload,
+            ConflictResolutionSessionId = request.ConflictResolutionSessionId,
+            ConflictVerdictRevision = request.ConflictVerdictRevision,
+            ConflictVerdict = request.ConflictVerdict,
             OperatorIdentity = request.OperatorIdentity ?? new OperatorIdentityContext(),
             Session = CloneSession(request.Session, nowUtc),
             SubmittedAtUtc = request.SubmittedAtUtc == default ? nowUtc : request.SubmittedAtUtc
@@ -3000,6 +3437,276 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string? ValidateConflictSessionStartRequest(
+        OperatorConflictResolutionSessionStartRequest request,
+        string? normalizedScopeItemKey)
+    {
+        if (string.IsNullOrWhiteSpace(request.RequestId))
+        {
+            return "request_id_required";
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedScopeItemKey))
+        {
+            return "scope_item_key_required";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateConflictSessionRespondRequest(
+        OperatorConflictResolutionSessionRespondRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RequestId))
+        {
+            return "request_id_required";
+        }
+
+        if (request.ConflictSessionId == Guid.Empty)
+        {
+            return "conflict_session_id_required";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.QuestionKey))
+        {
+            return "question_key_required";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.AnswerValue))
+        {
+            return "answer_value_required";
+        }
+
+        return null;
+    }
+
+    private static ResolutionConflictSessionCasePacket BuildCasePacket(ResolutionItemDetail item)
+    {
+        return new ResolutionConflictSessionCasePacket
+        {
+            Item = item,
+            InterpretationLoop = item.InterpretationLoop,
+            Evidence = [.. item.Evidence],
+            Notes = [.. item.Notes],
+            DurableContextSummaries =
+            [
+                item.EvidenceRationaleSummary,
+                item.OperatorDecisionFocus,
+                item.AutoResolutionGap
+            ]
+        };
+    }
+
+    private static bool IsEligibleForConflictSession(ResolutionItemDetail item)
+    {
+        if (item == null)
+        {
+            return false;
+        }
+
+        if (string.Equals(item.ItemType, ResolutionItemTypes.Contradiction, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return string.Equals(item.ItemType, ResolutionItemTypes.Review, StringComparison.Ordinal)
+            && ConflictSessionEligibleReviewSourceKinds.Contains(item.SourceKind ?? string.Empty);
+    }
+
+    private static ResolutionConflictSessionQuestion? NormalizeQuestion(ResolutionConflictSessionQuestion? question)
+    {
+        if (question == null || string.IsNullOrWhiteSpace(question.QuestionText))
+        {
+            return null;
+        }
+
+        return new ResolutionConflictSessionQuestion
+        {
+            QuestionKey = string.IsNullOrWhiteSpace(question.QuestionKey) ? "q1" : question.QuestionKey.Trim(),
+            QuestionText = question.QuestionText.Trim(),
+            AnswerKind = string.IsNullOrWhiteSpace(question.AnswerKind) ? "free_text" : question.AnswerKind.Trim(),
+            Notes = NormalizeOptional(question.Notes)
+        };
+    }
+
+    private static ResolutionConflictSessionVerdict NormalizeConflictVerdict(
+        ResolutionConflictSessionVerdict verdict,
+        ResolutionConflictSessionCasePacket casePacket)
+    {
+        var knownEvidenceRefs = (casePacket.Evidence ?? [])
+            .Select(x => NormalizeOptional(x.SourceRef) ?? $"evidence:{x.EvidenceItemId:D}")
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+        var normalizedClaims = (verdict.ResolvedClaims ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.Summary))
+            .Select(x => new ResolutionConflictSessionClaim
+            {
+                ClaimType = ResolutionInterpretationClaimTypes.Normalize(x.ClaimType),
+                Summary = x.Summary.Trim(),
+                EvidenceRefs = (x.EvidenceRefs ?? [])
+                    .Where(knownEvidenceRefs.Contains)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList(),
+                OperatorInputRefs = (x.OperatorInputRefs ?? [])
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
+            })
+            .ToList();
+
+        var recommendedAction = ResolutionActionTypes.Normalize(verdict.NormalizationProposal?.RecommendedAction);
+        if (!ResolutionActionTypes.IsMutatingSupported(recommendedAction))
+        {
+            recommendedAction = ResolutionActionTypes.Clarify;
+        }
+
+        return new ResolutionConflictSessionVerdict
+        {
+            ResolutionVerdict = NormalizeVerdictState(verdict.ResolutionVerdict),
+            ResolvedClaims = normalizedClaims,
+            RejectedClaims = (verdict.RejectedClaims ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x.Summary))
+                .Select(x => new ResolutionConflictSessionRejectedClaim
+                {
+                    Summary = x.Summary.Trim(),
+                    Reason = NormalizeOptional(x.Reason) ?? "rejected_by_model"
+                })
+                .ToList(),
+            EvidenceRefsUsed = (verdict.EvidenceRefsUsed ?? [])
+                .Where(knownEvidenceRefs.Contains)
+                .Distinct(StringComparer.Ordinal)
+                .ToList(),
+            OperatorInputsUsed = (verdict.OperatorInputsUsed ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToList(),
+            RemainingUncertainties = (verdict.RemainingUncertainties ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToList(),
+            NormalizationProposal = new ResolutionConflictNormalizationProposal
+            {
+                RecommendedAction = recommendedAction,
+                Explanation = NormalizeOptional(verdict.NormalizationProposal?.Explanation) ?? string.Empty,
+                ClarificationPayload = verdict.NormalizationProposal?.ClarificationPayload
+            },
+            ConfidenceCalibration = new ResolutionConflictConfidenceCalibration
+            {
+                ConfidenceScore = Math.Clamp(verdict.ConfidenceCalibration?.ConfidenceScore ?? 0f, 0f, 1f),
+                Rationale = NormalizeOptional(verdict.ConfidenceCalibration?.Rationale) ?? string.Empty
+            }
+        };
+    }
+
+    private static ResolutionConflictSessionVerdict BuildFallbackVerdict(string reason)
+    {
+        return new ResolutionConflictSessionVerdict
+        {
+            ResolutionVerdict = ResolutionConflictSessionStates.Fallback,
+            RemainingUncertainties =
+            [
+                "AI conflict session returned a fallback result; operator manual review is required."
+            ],
+            NormalizationProposal = new ResolutionConflictNormalizationProposal
+            {
+                RecommendedAction = ResolutionActionTypes.Clarify,
+                Explanation = $"Fallback: {reason}"
+            },
+            ConfidenceCalibration = new ResolutionConflictConfidenceCalibration
+            {
+                ConfidenceScore = 0f,
+                Rationale = "fallback"
+            }
+        };
+    }
+
+    private static string NormalizeVerdictState(string? verdict)
+    {
+        if (string.Equals(verdict, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal))
+        {
+            return ResolutionConflictSessionStates.ReadyForCommit;
+        }
+
+        if (string.Equals(verdict, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal))
+        {
+            return ResolutionConflictSessionStates.Fallback;
+        }
+
+        return ResolutionConflictSessionStates.NeedsWebReview;
+    }
+
+    private static OperatorWorkflowStepContext? BuildConflictSessionStep(DbOperatorResolutionConflictSession row)
+    {
+        if (row.Status is ResolutionConflictSessionStates.HandedOff or ResolutionConflictSessionStates.Expired)
+        {
+            return null;
+        }
+
+        return new OperatorWorkflowStepContext
+        {
+            StepKind = ResolutionConflictSessionContract.StepKind,
+            StepState = row.Status,
+            StartedAtUtc = row.StartedAtUtc,
+            BoundTrackedPersonId = row.TrackedPersonId,
+            BoundScopeItemKey = row.ScopeItemKey
+        };
+    }
+
+    private static ResolutionConflictSessionView MapConflictSession(DbOperatorResolutionConflictSession row)
+    {
+        var casePacket = DeserializeOrDefault<ResolutionConflictSessionCasePacket>(row.CasePacketJson);
+        var question = DeserializeOrDefault<ResolutionConflictSessionQuestion>(row.QuestionJson);
+        var answer = DeserializeOrDefault<ResolutionConflictSessionOperatorInput>(row.AnswerJson);
+        var verdict = DeserializeOrDefault<ResolutionConflictSessionVerdict>(row.VerdictJson);
+        var auditTrail = DeserializeOrDefault<List<ResolutionInterpretationAuditEntry>>(row.AuditTrailJson) ?? [];
+        return new ResolutionConflictSessionView
+        {
+            ConflictSessionId = row.Id,
+            State = row.Status,
+            StateReason = row.StateReason,
+            ScopeKey = row.ScopeKey,
+            TrackedPersonId = row.TrackedPersonId,
+            ScopeItemKey = row.ScopeItemKey,
+            ItemType = row.ItemType,
+            SourceKind = row.SourceKind,
+            Surface = row.Surface,
+            Revision = row.Revision,
+            StartedAtUtc = row.StartedAtUtc,
+            ExpiresAtUtc = row.ExpiresAtUtc,
+            UpdatedAtUtc = row.UpdatedAtUtc,
+            CompletedAtUtc = row.CompletedAtUtc,
+            Budgets = new ResolutionConflictSessionBudget
+            {
+                UsedModelCalls = row.ModelCallCount,
+                UsedOperatorQuestions = row.QuestionCount,
+                UsedOperatorAnswers = row.AnswerCount
+            },
+            InitialCasePacket = casePacket,
+            OperatorQuestion = question,
+            OperatorAnswer = answer,
+            FinalVerdict = verdict,
+            AuditTrail = auditTrail,
+            FailureReason = row.FailureReason
+        };
+    }
+
+    private static T? DeserializeOrDefault<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch
+        {
+            return default;
+        }
     }
 
     private static string NormalizeAuditValue(string? value, string fallback = "unknown")

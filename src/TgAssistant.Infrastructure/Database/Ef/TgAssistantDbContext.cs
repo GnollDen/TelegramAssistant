@@ -70,6 +70,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbIdentityMergeHistory> IdentityMergeHistories => Set<DbIdentityMergeHistory>();
     public DbSet<DbRuntimeControlState> RuntimeControlStates => Set<DbRuntimeControlState>();
     public DbSet<DbOperatorResolutionAction> OperatorResolutionActions => Set<DbOperatorResolutionAction>();
+    public DbSet<DbOperatorResolutionConflictSession> OperatorResolutionConflictSessions => Set<DbOperatorResolutionConflictSession>();
     public DbSet<DbOperatorAuditEvent> OperatorAuditEvents => Set<DbOperatorAuditEvent>();
     public DbSet<DbOperatorOfflineEvent> OperatorOfflineEvents => Set<DbOperatorOfflineEvent>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
@@ -1471,6 +1472,9 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.Decision).HasColumnName("decision");
             e.Property(x => x.Explanation).HasColumnName("explanation");
             e.Property(x => x.ClarificationPayloadJson).HasColumnName("clarification_payload_json").HasColumnType("jsonb");
+            e.Property(x => x.ConflictResolutionSessionId).HasColumnName("conflict_resolution_session_id");
+            e.Property(x => x.ConflictVerdictRevision).HasColumnName("conflict_verdict_revision");
+            e.Property(x => x.ConflictVerdictJson).HasColumnName("conflict_verdict_json").HasColumnType("jsonb");
             e.Property(x => x.OperatorId).HasColumnName("operator_id");
             e.Property(x => x.OperatorDisplay).HasColumnName("operator_display");
             e.Property(x => x.OperatorSessionId).HasColumnName("operator_session_id");
@@ -1496,8 +1500,51 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.CreatedAtUtc });
             e.HasIndex(x => new { x.ScopeItemKey, x.CreatedAtUtc });
             e.HasIndex(x => new { x.OperatorSessionId, x.CreatedAtUtc });
+            e.HasIndex(x => x.ConflictResolutionSessionId)
+                .HasFilter("conflict_resolution_session_id IS NOT NULL");
             e.HasIndex(x => new { x.RecomputeStatus, x.RecomputeStatusUpdatedAtUtc })
                 .HasFilter("recompute_status IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbOperatorResolutionConflictSession>(e =>
+        {
+            e.ToTable("operator_resolution_conflict_sessions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.RequestId).HasColumnName("request_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.ScopeItemKey).HasColumnName("scope_item_key");
+            e.Property(x => x.ItemType).HasColumnName("item_type");
+            e.Property(x => x.SourceKind).HasColumnName("source_kind");
+            e.Property(x => x.SourceRef).HasColumnName("source_ref");
+            e.Property(x => x.OperatorId).HasColumnName("operator_id");
+            e.Property(x => x.OperatorSessionId).HasColumnName("operator_session_id");
+            e.Property(x => x.Surface).HasColumnName("surface");
+            e.Property(x => x.Status).HasColumnName("status");
+            e.Property(x => x.StateReason).HasColumnName("state_reason");
+            e.Property(x => x.Revision).HasColumnName("revision");
+            e.Property(x => x.QuestionCount).HasColumnName("question_count");
+            e.Property(x => x.AnswerCount).HasColumnName("answer_count");
+            e.Property(x => x.ModelCallCount).HasColumnName("model_call_count");
+            e.Property(x => x.CasePacketJson).HasColumnName("case_packet_json").HasColumnType("jsonb");
+            e.Property(x => x.QuestionJson).HasColumnName("question_json").HasColumnType("jsonb");
+            e.Property(x => x.AnswerJson).HasColumnName("answer_json").HasColumnType("jsonb");
+            e.Property(x => x.VerdictJson).HasColumnName("verdict_json").HasColumnType("jsonb");
+            e.Property(x => x.NormalizationProposalJson).HasColumnName("normalization_proposal_json").HasColumnType("jsonb");
+            e.Property(x => x.AuditTrailJson).HasColumnName("audit_trail_json").HasColumnType("jsonb");
+            e.Property(x => x.FailureReason).HasColumnName("failure_reason");
+            e.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc");
+            e.Property(x => x.ExpiresAtUtc).HasColumnName("expires_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc");
+            e.Property(x => x.FinalActionId).HasColumnName("final_action_id");
+            e.Property(x => x.FinalActionRequestId).HasColumnName("final_action_request_id");
+            e.HasIndex(x => x.RequestId).IsUnique();
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.ScopeItemKey, x.UpdatedAtUtc });
+            e.HasIndex(x => new { x.OperatorSessionId, x.ScopeItemKey, x.UpdatedAtUtc });
+            e.HasIndex(x => new { x.OperatorSessionId, x.ScopeItemKey, x.Status })
+                .HasFilter("status in ('awaiting_operator_answer','ready_for_commit')");
         });
 
         modelBuilder.Entity<DbOperatorAuditEvent>(e =>

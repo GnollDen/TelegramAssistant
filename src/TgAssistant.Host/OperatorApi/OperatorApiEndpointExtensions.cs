@@ -309,6 +309,66 @@ public static class OperatorApiEndpointExtensions
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
+        group.MapPost("/resolution/conflict-session/start", async (
+            HttpContext httpContext,
+            OperatorConflictResolutionSessionStartRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionDetail, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.StartConflictResolutionSessionAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionDetail);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/resolution/conflict-session/respond", async (
+            HttpContext httpContext,
+            OperatorConflictResolutionSessionRespondRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionDetail, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.RespondConflictResolutionSessionAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionDetail);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapPost("/resolution/conflict-session/query", async (
+            HttpContext httpContext,
+            OperatorConflictResolutionSessionQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionDetail, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.QueryConflictResolutionSessionAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionDetail);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
         group.MapPost("/resolution/actions", async (
             HttpContext httpContext,
             ResolutionActionRequest request,
@@ -425,6 +485,7 @@ public static class OperatorApiEndpointExtensions
             StatusCodes.Status401Unauthorized => Results.Json(body, statusCode: StatusCodes.Status401Unauthorized),
             StatusCodes.Status403Forbidden => Results.Json(body, statusCode: StatusCodes.Status403Forbidden),
             StatusCodes.Status404NotFound => Results.Json(body, statusCode: StatusCodes.Status404NotFound),
+            StatusCodes.Status409Conflict => Results.Json(body, statusCode: StatusCodes.Status409Conflict),
             _ => Results.BadRequest(body)
         };
     }
@@ -443,9 +504,18 @@ public static class OperatorApiEndpointExtensions
             "handoff_signing_secret_missing" => StatusCodes.Status503ServiceUnavailable,
             "tracked_person_not_found_or_inactive" => StatusCodes.Status404NotFound,
             "scope_item_not_found" => StatusCodes.Status404NotFound,
+            "conflict_session_not_found" => StatusCodes.Status404NotFound,
             "session_active_tracked_person_not_available" => StatusCodes.Status404NotFound,
             "preferred_tracked_person_not_available" => StatusCodes.Status404NotFound,
             "offline_event_not_found" => StatusCodes.Status404NotFound,
+            "scope_not_enabled" => StatusCodes.Status403Forbidden,
+            "unsupported_resolution_item" => StatusCodes.Status403Forbidden,
+            "conflict_session_not_ready_for_commit" => StatusCodes.Status409Conflict,
+            "conflict_verdict_revision_mismatch" => StatusCodes.Status409Conflict,
+            "conflict_session_handoff_mismatch" => StatusCodes.Status409Conflict,
+            "conflict_session_not_waiting_for_answer" => StatusCodes.Status409Conflict,
+            "answer_budget_exceeded" => StatusCodes.Status409Conflict,
+            "question_mismatch" => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status400BadRequest
         };
     }

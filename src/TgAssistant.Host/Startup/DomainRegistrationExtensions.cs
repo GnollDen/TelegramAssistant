@@ -71,6 +71,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
         services.AddSingleton<IResolutionInterpretationModel, LlmResolutionInterpretationModel>();
+        services.AddSingleton<IConflictResolutionSessionModel, LlmConflictResolutionSessionModel>();
         services.AddSingleton<ResolutionInterpretationLoopV1Service>();
         services.AddSingleton<IResolutionInterpretationLoopService, ResolutionInterpretationLoopService>();
         services.AddSingleton<IResolutionReadService, ResolutionReadProjectionService>();

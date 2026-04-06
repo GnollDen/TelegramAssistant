@@ -357,6 +357,21 @@ public static class Opint009TelegramAlertsSmokeRunner
         public Task<OperatorResolutionActionResultEnvelope> SubmitResolutionActionAsync(ResolutionActionRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-B smoke should not submit resolution actions.");
 
+        public Task<OperatorConflictResolutionSessionResultEnvelope> StartConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionStartRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-009-B smoke should not start AI conflict sessions.");
+
+        public Task<OperatorConflictResolutionSessionResultEnvelope> RespondConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionRespondRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-009-B smoke should not respond to AI conflict sessions.");
+
+        public Task<OperatorConflictResolutionSessionResultEnvelope> QueryConflictResolutionSessionAsync(
+            OperatorConflictResolutionSessionQueryRequest request,
+            CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-009-B smoke should not query AI conflict sessions.");
+
         public Task<OperatorPersonWorkspaceListQueryResult> QueryPersonWorkspaceListAsync(OperatorPersonWorkspaceListQueryRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-B smoke should not query person workspace list.");
 
