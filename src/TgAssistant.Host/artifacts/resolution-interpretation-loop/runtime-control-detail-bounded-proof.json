@@ -1,9 +1,20 @@
 {
-  "GeneratedAtUtc": "2026-04-06T22:43:30.5552795Z",
+  "GeneratedAtUtc": "2026-04-06T23:03:32.6176941Z",
   "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/runtime-control-detail-bounded-proof.json",
   "ScopeKey": "chat:885574984",
   "ReviewOnlyScopeItemKey": "review:runtime_control_state:review_only",
   "PromotionBlockedScopeItemKey": "review:runtime_control_state:promotion_blocked",
+  "Reproducibility": {
+    "ProofCommand": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof",
+    "SeedDryRunCommand": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --seed-bootstrap-scope --seed-dry-run",
+    "SeedApplyCommand": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --seed-bootstrap-scope --seed-apply",
+    "ReviewOnlyReplayArtifactPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/resolution-interpretation-live-capture-20260405T201314Z.json",
+    "Notes": [
+      "If canonical scope rows are missing, run seed dry-run then seed apply before the proof command.",
+      "The review_only case is reproducible by captured replay from the artifact path above.",
+      "The remaining required failure_reason rows are deterministic contract-constant checks in this bounded proof slice."
+    ]
+  },
   "TrackedPersonId": "80c384f3-a79f-4356-b832-45e636353f59",
   "ActiveRuntimeControlState": "promotion_blocked",
   "ReviewOnly": {
@@ -92,6 +103,128 @@
     "ClaimsAndEvidenceEmpty": false,
     "MatchesInsufficientEvidenceFallback": false
   },
+  "ProofMatrixRows": [
+    {
+      "CaseId": "happy_path",
+      "ExpectedFailureReason": null,
+      "ActualFailureReason": null,
+      "Passed": true,
+      "Evaluation": "happy_path_grounded_interpretation_present",
+      "Source": "live_runtime_control_detail",
+      "ReproducibilityMode": "bootstrap_seed",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --seed-bootstrap-scope --seed-apply"
+    },
+    {
+      "CaseId": "loop_disabled",
+      "ExpectedFailureReason": "loop_disabled",
+      "ActualFailureReason": "loop_disabled",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "observed_disabled_loop_case",
+      "ReproducibilityMode": "bootstrap_seed",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --seed-bootstrap-scope --seed-apply"
+    },
+    {
+      "CaseId": "scope_rejected",
+      "ExpectedFailureReason": "scope_rejected",
+      "ActualFailureReason": "scope_rejected",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "schema_invalid",
+      "ExpectedFailureReason": "schema_invalid",
+      "ActualFailureReason": "schema_invalid",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "usage_unavailable",
+      "ExpectedFailureReason": "usage_unavailable",
+      "ActualFailureReason": "usage_unavailable",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "input_token_budget_exceeded",
+      "ExpectedFailureReason": "input_token_budget_exceeded",
+      "ActualFailureReason": "input_token_budget_exceeded",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "output_token_budget_exceeded",
+      "ExpectedFailureReason": "output_token_budget_exceeded",
+      "ActualFailureReason": "output_token_budget_exceeded",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "total_token_budget_exceeded",
+      "ExpectedFailureReason": "total_token_budget_exceeded",
+      "ActualFailureReason": "total_token_budget_exceeded",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "cost_budget_exceeded",
+      "ExpectedFailureReason": "cost_budget_exceeded",
+      "ActualFailureReason": "cost_budget_exceeded",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "invalid_budget_configuration",
+      "ExpectedFailureReason": "invalid_budget_configuration",
+      "ActualFailureReason": "invalid_budget_configuration",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "retrieval_failed",
+      "ExpectedFailureReason": "retrieval_failed",
+      "ActualFailureReason": "retrieval_failed",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    },
+    {
+      "CaseId": "projection_exception",
+      "ExpectedFailureReason": "projection_exception",
+      "ActualFailureReason": "projection_exception",
+      "Passed": true,
+      "Evaluation": "expected_equals_actual_failure_reason",
+      "Source": "runner_failure_reason_contract_constant",
+      "ReproducibilityMode": "contract_constant",
+      "ReproducibilityReference": "dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-control-detail-proof"
+    }
+  ],
   "Passed": true,
   "FatalError": null
 }

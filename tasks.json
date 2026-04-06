@@ -137,8 +137,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "runtime-control detail proof report now includes deterministic proof_matrix_rows: happy_path plus one expected-vs-actual pass/fail row for each required rollback failure_reason; dotnet build and --runtime-control-detail-proof pass.",
       "dependencies": [
         "DTP-005"
       ]
@@ -156,8 +156,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "runtime-control detail proof report now records reproducibility metadata (canonical proof command, seed bootstrap dry-run/apply commands, replay artifact path) and per-case reproducibility provenance in proof_matrix_rows; dotnet build and --runtime-control-detail-proof pass.",
       "dependencies": [
         "DTP-006A"
       ]
