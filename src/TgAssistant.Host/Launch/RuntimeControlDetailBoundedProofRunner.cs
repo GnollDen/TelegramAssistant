@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
@@ -99,6 +102,45 @@ public static class RuntimeControlDetailBoundedProofRunner
                 report.PromotionBlocked.PresenceNote = $"Current active runtime state is '{report.ActiveRuntimeControlState ?? "unknown"}', so the live promotion_blocked item is not materialized in this proof run.";
             }
 
+            var disabledScopeItemKey = ResolveDisabledProofScopeItemKey(reviewOnly, promotionBlocked);
+            var disabledReadService = new ResolutionReadProjectionService(
+                dbFactory,
+                new ThrowingResolutionInterpretationLoopService(),
+                Options.Create(new ResolutionInterpretationLoopSettings
+                {
+                    Enabled = false,
+                    CanonicalScopeOnly = true,
+                    CanonicalScopeKey = ScopeKey
+                }),
+                NullLogger<ResolutionReadProjectionService>.Instance);
+            var disabledDetail = await disabledReadService.GetDetailAsync(
+                new ResolutionDetailRequest
+                {
+                    TrackedPersonId = trackedPerson.Id,
+                    ScopeItemKey = disabledScopeItemKey,
+                    EvidenceLimit = 5,
+                    EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
+                    EvidenceSortDirection = ResolutionSortDirections.Desc,
+                    IncludeInterpretation = true
+                },
+                ct);
+            report.DisabledLoop = BuildExcerpt(disabledDetail, disabledScopeItemKey, "disabled_loop");
+            var disabledLoop = disabledDetail.Item?.InterpretationLoop;
+            Ensure(disabledLoop != null, "Disabled-loop proof did not include interpretation payload.");
+            Ensure(disabledLoop.Applied, "Disabled-loop interpretation payload is not applied.");
+            Ensure(disabledLoop.UsedFallback, "Disabled-loop interpretation payload must be fallback.");
+            Ensure(string.Equals(disabledLoop.FailureReason, "loop_disabled", StringComparison.Ordinal), "Disabled-loop failure_reason must be exactly 'loop_disabled'.");
+            Ensure(disabledLoop.AuditTrail.Count > 0, "Disabled-loop fallback must include interpretation audit trail.");
+            var disabledAudit = disabledLoop.AuditTrail[0];
+            Ensure(disabledAudit.Provider is null, "Disabled-loop audit provider must be null.");
+            Ensure(disabledAudit.Model is null, "Disabled-loop audit model must be null.");
+            Ensure(disabledAudit.RequestId is null, "Disabled-loop audit request_id must be null.");
+            Ensure(disabledAudit.LatencyMs is null, "Disabled-loop audit latency_ms must be null.");
+            Ensure(disabledAudit.PromptTokens is null, "Disabled-loop audit prompt_tokens must be null.");
+            Ensure(disabledAudit.CompletionTokens is null, "Disabled-loop audit completion_tokens must be null.");
+            Ensure(disabledAudit.TotalTokens is null, "Disabled-loop audit total_tokens must be null.");
+            Ensure(disabledAudit.CostUsd is null, "Disabled-loop audit cost_usd must be null.");
+
             report.Passed = true;
         }
         catch (Exception ex)
@@ -167,6 +209,23 @@ public static class RuntimeControlDetailBoundedProofRunner
                 && string.Equals(loop?.ReviewRecommendation?.Reason, RuntimeControlInterpretationPublicationGuard.InsufficientEvidenceDecision, StringComparison.Ordinal)
                 && string.Equals(loop?.FailureReason, RuntimeControlInterpretationPublicationGuard.InsufficientEvidenceFailureReason, StringComparison.Ordinal)
         };
+    }
+
+    private static string ResolveDisabledProofScopeItemKey(
+        ResolutionDetailResult reviewOnly,
+        ResolutionDetailResult promotionBlocked)
+    {
+        if (reviewOnly.ItemFound && reviewOnly.Item != null)
+        {
+            return reviewOnly.Item.ScopeItemKey;
+        }
+
+        if (promotionBlocked.ItemFound && promotionBlocked.Item != null)
+        {
+            return promotionBlocked.Item.ScopeItemKey;
+        }
+
+        return ReviewOnlyScopeItemKey;
     }
 
     private static async Task<RuntimeControlDetailProofExcerpt> BuildCapturedReviewOnlyReplayAsync(CancellationToken ct)
@@ -287,6 +346,7 @@ public sealed class RuntimeControlDetailBoundedProofReport
     public string? ActiveRuntimeControlState { get; set; }
     public RuntimeControlDetailProofExcerpt ReviewOnly { get; set; } = new();
     public RuntimeControlDetailProofExcerpt PromotionBlocked { get; set; } = new();
+    public RuntimeControlDetailProofExcerpt DisabledLoop { get; set; } = new();
     public bool Passed { get; set; }
     public string? FatalError { get; set; }
 }
@@ -317,4 +377,14 @@ public sealed class RuntimeControlDetailProofExcerpt
     public string? InterpretationFailureReason { get; set; }
     public bool ClaimsAndEvidenceEmpty { get; set; }
     public bool MatchesInsufficientEvidenceFallback { get; set; }
+}
+
+file sealed class ThrowingResolutionInterpretationLoopService : IResolutionInterpretationLoopService
+{
+    public Task<ResolutionInterpretationLoopResult> InterpretAsync(
+        ResolutionInterpretationLoopRequest request,
+        CancellationToken ct = default)
+    {
+        throw new InvalidOperationException("Interpretation loop should not be called when ResolutionInterpretationLoop:Enabled=false.");
+    }
 }

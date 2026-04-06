@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -46,15 +48,18 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionInterpretationLoopService _interpretationLoopService;
+    private readonly ResolutionInterpretationLoopSettings _interpretationLoopSettings;
     private readonly ILogger<ResolutionReadProjectionService> _logger;
 
     public ResolutionReadProjectionService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         IResolutionInterpretationLoopService interpretationLoopService,
+        IOptions<ResolutionInterpretationLoopSettings> interpretationLoopSettings,
         ILogger<ResolutionReadProjectionService> logger)
     {
         _dbFactory = dbFactory;
         _interpretationLoopService = interpretationLoopService;
+        _interpretationLoopSettings = interpretationLoopSettings.Value ?? new ResolutionInterpretationLoopSettings();
         _logger = logger;
     }
 
@@ -266,69 +271,76 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         if (request.IncludeInterpretation
             && string.Equals(trackedPerson.ScopeKey, ResolutionInterpretationCanonicalScopeKey, StringComparison.Ordinal))
         {
-            try
+            if (!_interpretationLoopSettings.Enabled)
             {
-                interpretationLoop = await _interpretationLoopService.InterpretAsync(
-                    new ResolutionInterpretationLoopRequest
-                    {
-                        TrackedPersonId = trackedPerson.PersonId,
-                        ScopeKey = trackedPerson.ScopeKey,
-                        ScopeItemKey = match.Summary.ScopeItemKey,
-                        Item = match.Summary,
-                        SourceKind = match.SourceKind,
-                        SourceRef = match.SourceRef,
-                        RequiredAction = match.RequiredAction,
-                        Notes = [.. match.Notes],
-                        Evidence = [.. evidence],
-                        DurableContextSummaries = BuildInterpretationDurableContextSummaries(
-                            trackedPerson.ScopeKey,
-                            match,
-                            durableContexts)
-                    },
-                    ct);
+                interpretationLoop = BuildLoopDisabledFallback(match, evidence, evidenceRationaleSummary);
             }
-            catch (Exception ex)
+            else
             {
-                _logger.LogWarning(
-                    ex,
-                    "Resolution interpretation loop failed unexpectedly; using deterministic projection fallback. scope_key={ScopeKey}, scope_item_key={ScopeItemKey}",
-                    trackedPerson.ScopeKey,
-                    match.Summary.ScopeItemKey);
-
-                interpretationLoop = new ResolutionInterpretationLoopResult
+                try
                 {
-                    Applied = true,
-                    UsedFallback = true,
-                    FailureReason = "projection_loop_exception",
-                    ContextSufficient = evidence.Count > 0,
-                    RequestedContextType = ResolutionInterpretationContextTypes.None,
-                    InterpretationSummary = evidenceRationaleSummary,
-                    ExplicitUncertainties =
-                    [
-                        "Deterministic projection fallback was used because the interpretation loop raised an unexpected exception."
-                    ],
-                    ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
-                    {
-                        Decision = ResolutionInterpretationReviewRecommendations.Review,
-                        Reason = "Existing deterministic projection keeps this item in operator review."
-                    },
-                    EvidenceRefsUsed = evidence
-                        .Select(BuildEvidenceRefForInterpretation)
-                        .Take(2)
-                        .ToList(),
-                    AuditTrail =
-                    [
-                        new ResolutionInterpretationAuditEntry
+                    interpretationLoop = await _interpretationLoopService.InterpretAsync(
+                        new ResolutionInterpretationLoopRequest
                         {
-                            Step = "fallback",
-                            RetrievalRound = 0,
-                            RequestedContextType = ResolutionInterpretationContextTypes.None,
-                            Status = "projection_exception",
-                            Details = ex.Message,
-                            ObservedAtUtc = DateTime.UtcNow
-                        }
-                    ]
-                };
+                            TrackedPersonId = trackedPerson.PersonId,
+                            ScopeKey = trackedPerson.ScopeKey,
+                            ScopeItemKey = match.Summary.ScopeItemKey,
+                            Item = match.Summary,
+                            SourceKind = match.SourceKind,
+                            SourceRef = match.SourceRef,
+                            RequiredAction = match.RequiredAction,
+                            Notes = [.. match.Notes],
+                            Evidence = [.. evidence],
+                            DurableContextSummaries = BuildInterpretationDurableContextSummaries(
+                                trackedPerson.ScopeKey,
+                                match,
+                                durableContexts)
+                        },
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Resolution interpretation loop failed unexpectedly; using deterministic projection fallback. scope_key={ScopeKey}, scope_item_key={ScopeItemKey}",
+                        trackedPerson.ScopeKey,
+                        match.Summary.ScopeItemKey);
+
+                    interpretationLoop = new ResolutionInterpretationLoopResult
+                    {
+                        Applied = true,
+                        UsedFallback = true,
+                        FailureReason = "projection_loop_exception",
+                        ContextSufficient = evidence.Count > 0,
+                        RequestedContextType = ResolutionInterpretationContextTypes.None,
+                        InterpretationSummary = evidenceRationaleSummary,
+                        ExplicitUncertainties =
+                        [
+                            "Deterministic projection fallback was used because the interpretation loop raised an unexpected exception."
+                        ],
+                        ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
+                        {
+                            Decision = ResolutionInterpretationReviewRecommendations.Review,
+                            Reason = "Existing deterministic projection keeps this item in operator review."
+                        },
+                        EvidenceRefsUsed = evidence
+                            .Select(BuildEvidenceRefForInterpretation)
+                            .Take(2)
+                            .ToList(),
+                        AuditTrail =
+                        [
+                            new ResolutionInterpretationAuditEntry
+                            {
+                                Step = "fallback",
+                                RetrievalRound = 0,
+                                RequestedContextType = ResolutionInterpretationContextTypes.None,
+                                Status = "projection_exception",
+                                Details = ex.Message,
+                                ObservedAtUtc = DateTime.UtcNow
+                            }
+                        ]
+                    };
+                }
             }
 
             if (interpretationLoop.Applied && !string.IsNullOrWhiteSpace(interpretationLoop.InterpretationSummary))
@@ -2325,6 +2337,56 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         return string.IsNullOrWhiteSpace(evidence.SourceRef)
             ? $"evidence:{evidence.EvidenceItemId:D}"
             : evidence.SourceRef.Trim();
+    }
+
+    private static ResolutionInterpretationLoopResult BuildLoopDisabledFallback(
+        ProjectedResolutionItem match,
+        IReadOnlyCollection<ResolutionEvidenceSummary> evidence,
+        string interpretationSummary)
+    {
+        return new ResolutionInterpretationLoopResult
+        {
+            Applied = true,
+            UsedFallback = true,
+            FailureReason = "loop_disabled",
+            ContextSufficient = evidence.Count > 0,
+            RequestedContextType = ResolutionInterpretationContextTypes.None,
+            InterpretationSummary = interpretationSummary,
+            ExplicitUncertainties =
+            [
+                "Deterministic projection fallback was used because ResolutionInterpretationLoop is disabled."
+            ],
+            ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
+            {
+                Decision = ResolutionInterpretationReviewRecommendations.Review,
+                Reason = "Existing deterministic projection keeps this item in operator review while the interpretation loop is disabled."
+            },
+            EvidenceRefsUsed = evidence
+                .Select(BuildEvidenceRefForInterpretation)
+                .Take(2)
+                .ToList(),
+            AuditTrail =
+            [
+                new ResolutionInterpretationAuditEntry
+                {
+                    Step = "scope_gate",
+                    RetrievalRound = 0,
+                    RequestedContextType = ResolutionInterpretationContextTypes.None,
+                    Status = "skipped",
+                    Details = $"Resolution interpretation loop disabled by settings for scope_item_key={match.Summary.ScopeItemKey}.",
+                    Provider = null,
+                    Model = null,
+                    RequestId = null,
+                    LatencyMs = null,
+                    PromptTokens = null,
+                    CompletionTokens = null,
+                    TotalTokens = null,
+                    CostUsd = null,
+                    EvidenceRefs = [],
+                    ObservedAtUtc = DateTime.UtcNow
+                }
+            ]
+        };
     }
 
     private static IQueryable<EvidenceProjectionRow> ApplyEvidenceOrdering(
