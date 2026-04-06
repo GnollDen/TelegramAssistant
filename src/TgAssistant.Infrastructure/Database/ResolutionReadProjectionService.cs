@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -130,7 +132,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             TrackedPersonId = trackedPerson.PersonId,
             ScopeKey = trackedPerson.ScopeKey,
             TrackedPersonDisplayName = trackedPerson.DisplayName,
-            RuntimeState = runtimeState,
+            RuntimeState = ToRuntimeStateSummary(runtimeState),
             TotalOpenCount = projected.Count,
             FilteredCount = ordered.Count,
             ItemTypeCounts = BuildFacetCounts(
@@ -244,6 +246,16 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             request.EvidenceSortDirection,
             request.EvidenceLimit,
             ct);
+        evidence = MergeStructuredRuntimeControlEvidence(
+            trackedPerson.ScopeKey,
+            match,
+            runtimeState,
+            runtimeDefects,
+            durableContexts,
+            evidence,
+            request.EvidenceSortBy,
+            request.EvidenceSortDirection,
+            request.EvidenceLimit);
         ApplyEvidenceRelevanceHints(match, evidence);
         var evidenceRationaleSummary = BuildEvidenceRationaleSummary(match, evidence);
         var autoResolutionGap = BuildAutoResolutionGap(match);
@@ -268,12 +280,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                         RequiredAction = match.RequiredAction,
                         Notes = [.. match.Notes],
                         Evidence = [.. evidence],
-                        DurableContextSummaries = durableContexts
-                            .Where(x => match.DurableMetadataIds.Contains(x.MetadataId))
-                            .OrderByDescending(x => x.UpdatedAtUtc)
-                            .Select(x => x.MetadataSummary)
-                            .Take(3)
-                            .ToList()
+                        DurableContextSummaries = BuildInterpretationDurableContextSummaries(
+                            trackedPerson.ScopeKey,
+                            match,
+                            durableContexts)
                     },
                     ct);
             }
@@ -386,7 +396,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private static List<ProjectedResolutionItem> BuildProjectedItems(
         TrackedPersonScope trackedPerson,
-        ResolutionRuntimeStateSummary? runtimeState,
+        RuntimeControlStateContext? runtimeState,
         IReadOnlyList<DurableContext> durableContexts,
         IReadOnlyList<DbClarificationBranchState> clarificationBranches,
         IReadOnlyList<DbStage8RecomputeQueueItem> queueItems,
@@ -881,7 +891,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private static List<ProjectedResolutionItem> BuildRuntimeReviewItems(
         TrackedPersonScope trackedPerson,
-        ResolutionRuntimeStateSummary? runtimeState,
+        RuntimeControlStateContext? runtimeState,
         IReadOnlyList<DurableContext> durableContexts,
         IReadOnlyList<DbRuntimeDefect> runtimeDefects)
     {
@@ -930,14 +940,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 },
                 SourceKind = "runtime_control_state",
                 SourceRef = runtimeState.State,
-                Notes =
-                [
-                    new ResolutionDetailNote
-                    {
-                        Kind = "runtime_state",
-                        Text = $"{runtimeState.State} from {runtimeState.Source}."
-                    }
-                ],
+                Notes = BuildRuntimeControlStateNotes(
+                    trackedPerson.ScopeKey,
+                    runtimeState,
+                    runtimeDefects,
+                    durableContexts),
                 UseTrackedPersonEvidence = true
             });
         }
@@ -1257,6 +1264,14 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         for (var index = 0; index < evidence.Count; index++)
         {
             var entry = evidence[index];
+            if (TryBuildStructuredRuntimeControlEvidenceAnnotations(item, entry, out var directHint, out var directLinkage))
+            {
+                entry.RelevanceHint = directHint;
+                entry.RelevanceHintIsHeuristic = false;
+                entry.DecisionLinkage = directLinkage;
+                continue;
+            }
+
             entry.RelevanceHint = BuildEvidenceRelevanceHint(item, entry);
             entry.RelevanceHintIsHeuristic = true;
             entry.DecisionLinkage = BuildEvidenceDecisionLinkage(item, entry);
@@ -1357,9 +1372,18 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         }
         else if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
         {
-            stance = ResolutionDecisionStances.Ambiguous;
-            calibration = ResolutionDecisionHeuristicCalibrations.Low;
-            summary = "Сообщение остается bounded-контекстом этого scope и не подтверждает причину режима рантайма само по себе.";
+            if (IsStructuredRuntimeControlEvidence(evidence))
+            {
+                stance = ResolutionDecisionStances.Supports;
+                calibration = ResolutionDecisionHeuristicCalibrations.Medium;
+                summary = "Структурированная запись рантайма прямо связывает текущий режим с runtime_control_state, linked runtime_defect и stage8 gate metadata внутри этого scope.";
+            }
+            else
+            {
+                stance = ResolutionDecisionStances.Ambiguous;
+                calibration = ResolutionDecisionHeuristicCalibrations.Low;
+                summary = "Сообщение остается bounded-контекстом этого scope и не подтверждает причину режима рантайма само по себе.";
+            }
         }
         else if (hasDirectDurableLink && hasEvidenceProvenance)
         {
@@ -1400,6 +1424,14 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         ProjectedResolutionItem item,
         IReadOnlyList<ResolutionEvidenceSummary> evidence)
     {
+        if (string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal)
+            && evidence.Any(IsStructuredRuntimeControlEvidence))
+        {
+            var structuredCount = evidence.Count(IsStructuredRuntimeControlEvidence);
+            var messageCount = Math.Max(evidence.Count - structuredCount, 0);
+            return $"Показано {FormatCountRu(structuredCount, "структурированный сигнал рантайма", "структурированных сигнала рантайма", "структурированных сигналов рантайма")}: active runtime state и связанные promotion-block defects/gates внутри этого scope. Дополнительно показано {FormatCountRu(messageCount, "сообщение", "сообщения", "сообщений")} только как bounded-контекст.";
+        }
+
         var familyRu = DescribeFamilyRu(item.Summary.AffectedFamily);
         var signalSummary = item.Summary.ItemType switch
         {
@@ -1499,6 +1531,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 
     private static string BuildEvidenceRelevanceHint(ProjectedResolutionItem item, ResolutionEvidenceSummary evidence)
     {
+        if (IsStructuredRuntimeControlEvidence(evidence))
+        {
+            return "Прямая запись причины режима рантайма: сигнал собран из active runtime state, linked defects и stage8 gate metadata этого scope.";
+        }
+
         if (string.IsNullOrWhiteSpace(evidence.SenderDisplay))
         {
             return "Индикатор нехватки контекста: не удалось надежно привязать отправителя.";
@@ -1965,7 +2002,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         };
     }
 
-    private static async Task<ResolutionRuntimeStateSummary?> LoadRuntimeStateAsync(
+    private static async Task<RuntimeControlStateContext?> LoadRuntimeStateAsync(
         TgAssistantDbContext db,
         CancellationToken ct)
     {
@@ -1977,11 +2014,13 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             return null;
         }
 
-        return new ResolutionRuntimeStateSummary
+        return new RuntimeControlStateContext
         {
+            Id = row.Id,
             State = row.State,
             Reason = row.Reason,
             Source = row.Source,
+            DetailsJson = row.DetailsJson,
             ActivatedAtUtc = row.ActivatedAtUtc
         };
     }
@@ -2038,6 +2077,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 EvidenceCount = evidenceCount,
                 UpdatedAtUtc = row.UpdatedAt,
                 TrustFactor = Clamp01((float)Math.Round((row.Confidence + row.Freshness + row.Stability) / 3f, 2, MidpointRounding.AwayFromZero)),
+                MetadataJson = row.MetadataJson,
                 MetadataSummary = BuildDurableSummary(trackedPerson.DisplayName, row.ObjectFamily, row.MetadataJson, evidenceCount)
             });
         }
@@ -2362,12 +2402,447 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
     private static float Clamp01(float value)
         => Math.Clamp(value, 0f, 1f);
 
+    private static ResolutionRuntimeStateSummary? ToRuntimeStateSummary(RuntimeControlStateContext? runtimeState)
+    {
+        if (runtimeState == null)
+        {
+            return null;
+        }
+
+        return new ResolutionRuntimeStateSummary
+        {
+            State = runtimeState.State,
+            Reason = runtimeState.Reason,
+            Source = runtimeState.Source,
+            ActivatedAtUtc = runtimeState.ActivatedAtUtc
+        };
+    }
+
+    private static List<string> BuildInterpretationDurableContextSummaries(
+        string scopeKey,
+        ProjectedResolutionItem item,
+        IReadOnlyList<DurableContext> durableContexts)
+    {
+        if (IsPromotionBlockedRuntimeControlItem(scopeKey, item))
+        {
+            return durableContexts
+                .Where(context => string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal))
+                .OrderByDescending(context => context.UpdatedAtUtc)
+                .Select(BuildPromotionBlockedDurableGateSummary)
+                .Take(3)
+                .ToList();
+        }
+
+        return durableContexts
+            .Where(x => item.DurableMetadataIds.Contains(x.MetadataId))
+            .OrderByDescending(x => x.UpdatedAtUtc)
+            .Select(x => x.MetadataSummary)
+            .Take(3)
+            .ToList();
+    }
+
+    private static List<ResolutionDetailNote> BuildRuntimeControlStateNotes(
+        string scopeKey,
+        RuntimeControlStateContext runtimeState,
+        IReadOnlyList<DbRuntimeDefect> runtimeDefects,
+        IReadOnlyList<DurableContext> durableContexts)
+    {
+        var notes = new List<ResolutionDetailNote>
+        {
+            new()
+            {
+                Kind = "runtime_state",
+                Text = $"{runtimeState.State} from {runtimeState.Source}."
+            }
+        };
+
+        if (!string.Equals(scopeKey, ResolutionInterpretationCanonicalScopeKey, StringComparison.Ordinal)
+            || !string.Equals(runtimeState.State, RuntimeControlStates.PromotionBlocked, StringComparison.Ordinal))
+        {
+            return notes;
+        }
+
+        var openDefectCount = TryReadInt(runtimeState.DetailsJson, "open_defect_count");
+        var highestEscalation = TryReadString(runtimeState.DetailsJson, "highest_escalation") ?? "unknown";
+        notes.Add(new ResolutionDetailNote
+        {
+            Kind = "runtime_control_cause",
+            Text = $"Active promotion block carries {openDefectCount} open runtime defect(s); highest escalation {highestEscalation}."
+        });
+
+        var gateContexts = ExtractPromotionBlockedGateContexts(durableContexts);
+        if (gateContexts.Count > 0)
+        {
+            var forcedCount = gateContexts.Count(x => x.ForcedByRuntimeState);
+            var lowConfidenceCount = gateContexts.Count(x => string.Equals(x.GateReason, "low_confidence_requires_operator_review", StringComparison.Ordinal));
+            notes.Add(new ResolutionDetailNote
+            {
+                Kind = "runtime_gate",
+                Text = $"Promotion-blocked durable objects in scope: forced_by_runtime_state={forcedCount}, low_confidence_requires_operator_review={lowConfidenceCount}."
+            });
+        }
+
+        foreach (var defect in runtimeDefects
+                     .Where(defect => string.Equals(defect.DefectClass, RuntimeDefectClasses.SemanticDrift, StringComparison.Ordinal))
+                     .OrderByDescending(defect => defect.UpdatedAtUtc)
+                     .Take(2))
+        {
+            var blockedReason = TryReadString(defect.DetailsJson, "blocked_reason") ?? "unknown";
+            notes.Add(new ResolutionDetailNote
+            {
+                Kind = "defect_link",
+                Text = $"Linked runtime_defect {defect.Id:D}: blocked_reason={blockedReason}, object_type={defect.ObjectType ?? "scope"}, updated_at_utc={defect.UpdatedAtUtc:O}."
+            });
+        }
+
+        return notes;
+    }
+
+    private static List<ResolutionEvidenceSummary> MergeStructuredRuntimeControlEvidence(
+        string scopeKey,
+        ProjectedResolutionItem item,
+        RuntimeControlStateContext? runtimeState,
+        IReadOnlyList<DbRuntimeDefect> runtimeDefects,
+        IReadOnlyList<DurableContext> durableContexts,
+        List<ResolutionEvidenceSummary> evidence,
+        string sortBy,
+        string sortDirection,
+        int evidenceLimit)
+    {
+        var structuredEvidence = BuildStructuredRuntimeControlEvidence(
+            scopeKey,
+            item,
+            runtimeState,
+            runtimeDefects,
+            durableContexts);
+        if (structuredEvidence.Count == 0)
+        {
+            return evidence;
+        }
+
+        var combined = structuredEvidence
+            .Concat(evidence)
+            .GroupBy(
+                entry => string.IsNullOrWhiteSpace(entry.SourceRef)
+                    ? entry.EvidenceItemId.ToString("D")
+                    : entry.SourceRef!,
+                StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+
+        var normalizedSortBy = ResolutionEvidenceSortFields.Normalize(sortBy);
+        var descending = string.Equals(ResolutionSortDirections.Normalize(sortDirection), ResolutionSortDirections.Desc, StringComparison.Ordinal);
+        combined = normalizedSortBy switch
+        {
+            ResolutionEvidenceSortFields.TrustFactor when descending => combined
+                .OrderByDescending(x => x.TrustFactor)
+                .ThenByDescending(x => x.ObservedAtUtc ?? DateTime.MinValue)
+                .ToList(),
+            ResolutionEvidenceSortFields.TrustFactor => combined
+                .OrderBy(x => x.TrustFactor)
+                .ThenBy(x => x.ObservedAtUtc ?? DateTime.MinValue)
+                .ToList(),
+            _ when descending => combined
+                .OrderByDescending(x => x.ObservedAtUtc ?? DateTime.MinValue)
+                .ThenByDescending(x => x.TrustFactor)
+                .ToList(),
+            _ => combined
+                .OrderBy(x => x.ObservedAtUtc ?? DateTime.MinValue)
+                .ThenBy(x => x.TrustFactor)
+                .ToList()
+        };
+
+        return combined
+            .Take(Math.Max(1, evidenceLimit))
+            .ToList();
+    }
+
+    private static List<ResolutionEvidenceSummary> BuildStructuredRuntimeControlEvidence(
+        string scopeKey,
+        ProjectedResolutionItem item,
+        RuntimeControlStateContext? runtimeState,
+        IReadOnlyList<DbRuntimeDefect> runtimeDefects,
+        IReadOnlyList<DurableContext> durableContexts)
+    {
+        if (runtimeState == null || !IsPromotionBlockedRuntimeControlItem(scopeKey, item))
+        {
+            return [];
+        }
+
+        var gateContexts = ExtractPromotionBlockedGateContexts(durableContexts);
+        var evidence = new List<ResolutionEvidenceSummary>
+        {
+            new()
+            {
+                EvidenceItemId = CreateDeterministicGuid($"runtime_control_state:{runtimeState.Id}"),
+                SourceRef = $"runtime_control_state:{runtimeState.Id}",
+                SourceLabel = "Runtime control state",
+                Summary = BuildPromotionBlockedRuntimeStateEvidenceSummary(runtimeState, runtimeDefects, gateContexts),
+                TrustFactor = 0.99f,
+                ObservedAtUtc = runtimeState.ActivatedAtUtc,
+                SenderDisplay = "runtime_control"
+            }
+        };
+
+        foreach (var defect in runtimeDefects
+                     .Where(defect => string.Equals(defect.DefectClass, RuntimeDefectClasses.SemanticDrift, StringComparison.Ordinal))
+                     .OrderByDescending(defect => defect.UpdatedAtUtc)
+                     .Take(2))
+        {
+            evidence.Add(new ResolutionEvidenceSummary
+            {
+                EvidenceItemId = defect.Id,
+                SourceRef = $"runtime_defect:{defect.Id:D}",
+                SourceLabel = "Runtime defect",
+                Summary = BuildPromotionBlockedRuntimeDefectEvidenceSummary(defect, gateContexts),
+                TrustFactor = 0.97f,
+                ObservedAtUtc = defect.UpdatedAtUtc,
+                SenderDisplay = "runtime_control"
+            });
+        }
+
+        return evidence;
+    }
+
+    private static string BuildPromotionBlockedRuntimeStateEvidenceSummary(
+        RuntimeControlStateContext runtimeState,
+        IReadOnlyList<DbRuntimeDefect> runtimeDefects,
+        IReadOnlyList<PromotionBlockedGateContext> gateContexts)
+    {
+        var openDefectCount = TryReadInt(runtimeState.DetailsJson, "open_defect_count");
+        var highestEscalation = TryReadString(runtimeState.DetailsJson, "highest_escalation") ?? "unknown";
+        var forcedCount = gateContexts.Count(x => x.ForcedByRuntimeState);
+        var lowConfidenceCount = gateContexts.Count(x => string.Equals(x.GateReason, "low_confidence_requires_operator_review", StringComparison.Ordinal));
+        var families = gateContexts
+            .Select(x => DescribeFamily(x.ObjectFamily))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToList();
+        var familySummary = families.Count == 0 ? "none" : string.Join(", ", families);
+
+        return $"Active runtime_control_state is promotion_blocked since {runtimeState.ActivatedAtUtc:O}; reason={runtimeState.Reason}; source={runtimeState.Source}; open_defect_count={openDefectCount}; highest_escalation={highestEscalation}; semantic_drift_defects={runtimeDefects.Count(x => string.Equals(x.DefectClass, RuntimeDefectClasses.SemanticDrift, StringComparison.Ordinal))}; forced_by_runtime_state objects={forcedCount}; low_confidence_requires_operator_review objects={lowConfidenceCount}; affected families={familySummary}.";
+    }
+
+    private static string BuildPromotionBlockedRuntimeDefectEvidenceSummary(
+        DbRuntimeDefect defect,
+        IReadOnlyList<PromotionBlockedGateContext> gateContexts)
+    {
+        var blockedReason = TryReadString(defect.DetailsJson, "blocked_reason") ?? "unknown";
+        var promotionBlockedCount = TryReadInt(defect.DetailsJson, "promotion_blocked");
+        var lowConfidenceCount = TryReadInt(defect.DetailsJson, "low_confidence_promotion_blocked");
+        var runtimeControlState = TryReadString(defect.DetailsJson, "runtime_control_state") ?? "unknown";
+        var resultStatus = TryReadString(defect.DetailsJson, "result_status") ?? "unknown";
+        var relatedGates = blockedReason == "low_confidence_requires_operator_review"
+            ? gateContexts.Where(x => string.Equals(x.GateReason, blockedReason, StringComparison.Ordinal)).ToList()
+            : gateContexts.Where(x => x.ForcedByRuntimeState).ToList();
+        var gateSummary = relatedGates.Count == 0
+            ? "none"
+            : string.Join("; ", relatedGates.Take(2).Select(BuildPromotionBlockedGateEvidenceFragment));
+
+        return $"runtime_defect {defect.Id:D} links promotion blocking: defect_class={defect.DefectClass}; severity={defect.Severity}; object_type={defect.ObjectType ?? "scope"}; blocked_reason={blockedReason}; result_status={resultStatus}; runtime_control_state={runtimeControlState}; promotion_blocked={promotionBlockedCount}; low_confidence_promotion_blocked={lowConfidenceCount}; gate_context={gateSummary}.";
+    }
+
+    private static string BuildPromotionBlockedGateEvidenceFragment(PromotionBlockedGateContext gateContext)
+    {
+        var parts = new List<string>
+        {
+            $"family={DescribeFamily(gateContext.ObjectFamily)}",
+            $"gate_reason={gateContext.GateReason ?? "unknown"}",
+            $"forced_by_runtime_state={gateContext.ForcedByRuntimeState.ToString().ToLowerInvariant()}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(gateContext.RuntimeControlState))
+        {
+            parts.Add($"runtime_control_state={gateContext.RuntimeControlState}");
+        }
+
+        if (gateContext.TrustFactor.HasValue)
+        {
+            parts.Add($"trust_factor={gateContext.TrustFactor.Value:0.##}");
+        }
+
+        if (gateContext.TrustThreshold.HasValue)
+        {
+            parts.Add($"trust_threshold={gateContext.TrustThreshold.Value:0.##}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(gateContext.TriggerRef))
+        {
+            parts.Add($"trigger_ref={gateContext.TriggerRef}");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    private static string BuildPromotionBlockedDurableGateSummary(DurableContext context)
+    {
+        if (!TryParsePromotionBlockedGateContext(context, out var gateContext))
+        {
+            return context.MetadataSummary;
+        }
+
+        return $"{DescribeFamily(context.ObjectFamily)}: stage8 gate reason={gateContext.GateReason ?? "unknown"}, forced_by_runtime_state={gateContext.ForcedByRuntimeState.ToString().ToLowerInvariant()}, runtime_control_state={gateContext.RuntimeControlState ?? "unknown"}, trust_factor={(gateContext.TrustFactor?.ToString("0.##") ?? "n/a")}, trust_threshold={(gateContext.TrustThreshold?.ToString("0.##") ?? "n/a")}.";
+    }
+
+    private static List<PromotionBlockedGateContext> ExtractPromotionBlockedGateContexts(IReadOnlyList<DurableContext> durableContexts)
+        => durableContexts
+            .Where(context => string.Equals(context.PromotionState, Stage8PromotionStates.PromotionBlocked, StringComparison.Ordinal))
+            .Select(context => TryParsePromotionBlockedGateContext(context, out var gateContext) ? gateContext : null)
+            .Where(context => context != null)
+            .Select(context => context!)
+            .ToList();
+
+    private static bool TryParsePromotionBlockedGateContext(DurableContext context, out PromotionBlockedGateContext gateContext)
+    {
+        gateContext = new PromotionBlockedGateContext
+        {
+            MetadataId = context.MetadataId,
+            ObjectFamily = context.ObjectFamily
+        };
+
+        if (string.IsNullOrWhiteSpace(context.MetadataJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(context.MetadataJson);
+            if (!document.RootElement.TryGetProperty("stage8_gate", out var stage8Gate)
+                || stage8Gate.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            gateContext = new PromotionBlockedGateContext
+            {
+                MetadataId = context.MetadataId,
+                ObjectFamily = context.ObjectFamily,
+                GateReason = TryReadString(stage8Gate, "reason", out var gateReason) ? gateReason : null,
+                ForcedByRuntimeState = TryReadBoolean(stage8Gate, "forced_by_runtime_state"),
+                RuntimeControlState = TryReadString(stage8Gate, "runtime_control_state", out var runtimeControlState) ? runtimeControlState : null,
+                TriggerRef = TryReadString(stage8Gate, "trigger_ref", out var triggerRef) ? triggerRef : null,
+                TrustFactor = TryReadFloat(stage8Gate, "trust_factor"),
+                TrustThreshold = TryReadFloat(stage8Gate, "trust_threshold"),
+                AppliedAtUtc = TryReadDateTime(stage8Gate, "applied_at_utc")
+            };
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryBuildStructuredRuntimeControlEvidenceAnnotations(
+        ProjectedResolutionItem item,
+        ResolutionEvidenceSummary evidence,
+        out string relevanceHint,
+        out ResolutionEvidenceDecisionLinkage linkage)
+    {
+        relevanceHint = string.Empty;
+        linkage = new ResolutionEvidenceDecisionLinkage();
+
+        if (!string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal)
+            || !IsStructuredRuntimeControlEvidence(evidence))
+        {
+            return false;
+        }
+
+        relevanceHint = "Прямая cause-evidence запись для текущего promotion_blocked scope item: описывает state/defect/gate причину без эвристического вывода из сообщений.";
+        linkage = new ResolutionEvidenceDecisionLinkage
+        {
+            LinkType = ResolutionDecisionLinkTypes.DecisionUnit,
+            LinkTarget = ResolveReviewDecisionUnit(item),
+            ReviewQuestion = BuildOperatorDecisionFocus(item),
+            Stance = ResolutionDecisionStances.Supports,
+            Summary = "Структурированная запись прямо поддерживает решение оставить scope в promotion_blocked до снятия defect или gate-причины.",
+            IsHeuristic = false
+        };
+        return true;
+    }
+
+    private static bool IsStructuredRuntimeControlEvidence(ResolutionEvidenceSummary evidence)
+    {
+        var sourceRef = evidence.SourceRef?.Trim() ?? string.Empty;
+        return sourceRef.StartsWith("runtime_control_state:", StringComparison.Ordinal)
+            || sourceRef.StartsWith("runtime_defect:", StringComparison.Ordinal);
+    }
+
+    private static bool IsPromotionBlockedRuntimeControlItem(string scopeKey, ProjectedResolutionItem item)
+        => string.Equals(scopeKey, ResolutionInterpretationCanonicalScopeKey, StringComparison.Ordinal)
+           && string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal)
+           && string.Equals(item.SourceRef, RuntimeControlStates.PromotionBlocked, StringComparison.Ordinal);
+
+    private static string? TryReadString(string? json, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return TryReadString(document.RootElement, propertyName, out var value)
+                ? value
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadBoolean(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var property)
+           && property.ValueKind is JsonValueKind.True or JsonValueKind.False
+           && property.GetBoolean();
+
+    private static float? TryReadFloat(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.Number
+            || !property.TryGetSingle(out var value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static DateTime? TryReadDateTime(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return DateTime.TryParse(property.GetString(), out var parsed)
+            ? parsed.ToUniversalTime()
+            : null;
+    }
+
+    private static Guid CreateDeterministicGuid(string value)
+        => new(MD5.HashData(Encoding.UTF8.GetBytes(value)));
+
     private sealed class TrackedPersonScope
     {
         public Guid PersonId { get; init; }
         public string ScopeKey { get; init; } = string.Empty;
         public string DisplayName { get; init; } = string.Empty;
         public int EvidenceCount { get; init; }
+    }
+
+    private sealed class RuntimeControlStateContext
+    {
+        public long Id { get; init; }
+        public string State { get; init; } = RuntimeControlStates.Normal;
+        public string Reason { get; init; } = string.Empty;
+        public string Source { get; init; } = string.Empty;
+        public string DetailsJson { get; init; } = "{}";
+        public DateTime ActivatedAtUtc { get; init; }
     }
 
     private sealed class DurableContext
@@ -2385,7 +2860,21 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         public string ContradictionMarkersJson { get; init; } = "[]";
         public int EvidenceCount { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
+        public string MetadataJson { get; init; } = "{}";
         public string MetadataSummary { get; init; } = string.Empty;
+    }
+
+    private sealed class PromotionBlockedGateContext
+    {
+        public Guid MetadataId { get; init; }
+        public string ObjectFamily { get; init; } = string.Empty;
+        public string? GateReason { get; init; }
+        public bool ForcedByRuntimeState { get; init; }
+        public string? RuntimeControlState { get; init; }
+        public string? TriggerRef { get; init; }
+        public float? TrustFactor { get; init; }
+        public float? TrustThreshold { get; init; }
+        public DateTime? AppliedAtUtc { get; init; }
     }
 
     private sealed class ProjectedResolutionItem
