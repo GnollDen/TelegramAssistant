@@ -1,1315 +1,964 @@
 {
-  "project": {
-    "name": "Person Intelligence System",
-    "version": "execution-backlog-v2-operator-layer",
-    "created_at": "2026-04-02",
-    "prd_source": "docs/planning/README.md",
-    "baseline_ref": "origin/master",
-    "baseline_commit": "31e4e26b34baf43e01560cd249a4cd11a393163f",
-    "repository_root": "C:/Users/thrg0/Downloads/TelegramAssistant/repo_inspect"
-  },
-  "baseline_analysis": {
-    "valid_core": [
-      "Telegram ingest listener",
-      "archive import and media processing",
-      "message/session/extraction persistence",
-      "database bootstrap and Redis queueing",
-      "Docker and monitoring shell",
-      "Stage5 substrate utilities after narrowing responsibilities"
-    ],
-    "prd_terms": [
-      "tracked person",
-      "linked person",
-      "candidate identity",
-      "mention",
-      "profile",
-      "dossier",
-      "pair dynamics",
-      "timeline episode",
-      "story arc",
-      "Stage 5 substrate",
-      "Stage 6 bootstrap",
-      "Stage 7 durable formation",
-      "Stage 8 crystallization",
-      "normalization",
-      "promotion",
-      "truth layers",
-      "clarification discipline",
-      "scoped recompute"
-    ],
-    "obsolete_docs": [
-      "docs/planning/README.md",
-      "docs/planning/N1_*",
-      "docs/planning/S6_R0_*",
-      "docs/planning/STAGE6_*",
-      "docs/planning/WEB_*",
-      "docs/planning/PRE_SPRINT0_STAGE6_*",
-      "docs/planning/PRE_SPRINT_W0_WEB_*",
-      "docs/planning/SPRINT_10_*",
-      "docs/planning/SPRINT_11_*",
-      "docs/planning/SPRINT_12_*",
-      "docs/planning/SPRINT_13_*",
-      "docs/planning/SPRINT_14_*"
-    ],
-    "classification": {
-      "keep": [
-        "src/TgAssistant.Telegram/Listener/*",
-        "src/TgAssistant.Processing/Archive/*",
-        "src/TgAssistant.Processing/Media/*",
-        "src/TgAssistant.Infrastructure/Redis/RedisMessageQueue.cs",
-        "src/TgAssistant.Infrastructure/Database/DatabaseInitializer.cs",
-        "deploy/Dockerfile",
-        "deploy/Dockerfile.mcp"
-      ],
-      "keep_with_refactor": [
-        "src/TgAssistant.Intelligence/Stage5/*",
-        "src/TgAssistant.Host/Program.cs",
-        "src/TgAssistant.Host/Startup/*",
-        "src/TgAssistant.Core/Configuration/Settings.cs",
-        "src/TgAssistant.Infrastructure/Database/Ef/TgAssistantDbContext.cs",
-        "src/TgAssistant.Mcp/index.ts",
-        "docker-compose.yml"
-      ],
-      "quarantine_disable": [
-        "src/TgAssistant.Intelligence/Stage6/*",
-        "src/TgAssistant.Web/*",
-        "src/TgAssistant.Telegram/Bot/TelegramBotHostedService.cs",
-        "src/TgAssistant.Host/Web/WebRuntimeHostedService.cs",
-        "Stage6 repositories and verifiers"
-      ],
-      "delete_rewrite": [
-        "Stage6 Core models and interfaces",
-        "legacy Stage6 artifact/case/profile/strategy/draft contracts",
-        "Stage6-focused planning packs",
-        "legacy web operator workflow",
-        "legacy bot operator workflow"
-      ]
-    }
-  },
+  "project": "TelegramAssistant",
+  "baseline_analysis": "Generated for ralph-lite from logs/ralph-all-tasks-state.json",
   "task_groups": [
     {
-      "id": "phase-a-cleanup-reset",
-      "title": "Phase A. Cleanup / Reset to Valid Core",
-      "task_ids": [
-        "CLEANUP-001",
-        "CLEANUP-002",
-        "CLEANUP-003",
-        "CLEANUP-004",
-        "CLEANUP-005",
-        "CLEANUP-006",
-        "CLEANUP-007",
-        "CLEANUP-008",
-        "CLEANUP-009"
-      ]
+      "id": "DTP",
+      "description": "Detailed Task Pack"
     },
     {
-      "id": "phase-b-implementation",
-      "title": "Phase B. PRD Implementation on Clean Baseline",
-      "task_ids": [
-        "IMPLEMENT-001",
-        "IMPLEMENT-002",
-        "IMPLEMENT-003",
-        "IMPLEMENT-004",
-        "IMPLEMENT-005",
-        "IMPLEMENT-006",
-        "IMPLEMENT-007",
-        "IMPLEMENT-008",
-        "IMPLEMENT-009",
-        "IMPLEMENT-011",
-        "IMPLEMENT-012",
-        "IMPLEMENT-013",
-        "IMPLEMENT-014",
-        "IMPLEMENT-015",
-        "IMPLEMENT-016",
-        "IMPLEMENT-010"
-      ]
-    },
-    {
-      "id": "phase-c-post-cleanup",
-      "title": "Phase C. Post-Implementation Cleanup and Authority Hardening",
-      "task_ids": [
-        "CLEANUP-101",
-        "CLEANUP-102",
-        "CLEANUP-103",
-        "CLEANUP-104"
-      ]
-    },
-    {
-      "id": "phase-d-llm-gateway",
-      "title": "Phase D. LLM Gateway Foundation and Controlled Adoption",
-      "task_ids": [
-        "GATEWAY-001",
-        "GATEWAY-002",
-        "GATEWAY-003",
-        "GATEWAY-004",
-        "GATEWAY-005",
-        "GATEWAY-006",
-        "GATEWAY-007",
-        "GATEWAY-008"
-      ]
-    },
-    {
-      "id": "phase-e-prd-alignment-hardening",
-      "title": "Phase E. PRD Alignment and Runtime Hardening",
-      "task_ids": [
-        "ALIGN-201",
-        "ALIGN-202",
-        "ALIGN-203",
-        "ALIGN-204"
-      ]
-    },
-    {
-      "id": "phase-f-operator-interaction-layer",
-      "title": "Phase F. Operator Interaction Layer Execution Backlog",
-      "task_ids": [
-        "OPINT-001",
-        "OPINT-002",
-        "OPINT-003",
-        "OPINT-004",
-        "OPINT-005",
-        "OPINT-006",
-        "OPINT-007",
-        "OPINT-008",
-        "OPINT-009"
-      ]
+      "id": "PHB",
+      "description": "Phase B"
     }
   ],
   "tasks": [
     {
-      "id": "CLEANUP-001",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Define the reset boundary and valid-core inventory from origin/master. Explicitly mark current Stage6/web/tgbot as legacy and lock the retained baseline to reusable substrate and runtime foundations only.",
-      "executor_agent": "architect-reviewer",
+      "id": "DTP-001",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-001 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A reset-boundary note exists and maps keep, keep with refactor, quarantine/disable, and delete/rewrite areas across src/, deploy/, and docs/planning/.",
-        "The retained baseline contains only code that is code-backed, minimally necessary, PRD-compatible, and reusable without current Stage6/web/tgbot semantics.",
-        "The note explicitly states that current Stage6/web/tgbot are not the target architecture."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Review the note against the PRD, AGENTS.md, Program.cs, Stage6/, Web/, Telegram/Bot/, TgAssistant.Mcp/index.ts, and docker-compose.yml.",
-        "Verify that every retained item can survive without legacy Stage6/web/tgbot behavior.",
-        "Run dotnet build TelegramAssistant.sln after any code changes."
+        "Run task-specific verify commands"
       ],
-      "dependencies": [],
       "status": "done",
-      "notes": "This is the cleanup gate that prevents legacy carry-forward by inertia."
+      "notes": "settings-driven loop/model constants bound; build+validation passed",
+      "dependencies": []
     },
     {
-      "id": "CLEANUP-002",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Deprecate planning and runbook documents that normalize the accepted Stage6/web/tgbot baseline, and publish a clean-slate planning index anchored to the PRD and reset boundary.",
-      "executor_agent": "technical-writer",
+      "id": "DTP-002A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-002A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "docs/planning/README.md points to the clean-slate pack instead of N1 or Stage6/web readiness docs.",
-        "Legacy Stage6/web planning files are marked deprecated or archival with an explicit reason.",
-        "No active planning doc claims that current Stage6/web/tgbot is the implementation path."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Search docs/planning/ and docs/runbooks/ for 'Stage 6 accepted', 'readiness baseline', and 'web delivery' and confirm active docs redirect to the clean plan.",
-        "Open the new planning index and verify that the PRD and reset-boundary note are the active authority.",
-        "If doc paths change, run any available markdown or link validation used in the repo."
-      ],
-      "dependencies": [
-        "CLEANUP-001"
+        "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "Historical docs may remain, but they must stop driving execution."
+      "notes": "usage fields added to model response/audit; validation artifact confirms null+non-null propagation",
+      "dependencies": [
+        "DTP-001"
+      ]
     },
     {
-      "id": "CLEANUP-003",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Shrink the shared model and interface surface to a valid baseline. Remove or isolate Stage6/current-state/profile/strategy/draft/review/case/user-context contracts from active core namespaces.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-002B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-002B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Stage6-specific models and interfaces are no longer presented as active foundation contracts in TgAssistant.Core.",
-        "Retained shared models are limited to substrate, ingest, archive/media, evidence capture, queue, and minimal operational primitives.",
-        "Any preserved legacy contracts are clearly marked deprecated or moved behind a legacy boundary."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inspect src/TgAssistant.Core/Models/ and src/TgAssistant.Core/Interfaces/ and confirm legacy Stage6 contracts are removed, relocated, or marked legacy-only.",
-        "Run rg to verify that the active composition root no longer depends on Stage6 contracts as baseline APIs.",
-        "Run dotnet build TelegramAssistant.sln."
-      ],
-      "dependencies": [
-        "CLEANUP-001"
+        "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "Current Core over-encodes the rejected Stage6 product shape. Completed by moving legacy Stage6/current-state/profile/strategy/draft/review/case contracts behind TgAssistant.Core.Legacy namespaces and splitting legacy repositories out of the active core interface surface."
+      "notes": "claim uncertainty enforcement + validation rows added; no unsupported certainty",
+      "dependencies": [
+        "DTP-002A"
+      ]
     },
     {
-      "id": "CLEANUP-004",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Reset the schema and repository baseline. Separate preserved substrate tables from frozen legacy Stage6/domain product tables so new PRD work does not inherit old truth storage.",
-      "executor_agent": "database-administrator",
+      "id": "DTP-003",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-003 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A schema inventory labels each table and repository as retained substrate, retained with refactor, frozen legacy, or replace-on-rebuild.",
-        "Stage6 case/artifact/profile/strategy/draft/review repositories stop presenting frozen tables as active architecture.",
-        "Migration policy for the new PRD schema is defined without treating legacy Stage6 tables as canonical truth."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inspect TgAssistantDbContext, repository registrations, and migration files to confirm preserved versus frozen areas are explicit.",
-        "Verify the schema inventory names replacement boundaries for Stage6 tables and repos.",
-        "Run dotnet build TelegramAssistant.sln after code or migration manifest changes."
-      ],
-      "dependencies": [
-        "CLEANUP-003"
+        "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "This task defines what survives from origin/master at the storage layer. Completed by inventorying retained/frozen table families, splitting active versus legacy repository registrations, and explicitly marking frozen domain/Stage6 mappings as non-canonical in TgAssistantDbContext and planning notes."
+      "notes": "budget ceilings+precedence enforced; happy-path validation keeps failure_reason null",
+      "dependencies": [
+        "DTP-002B"
+      ]
     },
     {
-      "id": "CLEANUP-005",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Unwind legacy runtime wiring so Program.cs, hosted-service registration, runtime roles, and smokes no longer assume current Stage6/web/tgbot as normal runtime baseline.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-004",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-004 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "The cleaned host composition separates preserved substrate/runtime roles from disabled or legacy-only roles.",
-        "Current Stage6/web/bot hosted services are not part of the active baseline runtime role contract.",
-        "Runtime docs and smokes distinguish preserved substrate verification from legacy-only diagnostics."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inspect Program.cs and Host/Startup/*.cs and verify Stage6/web/bot are not default baseline roles.",
-        "Run dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --list-smokes and confirm cleaned role and smoke naming.",
-        "Run dotnet build TelegramAssistant.sln."
-      ],
-      "dependencies": [
-        "CLEANUP-003",
-        "CLEANUP-004"
+        "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "Host wiring is one of the main places where legacy assumptions remain normalized. Completed by separating preserved verification entrypoints from legacy diagnostics in Program.cs help text, renaming launch verification step labels away from web-prefixed names, and marking retired Stage6 runtime docs as legacy-only."
+      "notes": "loop-disabled path bypasses interpretation service; runtime-control proof passes with runtime-role/db/gateway env",
+      "dependencies": [
+        "DTP-003"
+      ]
     },
     {
-      "id": "CLEANUP-006",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Quarantine the current Stage6 implementation and helper commands so it cannot be mistaken for the new PRD Stage 6/7/8 path.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-005",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-005 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Current Stage6 services, verifiers, and helper commands are removed from active runtime composition or placed behind an explicit legacy gate.",
-        "No active module or planning doc refers to current Stage6 as the baseline for bootstrap, durable formation, or crystallization.",
-        "Any retained Stage6 code is marked as legacy reference only."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Search the codebase for active TgAssistant.Intelligence.Stage6 registrations/usages from Host startup and confirm they are gated or removed.",
-        "Run dotnet build TelegramAssistant.sln.",
-        "Verify that no task in Phase B depends on preserving old Stage6 semantics."
-      ],
-      "dependencies": [
-        "CLEANUP-004",
-        "CLEANUP-005"
+        "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "This is isolation, not refinement. Legacy Stage6 code is labeled as legacy-only and remains for reference/diagnostics only."
+      "notes": "failure-reason taxonomy constants + mappings implemented across loop/model/projection; dotnet build, --resolution-interpretation-loop-v1-validate, and --runtime-control-detail-proof all pass when run with runtime-role/db/redis/gateway startup env overrides.",
+      "dependencies": [
+        "DTP-004"
+      ]
     },
     {
-      "id": "CLEANUP-007",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Disable or quarantine the current web HTML renderer and Telegram bot operator workflow. Leave at most a clearly marked temporary diagnostic shell until the new person-first surfaces exist.",
-      "executor_agent": "frontend-developer",
+      "id": "DTP-006A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-006A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Current web and tgbot surfaces are no longer described or exposed as the target operator workflow.",
-        "If a temporary shell remains, it is labelled diagnostic-only and not presented as product baseline.",
-        "Legacy Stage6 queue/case/artifact flows are isolated from the clean implementation track."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inspect src/TgAssistant.Web/, WebRuntimeHostedService.cs, and TelegramBotHostedService.cs and confirm the legacy operator surface is disabled, gated, or clearly marked.",
-        "Run dotnet build TelegramAssistant.sln.",
-        "If a temporary surface remains, open it locally and confirm it advertises itself as legacy or diagnostic-only."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-005",
-        "CLEANUP-006"
-      ],
-      "status": "done",
-      "notes": "The current web layer is an internal renderer, not a reusable operator foundation. Legacy web and bot shell touchpoints are labeled diagnostic-only wherever they remain reachable."
+        "DTP-005"
+      ]
     },
     {
-      "id": "CLEANUP-008",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Strip Stage6-specific MCP tools, compose defaults, and deploy assumptions so MCP and deployment carry only reusable runtime responsibilities while the clean architecture is rebuilt.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-006B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-006B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "The MCP surface no longer presents Stage6 artifact/case-centric tools as the primary contract.",
-        "docker-compose.yml and deploy docs stop assuming web/bot/Stage6 operator flow as accepted baseline runtime.",
-        "Preserved MCP/deploy shell remains usable for health, transport, and future clean-model exposure."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inspect src/TgAssistant.Mcp/index.ts, docker-compose.yml, and deploy/ docs to confirm Stage6-centric defaults are removed or legacy-gated.",
-        "Run npm --prefix src/TgAssistant.Mcp run build if MCP code changes.",
-        "Run dotnet build TelegramAssistant.sln if Host or shared contracts change."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-005",
-        "CLEANUP-007"
-      ],
-      "status": "done",
-      "notes": "MCP transport/auth shell is reusable; its current tool catalog is not. Default docker-compose and deploy docs now reflect only the preserved shell baseline, while legacy web/bot/Stage6 paths are marked diagnostic-only or preview-only."
+        "DTP-006A"
+      ]
     },
     {
-      "id": "CLEANUP-009",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Audit the cleanup branch for hidden legacy bias. Cleanup and implementation must stay separate, the retained baseline must be minimal and code-backed, and no reset task may read as 'finish old Stage6/web/tgbot'.",
-      "executor_agent": "reviewer",
+      "id": "DTP-008A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-008A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A cleanup review note exists with findings or explicit approval across docs, models, DB, runtime, Stage6 isolation, web/tgbot, and MCP/deploy.",
-        "Any remaining dependency on legacy Stage6/web/tgbot is called out as blocking unless it is explicitly temporary and diagnostic-only.",
-        "Phase B does not start until cleanup approval is recorded or blocking findings are resolved."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Review cleanup changes against the PRD, reset-boundary note, and this backlog.",
-        "Rerun the required build commands for touched C# and TypeScript areas.",
-        "Confirm no implementation task depends on preserving old Stage6 case/artifact semantics."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-002",
-        "CLEANUP-004",
-        "CLEANUP-005",
-        "CLEANUP-006",
-        "CLEANUP-007",
-        "CLEANUP-008"
-      ],
-      "status": "done",
-      "notes": "This is the explicit gate against legacy carry-forward. Approval granted after CLEANUP-009-B removed active Stage6 verification dependencies from the preserved baseline and narrowed launch readiness to foundation, stage5, and budget-visibility."
+        "DTP-006B"
+      ]
     },
     {
-      "id": "IMPLEMENT-001",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Publish the clean-slate target architecture on top of the cleaned baseline: preserved substrate, person-first knowledge core, Stage 6 bootstrap, Stage 7 durable formation, Stage 8 crystallizers, and rollout cut lines.",
-      "executor_agent": "architect-reviewer",
+      "id": "DTP-008B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-008B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A target-architecture note maps PRD terms to concrete modules, storage boundaries, and runtime flows.",
-        "The architecture does not depend on legacy Stage6 case/artifact/profile/strategy/draft/review storage or operator flows.",
-        "Workstreams and dependency order are explicit enough to drive implementation without assistant-first drift."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Review the architecture note against the PRD and approved cleanup outputs.",
-        "Verify that every planned module has a clean baseline dependency and no hidden reliance on current Stage6/web/tgbot.",
-        "Run dotnet build TelegramAssistant.sln if project boundaries or code change."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-009"
-      ],
-      "status": "done",
-      "notes": "This becomes the implementation authority for Phase B. Target architecture note and workstream/dependency map are complete."
+        "DTP-008A"
+      ]
     },
     {
-      "id": "IMPLEMENT-002",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Introduce the new PRD data platform: Person, OperatorModel, SourceObject, EvidenceItem, RelationshipEdge, candidate identity state, ModelPassRun, NormalizationRun, and durable-object metadata.",
-      "executor_agent": "database-administrator",
+      "id": "DTP-007",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-007 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "New person-first schema objects exist and do not reuse frozen Stage6 truth tables as canonical storage.",
-        "Identity, evidence, run audit, and durable-object metadata are queryable by person scope, evidence ref, and run id.",
-        "The schema supports later bootstrap, durable formation, clarification, and crystallization without legacy case/artifact coupling."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Apply the new migrations to an empty database and a realistic substrate snapshot.",
-        "Run repository smoke checks for person lookup, source/evidence linkage, and run ledger writes.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-001"
-      ],
-      "status": "done",
-      "notes": "This replaces generic entity-first plus legacy Stage6 truth storage as the target model. IMPLEMENT-002-A/B/C completed with active-baseline schema for person identity, source/evidence storage, run ledgers, and durable-object metadata without reusing frozen Stage6 truth tables as canonical storage."
+        "DTP-008B"
+      ]
     },
     {
-      "id": "IMPLEMENT-003",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Refit the preserved ingestion, archive, media, and session pipeline so Stage 5 outputs normalized source, evidence, and provenance records aligned to the new person-first schema while preserving rebuildability.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-009A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-009A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Realtime ingest, archive import, media enrichment, and session slicing write source/evidence/provenance records keyed to the new data model.",
-        "Stage 5 remains corpus-first and does not materialize legacy Stage6 artifacts or durable person conclusions.",
-        "A full rerun from raw inputs can deterministically rebuild the cleaned substrate."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run realtime, archive, and media smokes on seeded data and verify new source/evidence/provenance rows.",
-        "Replay the same input twice and confirm deterministic rebuild behavior.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-002"
-      ],
-      "status": "done",
-      "notes": "This keeps the reusable ingest core but narrows Stage 5 to the PRD substrate boundary. IMPLEMENT-003-A/B/C now write realtime, archive, session, and media-derived source/evidence/provenance rows into the new substrate model, and IMPLEMENT-003-D added deterministic replay verification via --stage5-smoke to catch count/identity drift and non-substrate writes."
+        "DTP-007"
+      ]
     },
     {
-      "id": "IMPLEMENT-004",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Implement the new control-plane pass protocol and normalization layer: explicit input envelope, stable result statuses, typed candidate outputs, truth-layer separation, and storage-safe normalization.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-009B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-009B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Pass envelopes carry run type, target object, scope, source refs, truth summary, conflicts, unknowns, and schema version.",
-        "Normalization separates fact, inference, hypothesis, and conflict and prevents raw model prose from writing directly into durable state.",
-        "Passes can end in result_ready, need_more_data, need_operator_clarification, or blocked_invalid_input with persisted audit records."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Exercise normal, need-more-data, clarification, and invalid-input runs and verify stored run and normalization records.",
-        "Feed unsafe or malformed outputs and confirm they are downgraded or blocked.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-001",
-        "IMPLEMENT-002"
-      ],
-      "status": "done",
-      "notes": "This is the main governance seam between reasoning and durable state. IMPLEMENT-004-A/B/C now provide versioned pass envelopes, guarded typed normalization, and persisted audit records for model_pass_runs plus normalization_runs across result_ready, need_more_data, need_operator_clarification, and blocked_invalid_input outcomes, with CLI smokes covering the contract and audit paths."
+        "DTP-009A"
+      ]
     },
     {
-      "id": "IMPLEMENT-005",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Build PRD Stage 6 bootstrap on the prepared corpus: operator-centered graph initialization, tracked-person attachment, linked-person discovery, candidate identity handling, bootstrap slices, contradiction pools, and ambiguity pools without durable promotion.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-010",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-010 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A bootstrap run can execute for one tracked person or corpus scope and persist non-durable graph-init and ambiguity outputs.",
-        "Linked person, candidate identity, and mention states are explicitly differentiated in stored bootstrap results.",
-        "Repeated runs are idempotent and do not duplicate graph edges or bootstrap artifacts."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Seed a realistic corpus for one tracked person and run bootstrap twice, comparing counts and object identities.",
-        "Verify that bootstrap outputs remain non-durable and are not presented as reviewed dossiers or profiles.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-003",
-        "IMPLEMENT-004"
-      ],
-      "status": "done",
-      "notes": "This is a new bootstrap stage, not a repair of the old Stage6 engine. IMPLEMENT-005-A/B/C now provide non-durable operator-root graph initialization, tracked-person attachment, linked-person/candidate/mention discovery, and bootstrap ambiguity_pool, contradiction_pool, and bootstrap_slice outputs with idempotent rerun behavior verified through --stage6-bootstrap-smoke."
+        "DTP-009B"
+      ]
     },
     {
-      "id": "IMPLEMENT-006",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Build the implemented Stage 7 durable-formation baseline for dossiers, profiles, pair dynamics, events, timeline episodes, and story arcs from normalized candidates and bootstrap outputs.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-011",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-011 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Durable object families exist with evidence refs, freshness, stability, confidence, coverage, contradiction markers, and promotion state.",
-        "Profile versus dossier is explicit, pair dynamics is first-class, and timeline uses episodes and story arcs instead of legacy period summaries as the end state.",
-        "Formation logic remains separate from promotion governance and from later crystallizer reruns."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run durable formation on a seeded bootstrap scope and verify stored person, dossier, pair-dynamics, event, and timeline outputs.",
-        "Rerun the same scope and confirm revision behavior instead of duplicate durable rows.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-002",
-        "IMPLEMENT-004",
-        "IMPLEMENT-005"
-      ],
-      "status": "done",
-      "notes": "This parent is complete as the current Stage7 baseline, not as the full semantic depth implied by the PRD's broader second-intelligence-pass wording. IMPLEMENT-006-A/B/C materialize dossier/profile, pair-dynamics, and timeline/event/story-arc durable families with shared metadata and evidence links using audited deterministic synthesis from Stage6 bootstrap outputs, and IMPLEMENT-006-D adds consistent revision and idempotent rerun behavior so identical reruns reuse stable durable identities while changed reruns append family-specific revisions instead of duplicating rows."
+        "DTP-010"
+      ]
     },
     {
-      "id": "IMPLEMENT-007",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Build the implemented Stage 8 triggered scoped-recompute and outcome-gating baseline: trigger queue, dependency model, targeted reruns after new data, edits, deletes, and operator answers, plus promotion and clarification governance.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-012A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-012A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A persistent recompute queue exists with dedupe, retry, and smallest-sufficient-scope execution.",
-        "Promotion and clarification gates operate on the new truth-layer model instead of legacy Stage6 case/artifact state.",
-        "Clarification answers, edits, deletes, and high-signal data create targeted reruns instead of global rebuilds."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Apply clarification, edit, delete, and high-signal triggers and verify only affected scopes are rerun.",
-        "Exercise promotion-approved, promotion-blocked, and conflict-heavy candidates and verify stored outcomes.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-006"
-      ],
-      "status": "done",
-      "notes": "Completed as the current Stage8 baseline, not as full PRD-specialized crystallizer coverage. IMPLEMENT-007-A/B/C added a persistent deduping recompute queue with retry and smallest-sufficient-scope execution, trigger ingestion for clarification answers/edits/deletes/high-signal updates, and truth-layer promotion + clarification gates that update durable_object_metadata promotion_state/truth_layer outcomes with auditable gate metadata."
+        "DTP-011"
+      ]
     },
     {
-      "id": "IMPLEMENT-008",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Implement new operator surfaces on the clean model: person-root workspace, dossier/profile/pair/timeline views, clarification and review queues, and clean programmatic reads for those same objects.",
-      "executor_agent": "frontend-developer",
+      "id": "DTP-012B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-012B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Navigation starts from tracked person, linked person, or relevant graph context instead of legacy Stage6 case/chat shell.",
-        "Operator views expose truth layers, freshness, contradiction pressure, and review state clearly for each durable object family.",
-        "Primary operator workflow no longer depends on legacy Stage6 queue/case/artifact pages."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Start the web runtime locally and walk through person-root dossier, profile, pair-dynamics, timeline, clarification, and review flows.",
-        "Verify that canonical, proposal, operator-supplied, and obsolete states are visually distinct and consistent across pages.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-006",
-        "IMPLEMENT-007"
-      ],
-      "status": "done",
-      "notes": "Administrative closure 2026-04-04: historical placeholder for superseded pre-operator interface scope. Execution authority moved to phase-f OPINT tasks and was completed via OPINT-008 + OPINT-009; no further implementation is required under IMPLEMENT-008."
+        "DTP-012A"
+      ]
     },
     {
-      "id": "IMPLEMENT-009",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Implement observability, defect taxonomy, runtime control states, and budget governance for the new pass pipeline, normalization, promotion, clarification, and crystallization flows.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-013A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-013A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Metrics or logs exist for pass families, normalization outcomes, promotion blocks, contradiction load, clarification load, recompute depth, model spend, and runtime control states.",
-        "Defect classes and escalation rules cover ingestion, data, identity, model, normalization, control-plane, cost, and semantic-drift failures.",
-        "Runtime states such as normal, degraded, review_only, budget_protected, promotion_blocked, and safe_mode are visible and enforceable."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Inject cost, normalization, contradiction, and missing-context failure scenarios and verify recorded defects and control-state transitions.",
-        "Confirm queryable metrics expose run family duration, promotion-blocked counts, recompute queue depth, and budget by scope.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-004",
-        "IMPLEMENT-007"
-      ],
-      "status": "done",
-      "notes": "Completed through IMPLEMENT-009-A/B/C: pipeline metrics/rollups, runtime defect taxonomy persistence with escalation rules, and enforceable runtime control states (normal, degraded, review_only, budget_protected, promotion_blocked, safe_mode) now govern Stage8 execution and promotion behavior."
+        "DTP-012B"
+      ]
     },
     {
-      "id": "IMPLEMENT-010",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Backfill and validate the clean model from preserved substrate data, update runbooks for core knowledge/control pilot rollout and rollback, and run the pre-rollout audit before any cutover beyond pilot scopes.",
-      "executor_agent": "database-administrator",
+      "id": "DTP-013B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-013B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Pilot rebuild can run from substrate-only data with resumable checkpoints and clear restart behavior.",
-        "Runbooks describe core knowledge/control pilot rollout, rebuild, and rollback for the clean architecture instead of legacy Stage6/web/tgbot flows.",
-        "A pre-rollout review note or approval exists and rollout is not approved until blocking findings are resolved."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Restore a representative substrate snapshot, run partial rebuild, interrupt it, resume it, and verify stable counts and object identities.",
-        "Walk through the updated runbooks and confirm commands, service names, and rollback steps match the current codebase.",
-        "Run dotnet build TelegramAssistant.sln and the core pilot verification flow."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-005",
-        "IMPLEMENT-006",
-        "IMPLEMENT-009",
-        "IMPLEMENT-011",
-        "IMPLEMENT-012",
-        "IMPLEMENT-013",
-        "IMPLEMENT-014",
-        "IMPLEMENT-015",
-        "IMPLEMENT-016"
-      ],
-      "status": "done",
-      "notes": "Completed through IMPLEMENT-010-A/B/C after all dependencies were satisfied: resumable pilot rebuild/backfill flow is in place, runbooks were updated for clean-architecture pilot rollout/rollback, and the pre-rollout audit gate is recorded in execution backlog state."
+        "DTP-013A"
+      ]
     },
     {
-      "id": "IMPLEMENT-011",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Add retrieval-loop and pass-budget guardrails so Stage 6/7/8 runs cannot enter unbounded need_more_data cycles or silently burn cost on one scope.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-014",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-014 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Each pass family has explicit iteration, token, and cost budgets per scope or run.",
-        "Excessive need_more_data loops terminate into explicit blocked or escalated outcomes instead of continuing indefinitely.",
-        "Loop guard events are persisted and visible to runtime control-state and defect handling."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Simulate repeated need_more_data responses and verify the run is terminated at configured limits with an auditable terminal status.",
-        "Verify normal successful runs stay below the same guardrails without false positives.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-004",
-        "IMPLEMENT-009"
-      ],
-      "status": "done",
-      "notes": "Completed by adding auditable per-pass budget envelopes plus enforcement that converts exhausted need_more_data loops into terminal operator-clarification outcomes and runtime defect signals for Stage 6/7/8 control-plane handling."
+        "DTP-013B"
+      ]
     },
     {
-      "id": "IMPLEMENT-012",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Implement partial-graph continuation under unresolved clarifications so blocked identity or context branches do not freeze unrelated Stage 7/8 progress.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-015A",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-015A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Clarification-blocked branches are stored explicitly and scoped to affected graph segments.",
-        "Unrelated dossier, pair-dynamics, and timeline branches can continue on partial graph state where safe.",
-        "Blocked branches surface their dependency clearly without stalling unaffected work."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Create a clarification-blocked identity branch and verify unaffected branches continue durable formation and crystallization.",
-        "Verify affected branches remain blocked and auditable until clarification arrives.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-006",
-        "IMPLEMENT-007"
-      ],
-      "status": "done",
-      "notes": "Completed through IMPLEMENT-012-A/B: clarification_branch_states now persist branch-scoped unresolved clarification blocks, and Stage8 recompute execution consults those branch states so only the affected target family remains clarification-blocked while unaffected dossier/profile, pair-dynamics, or timeline work in the same scope can continue safely."
+        "DTP-014"
+      ]
     },
     {
-      "id": "IMPLEMENT-013",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Implement identity-resolution safety controls: reversible merge history, merge confidence tiers, and bounded invalidation or recompute after merge or split corrections.",
-      "executor_agent": "backend-developer",
+      "id": "DTP-015B",
+      "category": "DTP",
+      "priority": "P1",
+      "description": "Execute DTP-015B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Identity merges and splits are reversible with preserved before and after state.",
-        "Weak or ambiguous merges cannot silently promote poisoned durable knowledge.",
-        "Corrections trigger bounded invalidation or recompute on affected graph branches instead of forcing global reruns by default."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Approve and then reverse a merge and verify affected graph and durable knowledge return to a consistent state.",
-        "Inject a weak merge candidate and verify promotion is blocked or explicitly review-gated.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-005",
-        "IMPLEMENT-006",
-        "IMPLEMENT-007"
-      ],
-      "status": "done",
-      "notes": "Completed through IMPLEMENT-013-A/B: identity merges now persist reversible before/after snapshots with confidence-tier review gates, and applied or reversed corrections trigger bounded durable-object invalidation plus scoped Stage8 dossier/profile, pair-dynamics, and timeline recompute plans for only the affected persons rather than defaulting to global reruns."
+        "DTP-015A"
+      ]
     },
     {
-      "id": "IMPLEMENT-014",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Implement a canonical dossier-field registry and field-key normalization policy so extensible dossier output cannot drift into hundreds of duplicate semantic keys.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-001",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-001 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Durable dossier fields use canonical field families with alias mapping for near-duplicate keys.",
-        "New field families remain proposal-only until normalized and approved.",
-        "Normalization prevents semantically duplicate keys from fragmenting durable reads."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Submit overlapping field keys such as favorite_food and gastronomic_preferences and verify canonical mapping or blocked proposal behavior.",
-        "Verify durable reads aggregate through canonical keys rather than raw model labels.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-004",
-        "IMPLEMENT-006"
-      ],
-      "status": "done",
-      "notes": "Addresses dossier schema drift caused by open-ended LLM field generation. Completed by adding a canonical registry plus alias catalog and enforcing Stage7 dossier normalizer gating so approved aliases collapse into canonical durable fields while unapproved families remain proposal-only."
+        "DTP-015B"
+      ]
     },
     {
-      "id": "IMPLEMENT-015",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Implement freshness and decay policy for durable knowledge so local episodes, situational states, and recency-sensitive behavior do not stay wrongly authoritative forever.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-002",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-002 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Stable traits, situational states, and local episodes have distinct freshness and decay semantics.",
-        "Read models can down-rank or obsolete stale durable conclusions when newer contradictory evidence arrives.",
-        "Stage 8 refresh logic uses recency-aware weighting instead of blindly preferring old durable knowledge."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Create an old situational state and newer contradictory evidence and verify the stale state is downgraded or expired appropriately.",
-        "Verify durable stable traits remain more persistent than local episodes under the same decay logic.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-006",
-        "IMPLEMENT-007"
-      ],
-      "status": "done",
-      "notes": "Addresses stale guidance risk from outdated durable knowledge in Stage 8. Completed by persisting explicit decay classes/policies, applying policy-aware freshness scoring in Stage7 refresh paths, and using recency-aware Stage8 gating to downgrade stale contradictory situational/local conclusions more aggressively than stable traits."
+        "PHB-001"
+      ]
     },
     {
-      "id": "IMPLEMENT-016",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Implement backfill resource-safety controls: per-scope locking, bounded concurrency, deadlock-aware retries, and resumable checkpointing for large archive rebuilds.",
-      "executor_agent": "database-administrator",
+      "id": "PHB-003",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-003 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Large rebuilds use bounded concurrency and per-scope locking to avoid cross-scope write contention.",
-        "Database deadlocks and transient write conflicts are retried with bounded backoff and durable checkpoints.",
-        "Partial multi-hour runs can resume safely without duplicating or corrupting durable objects."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run a concurrent backfill scenario over multiple scopes and verify bounded worker concurrency with stable checkpoint progress.",
-        "Inject a deadlock or transient conflict and verify retry, backoff, and recovery behavior without data loss.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-007",
-        "IMPLEMENT-009"
-      ],
-      "status": "done",
-      "notes": "Completed through IMPLEMENT-016-A/B: bounded per-scope backfill leasing with durable checkpoints now includes deadlock/transient conflict classification, bounded retry backoff, and persisted recovery telemetry (retry/deadlock/transient counters plus recovery timestamps) with smoke coverage for retry and recovery behavior."
+        "PHB-002"
+      ]
     },
     {
-      "id": "CLEANUP-101",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Execute the safe-deletion batch after runtime-critical remediation: remove orphan directories, orphan TgAssistant.Web residue, clearly unused placeholders, and safe-to-delete stale repository surface already proven to have no active consumers.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-004",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-004 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Orphan filesystem residue is removed from the repo without touching active runtime seams.",
-        "The orphan TgAssistant.Web tree and other empty placeholder files no longer remain in the mainline source tree.",
-        "Safe-to-delete stale repository surface is removed only where caller analysis already proved no active usage."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Verify the target paths no longer exist or are removed from the solution/runtime composition.",
-        "Search the codebase for remaining references to the deleted placeholder and stale repository contracts.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "IMPLEMENT-016"
-      ],
-      "status": "done",
-      "notes": "Completed via CLEANUP-101-A/B on 2026-04-03: inventory-backed safe-delete batch executed for orphan src/TgAssistant.Web residue and bounded tracked .dotnet/.dotnet stale sentinel/telemetry artifacts, with post-delete absence and no-caller searches revalidated."
+        "PHB-003"
+      ]
     },
     {
-      "id": "CLEANUP-102",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Isolate the remaining legacy Stage6 bot/autocase/network cluster and trim stale config or DI residue so legacy diagnostics remain explicit and cannot drift back into the active baseline by ambient wiring.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-005",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-005 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Legacy Stage6 bot/autocase/network code is moved behind a tighter legacy boundary or clearly marked as non-baseline diagnostics only.",
-        "Legacy config bindings and DI registrations for BotChat, Web, and Stage6AutoCaseGeneration are removed or gated by explicit legacy-only switches.",
-        "No active startup path or config default suggests those clusters are normal runtime behavior."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Search Host startup and settings registration for BotChat, Web, and Stage6AutoCaseGeneration and confirm only explicit legacy diagnostics remain.",
-        "Inspect the isolated Stage6 bot/autocase/network surface and verify it no longer leaks into active composition by default.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-101"
-      ],
-      "status": "done",
-      "notes": "Completed via CLEANUP-102-A/B on 2026-04-03: legacy Stage6 bot/autocase/network paths were kept diagnostic-only behind explicit switches, and stale startup config/DI residue was trimmed so BotChat/Stage6AutoCaseGeneration settings bind only for legacy cluster diagnostics while Web no longer has baseline settings binding."
+        "PHB-004"
+      ]
     },
     {
-      "id": "CLEANUP-103",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Reclassify the DB boundary after remediation: separate truly active mappings and repositories from frozen legacy ones, then cut or retire the stale repo surface that no longer belongs in the active baseline.",
-      "executor_agent": "database-administrator",
+      "id": "PHB-006A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-006A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "The active versus frozen DB boundary is explicit in DbContext and repository registrations.",
-        "Stale repositories are either removed, isolated, or justified with clear active callers and storage purpose.",
-        "No schema reduction is attempted until active-path versus frozen-path ownership is fully documented."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Trace callers for candidate stale repositories and confirm the chosen keep/isolate/delete treatment is code-backed.",
-        "Inspect TgAssistantDbContext and related registrations to verify active and frozen mappings are no longer ambiguous.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-102"
-      ],
-      "status": "done",
-      "notes": "Completed via CLEANUP-103-A/B on 2026-04-03: the active versus frozen DB boundary was re-audited, legacy-only eval/review repositories were isolated, dead model-pass-envelope and summary repositories were removed without schema drops, and identity-merge storage was retained behind a dedicated correction-store registration instead of the active baseline repository block."
+        "PHB-005"
+      ]
     },
     {
-      "id": "CLEANUP-104",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Rebuild the docs authority chain after cleanup: restore an explicit planning index, merge or archive pre-PRD option notes, and ensure active markdown reflects the current baseline and gateway-extension positioning.",
-      "executor_agent": "technical-writer",
+      "id": "PHB-006B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-006B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Active docs authority is explicit and points to the current PRD, gateway PRD, and current backlog rather than stale or missing indices.",
-        "Pre-PRD option notes and residual planning docs are archived, merged, or clearly downgraded out of the active authority chain.",
-        "README and planning surfaces describe the current runtime and cleanup state without legacy Stage6/web/bot baseline claims."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Open the active docs authority entrypoints and verify they point to the current baseline documents only.",
-        "Search for references to missing or deprecated planning docs and confirm active markdown no longer depends on them.",
-        "Run any repo markdown or link validation used for docs changes, if available."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-103"
-      ],
-      "status": "done",
-      "notes": "Final post-cleanup docs pass. This should happen after code and DB-boundary cleanup so the authority chain reflects the real project state."
+        "PHB-006A"
+      ]
     },
     {
-      "id": "GATEWAY-001",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Build the LLM Gateway foundation: provider-agnostic contracts, routing policy seam, adapter interface, normalized error surface, and configuration model for modality-aware provider selection.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-006C",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-006C according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A single internal ILlmGateway contract exists for text/chat/tools, embeddings, and audio requests.",
-        "Provider adapters, routing policy, and normalized request/response envelopes are defined without leaking vendor-specific semantics into domain services.",
-        "Configuration supports per-modality provider routing and explicit fallback policy without requiring business-logic edits."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run unit or contract-level checks for request envelope validation, routing policy selection, and normalized error mapping.",
-        "Verify gateway configuration can express codex-lb for text/chat/tools and openrouter for embeddings/audio without code changes.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-104"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-001-A/B: TgAssistant.Core now exposes provider-agnostic gateway contracts and error taxonomy, and the host/runtime foundation now includes LlmGateway configuration, routing policy, provider adapters, and DI wiring without broad caller cutover."
+        "PHB-006B"
+      ]
     },
     {
-      "id": "GATEWAY-002",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Add gateway smoke coverage and provider sanity checks so the new gateway can be validated independently before any live migration.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-007",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-007 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Gateway smoke tests exist for codex-lb text/chat, openrouter embeddings, and any active audio path.",
-        "Fallback and normalized error behavior are testable under smoke or integration-style checks.",
-        "Gateway readiness can be validated without migrating the full active LLM surface."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run gateway smokes for codex-lb text/chat success and failure cases.",
-        "Run gateway smokes for openrouter embeddings and active audio modality, if present.",
-        "Run dotnet build TelegramAssistant.sln and any gateway-specific smoke command set."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-001"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-002-A/B: the host now exposes standalone gateway success and failure smoke entrypoints covering codex-lb text/chat, openrouter embeddings/audio, retryable fallback to openrouter, and fail-fast normalized auth/schema errors without migrating the broader active LLM surface."
+        "PHB-006C"
+      ]
     },
     {
-      "id": "GATEWAY-003",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Add A/B experimentation support for the gateway so fixed replay sets can compare models/providers by latency, cost, error rate, schema validity, and normalized output quality.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-008A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-008A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A/B runs can route the same replay input through different providers or model settings under a stable experiment label.",
-        "Experiment output records provider, model, request id, latency, usage, fallback status, and result validity.",
-        "A/B support works through configuration and does not require domain-service code forks."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run a replay-based A/B comparison for one text/chat path and verify both experiment branches persist comparable telemetry.",
-        "Verify experiment labels and provider/model metadata are auditable.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-002"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-003-A/B: config-driven gateway experiments now support sticky branch routing plus an auditable replay A/B harness for the safe Stage5 edit-diff text path, producing comparable latency, usage/cost, error-rate, schema-validity, and normalized-output parity evidence without domain-service forks."
+        "PHB-007"
+      ]
     },
     {
-      "id": "GATEWAY-004",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Migrate one safe pilot text path to the gateway behind a feature flag and prove parity, rollback safety, and governance compatibility before broader rollout.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-008B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-008B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "One bounded active text path runs through the gateway under an explicit feature flag with rollback.",
-        "Pilot output remains within accepted domain and schema behavior compared with the pre-gateway path.",
-        "Budget, telemetry, and retry semantics remain visible and compatible with the current control plane."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run the pilot path with gateway disabled and enabled on the same replay set and compare normalized outputs and telemetry.",
-        "Verify rollback to the pre-gateway path works without code changes.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-003"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-004-A/B: the Stage5 edit-diff pilot path now runs behind Analysis:EditDiffGatewayEnabled with config-only rollback, and replay/governance validation is recorded in artifacts/llm-gateway/edit_diff_pilot_validation_report.json. The pilot proved rollback safety plus budget/telemetry compatibility, but runtime evidence also showed codex-lb primary instability with 100% fallback and only 25% normalized parity versus the legacy path, so broader rollout remains deferred to the formal GATEWAY-005 gate."
+        "PHB-008A"
+      ]
     },
     {
-      "id": "GATEWAY-005",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "Run the gateway verification and rollout gate: replay parity, fallback behavior, smoke stability, A/B evidence, and go/no-go for broader migration of text, embeddings, and audio paths.",
-      "executor_agent": "reviewer",
+      "id": "PHB-009",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-009 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Replay-based parity and A/B evidence exist for the pilot path and are sufficient to assess broader rollout risk.",
-        "Fallback, telemetry, and budget behavior are verified under gateway control.",
-        "A clear go/no-go decision exists for broader gateway adoption, including what should wait."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Review gateway smoke results, A/B outputs, parity comparisons, and pilot rollback evidence.",
-        "Verify broader rollout recommendations distinguish safe next migrations from deferred modalities or providers.",
-        "Run final verification commands required by the touched code paths."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-004"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-005-A/B. The rollout gate recorded a NO-GO for broader migration because gateway smokes and governance signals were healthy but replay A/B and pilot validation showed 100% fallback from codex-lb to openrouter and only 1/4 normalized parity versus the legacy path. The published recommendation keeps the gateway foundation and bounded edit-diff pilot in place, defers broader text/embeddings/audio migration, and requires primary-provider success plus materially improved parity before broader rollout is reconsidered."
+        "PHB-008B"
+      ]
     },
     {
-      "id": "GATEWAY-006",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Add Grafana-facing gateway analytics so provider-specific spend, token usage, throughput, and latency are visible for rollout decisions and ongoing operations.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-010A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-010A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "OpenRouter requests expose provider spend or price-derived spend, token usage, and request counts in Grafana-usable form.",
-        "All gateway providers expose request rate, tokens per second, end-to-end latency, provider latency, and token usage metrics.",
-        "Gateway analytics are available for pilot and bounded production paths without requiring replay-only artifacts."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run gateway success and failure paths and verify metrics are emitted by provider, modality, model, and status.",
-        "Verify OpenRouter cost or price-derived spend is queryable together with request and token usage dimensions.",
-        "Run dotnet build TelegramAssistant.sln and the gateway smokes or bounded verification commands required by the touched code."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-005"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-006-A/B/C. Gateway now emits Grafana-ready metrics for request throughput (RPS derivable), tokens/TPS, provider and end-to-end latency, fallback transitions, and OpenRouter spend (`provider` or `derived`) aligned with usage accounting. Bounded verification is codified through --llm-gateway-success-smoke, --llm-gateway-failure-smoke, --llm-gateway-analytics-smoke, and --llm-gateway-analytics-validate with report artifact artifacts/llm-gateway/analytics_validation_report.json."
+        "PHB-009"
+      ]
     },
     {
-      "id": "GATEWAY-007",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Run a bounded rollout for reasoning-to-shaping contract normalization across additional contract families, using app validation and explicit gates before any broader migration claims.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-010B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-010B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "A small ordered set of additional contract families is selected and evaluated for reasoning-pass plus shaping-pass adoption.",
-        "Each selected family has explicit schema, app-level validation, and bounded rollout evidence before being considered active.",
-        "Gateway-backed contract normalization remains selective and evidence-driven rather than broad by default."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Identify the next candidate contract families after EditDiff v1 and document why they are safe or unsafe for bounded rollout.",
-        "Implement one additional family behind an explicit gate and verify normalization, fallback, and app validation behavior.",
-        "Run dotnet build TelegramAssistant.sln and the relevant gateway normalization smokes or bounded family-specific verification commands."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-006"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via GATEWAY-007-A/B/C. Ranked post-EditDiff families and selected bounded `SessionSummary v1`; implemented schema+validator+feature-gated fallback path; and validated parity/schema/fallback/operational metrics through --llm-contract-family-validate with report artifact artifacts/llm-gateway/session_summary_family_validation_report.json. Recommendation: continue bounded reasoning-plus-shaping to the next single family only."
+        "PHB-010A"
+      ]
     },
     {
-      "id": "GATEWAY-008",
-      "category": "implementation",
-      "priority": "high",
-      "description": "Harden gateway observability, readiness, and governance so retry/error accounting, route control, and transport-backed validation are production-grade for bounded selective rollout.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-011A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-011A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Retryable primary failures that recover via fallback are still visible in provider-level error accounting and observability.",
-        "Startup or readiness checks validate gateway operability for active routes, credentials, and timeout completeness instead of assuming configuration is valid.",
-        "Governance guardrails constrain RouteOverride and model selection enough to prevent silent policy bypass on bounded production paths.",
-        "At least one bounded transport-backed validation path proves the gateway beyond synthetic handler-only smokes."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Verify retryable primary failures increment provider-level error metrics while successful fallback still records final outcome correctly.",
-        "Run gateway readiness/launch checks and confirm invalid route or missing provider config fails fast with actionable diagnostics.",
-        "Run transport-backed bounded validation for one safe gateway path and confirm metrics/exporter assumptions are evidence-backed.",
-        "Run dotnet build TelegramAssistant.sln and the touched gateway smokes/validation commands."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "GATEWAY-007"
-      ],
-      "status": "done",
-      "notes": "Administrative closure 2026-04-04: bounded gateway hardening track is complete for current rollout scope. GATEWAY-008-A and GATEWAY-008-C are done; readiness/governance/transport validation are present in code and gate remains intentionally frozen after polishing/tuning. No additional rollout-expansion work is authorized under GATEWAY-008 unless explicitly reopened."
+        "PHB-010B"
+      ]
     },
     {
-      "id": "ALIGN-201",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Harden the runtime and ops baseline so docker-compose, startup guards, and schema-initialization behavior agree on the active contract and do not perform risky DDL on the normal startup path.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-011B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-011B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Default compose/runtime config satisfies the startup guard for the intended baseline roles or is explicitly gated out of that baseline.",
-        "Schema-changing initialization is removed from ordinary startup or placed behind an explicit operator-only gate.",
-        "Runtime baseline behavior is documented and verifiable without hidden required settings."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Verify compose/env/appsettings align with RuntimeStartupGuard expectations for the baseline roles.",
-        "Trace startup initialization and confirm DDL does not run on the standard path unless explicitly requested.",
-        "Run dotnet build TelegramAssistant.sln and relevant startup/list-smokes verification."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "CLEANUP-104"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via ALIGN-201-A/B. Baseline compose/appsettings/startup guard contract was aligned and schema-changing initialization was removed from default startup by gating it behind explicit operator-only switch --operator-schema-init."
+        "PHB-011A"
+      ]
     },
     {
-      "id": "ALIGN-202",
-      "category": "cleanup/reset",
-      "priority": "critical",
-      "description": "Tighten Stage 7 and Stage 8 semantics against the PRD so active docs and backlog describe the implemented durable-formation and triggered scoped-recompute behavior without overstating current crystallizer coverage.",
-      "executor_agent": "architect-reviewer",
+      "id": "PHB-012A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-012A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "The code and planning notes explain what currently counts as Stage 7 durable formation and Stage 8 crystallization.",
-        "Any semantic drift between PRD and current implementation is either corrected or explicitly documented with a bounded remediation path.",
-        "Promotion and crystallizer semantics are no longer overstated in docs or backlog relative to the real code."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Review Stage7/Stage8 services, storage, and docs against the PRD and confirm the selected corrections or narrowed claims.",
-        "Verify updated semantics remain consistent across code comments, docs, and backlog notes.",
-        "Run dotnet build TelegramAssistant.sln if code changes are required."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "ALIGN-201"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via ALIGN-202-A/B. Active docs and backlog now describe current Stage7 as audited deterministic durable formation from Stage6 bootstrap outputs and current Stage8 as triggered scoped recompute plus outcome gating, while explicitly leaving broader PRD specialized crystallizer coverage as future scope."
+        "PHB-011B"
+      ]
     },
     {
-      "id": "ALIGN-203",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Seal the remaining legacy boundary seams that can still affect active behavior, especially the legacy trigger bridge, correction-store exposure, and any diagnostic-only services still leaking into default runtime expectations.",
-      "executor_agent": "database-administrator",
+      "id": "PHB-012B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-012B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Legacy-to-active bridges are explicit, justified, and isolated rather than ambient in the default runtime path.",
-        "Correction-only or legacy-only repositories are not presented as baseline runtime dependencies.",
-        "Any remaining diagnostic clusters stay reachable only through explicit gates."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Trace callers and registrations for the legacy trigger bridge and correction-store paths.",
-        "Verify default runtime wiring no longer exposes correction-only or legacy-only surfaces unintentionally.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "ALIGN-202"
-      ],
-      "status": "done",
-      "notes": "Completed on 2026-04-03 via ALIGN-203-A/B. Ambient default-DI registration of the identity-merge correction store was removed, and the remaining legacy Stage6 domain-review to active Stage8 bridge now requires explicit CLI admission via --allow-legacy-stage8-bridge before any legacy diagnostic path can run."
+        "PHB-012A"
+      ]
     },
     {
-      "id": "ALIGN-204",
-      "category": "cleanup/reset",
-      "priority": "high",
-      "description": "Normalize the docs authority chain after the alignment fixes so README, planning index, gateway prep docs, and cleanup notes reflect the current runtime baseline and target-state honestly.",
-      "executor_agent": "technical-writer",
+      "id": "PHB-013",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-013 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "README points cleanly to the active planning authority rather than competing top-level narratives.",
-        "Gateway prep and cleanup/audit notes are correctly classified as active, reference-only, or historical.",
-        "Active docs no longer overclaim PRD completion or hide current drift."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Open README and the planning index and verify they form a single authority chain.",
-        "Check that cleanup/audit notes and gateway prep docs are classified consistently with their current role.",
-        "Run any available markdown/link integrity validation used by the repo."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "ALIGN-203"
-      ],
-      "status": "done",
-      "notes": "Final alignment/docs pass after runtime and semantic hardening."
+        "PHB-012B"
+      ]
     },
     {
-      "id": "OPINT-001",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "P0 resolution-system foundation: freeze operator-layer authority cutline, resolution taxonomy, and bounded action/session contracts so execution can proceed without reopening legacy Stage6/web/tgbot flows.",
-      "executor_agent": "architect-reviewer",
+      "id": "PHB-014A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-014A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Backlog explicitly supersedes remaining blocked IMPLEMENT-008 interface scope with operator-layer tasks while preserving done history.",
-        "Resolution item taxonomy and action set are fixed for P0 (clarification, review, contradiction, missing_data, blocked_branch + approve/reject/defer/clarify/evidence/open-web).",
-        "Default decisions needed for execution are recorded: explanation required for reject/defer/clarify, summarized evidence drilldown in MVP, fixed tracked-person selector for bounded pilot.",
-        "Operator auth/session policy is recorded for Telegram/Web reuse: actions are authenticated and auditable, scoped to active tracked person/item, session state includes active mode and unfinished step, and the contract remains MCP-independent and non-legacy."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Verify tasks.json and task_slices.json contain a dedicated phase-f operator track with P0/P1/P2 sequencing and no reopened cleanup/gateway/alignment tasks.",
-        "Verify IMPLEMENT-008 remains historical/blocked and is not used as execution authority for new work.",
-        "Open docs/planning/OPINT-001-C_AUTH_SESSION_BOUNDARY_CONTRACT_2026-04-03.md and verify the shared operator identity, session, bounded action, handoff, and audit rules are explicit for Telegram and Web.",
-        "Run jq validation for tasks.json and task_slices.json after edits."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "ALIGN-204"
-      ],
-      "status": "done",
-      "notes": "Execution authority task only; phase-f OPINT tasks govern operator-layer P0/P1/P2 surfaces while IMPLEMENT-008 remains a historical/blocked placeholder. Done 2026-04-03: OPINT-001-A/B/C are complete, including defaults-for-now in docs/planning/OPINT-001-B_EXECUTION_DEFAULTS_2026-04-03.md and the shared auth/session bounded-action policy in docs/planning/OPINT-001-C_AUTH_SESSION_BOUNDARY_CONTRACT_2026-04-03.md. Parent moved to done because all child slices are done and the authority criteria are now satisfied. No product code changes in this step."
+        "PHB-013"
+      ]
     },
     {
-      "id": "OPINT-002",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "P0 bounded operator actions and persistence: implement clean resolution read/write contracts over current Stage8/clarification/runtime stores, with auditable operator decisions and bounded scope/session handling.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-014B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-014B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Resolution queue/detail read models are available from active (non-legacy) application contracts and include trust/status/evidence counters.",
-        "Operator actions (approve/reject/defer/clarify) persist decision + explanation + structured clarification payload with explicit operator identity/audit fields.",
-        "Action processing remains bounded to affected scope/person and does not require MCP or legacy Stage6 bot services."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run integration tests/smokes proving resolution reads and writes against bounded seeded scope data.",
-        "Verify persisted records include operator identity, action type, explanation requirement handling, and deterministic scope keys.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-001"
-      ],
-      "status": "done",
-      "notes": "Done 2026-04-04: OPINT-002-A/B/C/D delivered bounded operator resolution backend contracts end-to-end: clean queue/detail projections, auditable operator action persistence, role-gated operator API/application contracts, and bounded live validation evidence on seeded scope `chat:885574984` (normal/failure/auth-denied paths) recorded in docs/planning/OPINT-002-D_VALIDATION_2026-04-04.md."
+        "PHB-014A"
+      ]
     },
     {
-      "id": "OPINT-003",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "P0 recompute-after-resolution loop: wire post-action bounded recompute, related-conflict reevaluation, status transitions, and result persistence so resolution produces visible state convergence.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-015",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-015 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Each accepted operator action triggers bounded recompute for affected families/scope using active Stage8 queue semantics.",
-        "Related conflicts are reevaluated and automatically closed/updated when no longer relevant, while unresolved/new conflicts remain explicit.",
-        "Result lifecycle states (running/done/failed/clarification_blocked) are persisted and queryable for UI feedback."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run bounded seeded-scope flow: action -> recompute enqueue -> completion and verify status transitions plus related-conflict updates.",
-        "Inject failure/degraded path and verify result persistence reflects failure without silent state loss.",
-        "Run dotnet build TelegramAssistant.sln and touched Stage8 integration checks."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-002"
-      ],
-      "status": "done",
-      "notes": "Done 2026-04-04: OPINT-003-A/B/C/D completed the bounded recompute-after-resolution loop for P0: accepted operator actions enqueue scoped Stage8 recompute with explicit target mapping, related conflicts are reevaluated and auto-closed/updated with audit traceability, lifecycle feedback states are persisted/projected (`running`/`done`/`failed`/`clarification_blocked`), and bounded seeded runtime validation evidence is recorded in docs/planning/OPINT-003-D_VALIDATION_2026-04-04.md."
+        "PHB-014B"
+      ]
     },
     {
-      "id": "OPINT-004",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "P0 Telegram resolution surface: deliver compact mode-based operator flow for resolution cards/actions over active tracked-person context with bounded action handling and recompute feedback.",
-      "executor_agent": "frontend-developer",
+      "id": "PHB-016A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-016A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Telegram starts from mode selection and supports active tracked-person context for resolution mode.",
-        "Resolution cards expose required fields (type/summary/why/trust/status/evidence/updated-at) and actions (approve/reject/defer/clarify/evidence/open-web).",
-        "After action submission, Telegram displays recompute state and updated unresolved/auto-resolved outcomes for the same bounded scope."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run Telegram bounded pilot flow end-to-end on seeded scope and capture logs/screens proving card/action behavior.",
-        "Verify action authorization/allowlist and operator identity checks block unauthorized requests.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-003"
-      ],
-      "status": "done",
-      "notes": "Done 2026-04-04: OPINT-004-A/B/C1/C2/C3 delivered mode selection + tracked-person context, compact Telegram resolution cards/actions, clarification/evidence/open-web behavior, and recompute lifecycle feedback; OPINT-004-D bounded pilot validation confirmed authorize -> action -> persistence -> recompute feedback with unauthorized-deny auditing on seeded scope `chat:885574984` (see docs/planning/OPINT-004-D_VALIDATION_2026-04-04.md)."
+        "PHB-015"
+      ]
     },
     {
-      "id": "OPINT-005",
-      "category": "implementation",
-      "priority": "critical",
-      "description": "P0 Web resolution surface: deliver deep-analysis resolution queue/detail/evidence/clarification workflow and bounded operator actions with recompute feedback.",
-      "executor_agent": "frontend-developer",
+      "id": "PHB-016B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-016B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Web Resolution section supports priority sorting, filtering, queue counts, and item detail with evidence panel.",
-        "Clarification side panel supports follow-up flow and bounded actions without leaving item context.",
-        "UI reflects recompute running/done state and related-conflict updates from persisted backend status transitions."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run web bounded pilot flow queue -> detail -> evidence -> clarify/approve/reject/defer -> recompute feedback.",
-        "Verify web uses clean operator contracts and not legacy Stage6 web/queue/case pages.",
-        "Run dotnet build TelegramAssistant.sln and any web build checks used by the repo."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-004"
-      ],
-      "status": "done",
-      "notes": "P0 operator surface #2; sequenced after Telegram to match current delivery priority. Progress 2026-04-04: OPINT-005-A1 completed by adding clean host-served operator web shell entry (`/operator`) and dedicated Resolution route bootstrap (`/operator/resolution`) with explicit loading/empty/error entry states, without using legacy Stage6 web pages. Progress 2026-04-04: OPINT-005-A2 completed by enforcing trusted token-gated web operator auth/session context at `/api/operator/*` with auditable denied/expired session handling. Progress 2026-04-04: OPINT-005-B completed by wiring the web resolution queue view to clean operator contracts with active tracked-person scope selection, priority/status/type filters, unresolved counters, and backend-projection sorting controls (priority and latest activity). Remaining slices OPINT-005-C1+ are pending. Progress 2026-04-04: OPINT-005-C1 completed by adding selected-item detail rendering on /operator/resolution with deterministic selection/refresh/unavailable transitions and bounded provenance/status metadata from /api/operator/resolution/detail/query. Remaining slices OPINT-005-C2+ are pending. Progress 2026-04-04: OPINT-005-C2 completed by adding an in-context evidence drawer on /operator/resolution that renders bounded summarized evidence with provenance and confidence cues, supports evidence sorting/navigation, and preserves queue/detail route context while opening/closing the panel. Remaining slices OPINT-005-D1+ are pending. Progress 2026-04-04: OPINT-005-D1 completed by adding in-context bounded approve/reject/defer submission controls in web detail, enforcing reject/defer explanation requirements, preserving queue position/detail context through action refresh, and rendering deterministic action plus recompute status feedback from `/api/operator/resolution/actions` responses. Progress 2026-04-04: OPINT-005-D2 completed by adding a clarification side drawer on /operator/resolution with required follow-up fields, clarify explanation enforcement, structured clarification payload submission, and in-place queue/detail context preservation. Remaining slices OPINT-005-E+ are pending. Progress 2026-04-04: OPINT-005-E completed by adding deterministic web recompute lifecycle feedback (`running`/`done`/`failed`/`clarification_blocked`) and projection-based related-conflict delta visibility (`auto-resolved`/`remaining`/`newly-emerged`) after in-context actions on /operator/resolution. Progress 2026-04-04: OPINT-005-F completed with bounded web P0 validation artifact coverage (normal queue/detail/evidence/action flow, denied-action path, degraded recompute lifecycle evidence), documented in `docs/planning/OPINT-005-F_VALIDATION_2026-04-04.md` with execution outputs in `logs/opint-005-f-web-validation-report.json` and `logs/opint-005-f-recompute-degraded-report.json`."
+        "PHB-016A"
+      ]
     },
     {
-      "id": "OPINT-006",
-      "category": "implementation",
-      "priority": "high",
-      "description": "P1 operator assistant mode: implement Telegram assistant responses over active tracked-person context with explicit truth labeling, trust factor display, and bounded retrieval/read-model usage.",
-      "executor_agent": "frontend-developer",
+      "id": "PHB-016C",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-016C according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Assistant responses follow required structure: Short Answer, What Is Known, What It Means, Recommendation, Trust NN%.",
-        "Output explicitly labels Fact/Inference/Hypothesis/Recommendation and uses active tracked-person scope only.",
-        "Assistant can hand off to web deep analysis via Open in Web without bypassing bounded scope controls."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run assistant prompts on bounded person scope and verify truth labels/trust values are always present.",
-        "Verify retrieval/context assembly is scope-bounded and does not depend on MCP services.",
-        "Run dotnet build TelegramAssistant.sln."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-004",
-        "OPINT-005"
-      ],
-      "status": "done",
-      "notes": "Lower than P0 resolution-system work by design. Progress 2026-04-04: OPINT-006-A completed with contract-first authority in docs/planning/OPINT-006-A_ASSISTANT_RESPONSE_CONTRACT_2026-04-04.md, defining deterministic assistant response sections/truth-label/trust formatting plus bounded scope and Open in Web handoff rules. Progress 2026-04-04: OPINT-006-B1 completed with backend assistant response generation service and smoke validation for required section shape, truth labels, and terminal trust rendering (`--opint-006-b1-smoke`). Progress 2026-04-04: OPINT-006-B2 completed with bounded assistant context assembly over active tracked-person read models (`IResolutionReadService` queue/detail only), auditable read-model scope/person/session guardrail metadata, deterministic cross-scope rejection, and smoke validation via `--opint-006-b2-smoke`. Remaining slice OPINT-006-C is pending. Progress 2026-04-04: OPINT-006-C completed with Telegram assistant mode UX over active tracked-person context, deterministic contract rendering (Short Answer/What Is Known/What It Means/Recommendation/Trust), and bounded Open in Web link handoff validated by --opint-006-c-smoke. Parent moved to done because OPINT-006-A/B1/B2/C are all complete."
+        "PHB-016B"
+      ]
     },
     {
-      "id": "OPINT-007",
-      "category": "implementation",
-      "priority": "high",
-      "description": "P1 offline event capture: implement Telegram offline-event flow with optional audio attachment, prioritized clarification questions, stopping rule, and structured persistence for later web refinement.",
-      "executor_agent": "backend-developer",
+      "id": "PHB-017",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-017 according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Telegram flow supports summary input plus optional recording reference and stores structured offline-event input.",
-        "Clarification loop prioritizes high-gain questions and stops on low-gain/repetition/unknown patterns per PRD stopping rule.",
-        "Saved offline events are queryable in operator read models with affected scope/person and timeline-linkage metadata."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run bounded offline-event capture scenario including optional audio reference and verify structured persistence.",
-        "Verify clarification loop termination rule triggers correctly on repeated/no-new-information responses.",
-        "Run dotnet build TelegramAssistant.sln and touched persistence/read-model tests."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-002",
-        "OPINT-004"
-      ],
-      "status": "done",
-      "notes": "Uses clean operator-layer path; does not revive legacy Stage6 offline command flow. Progress 2026-04-04: OPINT-007-A1 completed by introducing active operator-layer offline-event persistence (`operator_offline_events`) with EF/DI repository boundary (`IOperatorOfflineEventRepository`) scoped for Telegram/Web flows and explicitly isolated from legacy Stage6 offline-event storage/commands. Remaining slices OPINT-007-B1/B2/B3/C1/C2 are pending. Progress 2026-04-04: OPINT-007-A2 completed by adding operator-layer offline-event read/query contracts (`IOperatorOfflineEventRepository.QueryAsync` + scoped `GetByIdWithinScopeAsync`) that enforce tracked-person/scope bounds and expose timeline-linkage/status metadata (`OperatorOfflineEventQueryResult` / `OperatorOfflineEventReadSummary`) for Telegram/Web refinement flows. Progress 2026-04-04: OPINT-007-B1 completed by implementing Telegram offline-event intake mode with active tracked-person selection, summary and optional recording-reference capture steps, and bounded draft persistence to `operator_offline_events` including operator/session linkage; remaining slices OPINT-007-B2/B3/C1/C2 are pending. Progress 2026-04-04: OPINT-007-B2 completed by adding a deterministic offline-event clarification policy in Telegram operator flow with information-gain ranking, persisted structured clarification state, and PRD stop-rule enforcement (repetition/no-new-information/unknown-answer/low-gain) to support partial-confidence save handoff for OPINT-007-B3. Progress 2026-04-04: OPINT-007-B3 completed by implementing Telegram orchestration for offline-event clarification progression (`offline:clarify-next`) and bounded partial-confidence final save (`offline:save-final`) with persisted trust/confidence and full clarification history linkage for downstream web refinement; added `--opint-007-b3-smoke` runner for bounded end-to-end validation. Remaining slices OPINT-007-C1/C2 are pending. Progress 2026-04-04: OPINT-007-C1 completed by delivering a dedicated web offline-event inspection/refinement route (`/operator/offline-events`) plus scoped operator APIs (`/api/operator/offline-events/query|detail|refine`) that expose confidence/trust, clarification history, extracted interpretation, and timeline-linkage metadata with refinement actions bounded to the selected offline event and active operator session; remaining slice OPINT-007-C2 is pending. Progress 2026-04-04: OPINT-007-C2 completed by adding a dedicated bounded timeline-linkage update write path (`/api/operator/offline-events/timeline-linkage`) with strict tracked-person/scope/offline-event checks and explicit operator audit-event persistence (`action_type=timeline_linkage_update`) so linkage refinements remain auditable without mutating unrelated person/timeline objects. Parent moved to done because OPINT-007-A1/A2/B1/B2/B3/C1/C2 are all complete."
+        "PHB-016C"
+      ]
     },
     {
-      "id": "OPINT-008",
-      "category": "implementation",
-      "priority": "high",
-      "description": "P1 web person workspace: implement persons list and person workspace (summary, dossier, profile, pair dynamics, timeline, evidence, revisions, resolution drilldown) on top of durable read models.",
-      "executor_agent": "frontend-developer",
+      "id": "PHB-018A",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-018A according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Web persons list supports search, unresolved badges, and recent updates for tracked persons.",
-        "Person workspace includes required sections: Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, Revisions, Resolution.",
-        "Views expose trust/uncertainty/provenance and support evidence/revision drilldown from durable objects."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Run web navigation flow persons list -> workspace tabs -> evidence/revision drilldown on bounded seeded scope.",
-        "Verify workspace reads are served from durable/read-model contracts and remain operator-auth bounded.",
-        "Run dotnet build TelegramAssistant.sln and any web build checks used by the repo."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-005"
-      ],
-      "status": "done",
-      "notes": "P1 deep-analysis expansion after P0 resolution surfaces. Progress 2026-04-04: OPINT-008-A completed by adding auth/session-bounded persons list UI at `/operator/persons` with search, unresolved badges, recent-update indicators, and tracked-person workspace handoff entry via `/operator/person-workspace`; backed by clean operator API query contract `/api/operator/persons/query` plus unresolved-signal projection from durable/read-model resolution views. Progress 2026-04-04: OPINT-008-B1 completed by implementing stable person-scoped workspace tab navigation on `/operator/person-workspace` and a durable/read-model Summary section served by `/api/operator/person-workspace/summary/query`, exposing trust/uncertainty signals, truth/promotion breakdowns, and provenance drilldown seeds for the selected tracked person. Progress 2026-04-04: OPINT-008-B2 completed by enabling the live Dossier section on `/operator/person-workspace` through `/api/operator/person-workspace/dossier/query`, with durable dossier fact rendering, explicit trust/provenance markers, and bounded drilldown seeds (durable metadata + model pass identifiers) within operator auth/session scope. Progress 2026-04-04: OPINT-008-B3 completed by enabling the live Profile section on `/operator/person-workspace` through `/api/operator/person-workspace/profile/query`, with durable profile signal rendering, explicit confidence/uncertainty and ambiguity/contradiction pressure cues, and bounded drilldown seeds (durable metadata + model pass identifiers) within operator auth/session scope. Progress 2026-04-04: OPINT-008-C1 completed by enabling the live Pair Dynamics section on `/operator/person-workspace` through `/api/operator/person-workspace/pair-dynamics/query`, with durable pair-state rendering, explicit direction-of-change/trust/uncertainty cues, and bounded evidence/provenance drilldown seeds (durable metadata + model pass identifiers) within operator auth/session scope. Progress 2026-04-04: OPINT-008-C2 completed by enabling the live Timeline section on `/operator/person-workspace` through `/api/operator/person-workspace/timeline/query`, with recency-ordered durable timeline shifts, explicit trust/uncertainty and closure-state cues, and bounded revision/evidence/provenance drilldown seeds (durable metadata + model pass identifiers) within operator auth/session scope. Progress 2026-04-04: OPINT-008-D1 completed by enabling the live Evidence section on `/operator/person-workspace` through `/api/operator/person-workspace/evidence/query`, joining durable-object evidence links with bounded evidence/source provenance and explicit trust/truth markers plus drilldown seeds (durable metadata + evidence item + source object + model pass identifiers) within operator auth/session scope. Progress 2026-04-04: OPINT-008-D2 completed by enabling the live Revisions section on `/operator/person-workspace` through `/api/operator/person-workspace/revisions/query`, aggregating bounded durable-object revision history with explicit revision/change cues, model-pass trigger context, and provenance drilldown seeds within operator auth/session scope. Progress 2026-04-04: OPINT-008-E completed by enabling the live Resolution section on `/operator/person-workspace` through `/api/operator/person-workspace/resolution/query`, exposing unresolved/resolved status signals and bounded per-item drilldown links into `/operator/resolution` while preserving tracked-person/auth/session scope. Parent moved to done because OPINT-008-A/B1/B2/B3/C1/C2/D1/D2/E are all complete."
+        "PHB-017"
+      ]
     },
     {
-      "id": "OPINT-009",
-      "category": "implementation",
-      "priority": "medium",
-      "description": "P2 alerts and richer control surfaces: implement workflow-critical alert delivery and richer web review/analytics/control views without opening broad unsafe operator actions.",
-      "executor_agent": "frontend-developer",
+      "id": "PHB-018B",
+      "category": "PHB",
+      "priority": "P2",
+      "description": "Execute PHB-018B according to docs/planning artifacts and ralph prompt block",
+      "executor_agent": "ralph-lite",
       "acceptance_criteria": [
-        "Telegram pushes only workflow-critical alerts by default and supports operator acknowledgement/entry into resolution context.",
-        "Web alerts provide grouped/filterable critical context linked to related resolution/person objects.",
-        "Richer control/analytics surfaces remain bounded, auditable, and do not expose raw admin/debug consoles as product UI."
+        "Task DoD from prompt block is met",
+        "Verification commands pass"
       ],
       "test_steps": [
-        "Trigger critical runtime/resolution conditions and verify Telegram/Web alert behavior and links.",
-        "Verify alert policy does not spam non-critical transitions by default.",
-        "Run dotnet build TelegramAssistant.sln and touched alert surface checks."
+        "Run task-specific verify commands"
       ],
+      "status": "pending",
+      "notes": "",
       "dependencies": [
-        "OPINT-006",
-        "OPINT-007",
-        "OPINT-008"
-      ],
-      "status": "done",
-      "notes": "P2 track by product priority; execute after P0/P1 stabilization. Progress 2026-04-04: OPINT-009-A completed by introducing explicit workflow-critical alert taxonomy plus suppression/escalation boundaries (suppressed/web-only/telegram+ack), adding shared policy contracts and evaluator, wiring Telegram Alerts mode to policy summary, and validating with --opint-009-a-smoke. Progress 2026-04-04: OPINT-009-B completed by shipping Telegram critical-alert cards with acknowledgement plus bounded Open-in-Web handoff/context preservation and validating with --opint-009-b-smoke. Progress 2026-04-04: OPINT-009-C1 completed by shipping the bounded `/operator/alerts` web surface with grouped/filterable workflow-critical context, related resolution/person links, `/api/operator/alerts/query`, and validation via --opint-009-c1-smoke. Progress 2026-04-04: OPINT-009-C2 completed by adding bounded web control/analytics widgets linked to alert context, extending the alerts projection with auditable workflow summary facets, and validating with `dotnet build TelegramAssistant.sln -v minimal`, `--opint-009-c1-smoke`, and `--opint-009-c2-smoke`. Progress 2026-04-04: OPINT-009-D completed by adding consolidated validation entrypoint `--opint-009-d-smoke` with artifact output (`src/TgAssistant.Host/logs/opint-009-d-alerts-validation-smoke-report.json`) covering delivery/suppression, acknowledgement continuity, deep-link handoff parameters, and bounded web alert surfaces."
+        "PHB-018A"
+      ]
     }
   ]
 }
