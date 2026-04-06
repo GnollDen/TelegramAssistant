@@ -52,6 +52,10 @@ Top-level routing:
 
 - Active bounded slice runbook: [RESOLUTION_INTERPRETATION_LOOP_V1_RUNBOOK_2026-04-05.md](/home/codex/projects/TelegramAssistant/docs/planning/RESOLUTION_INTERPRETATION_LOOP_V1_RUNBOOK_2026-04-05.md)
 
+### Design addenda
+
+- Proposed bounded design: [AI_CONFLICT_RESOLUTION_SESSION_DESIGN_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/AI_CONFLICT_RESOLUTION_SESSION_DESIGN_2026-04-06.md)
+
 ## Backlog Authority
 
 - [tasks.json](/home/codex/projects/TelegramAssistant/tasks.json)
