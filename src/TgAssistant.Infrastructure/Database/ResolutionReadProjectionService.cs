@@ -12,7 +12,7 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class ResolutionReadProjectionService : IResolutionReadService
 {
-    private const string ResolutionInterpretationCanonicalScopeKey = "chat:885574984";
+    private const string ResolutionInterpretationCanonicalScopeKey = RuntimeControlInterpretationPublicationGuard.CanonicalScopeKey;
     private const string ActiveStatus = "active";
     private static readonly Regex GuidRegex = new(
         @"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
@@ -352,6 +352,19 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             }
 
             rationaleIsHeuristic = interpretationLoop.UsedFallback;
+
+            if (RuntimeControlInterpretationPublicationGuard.ShouldSuppress(
+                    trackedPerson.ScopeKey,
+                    match.Summary.ScopeItemKey,
+                    match.SourceKind,
+                    interpretationLoop))
+            {
+                interpretationLoop = RuntimeControlInterpretationPublicationGuard.BuildSuppressedInterpretation(interpretationLoop);
+                evidenceRationaleSummary = RuntimeControlInterpretationPublicationGuard.InsufficientEvidenceSummary;
+                autoResolutionGap = RuntimeControlInterpretationPublicationGuard.InsufficientEvidenceGap;
+                operatorDecisionFocus = RuntimeControlInterpretationPublicationGuard.InsufficientEvidenceDecision;
+                rationaleIsHeuristic = true;
+            }
         }
 
         return new ResolutionDetailResult

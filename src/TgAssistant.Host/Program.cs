@@ -192,6 +192,10 @@ try
     var resolutionInterpretationLoopValidateOutput = resolutionInterpretationLoopValidateOutputArg is null
         ? null
         : resolutionInterpretationLoopValidateOutputArg["--resolution-interpretation-loop-v1-validate-output=".Length..];
+    var runtimeControlDetailProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--runtime-control-detail-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var runtimeControlDetailProofOutput = runtimeControlDetailProofOutputArg is null
+        ? null
+        : runtimeControlDetailProofOutputArg["--runtime-control-detail-proof-output=".Length..];
     var runStage6BootstrapSmoke = args.Any(arg => string.Equals(arg, "--stage6-bootstrap-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7DossierProfileSmoke = args.Any(arg => string.Equals(arg, "--stage7-dossier-profile-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage7PairDynamicsSmoke = args.Any(arg => string.Equals(arg, "--stage7-pair-dynamics-smoke", StringComparison.OrdinalIgnoreCase));
@@ -213,6 +217,7 @@ try
     var runOpint009C2Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c2-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009DSmoke = args.Any(arg => string.Equals(arg, "--opint-009-d-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
+    var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
     var runStage5ScopedRepair = args.Any(arg => string.Equals(arg, "--stage5-scoped-repair", StringComparison.OrdinalIgnoreCase));
@@ -654,6 +659,23 @@ try
 
     using (var scope = host.Services.CreateScope())
     {
+        if (runRuntimeControlDetailProof)
+        {
+            var report = await RuntimeControlDetailBoundedProofRunner.RunAsync(
+                host.Services,
+                runtimeControlDetailProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Runtime-control detail proof requested via --runtime-control-detail-proof. output={OutputPath}, passed={Passed}, tracked_person_id={TrackedPersonId}, active_runtime_control_state={ActiveRuntimeControlState}, review_only_claims_empty={ReviewOnlyClaimsEmpty}, promotion_blocked_live_item_present={PromotionBlockedLiveItemPresent}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.TrackedPersonId,
+                report.ActiveRuntimeControlState,
+                report.ReviewOnly.ClaimsAndEvidenceEmpty,
+                report.PromotionBlocked.LiveItemPresent);
+            return;
+        }
+
         if (runLivenessCheck)
         {
             await RuntimeHealthProbeRunner.RunLivenessCheckAsync(runtimeRoleSelection, CancellationToken.None);
