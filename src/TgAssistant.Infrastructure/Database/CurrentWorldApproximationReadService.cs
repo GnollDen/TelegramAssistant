@@ -10,15 +10,18 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
     private const string TimelinePrimaryActivityFactType = TemporalSingleValuedFactFamilies.TimelinePrimaryActivity;
 
     private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
+    private readonly IConditionalKnowledgeRepository _conditionalKnowledgeRepository;
     private readonly IStage7PairDynamicsRepository _stage7PairDynamicsRepository;
     private readonly IStage7TimelineRepository _stage7TimelineRepository;
 
     public CurrentWorldApproximationReadService(
         ITemporalPersonStateRepository temporalPersonStateRepository,
+        IConditionalKnowledgeRepository conditionalKnowledgeRepository,
         IStage7PairDynamicsRepository stage7PairDynamicsRepository,
         IStage7TimelineRepository stage7TimelineRepository)
     {
         _temporalPersonStateRepository = temporalPersonStateRepository;
+        _conditionalKnowledgeRepository = conditionalKnowledgeRepository;
         _stage7PairDynamicsRepository = stage7PairDynamicsRepository;
         _stage7TimelineRepository = stage7TimelineRepository;
     }
@@ -55,6 +58,7 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
 
         var pairSurface = await _stage7PairDynamicsRepository.GetCurrentWorldReadSurfaceAsync(scopeKey, request.TrackedPersonId, ct);
         var timelineSurface = await _stage7TimelineRepository.GetCurrentWorldReadSurfaceAsync(scopeKey, request.TrackedPersonId, ct);
+        var openConditionalStates = await _conditionalKnowledgeRepository.QueryOpenScopedAsync(scopeKey, request.TrackedPersonId, asOfUtc, ct);
 
         var snapshot = new CurrentWorldApproximationSnapshot
         {
@@ -67,7 +71,7 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
 
         PopulatePeopleRows(snapshot, openStates);
         PopulateRelationshipRows(snapshot, openStates, pairSurface);
-        PopulateConditionRows(snapshot, openStates, timelineSurface);
+        PopulateConditionRows(snapshot, openStates, openConditionalStates, timelineSurface);
         PopulateRecentChangeRows(snapshot, allScopedStates, asOfUtc);
 
         var disagreementReasons = CollectDisagreementReasons(snapshot, pairSurface, timelineSurface);
@@ -211,6 +215,7 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
     private static void PopulateConditionRows(
         CurrentWorldApproximationSnapshot snapshot,
         IReadOnlyCollection<TemporalPersonState> openStates,
+        IReadOnlyCollection<ConditionalKnowledgeState> openConditionalStates,
         CurrentWorldTimelineReadSurface? timelineSurface)
     {
         var conditionStates = openStates
@@ -235,6 +240,31 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
                 ValidToUtc = state.ValidToUtc,
                 EvidenceRefs = evidenceRefs,
                 SourceRefIds = sourceRefIds
+            });
+        }
+
+        foreach (var conditionalState in openConditionalStates
+                     .OrderByDescending(x => x.ValidFromUtc)
+                     .ThenByDescending(x => x.Id))
+        {
+            snapshot.ActiveConditionRows.Add(new ActiveConditionRow
+            {
+                ConditionRowId = Guid.NewGuid(),
+                SnapshotId = snapshot.SnapshotId,
+                SubjectRef = conditionalState.SubjectRef,
+                ConditionType = $"conditional:{conditionalState.FactFamily}:{conditionalState.RuleKind}",
+                ConditionValue = BuildConditionalConditionValue(conditionalState),
+                ValidFromUtc = conditionalState.ValidFromUtc,
+                ValidToUtc = conditionalState.ValidToUtc,
+                EvidenceRefs = conditionalState.EvidenceRefs
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList(),
+                SourceRefIds = conditionalState.SourceRefIds
+                    .Concat(GetSourceRefs(conditionalState))
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList()
             });
         }
 
@@ -375,6 +405,48 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
         }
 
         yield return $"temporal_state:{state.Id:D}";
+    }
+
+    private static IEnumerable<string> GetSourceRefs(ConditionalKnowledgeState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.TriggerRef))
+        {
+            yield return state.TriggerRef.Trim();
+        }
+
+        if (state.TriggerModelPassRunId.HasValue)
+        {
+            yield return $"model_pass:{state.TriggerModelPassRunId.Value:D}";
+        }
+
+        yield return $"conditional_state:{state.Id:D}";
+    }
+
+    private static string BuildConditionalConditionValue(ConditionalKnowledgeState state)
+    {
+        if (string.Equals(state.RuleKind, ConditionalKnowledgeRuleKinds.BaselineRule, StringComparison.Ordinal))
+        {
+            return NormalizeOptional(state.BaselineValue) ?? "n/a";
+        }
+
+        if (string.Equals(state.RuleKind, ConditionalKnowledgeRuleKinds.ExceptionRule, StringComparison.Ordinal))
+        {
+            return NormalizeOptional(state.ExceptionValue) ?? "n/a";
+        }
+
+        if (string.Equals(state.RuleKind, ConditionalKnowledgeRuleKinds.StyleDrift, StringComparison.Ordinal))
+        {
+            return NormalizeOptional(state.StyleLabel) ?? "n/a";
+        }
+
+        if (string.Equals(state.RuleKind, ConditionalKnowledgeRuleKinds.PhaseMarker, StringComparison.Ordinal))
+        {
+            var phase = NormalizeOptional(state.PhaseLabel) ?? "unknown";
+            var reason = NormalizeOptional(state.PhaseReason) ?? "unspecified";
+            return $"{phase} ({reason})";
+        }
+
+        return "n/a";
     }
 
     private static string NormalizeRequired(string? value, string name)

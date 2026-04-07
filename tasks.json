@@ -897,8 +897,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-016C completed: CurrentWorldApproximationReadService now consumes open ConditionalKnowledgeRepository rows as active-now condition rows (including conditional source refs) alongside temporal/timeline surfaces, and --current-world-approximation-proof now includes repository-backed conditional round-trip + targeted supersession evidence via case `conditional_repository_roundtrip_supersession`. Verified with dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --current-world-approximation-proof.",
       "dependencies": [
         "PHB-016B"
       ]

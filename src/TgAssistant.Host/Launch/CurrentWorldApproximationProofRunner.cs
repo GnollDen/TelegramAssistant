@@ -36,9 +36,11 @@ public static class CurrentWorldApproximationProofRunner
             using var scope = services.CreateScope();
             var appService = scope.ServiceProvider.GetRequiredService<IOperatorResolutionApplicationService>();
             var temporalRepository = scope.ServiceProvider.GetRequiredService<ITemporalPersonStateRepository>();
+            var conditionalRepository = scope.ServiceProvider.GetRequiredService<IConditionalKnowledgeRepository>();
             var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
 
             await RunPublishableCaseAsync(report, appService, temporalRepository, dbFactory, ct);
+            await RunConditionalRepositoryRoundTripCaseAsync(report, appService, conditionalRepository, dbFactory, ct);
             await RunDisagreementCaseAsync(report, appService, temporalRepository, dbFactory, ct);
             await RunInsufficientEvidenceCaseAsync(report, appService, dbFactory, ct);
             await RunInactiveDroppedOutCoverageCaseAsync(report, appService, temporalRepository, dbFactory, ct);
@@ -262,6 +264,122 @@ public static class CurrentWorldApproximationProofRunner
         });
     }
 
+    private static async Task RunConditionalRepositoryRoundTripCaseAsync(
+        CurrentWorldApproximationProofReport report,
+        IOperatorResolutionApplicationService appService,
+        IConditionalKnowledgeRepository conditionalRepository,
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        CancellationToken ct)
+    {
+        var scopeKey = BuildScopeKey("conditional_roundtrip");
+        var (_, trackedPersonId) = await EnsureTrackedPersonAsync(dbFactory, scopeKey, ct);
+        var subjectRef = $"person:{trackedPersonId:D}";
+        var nowUtc = DateTime.UtcNow;
+
+        var unaffectedProfilePreference = await conditionalRepository.InsertAsync(
+            new ConditionalKnowledgeWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                FactFamily = DossierFieldConditionalFamilies.ProfilePreference,
+                SubjectRef = subjectRef,
+                RuleKind = ConditionalKnowledgeRuleKinds.BaselineRule,
+                RuleId = Guid.NewGuid(),
+                BaselineValue = "tea_preference",
+                ValidFromUtc = nowUtc.AddMinutes(-8),
+                EvidenceRefs = [$"evidence:{Guid.NewGuid():D}"],
+                TriggerKind = TriggerKind,
+                TriggerRef = $"{TriggerKind}:conditional:profile_preference"
+            },
+            ct);
+
+        var behaviorPatternV1 = await conditionalRepository.InsertAsync(
+            new ConditionalKnowledgeWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                FactFamily = DossierFieldConditionalFamilies.BehaviorPattern,
+                SubjectRef = subjectRef,
+                RuleKind = ConditionalKnowledgeRuleKinds.BaselineRule,
+                RuleId = Guid.NewGuid(),
+                BaselineValue = "weekday_routine_v1",
+                ValidFromUtc = nowUtc.AddMinutes(-7),
+                EvidenceRefs = [$"evidence:{Guid.NewGuid():D}"],
+                TriggerKind = TriggerKind,
+                TriggerRef = $"{TriggerKind}:conditional:behavior_pattern:v1"
+            },
+            ct);
+
+        var behaviorPatternV2 = await conditionalRepository.InsertAsync(
+            new ConditionalKnowledgeWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                FactFamily = DossierFieldConditionalFamilies.BehaviorPattern,
+                SubjectRef = subjectRef,
+                RuleKind = ConditionalKnowledgeRuleKinds.BaselineRule,
+                RuleId = Guid.NewGuid(),
+                BaselineValue = "weekday_routine_v2",
+                ValidFromUtc = nowUtc.AddMinutes(-2),
+                EvidenceRefs = [$"evidence:{Guid.NewGuid():D}"],
+                SupersedesStateId = behaviorPatternV1.Id,
+                TriggerKind = TriggerKind,
+                TriggerRef = $"{TriggerKind}:conditional:behavior_pattern:v2"
+            },
+            ct);
+
+        var result = await appService.QueryPersonWorkspaceCurrentWorldAsync(
+            new OperatorPersonWorkspaceCurrentWorldQueryRequest
+            {
+                TrackedPersonId = trackedPersonId,
+                OperatorIdentity = BuildOperatorIdentity(nowUtc),
+                Session = BuildOperatorSession(nowUtc, trackedPersonId)
+            },
+            ct);
+
+        var rows = result.CurrentWorld.Snapshot.ActiveConditionRows;
+        var hasProfilePreferenceRow = rows.Any(x =>
+            string.Equals(x.ConditionType, $"conditional:{DossierFieldConditionalFamilies.ProfilePreference}:{ConditionalKnowledgeRuleKinds.BaselineRule}", StringComparison.Ordinal)
+            && string.Equals(x.ConditionValue, unaffectedProfilePreference.BaselineValue, StringComparison.Ordinal));
+        var hasUpdatedBehaviorPatternRow = rows.Any(x =>
+            string.Equals(x.ConditionType, $"conditional:{DossierFieldConditionalFamilies.BehaviorPattern}:{ConditionalKnowledgeRuleKinds.BaselineRule}", StringComparison.Ordinal)
+            && string.Equals(x.ConditionValue, behaviorPatternV2.BaselineValue, StringComparison.Ordinal));
+        var supersededBehaviorPatternStillVisible = rows.Any(x =>
+            string.Equals(x.ConditionType, $"conditional:{DossierFieldConditionalFamilies.BehaviorPattern}:{ConditionalKnowledgeRuleKinds.BaselineRule}", StringComparison.Ordinal)
+            && string.Equals(x.ConditionValue, behaviorPatternV1.BaselineValue, StringComparison.Ordinal));
+        var hasRepositorySourceRef = rows.Any(x =>
+            string.Equals(x.ConditionValue, behaviorPatternV2.BaselineValue, StringComparison.Ordinal)
+            && x.SourceRefIds.Any(sourceRef =>
+                string.Equals(sourceRef, $"conditional_state:{behaviorPatternV2.Id:D}", StringComparison.Ordinal)));
+
+        var actualHttpStatus = ResolveHttpStatus(result.Accepted, result.FailureReason);
+        report.Cases.Add(new CurrentWorldApproximationProofCase
+        {
+            CaseId = "conditional_repository_roundtrip_supersession",
+            ScopeKey = scopeKey,
+            TrackedPersonId = trackedPersonId,
+            AsOfUtc = result.CurrentWorld.AsOfUtc == default ? nowUtc : result.CurrentWorld.AsOfUtc,
+            ExpectedHttpStatus = StatusCodes.Status200OK,
+            ActualHttpStatus = actualHttpStatus,
+            ExpectedPublicationState = CurrentWorldApproximationPublicationStates.Publishable,
+            ActualPublicationState = result.CurrentWorld.PublicationState,
+            ActivePersonCount = result.CurrentWorld.ActivePersonCount,
+            InactivePersonCount = result.CurrentWorld.InactivePersonCount,
+            DroppedOutPersonCount = result.CurrentWorld.DroppedOutPersonCount,
+            ActiveRelationCount = result.CurrentWorld.ActiveRelationCount,
+            ActiveConditionCount = result.CurrentWorld.ActiveConditionCount,
+            RecentChangeCount = result.CurrentWorld.RecentChangeCount,
+            Reason = "repository_backed_conditional_roundtrip_and_targeted_supersession_are_visible_in_current_world_read",
+            Passed = result.Accepted
+                && actualHttpStatus == StatusCodes.Status200OK
+                && string.Equals(result.CurrentWorld.PublicationState, CurrentWorldApproximationPublicationStates.Publishable, StringComparison.Ordinal)
+                && hasProfilePreferenceRow
+                && hasUpdatedBehaviorPatternRow
+                && !supersededBehaviorPatternStillVisible
+                && hasRepositorySourceRef
+        });
+    }
+
     private static async Task RunInactiveDroppedOutCoverageCaseAsync(
         CurrentWorldApproximationProofReport report,
         IOperatorResolutionApplicationService appService,
@@ -444,7 +562,7 @@ public static class CurrentWorldApproximationProofRunner
     }
 
     private static string BuildScopeKey(string caseKey)
-        => $"proof:phb_014a:{caseKey}:{DateTime.UtcNow:yyyyMMddHHmmssfff}:{Guid.NewGuid():N}";
+        => $"proof:phb_016c:{caseKey}:{DateTime.UtcNow:yyyyMMddHHmmssfff}:{Guid.NewGuid():N}";
 
     private static OperatorIdentityContext BuildOperatorIdentity(DateTime nowUtc)
     {
