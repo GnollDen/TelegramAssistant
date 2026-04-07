@@ -365,8 +365,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-013B completed: added authenticated GET /api/operator/home/summary with bounded response contract `{navigationCounts, systemStatus, criticalUnresolvedCount, activeTrackedPersonCount, recentUpdates, degradedSources}`, deterministic degraded override via OperatorHomeSummary:ForceDegradedSummary, canonical critical count sourced only through ResolutionReadProjectionService.BuildOperatorHomeSummaryReadModel, ordered degradedSources filtering, navigation counts for Resolution/Persons/Alerts/Offline Events only, and recentUpdates bounded to approved operator route allow-list with deterministic ordering/cap (<=5). Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "DTP-013A"
       ]

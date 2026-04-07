@@ -625,6 +625,90 @@ public class OperatorResolutionQueueQueryResult
     public ResolutionQueueResult Queue { get; set; } = new();
 }
 
+public static class OperatorHomeSummaryOwners
+{
+    public const string CriticalUnresolvedCount = "resolution_queue.priority_counts.critical";
+}
+
+public static class OperatorHomeSummarySystemStatuses
+{
+    public const string Normal = RuntimeControlStates.Normal;
+    public const string Degraded = RuntimeControlStates.Degraded;
+    public const string ReviewOnly = RuntimeControlStates.ReviewOnly;
+    public const string BudgetProtected = RuntimeControlStates.BudgetProtected;
+    public const string PromotionBlocked = RuntimeControlStates.PromotionBlocked;
+    public const string SafeMode = RuntimeControlStates.SafeMode;
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        Normal,
+        Degraded,
+        ReviewOnly,
+        BudgetProtected,
+        PromotionBlocked,
+        SafeMode
+    };
+
+    public static bool IsSupported(string? value)
+        => Supported.Contains(Normalize(value));
+
+    public static string Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+}
+
+public static class OperatorHomeSummaryDegradedSources
+{
+    public const string NavigationCounts = "navigationCounts";
+    public const string SystemStatus = "systemStatus";
+    public const string CriticalUnresolvedCount = "criticalUnresolvedCount";
+    public const string ActiveTrackedPersonCount = "activeTrackedPersonCount";
+    public const string RecentUpdates = "recentUpdates";
+
+    public static IReadOnlyList<string> FullOrder { get; } =
+    [
+        NavigationCounts,
+        SystemStatus,
+        CriticalUnresolvedCount,
+        ActiveTrackedPersonCount,
+        RecentUpdates
+    ];
+}
+
+public sealed class OperatorHomeSummaryNavigationCounts
+{
+    public int Resolution { get; set; }
+    public int Persons { get; set; }
+    public int Alerts { get; set; }
+    public int OfflineEvents { get; set; }
+}
+
+public sealed class OperatorHomeSummaryRecentUpdate
+{
+    public string Id { get; set; } = string.Empty;
+    public DateTime OccurredAtUtc { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public string TargetUrl { get; set; } = string.Empty;
+}
+
+public sealed class OperatorHomeSummaryApiResponse
+{
+    public OperatorHomeSummaryNavigationCounts? NavigationCounts { get; set; }
+    public string? SystemStatus { get; set; }
+    public int? CriticalUnresolvedCount { get; set; }
+    public int? ActiveTrackedPersonCount { get; set; }
+    public List<OperatorHomeSummaryRecentUpdate>? RecentUpdates { get; set; }
+    public List<string> DegradedSources { get; set; } = [];
+}
+
+public class OperatorHomeSummaryReadModel
+{
+    public string CriticalUnresolvedCountOwner { get; set; } = OperatorHomeSummaryOwners.CriticalUnresolvedCount;
+    public int CriticalUnresolvedCount { get; set; }
+    public int TotalUnresolvedCount { get; set; }
+    public bool IsDegradedSummary { get; set; }
+    public DateTime GeneratedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public class OperatorResolutionDetailQueryRequest : OperatorContractRequestBase
 {
     public Guid? TrackedPersonId { get; set; }

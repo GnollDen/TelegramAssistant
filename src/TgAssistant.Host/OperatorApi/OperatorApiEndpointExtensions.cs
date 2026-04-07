@@ -1,12 +1,13 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Host.Startup;
+using TgAssistant.Infrastructure.Database;
 
 namespace TgAssistant.Host.OperatorApi;
 
@@ -77,6 +78,302 @@ public static class OperatorApiEndpointExtensions
 
             var result = await projectionBuilder.BuildAsync(request, auth.OperatorIdentity, auth.Session, ct);
             return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
+        group.MapGet("/home/summary", async (
+            HttpContext httpContext,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            OperatorAlertsProjectionBuilder alertsProjectionBuilder,
+            IResolutionReadService resolutionReadService,
+            IConfiguration configuration,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            var settings = configuration
+                .GetSection(OperatorHomeSummarySettings.Section)
+                .Get<OperatorHomeSummarySettings>() ?? new OperatorHomeSummarySettings();
+
+            var degradedSources = new HashSet<string>(StringComparer.Ordinal);
+            OperatorHomeSummaryNavigationCounts? navigationCounts = null;
+            string? systemStatus = null;
+            int? criticalUnresolvedCount = null;
+            int? activeTrackedPersonCount = null;
+            List<OperatorHomeSummaryRecentUpdate>? recentUpdates = null;
+            var session = auth.Session;
+            var activeTrackedPersonId = session.ActiveTrackedPersonId == Guid.Empty
+                ? (Guid?)null
+                : session.ActiveTrackedPersonId;
+            int? resolutionCount = null;
+            int? personsCount = null;
+            int? alertsCount = null;
+            int? offlineEventsCount = null;
+
+            if (!settings.Enabled || settings.ForceDegradedSummary)
+            {
+                degradedSources.UnionWith(OperatorHomeSummaryDegradedSources.FullOrder);
+            }
+            else
+            {
+                try
+                {
+                    var trackedPersons = await service.QueryTrackedPersonsAsync(
+                        new OperatorTrackedPersonQueryRequest
+                        {
+                            OperatorIdentity = auth.OperatorIdentity,
+                            Session = session,
+                            Limit = 50
+                        },
+                        ct);
+                    if (!trackedPersons.Accepted)
+                    {
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.ActiveTrackedPersonCount);
+                    }
+                    else
+                    {
+                        session = trackedPersons.Session;
+                        activeTrackedPersonCount = trackedPersons.TrackedPersons.Count;
+                        personsCount = trackedPersons.TrackedPersons.Count;
+
+                        var selectedTrackedPerson = trackedPersons.ActiveTrackedPerson
+                            ?? trackedPersons.TrackedPersons.FirstOrDefault();
+                        if (selectedTrackedPerson != null)
+                        {
+                            activeTrackedPersonId = selectedTrackedPerson.TrackedPersonId;
+                            if (session.ActiveTrackedPersonId != selectedTrackedPerson.TrackedPersonId)
+                            {
+                                var selected = await service.SelectTrackedPersonAsync(
+                                    new OperatorTrackedPersonSelectionRequest
+                                    {
+                                        OperatorIdentity = auth.OperatorIdentity,
+                                        Session = session,
+                                        TrackedPersonId = selectedTrackedPerson.TrackedPersonId,
+                                        RequestedAtUtc = DateTime.UtcNow
+                                    },
+                                    ct);
+                                if (selected.Accepted)
+                                {
+                                    session = selected.Session;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                    degradedSources.Add(OperatorHomeSummaryDegradedSources.ActiveTrackedPersonCount);
+                }
+
+                if (activeTrackedPersonId.HasValue)
+                {
+                    session.ActiveTrackedPersonId = activeTrackedPersonId.Value;
+                    session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+
+                    try
+                    {
+                        var queueResult = await service.GetResolutionQueueAsync(
+                            new OperatorResolutionQueueQueryRequest
+                            {
+                                OperatorIdentity = auth.OperatorIdentity,
+                                Session = session,
+                                TrackedPersonId = activeTrackedPersonId,
+                                SortBy = ResolutionQueueSortFields.Priority,
+                                SortDirection = ResolutionSortDirections.Desc,
+                                Limit = 50
+                            },
+                            ct);
+                        if (!queueResult.Accepted)
+                        {
+                            degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                            degradedSources.Add(OperatorHomeSummaryDegradedSources.SystemStatus);
+                            degradedSources.Add(OperatorHomeSummaryDegradedSources.CriticalUnresolvedCount);
+                        }
+                        else
+                        {
+                            session = queueResult.Session;
+                            resolutionCount = Math.Max(0, queueResult.Queue.TotalOpenCount);
+
+                            if (resolutionReadService is not ResolutionReadProjectionService projection)
+                            {
+                                throw new InvalidOperationException("Resolution read service does not expose canonical home summary owners.");
+                            }
+
+                            var summaryReadModel = projection.BuildOperatorHomeSummaryReadModel(queueResult.Queue);
+                            criticalUnresolvedCount = Math.Max(0, summaryReadModel.CriticalUnresolvedCount);
+
+                            var runtimeState = OperatorHomeSummarySystemStatuses.Normalize(queueResult.Queue.RuntimeState?.State);
+                            if (OperatorHomeSummarySystemStatuses.IsSupported(runtimeState))
+                            {
+                                systemStatus = runtimeState;
+                            }
+                            else
+                            {
+                                degradedSources.Add(OperatorHomeSummaryDegradedSources.SystemStatus);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.SystemStatus);
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.CriticalUnresolvedCount);
+                    }
+
+                    try
+                    {
+                        session.ActiveTrackedPersonId = activeTrackedPersonId.Value;
+                        session.ActiveMode = OperatorModeTypes.OfflineEvent;
+                        var offlineEventResult = await service.QueryOfflineEventsAsync(
+                            new OperatorOfflineEventQueryApiRequest
+                            {
+                                OperatorIdentity = auth.OperatorIdentity,
+                                Session = session,
+                                TrackedPersonId = activeTrackedPersonId.Value,
+                                Statuses = [],
+                                SortBy = OperatorOfflineEventSortFields.UpdatedAt,
+                                SortDirection = ResolutionSortDirections.Desc,
+                                Limit = 100
+                            },
+                            ct);
+                        if (!offlineEventResult.Accepted)
+                        {
+                            degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                        }
+                        else
+                        {
+                            session = offlineEventResult.Session;
+                            offlineEventsCount = Math.Max(0, offlineEventResult.OfflineEvents.TotalCount);
+                        }
+                    }
+                    catch
+                    {
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                    }
+                }
+                else
+                {
+                    resolutionCount ??= 0;
+                    offlineEventsCount ??= 0;
+                    criticalUnresolvedCount ??= 0;
+                    systemStatus ??= OperatorHomeSummarySystemStatuses.Normal;
+                }
+
+                try
+                {
+                    var alertsResult = await alertsProjectionBuilder.BuildAsync(
+                        new OperatorAlertsQueryRequest
+                        {
+                            TrackedPersonId = null,
+                            EscalationBoundary = OperatorAlertsEscalationFilters.All,
+                            PersonLimit = 50,
+                            AlertsPerPersonLimit = 12
+                        },
+                        auth.OperatorIdentity,
+                        session,
+                        ct);
+                    if (!alertsResult.Accepted)
+                    {
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                        degradedSources.Add(OperatorHomeSummaryDegradedSources.RecentUpdates);
+                    }
+                    else
+                    {
+                        alertsCount = Math.Max(0, alertsResult.Summary.TotalAlerts);
+                        recentUpdates = alertsResult.Groups
+                            .SelectMany(group => group.Alerts.Select(alert => new OperatorHomeSummaryRecentUpdate
+                            {
+                                Id = $"alert:{group.TrackedPerson.TrackedPersonId:N}:{alert.ScopeItemKey}:{alert.UpdatedAtUtc:O}",
+                                OccurredAtUtc = alert.UpdatedAtUtc,
+                                Summary = $"{group.TrackedPerson.DisplayName}: {alert.Title}",
+                                TargetUrl = alert.ResolutionUrl
+                            }))
+                            .Where(update => IsAllowedHomeTargetUrl(update.TargetUrl))
+                            .OrderByDescending(update => update.OccurredAtUtc)
+                            .ThenByDescending(update => update.Id, StringComparer.Ordinal)
+                            .Take(5)
+                            .ToList();
+                    }
+                }
+                catch
+                {
+                    degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+                    degradedSources.Add(OperatorHomeSummaryDegradedSources.RecentUpdates);
+                }
+            }
+
+            if (!degradedSources.Contains(OperatorHomeSummaryDegradedSources.NavigationCounts)
+                && resolutionCount.HasValue
+                && personsCount.HasValue
+                && alertsCount.HasValue
+                && offlineEventsCount.HasValue)
+            {
+                navigationCounts = new OperatorHomeSummaryNavigationCounts
+                {
+                    Resolution = Math.Max(0, resolutionCount.Value),
+                    Persons = Math.Max(0, personsCount.Value),
+                    Alerts = Math.Max(0, alertsCount.Value),
+                    OfflineEvents = Math.Max(0, offlineEventsCount.Value)
+                };
+            }
+            else
+            {
+                degradedSources.Add(OperatorHomeSummaryDegradedSources.NavigationCounts);
+            }
+
+            if (!degradedSources.Contains(OperatorHomeSummaryDegradedSources.SystemStatus)
+                && string.IsNullOrWhiteSpace(systemStatus))
+            {
+                degradedSources.Add(OperatorHomeSummaryDegradedSources.SystemStatus);
+            }
+
+            if (!degradedSources.Contains(OperatorHomeSummaryDegradedSources.CriticalUnresolvedCount)
+                && !criticalUnresolvedCount.HasValue)
+            {
+                degradedSources.Add(OperatorHomeSummaryDegradedSources.CriticalUnresolvedCount);
+            }
+
+            if (!degradedSources.Contains(OperatorHomeSummaryDegradedSources.ActiveTrackedPersonCount)
+                && !activeTrackedPersonCount.HasValue)
+            {
+                degradedSources.Add(OperatorHomeSummaryDegradedSources.ActiveTrackedPersonCount);
+            }
+
+            if (!degradedSources.Contains(OperatorHomeSummaryDegradedSources.RecentUpdates))
+            {
+                recentUpdates ??= [];
+            }
+
+            var orderedDegradedSources = OperatorHomeSummaryDegradedSources.FullOrder
+                .Where(degradedSources.Contains)
+                .ToList();
+
+            webAuthResolver.PersistSession(httpContext, session, OperatorModeTypes.ResolutionQueue);
+            return Results.Ok(new OperatorHomeSummaryApiResponse
+            {
+                NavigationCounts = orderedDegradedSources.Contains(OperatorHomeSummaryDegradedSources.NavigationCounts, StringComparer.Ordinal)
+                    ? null
+                    : navigationCounts,
+                SystemStatus = orderedDegradedSources.Contains(OperatorHomeSummaryDegradedSources.SystemStatus, StringComparer.Ordinal)
+                    ? null
+                    : systemStatus,
+                CriticalUnresolvedCount = orderedDegradedSources.Contains(OperatorHomeSummaryDegradedSources.CriticalUnresolvedCount, StringComparer.Ordinal)
+                    ? null
+                    : criticalUnresolvedCount,
+                ActiveTrackedPersonCount = orderedDegradedSources.Contains(OperatorHomeSummaryDegradedSources.ActiveTrackedPersonCount, StringComparer.Ordinal)
+                    ? null
+                    : activeTrackedPersonCount,
+                RecentUpdates = orderedDegradedSources.Contains(OperatorHomeSummaryDegradedSources.RecentUpdates, StringComparer.Ordinal)
+                    ? null
+                    : recentUpdates,
+                DegradedSources = orderedDegradedSources
+            });
         });
 
         group.MapPost("/resolution/handoff/consume", async (
@@ -554,6 +851,89 @@ public static class OperatorApiEndpointExtensions
                 }
             },
             statusCode: auth.StatusCode);
+    }
+
+    private static bool IsAllowedHomeTargetUrl(string? targetUrl)
+    {
+        if (string.IsNullOrWhiteSpace(targetUrl))
+        {
+            return false;
+        }
+
+        var normalized = targetUrl.Trim();
+        if (!normalized.StartsWith("/", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var queryIndex = normalized.IndexOf('?', StringComparison.Ordinal);
+        var path = queryIndex >= 0 ? normalized[..queryIndex] : normalized;
+        var query = queryIndex >= 0 ? normalized[(queryIndex + 1)..] : string.Empty;
+
+        if (string.Equals(path, "/operator", StringComparison.Ordinal)
+            || string.Equals(path, "/operator/persons", StringComparison.Ordinal)
+            || string.Equals(path, "/operator/alerts", StringComparison.Ordinal)
+            || string.Equals(path, "/operator/offline-events", StringComparison.Ordinal))
+        {
+            return string.IsNullOrEmpty(query);
+        }
+
+        var parameters = ParseQuery(query);
+        if (string.Equals(path, "/operator/person-workspace", StringComparison.Ordinal))
+        {
+            return parameters.Count == 1
+                && parameters.TryGetValue("trackedPersonId", out var trackedPerson)
+                && Guid.TryParse(trackedPerson, out _);
+        }
+
+        if (!string.Equals(path, "/operator/resolution", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (parameters.Count == 0)
+        {
+            return true;
+        }
+
+        if (parameters.Count != 3
+            || !parameters.TryGetValue("trackedPersonId", out var trackedPersonId)
+            || !Guid.TryParse(trackedPersonId, out _)
+            || !parameters.TryGetValue("scopeItemKey", out var scopeItemKey)
+            || string.IsNullOrWhiteSpace(scopeItemKey)
+            || !parameters.TryGetValue("activeMode", out var activeMode))
+        {
+            return false;
+        }
+
+        return string.Equals(activeMode, "resolution_queue", StringComparison.Ordinal)
+            || string.Equals(activeMode, "resolution_detail", StringComparison.Ordinal)
+            || string.Equals(activeMode, "assistant", StringComparison.Ordinal);
+    }
+
+    private static Dictionary<string, string> ParseQuery(string query)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return values;
+        }
+
+        var pairs = query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in pairs)
+        {
+            var index = pair.IndexOf('=', StringComparison.Ordinal);
+            var key = index >= 0 ? pair[..index] : pair;
+            var value = index >= 0 ? pair[(index + 1)..] : string.Empty;
+            if (string.IsNullOrWhiteSpace(key) || values.ContainsKey(key))
+            {
+                return new Dictionary<string, string>(StringComparer.Ordinal);
+            }
+
+            values[key] = Uri.UnescapeDataString(value);
+        }
+
+        return values;
     }
 
     private static string ResolveActionMode(string? actionType)
