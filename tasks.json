@@ -593,8 +593,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "done",
-      "notes": "PHB-006C completed: extended temporal/person-history proof matrices with deterministic negative-path rows. Temporal proof now includes required rejection rows `duplicate_open_active_row_rejected` and `supersession_link_required_for_replacement`; person-history proof now includes explicit rejection rows for unauthenticated operator identity and missing tracked person id to keep positive+negative matrix coverage. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --temporal-person-state-proof, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --person-history-proof.",
+      "status": "pending",
+      "notes": "",
       "dependencies": [
         "PHB-006C"
       ]
