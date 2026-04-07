@@ -237,6 +237,27 @@ public interface ITemporalPersonStateRepository
         CancellationToken ct = default);
 }
 
+public interface IConditionalKnowledgeRepository
+{
+    Task<ConditionalKnowledgeState> InsertAsync(
+        ConditionalKnowledgeWriteRequest request,
+        CancellationToken ct = default);
+
+    Task<List<ConditionalKnowledgeState>> QueryScopedAsync(
+        ConditionalKnowledgeScopeQuery query,
+        CancellationToken ct = default);
+
+    Task<List<ConditionalKnowledgeState>> QueryOpenScopedAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        DateTime asOfUtc,
+        CancellationToken ct = default);
+
+    Task<ConditionalKnowledgeState?> UpdateSupersessionAsync(
+        ConditionalKnowledgeSupersessionUpdateRequest request,
+        CancellationToken ct = default);
+}
+
 public interface ICurrentWorldApproximationReadService
 {
     Task<CurrentWorldApproximationSnapshot> BuildSnapshotAsync(

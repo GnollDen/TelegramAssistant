@@ -1174,6 +1174,38 @@ public class DbTemporalPersonState
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+public class DbConditionalKnowledgeState
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string FactFamily { get; set; } = string.Empty;
+    public string SubjectRef { get; set; } = string.Empty;
+    public string RuleKind { get; set; } = ConditionalKnowledgeRuleKinds.BaselineRule;
+    public Guid RuleId { get; set; }
+    public Guid? ParentRuleId { get; set; }
+    public string? BaselineValue { get; set; }
+    public string? ExceptionValue { get; set; }
+    public string? StyleLabel { get; set; }
+    public string? PhaseLabel { get; set; }
+    public string? PhaseReason { get; set; }
+    public string ConditionClauseIdsJson { get; set; } = "[]";
+    public string SourceRefIdsJson { get; set; } = "[]";
+    public string LinkedTemporalStateIdsJson { get; set; } = "[]";
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public DateTime ValidFromUtc { get; set; }
+    public DateTime? ValidToUtc { get; set; }
+    public float? Confidence { get; set; }
+    public string StateStatus { get; set; } = ConditionalKnowledgeStateStatuses.Open;
+    public Guid? SupersedesStateId { get; set; }
+    public Guid? SupersededByStateId { get; set; }
+    public string TriggerKind { get; set; } = "manual";
+    public string? TriggerRef { get; set; }
+    public Guid? TriggerModelPassRunId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 public class DbResolutionCaseReintegrationLedgerEntry
 {
     public Guid Id { get; set; }

@@ -859,8 +859,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-016A completed: added conditional knowledge persistence seam with new IConditionalKnowledgeRepository contract/models, EF row+mapping, DI registration, migration 0058_conditional_knowledge.sql, and deterministic missing-evidence reject reason conditional_evidence_refs_required. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage7-dossier-profile-smoke, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage7-timeline-smoke.",
       "dependencies": [
         "PHB-015"
       ]

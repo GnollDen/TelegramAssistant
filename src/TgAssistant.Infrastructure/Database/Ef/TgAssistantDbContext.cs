@@ -74,6 +74,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbOperatorAuditEvent> OperatorAuditEvents => Set<DbOperatorAuditEvent>();
     public DbSet<DbOperatorOfflineEvent> OperatorOfflineEvents => Set<DbOperatorOfflineEvent>();
     public DbSet<DbTemporalPersonState> TemporalPersonStates => Set<DbTemporalPersonState>();
+    public DbSet<DbConditionalKnowledgeState> ConditionalKnowledgeStates => Set<DbConditionalKnowledgeState>();
     public DbSet<DbResolutionCaseReintegrationLedgerEntry> ResolutionCaseReintegrationLedgerEntries => Set<DbResolutionCaseReintegrationLedgerEntry>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
@@ -1640,6 +1641,45 @@ public class TgAssistantDbContext : DbContext
             e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
             e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.FactType, x.ValidFromUtc });
             e.HasIndex(x => new { x.ScopeKey, x.SubjectRef, x.FactType, x.StateStatus, x.ValidFromUtc });
+            e.HasIndex(x => x.SupersedesStateId).HasFilter("supersedes_state_id IS NOT NULL");
+            e.HasIndex(x => x.SupersededByStateId).HasFilter("superseded_by_state_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbConditionalKnowledgeState>(e =>
+        {
+            e.ToTable("conditional_knowledge_states");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.FactFamily).HasColumnName("fact_family");
+            e.Property(x => x.SubjectRef).HasColumnName("subject_ref");
+            e.Property(x => x.RuleKind).HasColumnName("rule_kind");
+            e.Property(x => x.RuleId).HasColumnName("rule_id");
+            e.Property(x => x.ParentRuleId).HasColumnName("parent_rule_id");
+            e.Property(x => x.BaselineValue).HasColumnName("baseline_value");
+            e.Property(x => x.ExceptionValue).HasColumnName("exception_value");
+            e.Property(x => x.StyleLabel).HasColumnName("style_label");
+            e.Property(x => x.PhaseLabel).HasColumnName("phase_label");
+            e.Property(x => x.PhaseReason).HasColumnName("phase_reason");
+            e.Property(x => x.ConditionClauseIdsJson).HasColumnName("condition_clause_ids_json").HasColumnType("jsonb");
+            e.Property(x => x.SourceRefIdsJson).HasColumnName("source_ref_ids_json").HasColumnType("jsonb");
+            e.Property(x => x.LinkedTemporalStateIdsJson).HasColumnName("linked_temporal_state_ids_json").HasColumnType("jsonb");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.ValidFromUtc).HasColumnName("valid_from_utc");
+            e.Property(x => x.ValidToUtc).HasColumnName("valid_to_utc");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.StateStatus).HasColumnName("state_status");
+            e.Property(x => x.SupersedesStateId).HasColumnName("supersedes_state_id");
+            e.Property(x => x.SupersededByStateId).HasColumnName("superseded_by_state_id");
+            e.Property(x => x.TriggerKind).HasColumnName("trigger_kind");
+            e.Property(x => x.TriggerRef).HasColumnName("trigger_ref");
+            e.Property(x => x.TriggerModelPassRunId).HasColumnName("trigger_model_pass_run_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.FactFamily, x.SubjectRef, x.ValidFromUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.StateStatus, x.ValidFromUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.FactFamily, x.RuleKind, x.RuleId }).IsUnique();
             e.HasIndex(x => x.SupersedesStateId).HasFilter("supersedes_state_id IS NOT NULL");
             e.HasIndex(x => x.SupersededByStateId).HasFilter("superseded_by_state_id IS NOT NULL");
         });
