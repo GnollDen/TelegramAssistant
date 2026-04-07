@@ -1609,9 +1609,11 @@ public sealed class TelegramOperatorWorkflowService
         state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
         state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
 
+        var clarificationTrust = OperatorTruthTrustFormatter.FormatTrustPercent(
+            OperatorTruthTrustFormatter.ToTrustPercent(evaluation.PartialConfidence));
         var note = evaluation.StopTriggered
-            ? $"Clarification stop triggered ({FormatOfflineStopReason(evaluation.StopReason)}). Trust {Math.Round(evaluation.PartialConfidence * 100f):0}%."
-            : $"Clarification answer captured. Next question ready. Trust {Math.Round(evaluation.PartialConfidence * 100f):0}%";
+            ? $"Clarification stop triggered ({FormatOfflineStopReason(evaluation.StopReason)}). Trust {clarificationTrust}."
+            : $"Clarification answer captured. Next question ready. Trust {clarificationTrust}";
         return await RenderOfflineEventContextAsync(state, interaction, nowUtc, note, ct);
     }
 
@@ -1818,12 +1820,13 @@ public sealed class TelegramOperatorWorkflowService
         state.PendingOfflineEventInput = null;
         state.OfflineEventDraft = null;
 
-        var trust = Math.Round((request.Confidence ?? 0f) * 100f);
+        var trust = OperatorTruthTrustFormatter.FormatTrustPercent(
+            OperatorTruthTrustFormatter.ToTrustPercent(request.Confidence ?? 0f));
         return await RenderOfflineEventContextAsync(
             state,
             interaction,
             nowUtc,
-            note: $"Offline-event final save completed: {saved.OfflineEventId:D} (Trust {trust:0}%).",
+            note: $"Offline-event final save completed: {saved.OfflineEventId:D} (Trust {trust}).",
             ct);
     }
 
@@ -1885,7 +1888,7 @@ public sealed class TelegramOperatorWorkflowService
             .FirstOrDefault();
         lines.Add($"Clarification progress: {answeredCount}/{questionCount}");
         lines.Add($"Loop status: {clarificationState.LoopStatus}");
-        lines.Add($"Trust: {Math.Round(clarificationState.PartialConfidence * 100f):0}%");
+        lines.Add($"Trust: {OperatorTruthTrustFormatter.FormatTrustPercent(OperatorTruthTrustFormatter.ToTrustPercent(clarificationState.PartialConfidence))}");
         if (!string.IsNullOrWhiteSpace(clarificationState.StopReason))
         {
             lines.Add($"Stop reason: {FormatOfflineStopReason(clarificationState.StopReason)}");
@@ -3452,8 +3455,8 @@ public sealed class TelegramOperatorWorkflowService
 
     private static string FormatTrust(float trustFactor)
     {
-        var percent = Math.Clamp((int)Math.Round(trustFactor * 100f, MidpointRounding.AwayFromZero), 0, 100);
-        return $"{percent}%";
+        return OperatorTruthTrustFormatter.FormatTrustPercent(
+            OperatorTruthTrustFormatter.ToTrustPercent(trustFactor));
     }
 
     private static string FormatUtc(DateTime value)

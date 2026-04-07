@@ -57,7 +57,7 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
         var known = NormalizeWhatIsKnown(request.WhatIsKnown);
         var means = NormalizeWhatItMeans(request.WhatItMeans);
         var recommendation = NormalizeRecommendation(request.Recommendation);
-        var trust = ClampPercent(request.TrustPercent ?? recommendation.TrustPercent);
+        var trust = OperatorTruthTrustFormatter.ClampTrustPercent(request.TrustPercent ?? recommendation.TrustPercent);
         var generatedAt = (generatedAtUtc ?? DateTime.UtcNow).ToUniversalTime();
         var scopeItemKey = NormalizeOptional(request.OpenInWebScopeItemKey) ?? NormalizeOptional(session.ActiveScopeItemKey) ?? string.Empty;
         var operatorSessionId = NormalizeOptional(session.OperatorSessionId) ?? string.Empty;
@@ -159,13 +159,13 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
 
         var shortAnswerTrust = response.Sections.ShortAnswer?.TrustPercent;
         var recommendationTrust = response.Sections.Recommendation?.TrustPercent;
-        if (!IsPercent(response.TrustPercent)
+        if (!OperatorTruthTrustFormatter.IsTrustPercent(response.TrustPercent)
             || shortAnswerTrust == null
-            || !IsPercent(shortAnswerTrust.Value)
+            || !OperatorTruthTrustFormatter.IsTrustPercent(shortAnswerTrust.Value)
             || recommendationTrust == null
-            || !IsPercent(recommendationTrust.Value)
-            || response.Sections.WhatIsKnown.Any(x => !IsPercent(x.TrustPercent))
-            || response.Sections.WhatItMeans.Any(x => !IsPercent(x.TrustPercent)))
+            || !OperatorTruthTrustFormatter.IsTrustPercent(recommendationTrust.Value)
+            || response.Sections.WhatIsKnown.Any(x => !OperatorTruthTrustFormatter.IsTrustPercent(x.TrustPercent))
+            || response.Sections.WhatItMeans.Any(x => !OperatorTruthTrustFormatter.IsTrustPercent(x.TrustPercent)))
         {
             errors.Add("trust_percent_invalid");
         }
@@ -237,15 +237,13 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
         lines.Add("Recommendation");
         lines.Add(FormatLine(response.Sections.Recommendation));
         lines.Add(string.Empty);
-        lines.Add($"Trust: {ClampPercent(response.TrustPercent)}%");
+        lines.Add($"Trust: {OperatorTruthTrustFormatter.FormatTrustPercent(response.TrustPercent)}");
         return string.Join(Environment.NewLine, lines);
     }
 
     private static OperatorAssistantStatement NormalizeShortAnswer(OperatorAssistantStatementInput? input)
     {
-        var label = OperatorAssistantTruthLabels.IsShortAnswerSupported(input?.TruthLabel)
-            ? input!.TruthLabel.Trim()
-            : OperatorAssistantTruthLabels.Inference;
+        var label = OperatorTruthTrustFormatter.NormalizeShortAnswerLabel(input?.TruthLabel);
         return CreateStatement(input, label, DefaultShortAnswerFallback);
     }
 
@@ -269,7 +267,7 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
             .Select(x =>
             {
                 var label = OperatorAssistantTruthLabels.IsWhatItMeansSupported(x.TruthLabel)
-                    ? x.TruthLabel.Trim()
+                    ? OperatorTruthTrustFormatter.NormalizeWhatItMeansLabel(x.TruthLabel)
                     : OperatorAssistantTruthLabels.Inference;
                 return CreateStatement(x, label, DefaultMeansFallback);
             })
@@ -284,7 +282,7 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
     }
 
     private static OperatorAssistantStatement NormalizeRecommendation(OperatorAssistantStatementInput? input)
-        => CreateStatement(input, OperatorAssistantTruthLabels.Recommendation, DefaultRecommendationFallback);
+        => CreateStatement(input, OperatorTruthTrustFormatter.NormalizeRecommendationLabel(input?.TruthLabel), DefaultRecommendationFallback);
 
     private static OperatorAssistantStatement CreateStatement(
         OperatorAssistantStatementInput? input,
@@ -301,7 +299,7 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
         {
             TruthLabel = truthLabel,
             Text = statementText,
-            TrustPercent = ClampPercent(input?.TrustPercent ?? 50),
+            TrustPercent = OperatorTruthTrustFormatter.ClampTrustPercent(input?.TrustPercent ?? 50),
             EvidenceRefs = [.. (input?.EvidenceRefs ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim())]
         };
     }
@@ -315,12 +313,6 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
 
         return ForbiddenHandoffLeakMarkers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
-
-    private static bool IsPercent(int value)
-        => value is >= 0 and <= 100;
-
-    private static int ClampPercent(int value)
-        => Math.Clamp(value, 0, 100);
 
     private static string NormalizeRequired(string? value, string fallback)
         => NormalizeOptional(value) ?? fallback;
@@ -346,5 +338,5 @@ public sealed class OperatorAssistantResponseGenerationService : IOperatorAssist
     }
 
     private static string FormatLine(OperatorAssistantStatement statement)
-        => $"[{statement.TruthLabel} | {ClampPercent(statement.TrustPercent)}%] {statement.Text}";
+        => OperatorTruthTrustFormatter.FormatTaggedLine(statement.TruthLabel, statement.TrustPercent, statement.Text);
 }

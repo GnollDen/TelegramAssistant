@@ -220,6 +220,29 @@ public class ResolutionInterpretationLoopResult
     public List<ResolutionInterpretationAuditEntry> AuditTrail { get; set; } = [];
 }
 
+public static class ResolutionInterpretationFailureReasons
+{
+    public const string LoopDisabled = "loop_disabled";
+    public const string ScopeRejected = "scope_rejected";
+    public const string SchemaInvalid = "schema_invalid";
+    public const string UsageUnavailable = "usage_unavailable";
+    public const string InputTokenBudgetExceeded = "input_token_budget_exceeded";
+    public const string OutputTokenBudgetExceeded = "output_token_budget_exceeded";
+    public const string TotalTokenBudgetExceeded = "total_token_budget_exceeded";
+    public const string CostBudgetExceeded = "cost_budget_exceeded";
+    public const string InvalidBudgetConfiguration = "invalid_budget_configuration";
+    public const string RetrievalFailed = "retrieval_failed";
+    public const string ProjectionException = "projection_exception";
+}
+
+public sealed class ResolutionInterpretationSchemaException : Exception
+{
+    public ResolutionInterpretationSchemaException(string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+    }
+}
+
 public class ResolutionInterpretationClaim
 {
     [JsonPropertyName("claim_type")]
@@ -257,6 +280,14 @@ public static class ResolutionInterpretationClaimTypes
             ? normalized
             : Hypothesis;
     }
+
+    public static string ToDisplayLabel(string? value)
+        => Normalize(value) switch
+        {
+            Fact => OperatorAssistantTruthLabels.Fact,
+            Inference => OperatorAssistantTruthLabels.Inference,
+            _ => OperatorAssistantTruthLabels.Hypothesis
+        };
 }
 
 public class ResolutionInterpretationReviewRecommendation
@@ -297,6 +328,18 @@ public class ResolutionInterpretationAuditEntry
     [JsonPropertyName("latency_ms")]
     public int? LatencyMs { get; set; }
 
+    [JsonPropertyName("prompt_tokens")]
+    public int? PromptTokens { get; set; }
+
+    [JsonPropertyName("completion_tokens")]
+    public int? CompletionTokens { get; set; }
+
+    [JsonPropertyName("total_tokens")]
+    public int? TotalTokens { get; set; }
+
+    [JsonPropertyName("cost_usd")]
+    public decimal? CostUsd { get; set; }
+
     [JsonPropertyName("evidence_refs")]
     public List<string> EvidenceRefs { get; set; } = [];
 
@@ -327,7 +370,10 @@ public class ResolutionInterpretationModelResponse
     public string Model { get; set; } = string.Empty;
     public string? RequestId { get; set; }
     public int LatencyMs { get; set; }
-    public int TotalTokens { get; set; }
+    public int? PromptTokens { get; set; }
+    public int? CompletionTokens { get; set; }
+    public int? TotalTokens { get; set; }
+    public decimal? CostUsd { get; set; }
 }
 
 public class ResolutionConflictSessionModelRequest

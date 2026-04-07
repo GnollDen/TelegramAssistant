@@ -270,8 +270,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-010 completed: added shared OperatorTruthTrustFormatter helper for canonical Fact/Inference/Hypothesis/Recommendation label normalization, 0..1 trust-to-percent conversion, and consistent tagged/trust string formatting; rewired operator assistant response generation/context assembly and Telegram workflow trust displays to consume shared helper instead of duplicating conversions. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-006-b1-smoke.",
       "dependencies": [
         "DTP-009B"
       ]

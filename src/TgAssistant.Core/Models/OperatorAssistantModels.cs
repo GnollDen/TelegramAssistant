@@ -28,16 +28,98 @@ public static class OperatorAssistantTruthLabels
     };
 
     public static bool IsSupported(string? value)
-        => !string.IsNullOrWhiteSpace(value) && Supported.Contains(value.Trim());
+        => OperatorTruthTrustFormatter.TryNormalizeLabel(value, out _);
 
     public static bool IsShortAnswerSupported(string? value)
-        => string.Equals(value, Fact, StringComparison.Ordinal)
-            || string.Equals(value, Inference, StringComparison.Ordinal)
-            || string.Equals(value, Hypothesis, StringComparison.Ordinal);
+        => string.Equals(OperatorTruthTrustFormatter.NormalizeLabel(value), Fact, StringComparison.Ordinal)
+            || string.Equals(OperatorTruthTrustFormatter.NormalizeLabel(value), Inference, StringComparison.Ordinal)
+            || string.Equals(OperatorTruthTrustFormatter.NormalizeLabel(value), Hypothesis, StringComparison.Ordinal);
 
     public static bool IsWhatItMeansSupported(string? value)
-        => string.Equals(value, Inference, StringComparison.Ordinal)
-            || string.Equals(value, Hypothesis, StringComparison.Ordinal);
+        => string.Equals(OperatorTruthTrustFormatter.NormalizeLabel(value), Inference, StringComparison.Ordinal)
+            || string.Equals(OperatorTruthTrustFormatter.NormalizeLabel(value), Hypothesis, StringComparison.Ordinal);
+}
+
+public static class OperatorTruthTrustFormatter
+{
+    private static readonly Dictionary<string, string> CanonicalLabelByNormalized = new(StringComparer.Ordinal)
+    {
+        ["fact"] = OperatorAssistantTruthLabels.Fact,
+        ["inference"] = OperatorAssistantTruthLabels.Inference,
+        ["hypothesis"] = OperatorAssistantTruthLabels.Hypothesis,
+        ["recommendation"] = OperatorAssistantTruthLabels.Recommendation
+    };
+
+    public static bool TryNormalizeLabel(string? value, out string normalized)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var key = value.Trim().ToLowerInvariant();
+        if (!CanonicalLabelByNormalized.TryGetValue(key, out var canonical))
+        {
+            return false;
+        }
+
+        normalized = canonical;
+        return true;
+    }
+
+    public static string NormalizeLabel(string? value)
+        => TryNormalizeLabel(value, out var normalized) ? normalized : string.Empty;
+
+    public static string NormalizeShortAnswerLabel(string? value)
+    {
+        var normalized = NormalizeLabel(value);
+        return string.Equals(normalized, OperatorAssistantTruthLabels.Fact, StringComparison.Ordinal)
+            || string.Equals(normalized, OperatorAssistantTruthLabels.Inference, StringComparison.Ordinal)
+            || string.Equals(normalized, OperatorAssistantTruthLabels.Hypothesis, StringComparison.Ordinal)
+            ? normalized
+            : OperatorAssistantTruthLabels.Inference;
+    }
+
+    public static string NormalizeWhatItMeansLabel(string? value)
+    {
+        var normalized = NormalizeLabel(value);
+        return string.Equals(normalized, OperatorAssistantTruthLabels.Inference, StringComparison.Ordinal)
+            || string.Equals(normalized, OperatorAssistantTruthLabels.Hypothesis, StringComparison.Ordinal)
+            ? normalized
+            : OperatorAssistantTruthLabels.Inference;
+    }
+
+    public static string NormalizeRecommendationLabel(string? value)
+        => string.Equals(NormalizeLabel(value), OperatorAssistantTruthLabels.Recommendation, StringComparison.Ordinal)
+            ? OperatorAssistantTruthLabels.Recommendation
+            : OperatorAssistantTruthLabels.Recommendation;
+
+    public static int ToTrustPercent(float trustFactor)
+    {
+        var bounded = Math.Clamp(trustFactor, 0f, 1f);
+        return Math.Clamp((int)Math.Round(bounded * 100f, MidpointRounding.AwayFromZero), 0, 100);
+    }
+
+    public static int ToTrustPercent(float? trustFactor)
+        => ToTrustPercent(trustFactor ?? 0f);
+
+    public static int ClampTrustPercent(int value)
+        => Math.Clamp(value, 0, 100);
+
+    public static bool IsTrustPercent(int value)
+        => value is >= 0 and <= 100;
+
+    public static string FormatTrustPercent(int trustPercent)
+        => $"{ClampTrustPercent(trustPercent)}%";
+
+    public static string FormatTaggedLine(string truthLabel, int trustPercent, string text)
+    {
+        var label = TryNormalizeLabel(truthLabel, out var normalized)
+            ? normalized
+            : OperatorAssistantTruthLabels.Inference;
+        return $"[{label} | {FormatTrustPercent(trustPercent)}] {text}";
+    }
 }
 
 public static class OperatorAssistantFailureReasons

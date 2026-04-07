@@ -124,7 +124,7 @@ public sealed class OperatorAssistantContextAssemblyService : IOperatorAssistant
         var queueTop = queueResult.Items.FirstOrDefault();
         var detailItem = detailResult?.Item;
         var recommendationAction = detailItem?.RecommendedNextAction ?? queueTop?.RecommendedNextAction ?? ResolutionActionTypes.OpenWeb;
-        var trustPercent = ResolveTrustPercent(detailItem?.TrustFactor ?? queueTop?.TrustFactor ?? 0.6f);
+        var trustPercent = OperatorTruthTrustFormatter.ToTrustPercent(detailItem?.TrustFactor ?? queueTop?.TrustFactor ?? 0.6f);
 
         var known = BuildKnownStatements(queueResult, detailItem);
         var means = BuildInferenceStatements(queueResult, detailItem);
@@ -197,7 +197,7 @@ public sealed class OperatorAssistantContextAssemblyService : IOperatorAssistant
             {
                 Text = $"Selected scope item `{detail.ScopeItemKey}` is `{detail.ItemType}` with status `{detail.Status}` and {detail.EvidenceCount} evidence link(s).",
                 TruthLabel = OperatorAssistantTruthLabels.Fact,
-                TrustPercent = ResolveTrustPercent(detail.TrustFactor)
+                TrustPercent = OperatorTruthTrustFormatter.ToTrustPercent(detail.TrustFactor)
             });
 
             foreach (var evidence in detail.Evidence.Take(2))
@@ -206,7 +206,7 @@ public sealed class OperatorAssistantContextAssemblyService : IOperatorAssistant
                 {
                     Text = evidence.Summary,
                     TruthLabel = OperatorAssistantTruthLabels.Fact,
-                    TrustPercent = ResolveTrustPercent(evidence.TrustFactor),
+                    TrustPercent = OperatorTruthTrustFormatter.ToTrustPercent(evidence.TrustFactor),
                     EvidenceRefs = [$"evidence:{evidence.EvidenceItemId:D}"]
                 });
             }
@@ -262,9 +262,6 @@ public sealed class OperatorAssistantContextAssemblyService : IOperatorAssistant
                 : "Keep monitoring this tracked-person scope and reopen assistant mode after new evidence arrives."
         };
     }
-
-    private static int ResolveTrustPercent(float trustFactor)
-        => Math.Clamp((int)Math.Round(Math.Clamp(trustFactor, 0f, 1f) * 100f), 0, 100);
 
     private static string NormalizeRequired(string? value, string fallback)
         => NormalizeOptional(value) ?? fallback;
