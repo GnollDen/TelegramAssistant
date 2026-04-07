@@ -89,7 +89,6 @@ public sealed class TemporalPersonStateRepository : ITemporalPersonStateReposito
         if (TemporalSingleValuedFactFamilies.Contains(factType))
         {
             var existingOpen = await db.TemporalPersonStates
-                .AsNoTracking()
                 .FirstOrDefaultAsync(x =>
                     x.ScopeKey == scopeKey
                     && x.SubjectRef == subjectRef
@@ -108,6 +107,10 @@ public sealed class TemporalPersonStateRepository : ITemporalPersonStateReposito
                 {
                     throw new InvalidOperationException("supersession_link_required_for_replacement");
                 }
+
+                existingOpen.ValidToUtc = validFromUtc;
+                existingOpen.StateStatus = TemporalPersonStateStatuses.Superseded;
+                existingOpen.UpdatedAtUtc = nowUtc;
             }
         }
 
@@ -136,6 +139,22 @@ public sealed class TemporalPersonStateRepository : ITemporalPersonStateReposito
 
         db.TemporalPersonStates.Add(row);
         await db.SaveChangesAsync(ct);
+
+        if (request.SupersedesStateId.HasValue)
+        {
+            var supersededRow = await db.TemporalPersonStates.FirstOrDefaultAsync(
+                x => x.Id == request.SupersedesStateId.Value
+                    && x.ScopeKey == scopeKey
+                    && x.TrackedPersonId == trackedPersonId,
+                ct);
+            if (supersededRow != null && supersededRow.SupersededByStateId != row.Id)
+            {
+                supersededRow.SupersededByStateId = row.Id;
+                supersededRow.UpdatedAtUtc = nowUtc;
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
         return Map(row);
     }
 

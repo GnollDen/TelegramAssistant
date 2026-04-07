@@ -14,15 +14,19 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
     private const string EventEvidenceLinkRole = "event_supporting";
     private const string TimelineEpisodeEvidenceLinkRole = "timeline_episode_supporting";
     private const string StoryArcEvidenceLinkRole = "story_arc_supporting";
+    private const string TemporalTriggerKind = "stage7_timeline";
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
     private readonly ILogger<Stage7TimelineRepository> _logger;
 
     public Stage7TimelineRepository(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
+        ITemporalPersonStateRepository temporalPersonStateRepository,
         ILogger<Stage7TimelineRepository> logger)
     {
         _dbFactory = dbFactory;
+        _temporalPersonStateRepository = temporalPersonStateRepository;
         _logger = logger;
     }
 
@@ -228,6 +232,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         await SyncEvidenceLinksAsync(db, storyArcMetadata.Id, scopeKey, evidenceItemIds, StoryArcEvidenceLinkRole, now, ct);
 
         await db.SaveChangesAsync(ct);
+        await UpsertTimelineTemporalStateAsync(auditRecord, bootstrapResult, episodeClosureState, evidenceItemIds, now, ct);
         await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
@@ -252,6 +257,72 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             CurrentStoryArcRevision = MapStoryArcRevision(storyArcRevision),
             EvidenceItemIds = [.. evidenceItemIds.OrderBy(x => x)]
         };
+    }
+
+    private async Task UpsertTimelineTemporalStateAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        string episodeClosureState,
+        IReadOnlyCollection<Guid> evidenceItemIds,
+        DateTime validFromUtc,
+        CancellationToken ct)
+    {
+        var trackedPerson = bootstrapResult.TrackedPerson;
+        if (trackedPerson == null || trackedPerson.PersonId == Guid.Empty || string.IsNullOrWhiteSpace(bootstrapResult.ScopeKey))
+        {
+            return;
+        }
+
+        var scopeKey = bootstrapResult.ScopeKey;
+        var subjectRef = $"person:{trackedPerson.PersonId:D}:timeline_episode";
+        var value = $"bootstrap_episode:{episodeClosureState}";
+        var evidenceRefs = evidenceItemIds.Select(x => $"evidence:{x:D}").ToArray();
+        var openState = await _temporalPersonStateRepository.GetOpenStateAsync(
+            scopeKey,
+            subjectRef,
+            Stage7TimelineTemporalFactTypes.TimelinePrimaryActivity,
+            ct);
+        if (openState != null && string.Equals(openState.Value, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var inserted = await _temporalPersonStateRepository.InsertAsync(
+            new TemporalPersonStateWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPerson.PersonId,
+                SubjectRef = subjectRef,
+                FactType = Stage7TimelineTemporalFactTypes.TimelinePrimaryActivity,
+                FactCategory = TemporalPersonStateFactCategories.EventConditioned,
+                Value = value,
+                ValidFromUtc = validFromUtc,
+                Confidence = null,
+                EvidenceRefs = evidenceRefs,
+                StateStatus = TemporalPersonStateStatuses.Open,
+                SupersedesStateId = openState?.Id,
+                TriggerKind = TemporalTriggerKind,
+                TriggerRef = $"{TemporalTriggerKind}:{auditRecord.ModelPassRunId:D}:{Stage7TimelineTemporalFactTypes.TimelinePrimaryActivity}",
+                TriggerModelPassRunId = auditRecord.ModelPassRunId
+            },
+            ct);
+
+        if (openState == null)
+        {
+            return;
+        }
+
+        _ = await _temporalPersonStateRepository.UpdateSupersessionAsync(
+            new TemporalPersonStateSupersessionUpdateRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPerson.PersonId,
+                PreviousStateId = openState.Id,
+                SupersededByStateId = inserted.Id,
+                SupersededAtUtc = validFromUtc,
+                NextStatus = TemporalPersonStateStatuses.Superseded
+            },
+            ct);
     }
 
     private static async Task<DbDurableObjectMetadata> UpsertMetadataAsync(

@@ -13,15 +13,25 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
     private const string PendingPromotionState = "pending";
     private const string DossierEvidenceLinkRole = "dossier_supporting";
     private const string ProfileEvidenceLinkRole = "profile_supporting";
+    private const string TemporalTriggerKind = "stage7_dossier_profile";
+    private const string ProfileStatusValueStable = "stable";
+    private const string ProfileStatusValueNeedsContext = "needs_context";
+    private const string ProfileStatusValueContested = "contested";
+    private const string ProfileLocationValueUnknown = "location_unresolved";
+    private const string RelationshipStateValueOperatorLinked = "operator_linked";
+    private const string RelationshipStateValueUnlinked = "operator_unlinked";
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
+    private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
     private readonly ILogger<Stage7DossierProfileRepository> _logger;
 
     public Stage7DossierProfileRepository(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
+        ITemporalPersonStateRepository temporalPersonStateRepository,
         ILogger<Stage7DossierProfileRepository> logger)
     {
         _dbFactory = dbFactory;
+        _temporalPersonStateRepository = temporalPersonStateRepository;
         _logger = logger;
     }
 
@@ -148,6 +158,7 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
         await SyncEvidenceLinksAsync(db, profileMetadata.Id, scopeKey, evidenceItemIds, ProfileEvidenceLinkRole, now, ct);
 
         await db.SaveChangesAsync(ct);
+        await UpsertTemporalStatesAsync(auditRecord, bootstrapResult, evidenceItemIds, now, ct);
         await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
@@ -167,6 +178,135 @@ public class Stage7DossierProfileRepository : IStage7DossierProfileRepository
             CurrentProfileRevision = MapProfileRevision(profileRevision),
             EvidenceItemIds = [.. evidenceItemIds.OrderBy(x => x)]
         };
+    }
+
+    private async Task UpsertTemporalStatesAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        IReadOnlyCollection<Guid> evidenceItemIds,
+        DateTime validFromUtc,
+        CancellationToken ct)
+    {
+        var trackedPerson = bootstrapResult.TrackedPerson;
+        if (trackedPerson == null || trackedPerson.PersonId == Guid.Empty || string.IsNullOrWhiteSpace(bootstrapResult.ScopeKey))
+        {
+            return;
+        }
+
+        var scopeKey = bootstrapResult.ScopeKey;
+        var subjectRef = string.IsNullOrWhiteSpace(trackedPerson.PersonRef)
+            ? $"person:{trackedPerson.PersonId:D}"
+            : trackedPerson.PersonRef.Trim();
+        var evidenceRefs = evidenceItemIds.Select(x => $"evidence:{x:D}").ToArray();
+        var profileStatusValue = ResolveProfileStatusValue(bootstrapResult);
+        var relationshipStateValue = bootstrapResult.OperatorPerson == null
+            ? RelationshipStateValueUnlinked
+            : RelationshipStateValueOperatorLinked;
+
+        await UpsertTemporalStateAsync(
+            scopeKey,
+            trackedPerson.PersonId,
+            subjectRef,
+            Stage7DossierProfileTemporalFactTypes.ProfileStatus,
+            TemporalPersonStateFactCategories.Stable,
+            profileStatusValue,
+            evidenceRefs,
+            auditRecord.ModelPassRunId,
+            validFromUtc,
+            ct);
+        await UpsertTemporalStateAsync(
+            scopeKey,
+            trackedPerson.PersonId,
+            subjectRef,
+            Stage7DossierProfileTemporalFactTypes.ProfileLocation,
+            TemporalPersonStateFactCategories.Temporal,
+            ProfileLocationValueUnknown,
+            evidenceRefs,
+            auditRecord.ModelPassRunId,
+            validFromUtc,
+            ct);
+        await UpsertTemporalStateAsync(
+            scopeKey,
+            trackedPerson.PersonId,
+            subjectRef,
+            Stage7DossierProfileTemporalFactTypes.RelationshipState,
+            TemporalPersonStateFactCategories.EventConditioned,
+            relationshipStateValue,
+            evidenceRefs,
+            auditRecord.ModelPassRunId,
+            validFromUtc,
+            ct);
+    }
+
+    private async Task UpsertTemporalStateAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        string subjectRef,
+        string factType,
+        string factCategory,
+        string value,
+        IReadOnlyCollection<string> evidenceRefs,
+        Guid modelPassRunId,
+        DateTime validFromUtc,
+        CancellationToken ct)
+    {
+        var openState = await _temporalPersonStateRepository.GetOpenStateAsync(scopeKey, subjectRef, factType, ct);
+        if (openState != null && string.Equals(openState.Value, value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var inserted = await _temporalPersonStateRepository.InsertAsync(
+            new TemporalPersonStateWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                SubjectRef = subjectRef,
+                FactType = factType,
+                FactCategory = factCategory,
+                Value = value,
+                ValidFromUtc = validFromUtc,
+                Confidence = null,
+                EvidenceRefs = evidenceRefs,
+                StateStatus = TemporalPersonStateStatuses.Open,
+                SupersedesStateId = openState?.Id,
+                TriggerKind = TemporalTriggerKind,
+                TriggerRef = $"{TemporalTriggerKind}:{modelPassRunId:D}:{factType}",
+                TriggerModelPassRunId = modelPassRunId
+            },
+            ct);
+
+        if (openState == null)
+        {
+            return;
+        }
+
+        _ = await _temporalPersonStateRepository.UpdateSupersessionAsync(
+            new TemporalPersonStateSupersessionUpdateRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                PreviousStateId = openState.Id,
+                SupersededByStateId = inserted.Id,
+                SupersededAtUtc = validFromUtc,
+                NextStatus = TemporalPersonStateStatuses.Superseded
+            },
+            ct);
+    }
+
+    private static string ResolveProfileStatusValue(Stage6BootstrapGraphResult bootstrapResult)
+    {
+        if (bootstrapResult.ContradictionOutputs.Count > 0)
+        {
+            return ProfileStatusValueContested;
+        }
+
+        if (bootstrapResult.AmbiguityOutputs.Count > 0)
+        {
+            return ProfileStatusValueNeedsContext;
+        }
+
+        return ProfileStatusValueStable;
     }
 
     private static async Task<DbDurableObjectMetadata> UpsertMetadataAsync(

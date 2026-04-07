@@ -208,6 +208,10 @@ try
     var runtimeControlDetailProofOutput = runtimeControlDetailProofOutputArg is null
         ? null
         : runtimeControlDetailProofOutputArg["--runtime-control-detail-proof-output=".Length..];
+    var temporalPersonStateProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--temporal-person-state-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var temporalPersonStateProofOutput = temporalPersonStateProofOutputArg is null
+        ? null
+        : temporalPersonStateProofOutputArg["--temporal-person-state-proof-output=".Length..];
     var stageSemanticContractProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--stage-semantic-contract-proof-output=", StringComparison.OrdinalIgnoreCase));
     var stageSemanticContractProofOutput = stageSemanticContractProofOutputArg is null
         ? null
@@ -241,6 +245,7 @@ try
     var runOpintHomeDashboardSmoke = args.Any(arg => string.Equals(arg, "--opint-home-dashboard-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
+    var runTemporalPersonStateProof = args.Any(arg => string.Equals(arg, "--temporal-person-state-proof", StringComparison.OrdinalIgnoreCase));
     var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
@@ -334,6 +339,7 @@ try
         "--opint-012-b-smoke",
         "--opint-home-dashboard-smoke",
         "--resolution-interpretation-loop-v1-validate",
+        "--temporal-person-state-proof",
         "--stage-semantic-contract-proof",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -751,6 +757,21 @@ try
                 report.ActiveRuntimeControlState,
                 report.ReviewOnly.ClaimsAndEvidenceEmpty,
                 report.PromotionBlocked.LiveItemPresent);
+            return;
+        }
+
+        if (runTemporalPersonStateProof)
+        {
+            var report = await TemporalPersonStateProofRunner.RunAsync(
+                host.Services,
+                temporalPersonStateProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Temporal person-state proof requested via --temporal-person-state-proof. output={OutputPath}, passed={Passed}, row_count={RowCount}, scope_key={ScopeKey}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.Rows.Count,
+                report.ScopeKey);
             return;
         }
 

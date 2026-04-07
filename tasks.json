@@ -536,8 +536,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-006A completed: integrated Stage7 dossier/profile and timeline temporal writes via TemporalPersonStateRepository with deterministic single-valued supersession handling; Stage7 pair-dynamics remains out of temporal write scope. Added --temporal-person-state-proof runner and phase-B artifact output at src/TgAssistant.Host/artifacts/phase-b/temporal-person-state-proof.json. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --temporal-person-state-proof.",
       "dependencies": [
         "PHB-005"
       ]
