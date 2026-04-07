@@ -728,7 +728,7 @@ public class OperatorOfflineEventDetailQueryResultEnvelope
     public bool Accepted { get; set; }
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
-    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+    public OperatorOfflineEventSingleItemView OfflineEvent { get; set; } = new();
 }
 
 public class OperatorOfflineEventRefinementResult
@@ -737,7 +737,7 @@ public class OperatorOfflineEventRefinementResult
     public string? FailureReason { get; set; }
     public Guid? AuditEventId { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
-    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+    public OperatorOfflineEventSingleItemView OfflineEvent { get; set; } = new();
 }
 
 public class OperatorOfflineEventTimelineLinkageUpdateResult
@@ -746,5 +746,20 @@ public class OperatorOfflineEventTimelineLinkageUpdateResult
     public string? FailureReason { get; set; }
     public Guid? AuditEventId { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
-    public OperatorOfflineEventDetailView OfflineEvent { get; set; } = new();
+    public OperatorOfflineEventSingleItemView OfflineEvent { get; set; } = new();
+}
+
+public class OperatorOfflineEventSingleItemView
+{
+    public Guid? Id { get; set; }
+    public Guid? TrackedPersonId { get; set; }
+    public string? ScopeKey { get; set; }
+    public string? Summary { get; set; }
+    public float? Confidence { get; set; }
+    public int? ClarificationHistoryCount { get; set; }
+    public string? StopReason { get; set; }
+    public string? LinkageTargetFamily { get; set; }
+    public string? LinkageTargetRef { get; set; }
+    public bool ScopeBound { get; set; }
+    public bool Found { get; set; }
 }

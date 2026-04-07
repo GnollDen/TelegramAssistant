@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using TgAssistant.Core.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Models;
+using TgAssistant.Host.OperatorApi;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Telegram.Operator;
 
@@ -24,6 +27,7 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
     {
         var resolvedOutputPath = ResolveOutputPath(outputPath);
         var dbFactory = services.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
+        var operatorResolutionService = services.GetRequiredService<IOperatorResolutionApplicationService>();
         var settings = services.GetRequiredService<IOptions<TelegramSettings>>().Value;
         var workflow = services.GetRequiredService<TelegramOperatorWorkflowService>();
         var sessionStore = services.GetRequiredService<TelegramOperatorSessionStore>();
@@ -310,6 +314,14 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
                 && string.Equals(loopStatusElement.GetString(), OfflineEventClarificationLoopStatuses.Stopped, StringComparison.Ordinal),
                 "Stored clarification loopStatus mismatch.");
 
+            report.ApiContractProofRows = await BuildApiContractProofRowsAsync(
+                operatorResolutionService,
+                seed,
+                savedOfflineEventId,
+                ct);
+            Ensure(report.ApiContractProofRows.Count >= 7, "API contract proof matrix must include at least 7 rows (200/400x3/401/403/404).");
+            Ensure(report.ApiContractProofRows.All(x => x.Passed), "API contract proof matrix contains a failing row.");
+
             report.AllChecksPassed = true;
         }
         catch (Exception ex)
@@ -497,6 +509,296 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
             throw new InvalidOperationException(message);
         }
     }
+
+    private static async Task<List<Opint007ApiContractProofRow>> BuildApiContractProofRowsAsync(
+        IOperatorResolutionApplicationService service,
+        Opint007B3SeedState seed,
+        Guid savedOfflineEventId,
+        CancellationToken ct)
+    {
+        var rows = new List<Opint007ApiContractProofRow>();
+        var nowUtc = DateTime.UtcNow;
+        var session = BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc);
+        var identity = BuildProofIdentity(nowUtc);
+
+        var detailSuccess = await service.GetOfflineEventDetailAsync(
+            new OperatorOfflineEventDetailQueryRequest
+            {
+                TrackedPersonId = seed.TrackedPersonId,
+                OfflineEventId = savedOfflineEventId,
+                OperatorIdentity = identity,
+                Session = session
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "detail_200",
+            endpoint: "/api/operator/offline-events/detail",
+            accepted: detailSuccess.Accepted,
+            failureReason: detailSuccess.FailureReason,
+            offlineEvent: detailSuccess.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status200OK,
+            expectedFailureReason: null,
+            expectedScopeBound: true,
+            expectedFound: true,
+            expectedRecordFieldsNull: false));
+
+        var detailScopeMismatch = await service.GetOfflineEventDetailAsync(
+            new OperatorOfflineEventDetailQueryRequest
+            {
+                TrackedPersonId = Guid.NewGuid(),
+                OfflineEventId = savedOfflineEventId,
+                OperatorIdentity = identity,
+                Session = BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc)
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "detail_403_scope_mismatch",
+            endpoint: "/api/operator/offline-events/detail",
+            accepted: detailScopeMismatch.Accepted,
+            failureReason: detailScopeMismatch.FailureReason,
+            offlineEvent: detailScopeMismatch.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status403Forbidden,
+            expectedFailureReason: "session_scope_item_mismatch",
+            expectedScopeBound: false,
+            expectedFound: false,
+            expectedRecordFieldsNull: true));
+
+        var missingOfflineEventId = Guid.NewGuid();
+        var detailNotFound = await service.GetOfflineEventDetailAsync(
+            new OperatorOfflineEventDetailQueryRequest
+            {
+                TrackedPersonId = seed.TrackedPersonId,
+                OfflineEventId = missingOfflineEventId,
+                OperatorIdentity = identity,
+                Session = BuildProofSession(seed.TrackedPersonId, missingOfflineEventId, nowUtc)
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "detail_404_not_found",
+            endpoint: "/api/operator/offline-events/detail",
+            accepted: detailNotFound.Accepted,
+            failureReason: detailNotFound.FailureReason,
+            offlineEvent: detailNotFound.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status404NotFound,
+            expectedFailureReason: "offline_event_not_found",
+            expectedScopeBound: true,
+            expectedFound: false,
+            expectedRecordFieldsNull: true));
+
+        var invalidStatus = await service.SubmitOfflineEventTimelineLinkageUpdateAsync(
+            new OperatorOfflineEventTimelineLinkageUpdateRequest
+            {
+                TrackedPersonId = seed.TrackedPersonId,
+                OfflineEventId = savedOfflineEventId,
+                LinkageStatus = "invalid_status",
+                TargetFamily = "resolution",
+                TargetRef = "resolution:validation",
+                LinkageNote = "verification",
+                SubmittedAtUtc = nowUtc,
+                OperatorIdentity = identity,
+                Session = BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc)
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "timeline_400_invalid_status",
+            endpoint: "/api/operator/offline-events/timeline-linkage",
+            accepted: invalidStatus.Accepted,
+            failureReason: invalidStatus.FailureReason,
+            offlineEvent: invalidStatus.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status400BadRequest,
+            expectedFailureReason: "unsupported_offline_event_timeline_linkage_status",
+            expectedScopeBound: true,
+            expectedFound: true,
+            expectedRecordFieldsNull: false));
+
+        var invalidFamily = await service.SubmitOfflineEventTimelineLinkageUpdateAsync(
+            new OperatorOfflineEventTimelineLinkageUpdateRequest
+            {
+                TrackedPersonId = seed.TrackedPersonId,
+                OfflineEventId = savedOfflineEventId,
+                LinkageStatus = "linked",
+                TargetFamily = "invalid_family",
+                TargetRef = "resolution:validation",
+                LinkageNote = "verification",
+                SubmittedAtUtc = nowUtc,
+                OperatorIdentity = identity,
+                Session = BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc)
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "timeline_400_invalid_family",
+            endpoint: "/api/operator/offline-events/timeline-linkage",
+            accepted: invalidFamily.Accepted,
+            failureReason: invalidFamily.FailureReason,
+            offlineEvent: invalidFamily.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status400BadRequest,
+            expectedFailureReason: "invalid_target_family",
+            expectedScopeBound: true,
+            expectedFound: true,
+            expectedRecordFieldsNull: false));
+
+        var invalidRef = await service.SubmitOfflineEventTimelineLinkageUpdateAsync(
+            new OperatorOfflineEventTimelineLinkageUpdateRequest
+            {
+                TrackedPersonId = seed.TrackedPersonId,
+                OfflineEventId = savedOfflineEventId,
+                LinkageStatus = "linked",
+                TargetFamily = "resolution",
+                TargetRef = string.Empty,
+                LinkageNote = "verification",
+                SubmittedAtUtc = nowUtc,
+                OperatorIdentity = identity,
+                Session = BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc)
+            },
+            ct);
+        rows.Add(BuildProofRow(
+            caseId: "timeline_400_invalid_target_ref",
+            endpoint: "/api/operator/offline-events/timeline-linkage",
+            accepted: invalidRef.Accepted,
+            failureReason: invalidRef.FailureReason,
+            offlineEvent: invalidRef.OfflineEvent,
+            expectedStatusCode: StatusCodes.Status400BadRequest,
+            expectedFailureReason: "invalid_target_ref",
+            expectedScopeBound: true,
+            expectedFound: true,
+            expectedRecordFieldsNull: false));
+
+        var authFailure = WebOperatorAuthResult.Failure(
+            statusCode: StatusCodes.Status401Unauthorized,
+            failureReason: "auth_denied",
+            auditEventId: null,
+            session: BuildProofSession(seed.TrackedPersonId, savedOfflineEventId, nowUtc),
+            operatorIdentity: BuildProofIdentity(nowUtc));
+        var authFailureResult = OperatorApiEndpointExtensions.ToOfflineEventSingleItemAuthFailureResultForTesting(authFailure);
+        var authFailureEnvelope = await ExecuteOfflineEventEnvelopeAsync(authFailureResult);
+        var authFieldsNull = IsRecordBackedFieldsNull(authFailureEnvelope.OfflineEvent);
+        var authPassed =
+            authFailureEnvelope.StatusCode == StatusCodes.Status401Unauthorized
+            && string.Equals(authFailureEnvelope.FailureReason, "auth_denied", StringComparison.Ordinal)
+            && authFailureEnvelope.OfflineEvent.ScopeBound == false
+            && authFailureEnvelope.OfflineEvent.Found == false
+            && authFieldsNull;
+        rows.Add(new Opint007ApiContractProofRow
+        {
+            CaseId = "detail_401_auth_failure",
+            Endpoint = "/api/operator/offline-events/detail",
+            ExpectedStatusCode = StatusCodes.Status401Unauthorized,
+            ActualStatusCode = authFailureEnvelope.StatusCode,
+            ExpectedFailureReason = "auth_denied",
+            ActualFailureReason = authFailureEnvelope.FailureReason,
+            ExpectedScopeBound = false,
+            ActualScopeBound = authFailureEnvelope.OfflineEvent.ScopeBound,
+            ExpectedFound = false,
+            ActualFound = authFailureEnvelope.OfflineEvent.Found,
+            ExpectedRecordFieldsNull = true,
+            ActualRecordFieldsNull = authFieldsNull,
+            Passed = authPassed
+        });
+
+        return rows;
+    }
+
+    private static OperatorIdentityContext BuildProofIdentity(DateTime nowUtc)
+    {
+        return new OperatorIdentityContext
+        {
+            OperatorId = "opint-007-b3-smoke-operator",
+            OperatorDisplay = "OPINT-007-B3 Smoke Operator",
+            SurfaceSubject = "opint-007-b3-smoke",
+            AuthSource = "opint-007-b3-smoke",
+            AuthTimeUtc = nowUtc
+        };
+    }
+
+    private static OperatorSessionContext BuildProofSession(Guid trackedPersonId, Guid offlineEventId, DateTime nowUtc)
+    {
+        return new OperatorSessionContext
+        {
+            OperatorSessionId = $"opint-007-b3-smoke:{Guid.NewGuid():N}",
+            Surface = OperatorSurfaceTypes.Web,
+            ActiveMode = OperatorModeTypes.OfflineEvent,
+            ActiveTrackedPersonId = trackedPersonId,
+            ActiveScopeItemKey = $"offline_event:{offlineEventId:D}",
+            AuthenticatedAtUtc = nowUtc.AddMinutes(-2),
+            LastSeenAtUtc = nowUtc.AddMinutes(-1),
+            ExpiresAtUtc = nowUtc.AddHours(1)
+        };
+    }
+
+    private static Opint007ApiContractProofRow BuildProofRow(
+        string caseId,
+        string endpoint,
+        bool accepted,
+        string? failureReason,
+        OperatorOfflineEventSingleItemView offlineEvent,
+        int expectedStatusCode,
+        string? expectedFailureReason,
+        bool expectedScopeBound,
+        bool expectedFound,
+        bool expectedRecordFieldsNull)
+    {
+        var actualStatusCode = accepted
+            ? StatusCodes.Status200OK
+            : OperatorApiEndpointExtensions.MapFailureStatusCodeForTesting(failureReason);
+        var actualRecordFieldsNull = IsRecordBackedFieldsNull(offlineEvent);
+        return new Opint007ApiContractProofRow
+        {
+            CaseId = caseId,
+            Endpoint = endpoint,
+            ExpectedStatusCode = expectedStatusCode,
+            ActualStatusCode = actualStatusCode,
+            ExpectedFailureReason = expectedFailureReason,
+            ActualFailureReason = failureReason,
+            ExpectedScopeBound = expectedScopeBound,
+            ActualScopeBound = offlineEvent.ScopeBound,
+            ExpectedFound = expectedFound,
+            ActualFound = offlineEvent.Found,
+            ExpectedRecordFieldsNull = expectedRecordFieldsNull,
+            ActualRecordFieldsNull = actualRecordFieldsNull,
+            Passed = expectedStatusCode == actualStatusCode
+                && string.Equals(expectedFailureReason, failureReason, StringComparison.Ordinal)
+                && expectedScopeBound == offlineEvent.ScopeBound
+                && expectedFound == offlineEvent.Found
+                && expectedRecordFieldsNull == actualRecordFieldsNull
+        };
+    }
+
+    private static bool IsRecordBackedFieldsNull(OperatorOfflineEventSingleItemView offlineEvent)
+    {
+        return offlineEvent.Id is null
+               && offlineEvent.TrackedPersonId is null
+               && offlineEvent.ScopeKey is null
+               && offlineEvent.Summary is null
+               && offlineEvent.Confidence is null
+               && offlineEvent.ClarificationHistoryCount is null
+               && offlineEvent.StopReason is null
+               && offlineEvent.LinkageTargetFamily is null
+               && offlineEvent.LinkageTargetRef is null;
+    }
+
+    private static async Task<Opint007ExecutedOfflineEventEnvelope> ExecuteOfflineEventEnvelopeAsync(IResult result)
+    {
+        var context = new DefaultHttpContext();
+        var requestServices = new ServiceCollection()
+            .AddOptions()
+            .AddLogging()
+            .BuildServiceProvider();
+        context.RequestServices = requestServices;
+        await using var body = new MemoryStream();
+        context.Response.Body = body;
+        await result.ExecuteAsync(context);
+        context.Response.Body.Seek(0, SeekOrigin.Begin);
+        using var reader = new StreamReader(context.Response.Body);
+        var payload = await reader.ReadToEndAsync();
+        var envelope = JsonSerializer.Deserialize<Opint007ExecutedOfflineEventEnvelope>(
+            payload,
+            new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? new Opint007ExecutedOfflineEventEnvelope();
+        envelope.StatusCode = context.Response.StatusCode;
+        return envelope;
+    }
 }
 
 public sealed class Opint007OfflineEventClarificationOrchestrationSmokeReport
@@ -522,6 +824,7 @@ public sealed class Opint007OfflineEventClarificationOrchestrationSmokeReport
     public Opint007StepResult FinalSaveResult { get; set; } = new();
     public Guid? SavedOfflineEventId { get; set; }
     public Opint007B3StoredOfflineEvent? StoredEvent { get; set; }
+    public List<Opint007ApiContractProofRow> ApiContractProofRows { get; set; } = [];
     public bool CleanupCompleted { get; set; }
     public bool AllChecksPassed { get; set; }
     public string? FatalError { get; set; }
@@ -546,4 +849,29 @@ internal sealed class Opint007B3SeedState
     public Guid TrackedPersonId { get; set; }
     public string TrackedDisplayName { get; set; } = string.Empty;
     public long AuthorizedChatId { get; set; }
+}
+
+public sealed class Opint007ApiContractProofRow
+{
+    public string CaseId { get; set; } = string.Empty;
+    public string Endpoint { get; set; } = string.Empty;
+    public int ExpectedStatusCode { get; set; }
+    public int ActualStatusCode { get; set; }
+    public string? ExpectedFailureReason { get; set; }
+    public string? ActualFailureReason { get; set; }
+    public bool ExpectedScopeBound { get; set; }
+    public bool ActualScopeBound { get; set; }
+    public bool ExpectedFound { get; set; }
+    public bool ActualFound { get; set; }
+    public bool ExpectedRecordFieldsNull { get; set; }
+    public bool ActualRecordFieldsNull { get; set; }
+    public bool Passed { get; set; }
+}
+
+public sealed class Opint007ExecutedOfflineEventEnvelope
+{
+    public int StatusCode { get; set; }
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorOfflineEventSingleItemView OfflineEvent { get; set; } = new();
 }

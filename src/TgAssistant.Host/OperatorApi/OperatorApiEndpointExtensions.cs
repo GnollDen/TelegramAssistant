@@ -420,7 +420,7 @@ public static class OperatorApiEndpointExtensions
             var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
             if (!auth.Accepted)
             {
-                return ToAuthFailureResult(auth);
+                return ToOfflineEventSingleItemAuthFailureResult(auth);
             }
 
             request.OperatorIdentity = auth.OperatorIdentity;
@@ -440,7 +440,7 @@ public static class OperatorApiEndpointExtensions
             var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
             if (!auth.Accepted)
             {
-                return ToAuthFailureResult(auth);
+                return ToOfflineEventSingleItemAuthFailureResult(auth);
             }
 
             request.OperatorIdentity = auth.OperatorIdentity;
@@ -460,7 +460,7 @@ public static class OperatorApiEndpointExtensions
             var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.OfflineEvent, ct);
             if (!auth.Accepted)
             {
-                return ToAuthFailureResult(auth);
+                return ToOfflineEventSingleItemAuthFailureResult(auth);
             }
 
             request.OperatorIdentity = auth.OperatorIdentity;
@@ -489,6 +489,9 @@ public static class OperatorApiEndpointExtensions
             _ => Results.BadRequest(body)
         };
     }
+
+    internal static int MapFailureStatusCodeForTesting(string? failureReason)
+        => MapFailureStatusCode(failureReason);
 
     private static int MapFailureStatusCode(string? failureReason)
     {
@@ -529,6 +532,26 @@ public static class OperatorApiEndpointExtensions
                 failureReason = auth.FailureReason,
                 auditEventId = auth.AuditEventId,
                 session = auth.Session
+            },
+            statusCode: auth.StatusCode);
+    }
+
+    internal static IResult ToOfflineEventSingleItemAuthFailureResultForTesting(WebOperatorAuthResult auth)
+        => ToOfflineEventSingleItemAuthFailureResult(auth);
+
+    private static IResult ToOfflineEventSingleItemAuthFailureResult(WebOperatorAuthResult auth)
+    {
+        return Results.Json(
+            new
+            {
+                accepted = false,
+                failureReason = auth.FailureReason,
+                session = auth.Session,
+                offlineEvent = new OperatorOfflineEventSingleItemView
+                {
+                    ScopeBound = false,
+                    Found = false
+                }
             },
             statusCode: auth.StatusCode);
     }

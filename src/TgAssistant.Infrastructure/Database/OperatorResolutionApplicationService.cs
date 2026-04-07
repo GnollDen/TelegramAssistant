@@ -28,6 +28,12 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         Stage7DurableObjectFamilies.TimelineEpisode,
         Stage7DurableObjectFamilies.StoryArc
     };
+    private static readonly HashSet<string> OfflineEventTimelineLinkageTargetFamilies = new(StringComparer.Ordinal)
+    {
+        "resolution",
+        "person",
+        "alert"
+    };
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
@@ -2470,6 +2476,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             expectedScopeItemKey: expectedScopeItemKey,
             nowUtc)
             ?? ValidateOfflineEventDetailRequest(request);
+        validationFailure = NormalizeOfflineEventScopeFailureReason(validationFailure);
         if (validationFailure != null)
         {
             return new OperatorOfflineEventDetailQueryResultEnvelope
@@ -2477,11 +2484,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = validationFailure,
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = validationFailure
+                    Found = false
                 }
             };
         }
@@ -2495,11 +2501,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = "tracked_person_not_found_or_inactive",
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                    Found = false
                 }
             };
         }
@@ -2509,14 +2514,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             trackedPerson.ScopeKey,
             trackedPersonId.Value,
             ct);
-        var detail = record == null
-            ? new OperatorOfflineEventDetailView
-            {
-                ScopeBound = true,
-                Found = false,
-                ScopeFailureReason = "offline_event_not_found"
-            }
-            : BuildOfflineEventDetailView(record);
+        var detail = record == null ? null : BuildOfflineEventDetailView(record);
+        var offlineEvent = BuildOfflineEventSingleItemView(detail);
+        if (record == null)
+        {
+            offlineEvent.ScopeBound = true;
+            offlineEvent.Found = false;
+        }
 
         var session = CloneSession(request.Session, nowUtc);
         session.ActiveTrackedPersonId = trackedPersonId.Value;
@@ -2526,12 +2530,12 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 
         return new OperatorOfflineEventDetailQueryResultEnvelope
         {
-            Accepted = detail.ScopeBound && detail.Found,
-            FailureReason = detail.ScopeBound
-                ? detail.Found ? null : "offline_event_not_found"
-                : detail.ScopeFailureReason,
+            Accepted = offlineEvent.ScopeBound && offlineEvent.Found,
+            FailureReason = offlineEvent.ScopeBound
+                ? offlineEvent.Found ? null : "offline_event_not_found"
+                : null,
             Session = session,
-            OfflineEvent = detail
+            OfflineEvent = offlineEvent
         };
     }
 
@@ -2549,12 +2553,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             request.Session,
             requireActiveTrackedPerson: true,
             requireSupportedMode: true,
-            requireActiveScopeItem: true,
+            requireActiveScopeItem: false,
             requireMatchingUnfinishedStep: false,
             expectedTrackedPersonId: trackedPersonId,
             expectedScopeItemKey: expectedScopeItemKey,
             nowUtc)
             ?? ValidateOfflineEventRefinementRequest(request);
+        validationFailure = NormalizeOfflineEventScopeFailureReason(validationFailure);
         if (validationFailure != null)
         {
             return new OperatorOfflineEventRefinementResult
@@ -2562,11 +2567,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = validationFailure,
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = validationFailure
+                    Found = false
                 }
             };
         }
@@ -2580,11 +2584,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = "tracked_person_not_found_or_inactive",
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                    Found = false
                 }
             };
         }
@@ -2608,11 +2611,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = "offline_event_not_found",
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = true,
-                    Found = false,
-                    ScopeFailureReason = "offline_event_not_found"
+                    Found = false
                 }
             };
         }
@@ -2635,7 +2637,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             Accepted = true,
             AuditEventId = refinementRecord.AuditEventId,
             Session = session,
-            OfflineEvent = BuildOfflineEventDetailView(refinementRecord.OfflineEvent)
+            OfflineEvent = BuildOfflineEventSingleItemView(BuildOfflineEventDetailView(refinementRecord.OfflineEvent))
         };
     }
 
@@ -2653,12 +2655,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             request.Session,
             requireActiveTrackedPerson: true,
             requireSupportedMode: true,
-            requireActiveScopeItem: true,
+            requireActiveScopeItem: false,
             requireMatchingUnfinishedStep: false,
             expectedTrackedPersonId: trackedPersonId,
             expectedScopeItemKey: expectedScopeItemKey,
             nowUtc)
             ?? ValidateOfflineEventTimelineLinkageUpdateRequest(request);
+        validationFailure = NormalizeOfflineEventScopeFailureReason(validationFailure);
         if (validationFailure != null)
         {
             return new OperatorOfflineEventTimelineLinkageUpdateResult
@@ -2666,11 +2669,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = validationFailure,
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = validationFailure
+                    Found = false
                 }
             };
         }
@@ -2684,12 +2686,60 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = "tracked_person_not_found_or_inactive",
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = false,
-                    Found = false,
-                    ScopeFailureReason = "tracked_person_not_found_or_inactive"
+                    Found = false
                 }
+            };
+        }
+
+        var existingRecord = await _operatorOfflineEventRepository.GetByIdWithinScopeAsync(
+            request.OfflineEventId,
+            trackedPerson.ScopeKey,
+            trackedPersonId.Value,
+            ct);
+        if (existingRecord == null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = "offline_event_not_found",
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = new OperatorOfflineEventSingleItemView
+                {
+                    ScopeBound = true,
+                    Found = false
+                }
+            };
+        }
+
+        var linkageInputValidationFailure = ValidateOfflineEventTimelineLinkageInputRequest(request);
+        if (linkageInputValidationFailure != null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = linkageInputValidationFailure,
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = BuildOfflineEventSingleItemView(BuildOfflineEventDetailView(existingRecord))
+            };
+        }
+
+        var targetValidationFailure = await ValidateOfflineEventTimelineLinkageTargetInScopeAsync(
+            db,
+            trackedPerson.ScopeKey,
+            trackedPersonId.Value,
+            request,
+            ct);
+        if (targetValidationFailure != null)
+        {
+            return new OperatorOfflineEventTimelineLinkageUpdateResult
+            {
+                Accepted = false,
+                FailureReason = targetValidationFailure,
+                Session = CloneSession(request.Session, nowUtc),
+                OfflineEvent = BuildOfflineEventSingleItemView(BuildOfflineEventDetailView(existingRecord))
             };
         }
 
@@ -2712,11 +2762,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Accepted = false,
                 FailureReason = "offline_event_not_found",
                 Session = CloneSession(request.Session, nowUtc),
-                OfflineEvent = new OperatorOfflineEventDetailView
+                OfflineEvent = new OperatorOfflineEventSingleItemView
                 {
                     ScopeBound = true,
-                    Found = false,
-                    ScopeFailureReason = "offline_event_not_found"
+                    Found = false
                 }
             };
         }
@@ -2740,7 +2789,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             Accepted = true,
             AuditEventId = updateRecord.AuditEventId,
             Session = session,
-            OfflineEvent = BuildOfflineEventDetailView(updateRecord.OfflineEvent)
+            OfflineEvent = BuildOfflineEventSingleItemView(BuildOfflineEventDetailView(updateRecord.OfflineEvent))
         };
     }
 
@@ -2985,6 +3034,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             return "offline_event_id_required";
         }
 
+        return null;
+    }
+
+    private static string? ValidateOfflineEventTimelineLinkageInputRequest(OperatorOfflineEventTimelineLinkageUpdateRequest request)
+    {
         if (!OperatorOfflineEventTimelineLinkageStatuses.IsSupported(request.LinkageStatus))
         {
             return "unsupported_offline_event_timeline_linkage_status";
@@ -2997,12 +3051,17 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         {
             if (string.IsNullOrWhiteSpace(targetFamily))
             {
-                return "offline_event_timeline_linkage_target_family_required";
+                return "invalid_target_family";
+            }
+
+            if (!OfflineEventTimelineLinkageTargetFamilies.Contains(targetFamily))
+            {
+                return "invalid_target_family";
             }
 
             if (string.IsNullOrWhiteSpace(targetRef))
             {
-                return "offline_event_timeline_linkage_target_ref_required";
+                return "invalid_target_ref";
             }
         }
 
@@ -3054,6 +3113,146 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             TimelineLinkage = ParseTimelineLinkage(record.TimelineLinkageJson),
             Clarification = clarification
         };
+    }
+
+    private static OperatorOfflineEventSingleItemView BuildOfflineEventSingleItemView(OperatorOfflineEventDetailView? detail)
+    {
+        if (detail == null)
+        {
+            return new OperatorOfflineEventSingleItemView();
+        }
+
+        return new OperatorOfflineEventSingleItemView
+        {
+            Id = detail.Found ? detail.OfflineEventId : null,
+            TrackedPersonId = detail.Found ? detail.TrackedPersonId : null,
+            ScopeKey = detail.Found ? detail.ScopeKey : null,
+            Summary = detail.Found ? detail.Summary : null,
+            Confidence = detail.Found ? detail.Confidence : null,
+            ClarificationHistoryCount = detail.Found ? detail.Clarification.HistoryCount : null,
+            StopReason = detail.Found ? detail.Clarification.StopReason : null,
+            LinkageTargetFamily = detail.Found ? NormalizeOptional(detail.TimelineLinkage.TargetFamily) : null,
+            LinkageTargetRef = detail.Found ? NormalizeOptional(detail.TimelineLinkage.TargetRef) : null,
+            ScopeBound = detail.ScopeBound,
+            Found = detail.Found
+        };
+    }
+
+    private static string? NormalizeOfflineEventScopeFailureReason(string? failureReason)
+    {
+        return string.Equals(failureReason, "session_active_tracked_person_mismatch", StringComparison.Ordinal)
+            ? "session_scope_item_mismatch"
+            : failureReason;
+    }
+
+    private static async Task<string?> ValidateOfflineEventTimelineLinkageTargetInScopeAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        OperatorOfflineEventTimelineLinkageUpdateRequest request,
+        CancellationToken ct)
+    {
+        var status = OperatorOfflineEventTimelineLinkageStatuses.Normalize(request.LinkageStatus);
+        if (!string.Equals(status, OperatorOfflineEventTimelineLinkageStatuses.Linked, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var targetFamily = NormalizeOptional(request.TargetFamily);
+        if (string.IsNullOrWhiteSpace(targetFamily) || !OfflineEventTimelineLinkageTargetFamilies.Contains(targetFamily))
+        {
+            return "invalid_target_family";
+        }
+
+        var targetRef = NormalizeOptional(request.TargetRef);
+        if (string.IsNullOrWhiteSpace(targetRef))
+        {
+            return "invalid_target_ref";
+        }
+
+        var scopeBoundTargetExists = targetFamily switch
+        {
+            "person" => await TargetPersonExistsInScopeAsync(db, scopeKey, trackedPersonId, targetRef, ct),
+            "resolution" => await TargetResolutionExistsInScopeAsync(db, scopeKey, trackedPersonId, targetRef, ct),
+            "alert" => await TargetAlertExistsInScopeAsync(db, scopeKey, trackedPersonId, targetRef, ct),
+            _ => false
+        };
+
+        return scopeBoundTargetExists ? null : "invalid_target_ref";
+    }
+
+    private static async Task<bool> TargetPersonExistsInScopeAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        string targetRef,
+        CancellationToken ct)
+    {
+        if (!targetRef.StartsWith("person:", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParse(targetRef["person:".Length..], out var personId))
+        {
+            return false;
+        }
+
+        if (personId != trackedPersonId)
+        {
+            return false;
+        }
+
+        return await db.Persons
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == personId && x.ScopeKey == scopeKey && x.Status == ActiveStatus, ct);
+    }
+
+    private static async Task<bool> TargetResolutionExistsInScopeAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        string targetRef,
+        CancellationToken ct)
+    {
+        var normalizedTargetRef = NormalizeOptional(targetRef);
+        if (string.IsNullOrWhiteSpace(normalizedTargetRef))
+        {
+            return false;
+        }
+
+        return await db.OperatorResolutionActions
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.ScopeKey == scopeKey
+                    && x.TrackedPersonId == trackedPersonId
+                    && x.ScopeItemKey == normalizedTargetRef,
+                ct)
+            || await db.OperatorResolutionConflictSessions
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.ScopeKey == scopeKey
+                        && x.TrackedPersonId == trackedPersonId
+                        && x.ScopeItemKey == normalizedTargetRef,
+                    ct);
+    }
+
+    private static async Task<bool> TargetAlertExistsInScopeAsync(
+        TgAssistantDbContext db,
+        string scopeKey,
+        Guid trackedPersonId,
+        string targetRef,
+        CancellationToken ct)
+    {
+        var normalizedTargetRef = NormalizeOptional(targetRef);
+        if (string.IsNullOrWhiteSpace(normalizedTargetRef))
+        {
+            return false;
+        }
+
+        return await db.OperatorAuditEvents
+            .AsNoTracking()
+            .AnyAsync(
+                x => x.ScopeKey == scopeKey
+                    && x.TrackedPersonId == trackedPersonId
+                    && x.ScopeItemKey == normalizedTargetRef,
+                ct);
     }
 
     private static OperatorOfflineEventTimelineLinkageMetadata ParseTimelineLinkage(string? timelineLinkageJson)

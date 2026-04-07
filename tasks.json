@@ -232,8 +232,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-009A completed: single-item offline_event envelope is enforced for /detail|/refine|/timeline-linkage (including 401 auth failure envelope), timeline-linkage input validation now runs after scoped record load, and OPINT-007-B3 smoke now includes deterministic API contract proof rows for 200/400/401/403/404; verified with runtime env overrides via dotnet build and --runtime-role=ops --opint-007-b3-smoke.",
       "dependencies": [
         "DTP-007"
       ]
