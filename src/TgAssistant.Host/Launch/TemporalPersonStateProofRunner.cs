@@ -84,6 +84,32 @@ public static class TemporalPersonStateProofRunner
                 ct);
             report.Rows.Add(profileChanged.Row);
 
+            var duplicateOpenRejected = await AssertInsertRejectedAsync(
+                temporalRepository,
+                scopeKey: report.ScopeKey,
+                trackedPersonId: report.TrackedPersonId,
+                subjectRef: report.ProfileSubjectRef,
+                factType: Stage7DossierProfileTemporalFactTypes.ProfileStatus,
+                factCategory: TemporalPersonStateFactCategories.Stable,
+                value: "regressed_without_link",
+                supersedesStateId: null,
+                expectedFailureReason: "duplicate_open_active_row_rejected",
+                ct);
+            report.Rows.Add(duplicateOpenRejected);
+
+            var replacementLinkRejected = await AssertInsertRejectedAsync(
+                temporalRepository,
+                scopeKey: report.ScopeKey,
+                trackedPersonId: report.TrackedPersonId,
+                subjectRef: report.ProfileSubjectRef,
+                factType: Stage7DossierProfileTemporalFactTypes.ProfileStatus,
+                factCategory: TemporalPersonStateFactCategories.Stable,
+                value: "replacement_with_stale_link",
+                supersedesStateId: profileInitial.Row.NewStateId,
+                expectedFailureReason: "supersession_link_required_for_replacement",
+                ct);
+            report.Rows.Add(replacementLinkRejected);
+
             report.Passed = report.Rows.All(x => x.Passed);
         }
         catch (Exception ex)
@@ -222,6 +248,70 @@ public static class TemporalPersonStateProofRunner
         return new TemporalProofWriteOutcome
         {
             Row = row
+        };
+    }
+
+    private static async Task<TemporalPersonStateProofRow> AssertInsertRejectedAsync(
+        ITemporalPersonStateRepository temporalRepository,
+        string scopeKey,
+        Guid trackedPersonId,
+        string subjectRef,
+        string factType,
+        string factCategory,
+        string value,
+        Guid? supersedesStateId,
+        string expectedFailureReason,
+        CancellationToken ct)
+    {
+        var openState = await temporalRepository.GetOpenStateAsync(scopeKey, subjectRef, factType, ct);
+        Guid? insertedStateId = null;
+        string actualDecision;
+        string reason;
+        var passed = false;
+
+        try
+        {
+            var inserted = await temporalRepository.InsertAsync(
+                new TemporalPersonStateWriteRequest
+                {
+                    ScopeKey = scopeKey,
+                    TrackedPersonId = trackedPersonId,
+                    SubjectRef = subjectRef,
+                    FactType = factType,
+                    FactCategory = factCategory,
+                    Value = value,
+                    ValidFromUtc = DateTime.UtcNow,
+                    StateStatus = TemporalPersonStateStatuses.Open,
+                    SupersedesStateId = supersedesStateId,
+                    TriggerKind = TriggerKind,
+                    TriggerRef = $"{TriggerKind}:{factType}:{Guid.NewGuid():N}"
+                },
+                ct);
+            insertedStateId = inserted.Id;
+            actualDecision = "unexpectedly_accepted";
+            reason = "expected_rejection_not_observed";
+        }
+        catch (InvalidOperationException ex)
+        {
+            actualDecision = ex.Message.Trim();
+            reason = "repository_rejected_write";
+            passed = string.Equals(actualDecision, expectedFailureReason, StringComparison.Ordinal);
+        }
+
+        return new TemporalPersonStateProofRow
+        {
+            CaseId = expectedFailureReason,
+            ScopeKey = scopeKey,
+            SubjectRef = subjectRef,
+            FactType = factType,
+            PreviousStateId = openState?.Id,
+            NewStateId = insertedStateId,
+            ExpectedDecision = expectedFailureReason,
+            ActualDecision = actualDecision,
+            SupersedesStateId = supersedesStateId,
+            SupersededByStateId = null,
+            Reason = reason,
+            Passed = passed
         };
     }
 

@@ -148,6 +148,54 @@ public static class PersonHistoryProofRunner
                     && openVsHistoricalSeparated
             });
 
+            var unauthenticatedResult = await appService.QueryPersonWorkspaceHistoryAsync(
+                new OperatorPersonWorkspaceHistoryQueryRequest
+                {
+                    TrackedPersonId = report.TrackedPersonId,
+                    FactType = factType,
+                    OperatorIdentity = BuildInvalidOperatorIdentity(),
+                    Session = BuildOperatorSession(nowUtc)
+                },
+                ct);
+            report.Cases.Add(new PersonHistoryProofCase
+            {
+                CaseId = "unauthenticated_operator_rejected",
+                ScopeKey = report.ScopeKey,
+                TrackedPersonId = report.TrackedPersonId,
+                StateId = Guid.Empty,
+                ExpectedPublicationState = "operator_id_required",
+                ActualPublicationState = unauthenticatedResult.FailureReason ?? "accepted",
+                ExpectedHistoryOrder = "rejected",
+                ActualHistoryOrder = unauthenticatedResult.Accepted ? "accepted" : "rejected",
+                Reason = "person_history_requires_authenticated_operator_identity",
+                Passed = !unauthenticatedResult.Accepted
+                    && string.Equals(unauthenticatedResult.FailureReason, "operator_id_required", StringComparison.Ordinal)
+            });
+
+            var missingTrackedPersonResult = await appService.QueryPersonWorkspaceHistoryAsync(
+                new OperatorPersonWorkspaceHistoryQueryRequest
+                {
+                    TrackedPersonId = Guid.Empty,
+                    FactType = factType,
+                    OperatorIdentity = BuildOperatorIdentity(nowUtc),
+                    Session = BuildOperatorSession(nowUtc)
+                },
+                ct);
+            report.Cases.Add(new PersonHistoryProofCase
+            {
+                CaseId = "tracked_person_id_required_rejected",
+                ScopeKey = report.ScopeKey,
+                TrackedPersonId = Guid.Empty,
+                StateId = Guid.Empty,
+                ExpectedPublicationState = "tracked_person_id_required",
+                ActualPublicationState = missingTrackedPersonResult.FailureReason ?? "accepted",
+                ExpectedHistoryOrder = "rejected",
+                ActualHistoryOrder = missingTrackedPersonResult.Accepted ? "accepted" : "rejected",
+                Reason = "person_history_rejects_unscoped_requests_without_target_person",
+                Passed = !missingTrackedPersonResult.Accepted
+                    && string.Equals(missingTrackedPersonResult.FailureReason, "tracked_person_id_required", StringComparison.Ordinal)
+            });
+
             report.Passed = report.Cases.All(x => x.Passed);
         }
         catch (Exception ex)
@@ -180,6 +228,18 @@ public static class PersonHistoryProofRunner
             SurfaceSubject = "person_history_proof",
             AuthSource = "proof",
             AuthTimeUtc = nowUtc.AddMinutes(-1)
+        };
+    }
+
+    private static OperatorIdentityContext BuildInvalidOperatorIdentity()
+    {
+        return new OperatorIdentityContext
+        {
+            OperatorId = " ",
+            OperatorDisplay = "Proof Operator",
+            SurfaceSubject = "person_history_proof",
+            AuthSource = "proof",
+            AuthTimeUtc = DateTime.UtcNow
         };
     }
 

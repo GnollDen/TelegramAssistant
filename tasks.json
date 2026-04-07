@@ -574,8 +574,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-006C completed: extended proof matrices to include deterministic negative-path rejection rows across both artifacts. Temporal proof now asserts duplicate-open and stale-supersession-link rejections (duplicate_open_active_row_rejected, supersession_link_required_for_replacement), and person-history proof now includes authenticated-scope rejection rows (operator_id_required, tracked_person_id_required) alongside positive history/publication rows. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --temporal-person-state-proof, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --person-history-proof.",
       "dependencies": [
         "PHB-006B"
       ]
@@ -593,8 +593,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-006C completed: extended temporal/person-history proof matrices with deterministic negative-path rows. Temporal proof now includes required rejection rows `duplicate_open_active_row_rejected` and `supersession_link_required_for_replacement`; person-history proof now includes explicit rejection rows for unauthenticated operator identity and missing tracked person id to keep positive+negative matrix coverage. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --temporal-person-state-proof, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --person-history-proof.",
       "dependencies": [
         "PHB-006C"
       ]
