@@ -192,6 +192,10 @@ try
     var opint012ASmokeOutput = opint012ASmokeOutputArg is null
         ? null
         : opint012ASmokeOutputArg["--opint-012-a-smoke-output=".Length..];
+    var opint012BSmokeOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-012-b-smoke-output=", StringComparison.OrdinalIgnoreCase));
+    var opint012BSmokeOutput = opint012BSmokeOutputArg is null
+        ? null
+        : opint012BSmokeOutputArg["--opint-012-b-smoke-output=".Length..];
     var resolutionInterpretationLoopValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--resolution-interpretation-loop-v1-validate-output=", StringComparison.OrdinalIgnoreCase));
     var resolutionInterpretationLoopValidateOutput = resolutionInterpretationLoopValidateOutputArg is null
         ? null
@@ -225,6 +229,7 @@ try
     var runOpint009C2Smoke = args.Any(arg => string.Equals(arg, "--opint-009-c2-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint009DSmoke = args.Any(arg => string.Equals(arg, "--opint-009-d-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint012ASmoke = args.Any(arg => string.Equals(arg, "--opint-012-a-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpint012BSmoke = args.Any(arg => string.Equals(arg, "--opint-012-b-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
@@ -316,6 +321,7 @@ try
         "--opint-009-c2-smoke",
         "--opint-009-d-smoke",
         "--opint-012-a-smoke",
+        "--opint-012-b-smoke",
         "--resolution-interpretation-loop-v1-validate",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -619,6 +625,18 @@ try
             report.AllChecksPassed,
             report.TrackedPersonId,
             report.ScopeItemKey);
+        return;
+    }
+
+    if (runOpint012BSmoke)
+    {
+        var report = await Opint012BWebResolutionParitySmokeRunner.RunAsync(opint012BSmokeOutput, CancellationToken.None);
+        Log.Information(
+            "OPINT-012-B smoke requested via --opint-012-b-smoke. output={OutputPath}, passed={Passed}, render_contract={RenderContract}, null_trust_omits_percent={NullTrustOmitsPercent}. Exiting after successful verification.",
+            report.OutputPath,
+            report.AllChecksPassed,
+            report.RendererUsesDisplayLabelTrustPercent,
+            report.NullTrustOmitsPercent);
         return;
     }
 

@@ -327,8 +327,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-012B completed: web resolution detail now renders interpretation claims/recommendation using upstream display_label/trust_percent parity (`[DisplayLabel] [TrustPercent%]`, omit percent when null), and added OPINT-012-B web parity smoke (`--opint-012-b-smoke`) wired in Program. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-interpretation-loop-v1-validate, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-012-b-smoke.",
       "dependencies": [
         "DTP-012A"
       ]

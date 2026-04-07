@@ -8,6 +8,8 @@ namespace TgAssistant.Host.OperatorWeb;
 
 public static class OperatorWebEndpointExtensions
 {
+    internal static string OperatorResolutionShellHtml => OperatorResolutionHtml;
+
     public static IEndpointRouteBuilder MapOperatorWebShell(this IEndpointRouteBuilder endpoints)
     {
         var runtimeRoleSelection = endpoints.ServiceProvider.GetRequiredService<RuntimeRoleSelection>();
@@ -2941,6 +2943,91 @@ public static class OperatorWebEndpointExtensions
       return formatPercent(item && item.trustFactor);
     }
 
+    function buildDisplayLabelTrustPrefix(displayLabel, trustPercent) {
+      const normalizedLabel = (displayLabel || "").toString().trim();
+      const hasLabel = normalizedLabel.length > 0;
+      const hasTrust = trustPercent !== null
+        && trustPercent !== undefined
+        && Number.isFinite(Number(trustPercent));
+      if (!hasLabel && !hasTrust) {
+        return "";
+      }
+
+      if (!hasTrust) {
+        return "[" + normalizedLabel + "]";
+      }
+
+      const trustToken = "[" + Math.round(Number(trustPercent)) + "%]";
+      if (!hasLabel) {
+        return trustToken;
+      }
+
+      return "[" + normalizedLabel + "] " + trustToken;
+    }
+
+    function renderInterpretationPreview(item) {
+      const interpretation = item
+        ? (item.interpretationLoop || item.interpretation_loop || null)
+        : null;
+      if (!interpretation) {
+        return null;
+      }
+
+      const keyClaims = Array.isArray(interpretation.key_claims)
+        ? interpretation.key_claims
+        : (Array.isArray(interpretation.keyClaims) ? interpretation.keyClaims : []);
+      const surfacedClaims = keyClaims.filter(function(claim) {
+        return claim && typeof claim.summary === "string" && claim.summary.trim().length > 0;
+      });
+      const recommendation = interpretation.review_recommendation || interpretation.reviewRecommendation || null;
+      const recommendationReason = recommendation && typeof recommendation.reason === "string"
+        ? recommendation.reason.trim()
+        : "";
+      if (surfacedClaims.length === 0 && !recommendationReason) {
+        return null;
+      }
+
+      const section = document.createElement("section");
+      section.className = "detail-block";
+      const header = document.createElement("h4");
+      header.textContent = "Интерпретация";
+      section.appendChild(header);
+
+      const claimsList = document.createElement("ul");
+      claimsList.className = "detail-list";
+      surfacedClaims.slice(0, 3).forEach(function(claim) {
+        const claimNode = document.createElement("li");
+        const prefix = buildDisplayLabelTrustPrefix(
+          claim.display_label || claim.displayLabel,
+          claim.trust_percent ?? claim.trustPercent);
+        claimNode.textContent = prefix
+          ? (prefix + " " + claim.summary.trim())
+          : claim.summary.trim();
+        const evidenceRefs = Array.isArray(claim.evidence_refs)
+          ? claim.evidence_refs
+          : (Array.isArray(claim.evidenceRefs) ? claim.evidenceRefs : []);
+        if (evidenceRefs.length > 0) {
+          claimNode.textContent = claimNode.textContent + " (refs: " + evidenceRefs.slice(0, 3).join(", ") + ")";
+        }
+
+        claimsList.appendChild(claimNode);
+      });
+      section.appendChild(claimsList);
+
+      if (recommendationReason) {
+        const recommendationPrefix = buildDisplayLabelTrustPrefix(
+          recommendation.display_label || recommendation.displayLabel,
+          recommendation.trust_percent ?? recommendation.trustPercent);
+        const recommendationNode = document.createElement("p");
+        recommendationNode.textContent = recommendationPrefix
+          ? ("Рекомендация: " + recommendationPrefix + " " + recommendationReason)
+          : ("Рекомендация: " + recommendationReason);
+        section.appendChild(recommendationNode);
+      }
+
+      return section;
+    }
+
     function formatRuntimeEvidenceCaveat(item) {
       if (!isRuntimeReviewItem(item)) {
         return "";
@@ -3410,6 +3497,11 @@ public static class OperatorWebEndpointExtensions
         "<p><strong>Какое решение нужно сейчас:</strong> " + operatorDecisionFocus + "</p>" +
         (rationaleIsHeuristic ? "<p class='muted'>Сообщения ниже подобраны эвристически и не доказывают сбой сами по себе.</p>" : "");
       detailContentNode.appendChild(rationaleBlock);
+
+      const interpretationBlock = renderInterpretationPreview(item);
+      if (interpretationBlock) {
+        detailContentNode.appendChild(interpretationBlock);
+      }
 
       const statusBlock = document.createElement("section");
       statusBlock.className = "detail-block";
