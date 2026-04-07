@@ -70,6 +70,8 @@ public static class OperatorWebEndpointExtensions
       --brand: #0d3b66;
       --brand-ink: #ffffff;
       --critical: #a11212;
+      --warn-bg: #fff8e8;
+      --warn-ink: #7a5b00;
     }
     * { box-sizing: border-box; }
     body {
@@ -105,58 +107,262 @@ public static class OperatorWebEndpointExtensions
       color: var(--ink);
       background: #f9fbff;
     }
-    .nav-item strong { display: block; margin-bottom: 4px; }
+    .nav-item strong {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
     .nav-item small { color: var(--muted); }
     .nav-item.primary {
       background: var(--brand);
       color: var(--brand-ink);
       border-color: var(--brand);
     }
+    .nav-item.primary small { color: #d7e7ff; }
     .badge {
       display: inline-block;
-      margin-left: 6px;
+      margin-left: auto;
       padding: 1px 7px;
       border-radius: 999px;
       font-size: 12px;
       background: #eef2fb;
       color: #2d4269;
+      min-width: 28px;
+      text-align: center;
+    }
+    .nav-item.primary .badge {
+      background: #f2f7ff;
+      color: #0f3a66;
     }
     .critical {
       color: var(--critical);
       font-weight: 600;
     }
+    .status {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #f7f9ff;
+      font-size: 13px;
+    }
+    [data-state="degraded"] .status {
+      background: var(--warn-bg);
+      border-color: #eed79a;
+      color: var(--warn-ink);
+    }
+    #home-recent-updates ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+      display: grid;
+      gap: 6px;
+    }
+    #home-recent-updates time {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: 6px;
+    }
+    #home-recent-updates .empty {
+      color: var(--muted);
+      margin: 8px 0 0;
+    }
   </style>
 </head>
 <body>
-  <main>
+  <main id="operator-home" data-state="loading">
     <section class="card">
       <h1>Operator Web Home</h1>
       <p>Navigation-first shell for bounded operator workflows. Legacy Stage6 web/queue/case pages are not used.</p>
       <div class="nav-grid">
-        <a class="nav-item primary" href="/operator/resolution">
-          <strong>Resolution <span class="badge">P0</span></strong>
+        <a class="nav-item primary" href="/operator/resolution" id="home-nav-resolution">
+          <strong>Resolution <span class="badge" id="home-nav-count-resolution">...</span></strong>
           <small>Enter the dedicated queue/detail workflow route.</small>
         </a>
-        <a class="nav-item" href="/operator/offline-events">
-          <strong>Offline Events <span class="badge">P1</span></strong>
+        <a class="nav-item" href="/operator/offline-events" id="home-nav-offline-events">
+          <strong>Offline Events <span class="badge" id="home-nav-count-offline-events">...</span></strong>
           <small>Inspect and refine captured offline events with trust and clarification history.</small>
         </a>
-        <a class="nav-item" href="/operator/persons">
-          <strong>Persons <span class="badge">P1</span></strong>
+        <a class="nav-item" href="/operator/persons" id="home-nav-persons">
+          <strong>Persons <span class="badge" id="home-nav-count-persons">...</span></strong>
           <small>Browse tracked persons with unresolved and recency signals.</small>
         </a>
-        <a class="nav-item" href="/operator/alerts">
-          <strong>Alerts <span class="badge">P2</span></strong>
+        <a class="nav-item" href="/operator/alerts" id="home-nav-alerts">
+          <strong>Alerts <span class="badge" id="home-nav-count-alerts">...</span></strong>
           <small>Grouped workflow-critical alerts linked to person and resolution context.</small>
         </a>
+        <a class="nav-item" href="/operator/resolution" id="home-nav-assistant">
+          <strong>Assistant</strong>
+          <small>Open assistant mode from the resolution workspace.</small>
+        </a>
       </div>
+      <p id="home-summary-state" class="status">Loading summary...</p>
     </section>
     <section class="card">
       <h2>Operational Snapshot</h2>
-      <p>System status: <strong>normal</strong></p>
-      <p class="critical">Critical unresolved items: resolution queue connected; detail/evidence/action slices remain.</p>
+      <p id="home-system-status">System status: <strong>Loading...</strong></p>
+      <p id="home-critical-unresolved" class="critical">Critical unresolved items: Loading...</p>
+      <p id="home-active-persons">Active tracked persons: <strong>Loading...</strong></p>
+      <div id="home-recent-updates">
+        <strong>Recent significant updates</strong>
+        <p class="empty">Loading...</p>
+      </div>
     </section>
   </main>
+  <script>
+    (function () {
+      const root = document.getElementById("operator-home");
+      const summaryState = document.getElementById("home-summary-state");
+      const systemStatus = document.getElementById("home-system-status");
+      const criticalUnresolved = document.getElementById("home-critical-unresolved");
+      const activePersons = document.getElementById("home-active-persons");
+      const recentUpdates = document.getElementById("home-recent-updates");
+      const countResolution = document.getElementById("home-nav-count-resolution");
+      const countPersons = document.getElementById("home-nav-count-persons");
+      const countAlerts = document.getElementById("home-nav-count-alerts");
+      const countOfflineEvents = document.getElementById("home-nav-count-offline-events");
+      const degradedOrder = [
+        "navigationCounts",
+        "systemStatus",
+        "criticalUnresolvedCount",
+        "activeTrackedPersonCount",
+        "recentUpdates"
+      ];
+
+      function setContainerState(value) {
+        root.setAttribute("data-state", value);
+      }
+
+      function setCount(el, value, degraded) {
+        if (degraded || value === null || value === undefined) {
+          el.textContent = "-";
+          el.title = "Unavailable";
+          return;
+        }
+
+        const parsed = Number(value);
+        el.textContent = Number.isFinite(parsed) ? String(Math.max(0, parsed)) : "-";
+        el.title = "";
+      }
+
+      function renderRecentUpdates(items, degraded) {
+        if (degraded || !Array.isArray(items)) {
+          recentUpdates.innerHTML = "<strong>Recent significant updates</strong><p class='empty'>Summary unavailable during degraded mode.</p>";
+          return;
+        }
+
+        if (items.length === 0) {
+          recentUpdates.innerHTML = "<strong>Recent significant updates</strong><p class='empty'>No recent updates.</p>";
+          return;
+        }
+
+        const listItems = items.map(function (item) {
+          const summary = typeof item.summary === "string" ? item.summary : "Update";
+          const targetUrl = typeof item.targetUrl === "string" ? item.targetUrl : "/operator";
+          const occurredAt = typeof item.occurredAtUtc === "string" ? item.occurredAtUtc : "";
+          const encodedSummary = summary
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+          const encodedUrl = targetUrl.replaceAll("\"", "&quot;");
+          const encodedDate = occurredAt.replaceAll("\"", "&quot;");
+          return "<li><a href=\"" + encodedUrl + "\">" + encodedSummary + "</a><time datetime=\"" + encodedDate + "\">" + encodedDate + "</time></li>";
+        });
+
+        recentUpdates.innerHTML = "<strong>Recent significant updates</strong><ul>" + listItems.join("") + "</ul>";
+      }
+
+      function applyDegradedFallback(allSections, degradedSources) {
+        const degradedSet = new Set((degradedSources || []).filter(function (x) { return typeof x === "string"; }));
+        if (allSections) {
+          degradedOrder.forEach(function (section) { degradedSet.add(section); });
+        }
+
+        setContainerState(degradedSet.size > 0 ? "degraded" : "live");
+        const hasNavigationDegraded = degradedSet.has("navigationCounts");
+        setCount(countResolution, null, hasNavigationDegraded);
+        setCount(countPersons, null, hasNavigationDegraded);
+        setCount(countAlerts, null, hasNavigationDegraded);
+        setCount(countOfflineEvents, null, hasNavigationDegraded);
+
+        if (degradedSet.has("systemStatus")) {
+          systemStatus.innerHTML = "System status: <strong>Unavailable</strong>";
+        }
+        if (degradedSet.has("criticalUnresolvedCount")) {
+          criticalUnresolved.textContent = "Critical unresolved items: unavailable";
+        }
+        if (degradedSet.has("activeTrackedPersonCount")) {
+          activePersons.innerHTML = "Active tracked persons: <strong>Unavailable</strong>";
+        }
+        renderRecentUpdates(null, degradedSet.has("recentUpdates"));
+
+        summaryState.textContent = degradedSet.size > 0
+          ? "Summary is degraded. Navigation is still available."
+          : "Summary loaded.";
+      }
+
+      async function loadSummary() {
+        setContainerState("loading");
+        try {
+          const response = await fetch("/api/operator/home/summary", {
+            method: "GET",
+            headers: { "Accept": "application/json" }
+          });
+
+          if (!response.ok) {
+            applyDegradedFallback(true, degradedOrder);
+            summaryState.textContent = "Summary fetch failed. Navigation is still available.";
+            return;
+          }
+
+          const payload = await response.json();
+          const degradedSources = Array.isArray(payload.degradedSources) ? payload.degradedSources : [];
+          const degradedSet = new Set(degradedSources.filter(function (x) { return typeof x === "string"; }));
+          if (payload.navigationCounts === null) {
+            degradedSet.add("navigationCounts");
+          }
+
+          const counts = payload.navigationCounts || null;
+          setCount(countResolution, counts ? counts.resolution : null, degradedSet.has("navigationCounts"));
+          setCount(countPersons, counts ? counts.persons : null, degradedSet.has("navigationCounts"));
+          setCount(countAlerts, counts ? counts.alerts : null, degradedSet.has("navigationCounts"));
+          setCount(countOfflineEvents, counts ? counts.offlineEvents : null, degradedSet.has("navigationCounts"));
+
+          if (degradedSet.has("systemStatus") || payload.systemStatus === null || payload.systemStatus === undefined) {
+            systemStatus.innerHTML = "System status: <strong>Unavailable</strong>";
+          } else {
+            systemStatus.innerHTML = "System status: <strong>" + String(payload.systemStatus) + "</strong>";
+          }
+
+          if (degradedSet.has("criticalUnresolvedCount") || payload.criticalUnresolvedCount === null || payload.criticalUnresolvedCount === undefined) {
+            criticalUnresolved.textContent = "Critical unresolved items: unavailable";
+          } else {
+            criticalUnresolved.textContent = "Critical unresolved items: " + String(Math.max(0, Number(payload.criticalUnresolvedCount) || 0));
+          }
+
+          if (degradedSet.has("activeTrackedPersonCount") || payload.activeTrackedPersonCount === null || payload.activeTrackedPersonCount === undefined) {
+            activePersons.innerHTML = "Active tracked persons: <strong>Unavailable</strong>";
+          } else {
+            activePersons.innerHTML = "Active tracked persons: <strong>" + String(Math.max(0, Number(payload.activeTrackedPersonCount) || 0)) + "</strong>";
+          }
+
+          renderRecentUpdates(payload.recentUpdates, degradedSet.has("recentUpdates"));
+          const isDegraded = degradedSet.size > 0;
+          setContainerState(isDegraded ? "degraded" : "live");
+          summaryState.textContent = isDegraded
+            ? "Summary is partially degraded. Navigation is still available."
+            : "Summary loaded.";
+        } catch {
+          applyDegradedFallback(true, degradedOrder);
+          summaryState.textContent = "Summary fetch failed. Navigation is still available.";
+        }
+      }
+
+      loadSummary();
+    })();
+  </script>
 </body>
 </html>
 """;

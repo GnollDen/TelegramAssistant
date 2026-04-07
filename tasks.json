@@ -384,8 +384,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-014 completed: replaced static /operator home snapshot with live client-side summary rendering sourced from GET /api/operator/home/summary, kept navigation-first layout with Assistant as destination, mounted required dashboard markers (`home-system-status`, `home-critical-unresolved`, `home-active-persons`, `home-recent-updates`), rendered live counts for Resolution/Persons/Alerts/Offline Events, and enforced degraded behavior with `data-state='degraded'` for fetch failures and summary-degraded responses while preserving visible navigation links and section-level fallback content. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "DTP-013B"
       ]
