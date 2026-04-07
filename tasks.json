@@ -460,8 +460,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-002 completed: enforced Stage6/Stage7/Stage8 semantic contract routes in Stage6/Stage7/Stage8 runtime seams using shared StageSemanticContract mappings/constants; Stage7 formation services now gate on deterministic Stage6->Stage7 handoff validation (explicitly including stage6_discovery_pool), Stage8 recompute now validates Stage7->Stage8 accepted input family and routes dossier/profile, pair-dynamics, and timeline via shared semantic mapping with deterministic contract-violation rejection, and ClarificationBranchStateRepository/ResolutionRecomputePlanner now resolve branch/recompute families through the same shared mapping layer. Verified with dotnet build TelegramAssistant.sln plus --stage6-bootstrap-smoke, --stage7-dossier-profile-smoke, --stage7-pair-dynamics-smoke, --stage7-timeline-smoke, and --stage8-recompute-smoke.",
       "dependencies": [
         "PHB-001"
       ]

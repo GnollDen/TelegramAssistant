@@ -138,14 +138,26 @@ public class ClarificationBranchStateRepository : IClarificationBranchStateRepos
         var normalizedStage = NormalizeRequired(stage);
         var normalizedPassFamily = NormalizeRequired(passFamily);
 
-        return (normalizedStage, normalizedPassFamily) switch
+        if (StageSemanticContract.TryMapRuntimeStageAndPassFamilyToSemanticOutputFamily(
+                normalizedStage,
+                normalizedPassFamily,
+                out var semanticOutputFamily)
+            && !string.IsNullOrWhiteSpace(semanticOutputFamily))
         {
-            ("stage6_bootstrap", _) => Stage8RecomputeTargetFamilies.Stage6Bootstrap,
-            ("stage7_durable_formation", "dossier_profile") => Stage8RecomputeTargetFamilies.DossierProfile,
-            ("stage7_durable_formation", "pair_dynamics") => Stage8RecomputeTargetFamilies.PairDynamics,
-            ("stage7_durable_formation", "timeline_objects") => Stage8RecomputeTargetFamilies.TimelineObjects,
-            _ => $"{normalizedStage}:{normalizedPassFamily}"
-        };
+            if (string.Equals(semanticOutputFamily, StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph, StringComparison.Ordinal)
+                || string.Equals(semanticOutputFamily, StageSemanticOwnedOutputFamilies.Stage6DiscoveryPool, StringComparison.Ordinal))
+            {
+                return Stage8RecomputeTargetFamilies.Stage6Bootstrap;
+            }
+
+            if (StageSemanticContract.TryMapSemanticFamilyToStage8RecomputeTargetFamily(semanticOutputFamily, out var targetFamily)
+                && !string.IsNullOrWhiteSpace(targetFamily))
+            {
+                return targetFamily;
+            }
+        }
+
+        return $"{normalizedStage}:{normalizedPassFamily}";
     }
 
     private static string ResolveBlockReason(ModelPassAuditRecord record)

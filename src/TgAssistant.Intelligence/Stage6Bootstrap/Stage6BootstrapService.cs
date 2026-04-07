@@ -92,8 +92,8 @@ public class Stage6BootstrapService : IStage6BootstrapService
 
         return new ModelPassEnvelope
         {
-            Stage = "stage6_bootstrap",
-            PassFamily = "graph_init",
+            Stage = StageSemanticRuntimeSeams.Stage6BootstrapStage,
+            PassFamily = StageSemanticRuntimeSeams.Stage6GraphInitPassFamily,
             RunKind = string.IsNullOrWhiteSpace(request.RunKind) ? "manual" : request.RunKind.Trim(),
             ScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? "stage6_bootstrap:unresolved" : scopeKey,
             Scope = new ModelPassScope
@@ -132,7 +132,9 @@ public class Stage6BootstrapService : IStage6BootstrapService
             Conflicts = [.. resolution.Conflicts],
             Unknowns = [.. resolution.Unknowns],
             Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
-                ModelPassBudgetCatalog.Create("stage6_bootstrap", "graph_init")),
+                ModelPassBudgetCatalog.Create(
+                    StageSemanticRuntimeSeams.Stage6BootstrapStage,
+                    StageSemanticRuntimeSeams.Stage6GraphInitPassFamily)),
             ResultStatus = resultStatus,
             OutputSummary = outputSummary,
             StartedAtUtc = DateTime.UtcNow,

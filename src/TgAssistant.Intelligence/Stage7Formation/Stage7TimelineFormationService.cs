@@ -73,12 +73,13 @@ public class Stage7TimelineFormationService : IStage7TimelineService
         var scopeKey = string.IsNullOrWhiteSpace(bootstrapResult.ScopeKey)
             ? bootstrapEnvelope.ScopeKey
             : bootstrapResult.ScopeKey;
-        var resultStatus = ResolveResultStatus(bootstrapResult);
+        var contractViolationReason = ResolveContractViolationReason(bootstrapResult, StageSemanticOwnedOutputFamilies.Stage7DurableTimeline);
+        var resultStatus = ResolveResultStatus(bootstrapResult, contractViolationReason);
 
         return new ModelPassEnvelope
         {
-            Stage = "stage7_durable_formation",
-            PassFamily = "timeline_objects",
+            Stage = StageSemanticRuntimeSeams.Stage7DurableFormationStage,
+            PassFamily = StageSemanticRuntimeSeams.Stage7TimelineObjectsPassFamily,
             RunKind = string.IsNullOrWhiteSpace(request.RunKind) ? "manual" : request.RunKind.Trim(),
             ScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? "stage7_timeline:unresolved" : scopeKey,
             Scope = new ModelPassScope
@@ -127,13 +128,15 @@ public class Stage7TimelineFormationService : IStage7TimelineService
             ],
             Unknowns = BuildUnknowns(resultStatus, bootstrapEnvelope),
             Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
-                ModelPassBudgetCatalog.Create("stage7_durable_formation", "timeline_objects")),
+                ModelPassBudgetCatalog.Create(
+                    StageSemanticRuntimeSeams.Stage7DurableFormationStage,
+                    StageSemanticRuntimeSeams.Stage7TimelineObjectsPassFamily)),
             ResultStatus = resultStatus,
             OutputSummary = new ModelPassOutputSummary
             {
-                Summary = BuildOutputSummary(resultStatus, bootstrapResult),
+                Summary = BuildOutputSummary(resultStatus, bootstrapResult, contractViolationReason),
                 BlockedReason = string.Equals(resultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal)
-                    ? "Stage7 timeline formation requires a ready Stage6 bootstrap result with tracked person context."
+                    ? contractViolationReason ?? "Stage7 timeline formation requires a ready Stage6 bootstrap result with tracked person context."
                     : null
             },
             StartedAtUtc = DateTime.UtcNow,
@@ -143,7 +146,8 @@ public class Stage7TimelineFormationService : IStage7TimelineService
 
     private static string BuildRawModelOutput(Stage6BootstrapGraphResult bootstrapResult)
     {
-        var resultStatus = ResolveResultStatus(bootstrapResult);
+        var contractViolationReason = ResolveContractViolationReason(bootstrapResult, StageSemanticOwnedOutputFamilies.Stage7DurableTimeline);
+        var resultStatus = ResolveResultStatus(bootstrapResult, contractViolationReason);
         if (!string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
             if (string.Equals(resultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal))
@@ -331,19 +335,24 @@ public class Stage7TimelineFormationService : IStage7TimelineService
         return $"Durable timeline formation summarized tracked person '{bootstrapResult.TrackedPerson.DisplayName}' from bootstrap evidence count {bootstrapResult.EvidenceCount}.";
     }
 
-    private static string BuildOutputSummary(string resultStatus, Stage6BootstrapGraphResult bootstrapResult)
+    private static string BuildOutputSummary(string resultStatus, Stage6BootstrapGraphResult bootstrapResult, string? contractViolationReason)
     {
         return resultStatus switch
         {
             ModelPassResultStatuses.ResultReady => "Stage7 timeline formation produced durable event, timeline episode, and story arc outputs.",
             ModelPassResultStatuses.NeedMoreData => bootstrapResult.AuditRecord.Envelope.OutputSummary.Summary,
             ModelPassResultStatuses.NeedOperatorClarification => bootstrapResult.AuditRecord.Envelope.OutputSummary.Summary,
-            _ => "Stage7 timeline formation was blocked by incomplete bootstrap context."
+            _ => contractViolationReason ?? "Stage7 timeline formation was blocked by incomplete bootstrap context."
         };
     }
 
-    private static string ResolveResultStatus(Stage6BootstrapGraphResult bootstrapResult)
+    private static string ResolveResultStatus(Stage6BootstrapGraphResult bootstrapResult, string? contractViolationReason)
     {
+        if (!string.IsNullOrWhiteSpace(contractViolationReason))
+        {
+            return ModelPassResultStatuses.BlockedInvalidInput;
+        }
+
         if (!string.Equals(bootstrapResult.AuditRecord.Envelope.ResultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
             return bootstrapResult.AuditRecord.Envelope.ResultStatus;
@@ -436,5 +445,44 @@ public class Stage7TimelineFormationService : IStage7TimelineService
         }
 
         return unknowns;
+    }
+
+    private static string? ResolveContractViolationReason(Stage6BootstrapGraphResult bootstrapResult, string stage7OwnedOutputFamily)
+    {
+        var envelope = bootstrapResult.AuditRecord.Envelope;
+        if (!StageSemanticContract.TryMapRuntimeStageAndPassFamilyToSemanticOutputFamily(
+                envelope.Stage,
+                envelope.PassFamily,
+                out var stage6OwnedOutputFamily))
+        {
+            return StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        if (!string.Equals(stage6OwnedOutputFamily, StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph, StringComparison.Ordinal))
+        {
+            return StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        var bootstrapGraphHandoff = StageSemanticContract.ValidateStage6ToStage7Handoff(
+            StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph,
+            StageSemanticAcceptedInputFamilies.Stage6BootstrapGraph,
+            StageSemanticHandoffReasons.BootstrapComplete);
+        if (!bootstrapGraphHandoff.IsValid)
+        {
+            return bootstrapGraphHandoff.Reason ?? StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        var discoveryPoolHandoff = StageSemanticContract.ValidateStage6ToStage7Handoff(
+            StageSemanticOwnedOutputFamilies.Stage6DiscoveryPool,
+            StageSemanticAcceptedInputFamilies.Stage6DiscoveryPool,
+            StageSemanticHandoffReasons.BootstrapComplete);
+        if (!discoveryPoolHandoff.IsValid)
+        {
+            return discoveryPoolHandoff.Reason ?? StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        return StageSemanticContract.OwnsOutputFamily(StageSemanticStages.Stage7, stage7OwnedOutputFamily)
+            ? null
+            : StageSemanticHandoffReasons.StageContractViolation;
     }
 }

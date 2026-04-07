@@ -393,9 +393,50 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             return (bootstrapResult.AuditRecord.Envelope.ResultStatus, bootstrapResult.AuditRecord.ModelPassRunId);
         }
 
+        if (!StageSemanticContract.TryMapStage8RecomputeTargetFamilyToSemanticFamily(queueItem.TargetFamily, out var stage7OwnedOutputFamily)
+            || string.IsNullOrWhiteSpace(stage7OwnedOutputFamily))
+        {
+            _logger.LogWarning(
+                "Stage8 recompute rejected target family with deterministic contract reason: queue_item_id={QueueItemId}, target_family={TargetFamily}, reason={Reason}",
+                queueItem.Id,
+                queueItem.TargetFamily,
+                StageSemanticHandoffReasons.StageContractViolation);
+            return (ModelPassResultStatuses.BlockedInvalidInput, null);
+        }
+
+        if (!StageSemanticContract.TryMapStage7SemanticOutputFamilyToStage8AcceptedInputFamily(
+                stage7OwnedOutputFamily,
+                out var stage8AcceptedInputFamily)
+            || string.IsNullOrWhiteSpace(stage8AcceptedInputFamily))
+        {
+            _logger.LogWarning(
+                "Stage8 recompute rejected unresolved accepted-input mapping: queue_item_id={QueueItemId}, target_family={TargetFamily}, semantic_family={SemanticFamily}, reason={Reason}",
+                queueItem.Id,
+                queueItem.TargetFamily,
+                stage7OwnedOutputFamily,
+                StageSemanticHandoffReasons.StageContractViolation);
+            return (ModelPassResultStatuses.BlockedInvalidInput, null);
+        }
+
+        var handoffValidation = StageSemanticContract.ValidateStage7ToStage8Handoff(
+            stage7OwnedOutputFamily,
+            stage8AcceptedInputFamily,
+            StageSemanticHandoffReasons.NeedsRecompute);
+        if (!handoffValidation.IsValid)
+        {
+            _logger.LogWarning(
+                "Stage8 recompute rejected Stage7->Stage8 handoff: queue_item_id={QueueItemId}, target_family={TargetFamily}, semantic_family={SemanticFamily}, accepted_input_family={AcceptedInputFamily}, reason={Reason}",
+                queueItem.Id,
+                queueItem.TargetFamily,
+                stage7OwnedOutputFamily,
+                stage8AcceptedInputFamily,
+                handoffValidation.Reason ?? StageSemanticHandoffReasons.StageContractViolation);
+            return (ModelPassResultStatuses.BlockedInvalidInput, null);
+        }
+
         var upstreamBootstrap = await _stage6BootstrapService.RunGraphInitializationAsync(bootstrapRequest, ct);
 
-        if (string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.DossierProfile, StringComparison.Ordinal))
+        if (string.Equals(stage7OwnedOutputFamily, StageSemanticOwnedOutputFamilies.Stage7DurableProfile, StringComparison.Ordinal))
         {
             var dossierResult = await _stage7DossierProfileService.FormAsync(new Stage7DossierProfileFormationRequest
             {
@@ -407,7 +448,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             return (dossierResult.AuditRecord.Envelope.ResultStatus, dossierResult.AuditRecord.ModelPassRunId);
         }
 
-        if (string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.PairDynamics, StringComparison.Ordinal))
+        if (string.Equals(stage7OwnedOutputFamily, StageSemanticOwnedOutputFamilies.Stage7PairDynamics, StringComparison.Ordinal))
         {
             var pairResult = await _stage7PairDynamicsService.FormAsync(new Stage7PairDynamicsFormationRequest
             {
@@ -419,7 +460,7 @@ public class Stage8RecomputeQueueService : IStage8RecomputeQueueService
             return (pairResult.AuditRecord.Envelope.ResultStatus, pairResult.AuditRecord.ModelPassRunId);
         }
 
-        if (string.Equals(queueItem.TargetFamily, Stage8RecomputeTargetFamilies.TimelineObjects, StringComparison.Ordinal))
+        if (string.Equals(stage7OwnedOutputFamily, StageSemanticOwnedOutputFamilies.Stage7DurableTimeline, StringComparison.Ordinal))
         {
             var timelineResult = await _stage7TimelineService.FormAsync(new Stage7TimelineFormationRequest
             {

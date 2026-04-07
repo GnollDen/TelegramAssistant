@@ -80,6 +80,18 @@ public static class StageSemanticHandoffReasons
     ];
 }
 
+public static class StageSemanticRuntimeSeams
+{
+    public const string Stage6BootstrapStage = "stage6_bootstrap";
+    public const string Stage7DurableFormationStage = "stage7_durable_formation";
+    public const string Stage8RecomputeStage = "stage8_recompute";
+
+    public const string Stage6GraphInitPassFamily = "graph_init";
+    public const string Stage7DossierProfilePassFamily = "dossier_profile";
+    public const string Stage7PairDynamicsPassFamily = "pair_dynamics";
+    public const string Stage7TimelineObjectsPassFamily = "timeline_objects";
+}
+
 public sealed record StageSemanticHandoffValidationResult(bool IsValid, string? Reason = null)
 {
     public static StageSemanticHandoffValidationResult Valid() => new(true);
@@ -260,6 +272,54 @@ public static class StageSemanticContract
         };
 
         return targetFamily is not null;
+    }
+
+    public static bool TryMapStage8RecomputeTargetFamilyToSemanticFamily(string targetFamily, out string? semanticOwnedOutputFamily)
+    {
+        semanticOwnedOutputFamily = targetFamily switch
+        {
+            Stage8RecomputeTargetFamilies.DossierProfile => StageSemanticOwnedOutputFamilies.Stage7DurableProfile,
+            Stage8RecomputeTargetFamilies.PairDynamics => StageSemanticOwnedOutputFamilies.Stage7PairDynamics,
+            Stage8RecomputeTargetFamilies.TimelineObjects => StageSemanticOwnedOutputFamilies.Stage7DurableTimeline,
+            _ => null
+        };
+
+        return semanticOwnedOutputFamily is not null;
+    }
+
+    public static bool TryMapStage7SemanticOutputFamilyToStage8AcceptedInputFamily(string stage7OwnedOutputFamily, out string? stage8AcceptedInputFamily)
+    {
+        stage8AcceptedInputFamily = stage7OwnedOutputFamily switch
+        {
+            StageSemanticOwnedOutputFamilies.Stage7DurableProfile => StageSemanticAcceptedInputFamilies.Stage7DurableProfile,
+            StageSemanticOwnedOutputFamilies.Stage7PairDynamics => StageSemanticAcceptedInputFamilies.Stage7PairDynamics,
+            StageSemanticOwnedOutputFamilies.Stage7DurableTimeline => StageSemanticAcceptedInputFamilies.Stage7DurableTimeline,
+            StageSemanticOwnedOutputFamilies.Stage7CasePool => StageSemanticAcceptedInputFamilies.Stage7CasePool,
+            _ => null
+        };
+
+        return stage8AcceptedInputFamily is not null;
+    }
+
+    public static bool TryMapRuntimeStageAndPassFamilyToSemanticOutputFamily(
+        string stage,
+        string passFamily,
+        out string? semanticOwnedOutputFamily)
+    {
+        semanticOwnedOutputFamily = (stage, passFamily) switch
+        {
+            (StageSemanticRuntimeSeams.Stage6BootstrapStage, StageSemanticRuntimeSeams.Stage6GraphInitPassFamily)
+                => StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph,
+            (StageSemanticRuntimeSeams.Stage7DurableFormationStage, StageSemanticRuntimeSeams.Stage7DossierProfilePassFamily)
+                => StageSemanticOwnedOutputFamilies.Stage7DurableProfile,
+            (StageSemanticRuntimeSeams.Stage7DurableFormationStage, StageSemanticRuntimeSeams.Stage7PairDynamicsPassFamily)
+                => StageSemanticOwnedOutputFamilies.Stage7PairDynamics,
+            (StageSemanticRuntimeSeams.Stage7DurableFormationStage, StageSemanticRuntimeSeams.Stage7TimelineObjectsPassFamily)
+                => StageSemanticOwnedOutputFamilies.Stage7DurableTimeline,
+            _ => null
+        };
+
+        return semanticOwnedOutputFamily is not null;
     }
 
     private static bool IsKnownStage(string stage)

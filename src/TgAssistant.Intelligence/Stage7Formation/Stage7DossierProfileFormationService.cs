@@ -69,12 +69,13 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
         var scopeKey = string.IsNullOrWhiteSpace(bootstrapResult.ScopeKey)
             ? bootstrapEnvelope.ScopeKey
             : bootstrapResult.ScopeKey;
-        var resultStatus = ResolveResultStatus(bootstrapResult);
+        var contractViolationReason = ResolveContractViolationReason(bootstrapResult, StageSemanticOwnedOutputFamilies.Stage7DurableProfile);
+        var resultStatus = ResolveResultStatus(bootstrapResult, contractViolationReason);
 
         return new ModelPassEnvelope
         {
-            Stage = "stage7_durable_formation",
-            PassFamily = "dossier_profile",
+            Stage = StageSemanticRuntimeSeams.Stage7DurableFormationStage,
+            PassFamily = StageSemanticRuntimeSeams.Stage7DossierProfilePassFamily,
             RunKind = string.IsNullOrWhiteSpace(request.RunKind) ? "manual" : request.RunKind.Trim(),
             ScopeKey = string.IsNullOrWhiteSpace(scopeKey) ? "stage7_durable_formation:unresolved" : scopeKey,
             Scope = new ModelPassScope
@@ -137,13 +138,15 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
                 })
             ],
             Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
-                ModelPassBudgetCatalog.Create("stage7_durable_formation", "dossier_profile")),
+                ModelPassBudgetCatalog.Create(
+                    StageSemanticRuntimeSeams.Stage7DurableFormationStage,
+                    StageSemanticRuntimeSeams.Stage7DossierProfilePassFamily)),
             ResultStatus = resultStatus,
             OutputSummary = new ModelPassOutputSummary
             {
-                Summary = BuildOutputSummary(resultStatus, bootstrapResult),
+                Summary = BuildOutputSummary(resultStatus, bootstrapResult, contractViolationReason),
                 BlockedReason = string.Equals(resultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal)
-                    ? "Stage7 dossier/profile formation requires a ready Stage6 bootstrap result with tracked person context."
+                    ? contractViolationReason ?? "Stage7 dossier/profile formation requires a ready Stage6 bootstrap result with tracked person context."
                     : null
             },
             StartedAtUtc = DateTime.UtcNow,
@@ -153,7 +156,8 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
 
     private static string BuildRawModelOutput(Stage6BootstrapGraphResult bootstrapResult)
     {
-        var resultStatus = ResolveResultStatus(bootstrapResult);
+        var contractViolationReason = ResolveContractViolationReason(bootstrapResult, StageSemanticOwnedOutputFamilies.Stage7DurableProfile);
+        var resultStatus = ResolveResultStatus(bootstrapResult, contractViolationReason);
         if (!string.Equals(resultStatus, ModelPassResultStatuses.ResultReady, StringComparison.Ordinal))
         {
             if (string.Equals(resultStatus, ModelPassResultStatuses.BlockedInvalidInput, StringComparison.Ordinal))
@@ -318,20 +322,25 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
         return $"Durable dossier/profile formation summarized tracked person '{bootstrapResult.TrackedPerson.DisplayName}' from bootstrap evidence count {bootstrapResult.EvidenceCount}.";
     }
 
-    private static string BuildOutputSummary(string resultStatus, Stage6BootstrapGraphResult bootstrapResult)
+    private static string BuildOutputSummary(string resultStatus, Stage6BootstrapGraphResult bootstrapResult, string? contractViolationReason)
     {
         return resultStatus switch
         {
             ModelPassResultStatuses.ResultReady => "Stage7 dossier/profile formation produced durable dossier and global profile outputs.",
             ModelPassResultStatuses.NeedMoreData => bootstrapResult.AuditRecord.Envelope.OutputSummary.Summary,
             ModelPassResultStatuses.NeedOperatorClarification => bootstrapResult.AuditRecord.Envelope.OutputSummary.Summary,
-            _ => "Stage7 dossier/profile formation was blocked by incomplete bootstrap context."
+            _ => contractViolationReason ?? "Stage7 dossier/profile formation was blocked by incomplete bootstrap context."
         };
     }
 
-    private static string ResolveResultStatus(Stage6BootstrapGraphResult bootstrapResult)
+    private static string ResolveResultStatus(Stage6BootstrapGraphResult bootstrapResult, string? contractViolationReason)
     {
         if (bootstrapResult == null)
+        {
+            return ModelPassResultStatuses.BlockedInvalidInput;
+        }
+
+        if (!string.IsNullOrWhiteSpace(contractViolationReason))
         {
             return ModelPassResultStatuses.BlockedInvalidInput;
         }
@@ -358,5 +367,49 @@ public class Stage7DossierProfileFormationService : IStage7DossierProfileService
 
         var penalty = (ambiguityCount * 0.05f) + (contradictionCount * 0.08f);
         return Math.Clamp(baseline - penalty, 0.35f, 0.95f);
+    }
+
+    private static string? ResolveContractViolationReason(Stage6BootstrapGraphResult bootstrapResult, string stage7OwnedOutputFamily)
+    {
+        if (bootstrapResult == null || bootstrapResult.AuditRecord == null)
+        {
+            return StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        var envelope = bootstrapResult.AuditRecord.Envelope;
+        if (!StageSemanticContract.TryMapRuntimeStageAndPassFamilyToSemanticOutputFamily(
+                envelope.Stage,
+                envelope.PassFamily,
+                out var stage6OwnedOutputFamily))
+        {
+            return StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        if (!string.Equals(stage6OwnedOutputFamily, StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph, StringComparison.Ordinal))
+        {
+            return StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        var bootstrapGraphHandoff = StageSemanticContract.ValidateStage6ToStage7Handoff(
+            StageSemanticOwnedOutputFamilies.Stage6BootstrapGraph,
+            StageSemanticAcceptedInputFamilies.Stage6BootstrapGraph,
+            StageSemanticHandoffReasons.BootstrapComplete);
+        if (!bootstrapGraphHandoff.IsValid)
+        {
+            return bootstrapGraphHandoff.Reason ?? StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        var discoveryPoolHandoff = StageSemanticContract.ValidateStage6ToStage7Handoff(
+            StageSemanticOwnedOutputFamilies.Stage6DiscoveryPool,
+            StageSemanticAcceptedInputFamilies.Stage6DiscoveryPool,
+            StageSemanticHandoffReasons.BootstrapComplete);
+        if (!discoveryPoolHandoff.IsValid)
+        {
+            return discoveryPoolHandoff.Reason ?? StageSemanticHandoffReasons.StageContractViolation;
+        }
+
+        return StageSemanticContract.OwnsOutputFamily(StageSemanticStages.Stage7, stage7OwnedOutputFamily)
+            ? null
+            : StageSemanticHandoffReasons.StageContractViolation;
     }
 }

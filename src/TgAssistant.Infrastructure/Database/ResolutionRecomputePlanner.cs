@@ -53,11 +53,14 @@ public static class ResolutionRecomputePlanner
         ResolutionItemDetail item)
     {
         var normalizedFamily = item.AffectedFamily?.Trim() ?? string.Empty;
-        if (Stage8RecomputeTargetFamilies.All.Contains(normalizedFamily, StringComparer.Ordinal))
+        if (StageSemanticContract.TryMapStage8RecomputeTargetFamilyToSemanticFamily(normalizedFamily, out var semanticFamily)
+            && !string.IsNullOrWhiteSpace(semanticFamily)
+            && StageSemanticContract.TryMapSemanticFamilyToStage8RecomputeTargetFamily(semanticFamily, out var targetFamily)
+            && !string.IsNullOrWhiteSpace(targetFamily))
         {
             return new ResolutionRecomputeTarget
             {
-                TargetFamily = normalizedFamily,
+                TargetFamily = targetFamily,
                 TargetRef = $"person:{trackedPersonId:D}",
                 MappingRule = ResolutionRecomputeMappingRules.AffectedFamilyExact
             };
