@@ -422,8 +422,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-015B completed: extended `--opint-home-dashboard-smoke` beyond API-only checks to assert web/home marker contract (`home-system-status`, `home-critical-unresolved`, `home-active-persons`, `home-recent-updates`), approved live-count badges for Resolution/Persons/Alerts/Offline Events (Assistant nav remains count-optional), forced degraded all-null section contract with exact ordered `degradedSources`, and explicit partial-failure status reporting as `not_exercised` when deterministic injection is unavailable. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-home-dashboard-smoke`; artifact: `src/TgAssistant.Host/artifacts/operator-home/opint-home-dashboard-smoke.json`.",
       "dependencies": [
         "DTP-015A"
       ]

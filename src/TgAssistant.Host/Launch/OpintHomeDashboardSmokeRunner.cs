@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text.Json;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Models;
 using TgAssistant.Host.OperatorApi;
+using TgAssistant.Host.OperatorWeb;
 
 namespace TgAssistant.Host.Launch;
 
@@ -17,6 +19,22 @@ public static class OpintHomeDashboardSmokeRunner
         "degradedSources"
     ];
 
+    private static readonly IReadOnlyList<string> RequiredHomeMarkers =
+    [
+        "home-system-status",
+        "home-critical-unresolved",
+        "home-active-persons",
+        "home-recent-updates"
+    ];
+
+    private static readonly IReadOnlyList<string> RequiredCountBadgeIds =
+    [
+        "home-nav-count-resolution",
+        "home-nav-count-persons",
+        "home-nav-count-alerts",
+        "home-nav-count-offline-events"
+    ];
+
     public static async Task<OpintHomeDashboardSmokeReport> RunAsync(
         string? outputPath = null,
         CancellationToken ct = default)
@@ -27,15 +45,20 @@ public static class OpintHomeDashboardSmokeRunner
             GeneratedAtUtc = DateTime.UtcNow,
             OutputPath = resolvedOutputPath,
             RequiredTopLevelFields = RequiredTopLevelFields.ToList(),
-            ExpectedDegradedSourcesOrder = OperatorHomeSummaryDegradedSources.FullOrder.ToList()
+            ExpectedDegradedSourcesOrder = OperatorHomeSummaryDegradedSources.FullOrder.ToList(),
+            ExpectedHomeMarkers = RequiredHomeMarkers.ToList(),
+            PartialFailureStatus = "not_exercised"
         };
 
         Exception? fatal = null;
         try
         {
             VerifyApiContractShape(report);
+            VerifyForcedDegradedContract(report);
             VerifyDegradedSourcesOrder(report);
             VerifyTargetUrlAllowList(report);
+            VerifyHomeWebContract(report);
+            VerifyPartialFailureStatus(report);
 
             report.AllChecksPassed = true;
         }
@@ -55,7 +78,7 @@ public static class OpintHomeDashboardSmokeRunner
         if (!report.AllChecksPassed)
         {
             throw new InvalidOperationException(
-                "OPINT home dashboard smoke failed: API contract shape or target-url allow-list regressed.",
+                "OPINT home dashboard smoke failed: API/web/degraded contract regressed.",
                 fatal);
         }
 
@@ -89,12 +112,7 @@ public static class OpintHomeDashboardSmokeRunner
             DegradedSources = []
         };
 
-        var serialized = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        using var document = JsonDocument.Parse(serialized);
+        using var document = SerializeAndParse(payload);
         var root = document.RootElement;
         Ensure(root.ValueKind == JsonValueKind.Object, "OPINT home dashboard smoke failed: summary payload did not serialize as JSON object.");
 
@@ -121,6 +139,48 @@ public static class OpintHomeDashboardSmokeRunner
         Ensure(recentUpdate.TryGetProperty("targetUrl", out _), "OPINT home dashboard smoke failed: recentUpdates[*].targetUrl is missing.");
 
         report.ApiShapeValidated = true;
+    }
+
+    private static void VerifyForcedDegradedContract(OpintHomeDashboardSmokeReport report)
+    {
+        var forcedDegradedPayload = new OperatorHomeSummaryApiResponse
+        {
+            NavigationCounts = null,
+            SystemStatus = null,
+            CriticalUnresolvedCount = null,
+            ActiveTrackedPersonCount = null,
+            RecentUpdates = null,
+            DegradedSources = OperatorHomeSummaryDegradedSources.FullOrder.ToList()
+        };
+
+        using var document = SerializeAndParse(forcedDegradedPayload);
+        var root = document.RootElement;
+        Ensure(root.ValueKind == JsonValueKind.Object,
+            "OPINT home dashboard smoke failed: forced degraded payload did not serialize as JSON object.");
+
+        Ensure(root.GetProperty("navigationCounts").ValueKind == JsonValueKind.Null,
+            "OPINT home dashboard smoke failed: forced degraded contract expects navigationCounts=null.");
+        Ensure(root.GetProperty("systemStatus").ValueKind == JsonValueKind.Null,
+            "OPINT home dashboard smoke failed: forced degraded contract expects systemStatus=null.");
+        Ensure(root.GetProperty("criticalUnresolvedCount").ValueKind == JsonValueKind.Null,
+            "OPINT home dashboard smoke failed: forced degraded contract expects criticalUnresolvedCount=null.");
+        Ensure(root.GetProperty("activeTrackedPersonCount").ValueKind == JsonValueKind.Null,
+            "OPINT home dashboard smoke failed: forced degraded contract expects activeTrackedPersonCount=null.");
+        Ensure(root.GetProperty("recentUpdates").ValueKind == JsonValueKind.Null,
+            "OPINT home dashboard smoke failed: forced degraded contract expects recentUpdates=null.");
+
+        var degradedSources = root.GetProperty("degradedSources")
+            .EnumerateArray()
+            .Select(x => x.GetString())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Cast<string>()
+            .ToList();
+
+        report.ForcedDegradedActualSources = degradedSources;
+        Ensure(degradedSources.SequenceEqual(OperatorHomeSummaryDegradedSources.FullOrder),
+            "OPINT home dashboard smoke failed: forced degraded contract requires exact ordered degradedSources full list.");
+
+        report.ForcedDegradedContractValidated = true;
     }
 
     private static void VerifyDegradedSourcesOrder(OpintHomeDashboardSmokeReport report)
@@ -193,6 +253,76 @@ public static class OpintHomeDashboardSmokeRunner
         report.TargetUrlAllowListValidated = true;
     }
 
+    private static void VerifyHomeWebContract(OpintHomeDashboardSmokeReport report)
+    {
+        var html = typeof(OperatorWebEndpointExtensions)
+            .GetField("OperatorHomeHtml", BindingFlags.NonPublic | BindingFlags.Static)
+            ?.GetRawConstantValue() as string;
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException(
+                "OPINT home dashboard smoke failed: operator home shell HTML constant not found.");
+        }
+
+        foreach (var marker in RequiredHomeMarkers)
+        {
+            Ensure(html.Contains($"id=\"{marker}\"", StringComparison.Ordinal),
+                $"OPINT home dashboard smoke failed: required home marker missing: {marker}");
+        }
+
+        Ensure(html.Contains("id=\"home-nav-assistant\"", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: assistant navigation button missing.");
+
+        foreach (var badgeId in RequiredCountBadgeIds)
+        {
+            Ensure(html.Contains($"id=\"{badgeId}\"", StringComparison.Ordinal),
+                $"OPINT home dashboard smoke failed: required navigation count badge missing: {badgeId}");
+        }
+
+        Ensure(!html.Contains("id=\"home-nav-count-assistant\"", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: assistant navigation must not require its own count badge.");
+
+        Ensure(html.Contains("fetch(\"/api/operator/home/summary\"", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: operator home shell no longer fetches /api/operator/home/summary.");
+
+        Ensure(html.Contains("setContainerState(isDegraded ? \"degraded\" : \"live\")", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: happy/degraded container state transition contract missing.");
+
+        Ensure(html.Contains("setContainerState(degradedSet.size > 0 ? \"degraded\" : \"live\")", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: degraded fallback container-state contract missing.");
+
+        Ensure(html.Contains("applyDegradedFallback(true, degradedOrder)", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: forced degraded fallback invocation missing for fetch failure path.");
+
+        Ensure(html.Contains("Summary is partially degraded. Navigation is still available.", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: degraded-summary status copy contract missing.");
+
+        Ensure(html.Contains("Summary fetch failed. Navigation is still available.", StringComparison.Ordinal),
+            "OPINT home dashboard smoke failed: fetch-failure degraded status copy contract missing.");
+
+        report.HomeWebContractValidated = true;
+    }
+
+    private static void VerifyPartialFailureStatus(OpintHomeDashboardSmokeReport report)
+    {
+        report.PartialFailureDeterministicInjectionAvailable = false;
+        report.PartialFailureStatus = "not_exercised";
+        report.PartialFailureStatusNote =
+            $"No deterministic partial-failure injection setting exists under {OperatorHomeSummarySettings.Section}; status recorded as not_exercised per DTP-015B preflight.";
+        report.PartialFailureContractStatusValidated = true;
+    }
+
+    private static JsonDocument SerializeAndParse<T>(T payload)
+    {
+        var serialized = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+
+        return JsonDocument.Parse(serialized);
+    }
+
     private static bool InvokeAllowListMethod(MethodInfo method, string? targetUrl)
         => (bool)(method.Invoke(null, [targetUrl]) ?? false);
 
@@ -226,11 +356,19 @@ public sealed class OpintHomeDashboardSmokeReport
     public bool AllChecksPassed { get; set; }
     public string? FatalError { get; set; }
     public bool ApiShapeValidated { get; set; }
+    public bool ForcedDegradedContractValidated { get; set; }
     public bool DegradedSourcesOrderValidated { get; set; }
     public bool TargetUrlAllowListValidated { get; set; }
+    public bool HomeWebContractValidated { get; set; }
+    public bool PartialFailureContractStatusValidated { get; set; }
+    public bool PartialFailureDeterministicInjectionAvailable { get; set; }
+    public string PartialFailureStatus { get; set; } = "not_exercised";
+    public string? PartialFailureStatusNote { get; set; }
     public List<string> RequiredTopLevelFields { get; set; } = [];
     public List<string> ActualTopLevelFields { get; set; } = [];
     public List<string> ExpectedDegradedSourcesOrder { get; set; } = [];
+    public List<string> ForcedDegradedActualSources { get; set; } = [];
+    public List<string> ExpectedHomeMarkers { get; set; } = [];
     public List<OpintHomeDashboardTargetUrlCheck> TargetUrlAllowedChecks { get; set; } = [];
     public List<OpintHomeDashboardTargetUrlCheck> TargetUrlRejectedChecks { get; set; } = [];
 }
