@@ -216,6 +216,10 @@ try
     var personHistoryProofOutput = personHistoryProofOutputArg is null
         ? null
         : personHistoryProofOutputArg["--person-history-proof-output=".Length..];
+    var iterativeReintegrationProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--iterative-reintegration-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var iterativeReintegrationProofOutput = iterativeReintegrationProofOutputArg is null
+        ? null
+        : iterativeReintegrationProofOutputArg["--iterative-reintegration-proof-output=".Length..];
     var stageSemanticContractProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--stage-semantic-contract-proof-output=", StringComparison.OrdinalIgnoreCase));
     var stageSemanticContractProofOutput = stageSemanticContractProofOutputArg is null
         ? null
@@ -251,6 +255,7 @@ try
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runTemporalPersonStateProof = args.Any(arg => string.Equals(arg, "--temporal-person-state-proof", StringComparison.OrdinalIgnoreCase));
     var runPersonHistoryProof = args.Any(arg => string.Equals(arg, "--person-history-proof", StringComparison.OrdinalIgnoreCase));
+    var runIterativeReintegrationProof = args.Any(arg => string.Equals(arg, "--iterative-reintegration-proof", StringComparison.OrdinalIgnoreCase));
     var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
@@ -792,6 +797,21 @@ try
                 report.OutputPath,
                 report.Passed,
                 report.Cases.Count,
+                report.ScopeKey);
+            return;
+        }
+
+        if (runIterativeReintegrationProof)
+        {
+            var report = await IterativeReintegrationProofRunner.RunAsync(
+                host.Services,
+                iterativeReintegrationProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Iterative reintegration proof requested via --iterative-reintegration-proof. output={OutputPath}, passed={Passed}, row_count={RowCount}, scope_key={ScopeKey}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.Rows.Count,
                 report.ScopeKey);
             return;
         }

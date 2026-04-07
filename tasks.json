@@ -650,8 +650,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-009 completed: added iterative reintegration proof runner and CLI switch --iterative-reintegration-proof (optional --iterative-reintegration-proof-output) to execute multi-pass reintegration through ResolutionCaseReintegrationService against ResolutionCaseReintegrationLedgerRepository, proving stable carry_forward_case_id and expected status transitions across unresolved/deferred and resolved-by-ai pass scenarios, plus explicit negative-path rows for cross_scope_linkage_rejected and stale_recompute_linkage_rejected. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --iterative-reintegration-proof; artifact: src/TgAssistant.Host/artifacts/phase-b/iterative-pass-reintegration-proof.json.",
       "dependencies": [
         "PHB-008B"
       ]
