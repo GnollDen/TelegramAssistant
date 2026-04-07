@@ -220,6 +220,10 @@ try
     var currentWorldApproximationProofOutput = currentWorldApproximationProofOutputArg is null
         ? null
         : currentWorldApproximationProofOutputArg["--current-world-approximation-proof-output=".Length..];
+    var conditionalModelingProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--conditional-modeling-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var conditionalModelingProofOutput = conditionalModelingProofOutputArg is null
+        ? null
+        : conditionalModelingProofOutputArg["--conditional-modeling-proof-output=".Length..];
     var iterativeReintegrationProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--iterative-reintegration-proof-output=", StringComparison.OrdinalIgnoreCase));
     var iterativeReintegrationProofOutput = iterativeReintegrationProofOutputArg is null
         ? null
@@ -260,6 +264,7 @@ try
     var runTemporalPersonStateProof = args.Any(arg => string.Equals(arg, "--temporal-person-state-proof", StringComparison.OrdinalIgnoreCase));
     var runPersonHistoryProof = args.Any(arg => string.Equals(arg, "--person-history-proof", StringComparison.OrdinalIgnoreCase));
     var runCurrentWorldApproximationProof = args.Any(arg => string.Equals(arg, "--current-world-approximation-proof", StringComparison.OrdinalIgnoreCase));
+    var runConditionalModelingProof = args.Any(arg => string.Equals(arg, "--conditional-modeling-proof", StringComparison.OrdinalIgnoreCase));
     var runIterativeReintegrationProof = args.Any(arg => string.Equals(arg, "--iterative-reintegration-proof", StringComparison.OrdinalIgnoreCase));
     var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
@@ -357,6 +362,7 @@ try
         "--temporal-person-state-proof",
         "--person-history-proof",
         "--current-world-approximation-proof",
+        "--conditional-modeling-proof",
         "--stage-semantic-contract-proof",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -815,6 +821,20 @@ try
                 CancellationToken.None);
             Log.Information(
                 "Current-world approximation proof requested via --current-world-approximation-proof. output={OutputPath}, passed={Passed}, case_count={CaseCount}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.Cases.Count);
+            return;
+        }
+
+        if (runConditionalModelingProof)
+        {
+            var report = await ConditionalModelingProofRunner.RunAsync(
+                host.Services,
+                conditionalModelingProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Conditional modeling proof requested via --conditional-modeling-proof. output={OutputPath}, passed={Passed}, case_count={CaseCount}. Exiting after successful verification.",
                 report.OutputPath,
                 report.Passed,
                 report.Cases.Count);

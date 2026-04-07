@@ -954,8 +954,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-018B completed: added ConditionalModelingProofRunner and CLI switch --conditional-modeling-proof (optional --conditional-modeling-proof-output) with deterministic API-vs-web conditional parity proof rows for required cases baseline_plus_exception_publishable, phase_drift_publishable, and no_evidence_rule_rejected_with_honesty_state, writing artifact src/TgAssistant.Host/artifacts/phase-b/conditional-modeling-proof.json. Also hardened conditional honesty-state fallback so empty conditional-row snapshots inherit non-publishable WS-B5 publication states from current-world publication/read signals instead of defaulting to publishable. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --conditional-modeling-proof.",
       "dependencies": [
         "PHB-018A"
       ]

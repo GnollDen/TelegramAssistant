@@ -1,0 +1,50 @@
+{
+  "generated_at_utc": "2026-04-07T16:28:13.8192609Z",
+  "output_path": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/phase-b/conditional-modeling-proof.json",
+  "passed": true,
+  "fatal_error": null,
+  "cases": [
+    {
+      "case_id": "baseline_plus_exception_publishable",
+      "scope_key": "proof:phb_018b:baseline_exception:20260407162813935:f2da442fab194f1dbe3bdeb233c958c3",
+      "tracked_person_id": "97b219a5-e056-41e0-95a2-0f5a64b85f67",
+      "rule_id": "9141afe4-3177-407c-b66d-8a5b5807d2d9",
+      "exception_id": "c42f0f09-01b9-4ebf-aa9f-312b3096747d",
+      "phase_marker_id": null,
+      "expected_publication_state": "publishable",
+      "actual_publication_state": "publishable",
+      "expected_render_mode": "baseline-rule|exception-rule",
+      "actual_render_mode": "baseline-rule|exception-rule",
+      "reason": "api_rows_and_web_contract_keep_baseline_and_exception_render_modes_distinct_with_publishable_honesty_state",
+      "passed": true
+    },
+    {
+      "case_id": "phase_drift_publishable",
+      "scope_key": "proof:phb_018b:phase_drift:20260407162817227:64d3414b274a4bdd90d358a167a1b86f",
+      "tracked_person_id": "3e93f717-0691-4470-b396-d6972e9c5543",
+      "rule_id": "1c62d6cf-abe0-4ed6-a16e-814beb551232",
+      "exception_id": null,
+      "phase_marker_id": "16dc4d08-5921-4dc1-a3fd-50615abd302e",
+      "expected_publication_state": "publishable",
+      "actual_publication_state": "publishable",
+      "expected_render_mode": "phase-marker",
+      "actual_render_mode": "phase-marker",
+      "reason": "api_phase_marker_row_and_web_phase_section_preserve_phase_marker_render_mode_with_validity_window",
+      "passed": true
+    },
+    {
+      "case_id": "no_evidence_rule_rejected_with_honesty_state",
+      "scope_key": "proof:phb_018b:no_evidence:20260407162817290:fd44b4a94640420c8867fe7eaa98f699",
+      "tracked_person_id": "c93f51c4-7a8e-4c38-86f7-2dda5a5553cd",
+      "rule_id": "7a6fc858-b274-49f2-a195-e726d757db02",
+      "exception_id": null,
+      "phase_marker_id": null,
+      "expected_publication_state": "insufficient_evidence",
+      "actual_publication_state": "insufficient_evidence",
+      "expected_render_mode": "honesty-state",
+      "actual_render_mode": "honesty-state",
+      "reason": "missing_evidence_rule_insert_rejected_and_honesty_state_surfaces_non_publishable_status (conditional_evidence_refs_required)",
+      "passed": true
+    }
+  ]
+}

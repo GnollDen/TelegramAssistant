@@ -2095,6 +2095,24 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
+        if (states.Count == 0)
+        {
+            if (string.Equals(snapshot.PublicationState, CurrentWorldApproximationPublicationStates.InsufficientEvidence, StringComparison.Ordinal))
+            {
+                return WsB5ResponsePublicationStates.InsufficientEvidence;
+            }
+
+            if (!string.Equals(snapshot.PublicationState, CurrentWorldApproximationPublicationStates.Publishable, StringComparison.Ordinal))
+            {
+                var hasDisagreementSignals = snapshot.UncertaintyRefs.Any(x =>
+                    x.Contains("contradiction", StringComparison.Ordinal)
+                    || x.Contains("disagreement", StringComparison.Ordinal));
+                return hasDisagreementSignals
+                    ? WsB5ResponsePublicationStates.EscalationOnly
+                    : WsB5ResponsePublicationStates.ManualReviewRequired;
+            }
+        }
+
         if (states.Contains(WsB5ResponsePublicationStates.InsufficientEvidence, StringComparer.Ordinal))
         {
             return WsB5ResponsePublicationStates.InsufficientEvidence;
