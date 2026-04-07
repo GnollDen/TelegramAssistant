@@ -213,8 +213,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "ResolutionReadProjectionService now admits saved offline-event evidence for the same tracked_person_id+scope_key, with deterministic pre-merge candidate ordering (saved_at_utc desc, id desc), pre-merge cap=5, and merged final sort/truncate behavior; dotnet build and --opint-007-b3-smoke pass with Telegram__OwnerUserId override.",
       "dependencies": [
         "DTP-008B"
       ]

@@ -16,6 +16,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
 {
     private const string ResolutionInterpretationCanonicalScopeKey = RuntimeControlInterpretationPublicationGuard.CanonicalScopeKey;
     private const string ActiveStatus = "active";
+    private const int OfflineEventEvidenceCandidateLimit = 5;
+    private const string OfflineEventEvidenceSourceLabel = "offline_event";
     private static readonly Regex GuidRegex = new(
         @"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -310,7 +312,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     {
                         Applied = true,
                         UsedFallback = true,
-                        FailureReason = "projection_loop_exception",
+                        FailureReason = ResolutionInterpretationFailureReasons.ProjectionException,
                         ContextSufficient = evidence.Count > 0,
                         RequestedContextType = ResolutionInterpretationContextTypes.None,
                         InterpretationSummary = evidenceRationaleSummary,
@@ -334,8 +336,17 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                                 Step = "fallback",
                                 RetrievalRound = 0,
                                 RequestedContextType = ResolutionInterpretationContextTypes.None,
-                                Status = "projection_exception",
+                                Status = "model_error",
                                 Details = ex.Message,
+                                Provider = null,
+                                Model = null,
+                                RequestId = null,
+                                LatencyMs = null,
+                                PromptTokens = null,
+                                CompletionTokens = null,
+                                TotalTokens = null,
+                                CostUsd = null,
+                                EvidenceRefs = [],
                                 ObservedAtUtc = DateTime.UtcNow
                             }
                         ]
@@ -2235,8 +2246,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         CancellationToken ct)
     {
         var boundedLimit = Math.Clamp(evidenceLimit, 1, 20);
+        var mergeWindowLimit = boundedLimit + OfflineEventEvidenceCandidateLimit;
         var normalizedSortBy = ResolutionEvidenceSortFields.Normalize(evidenceSortBy);
         var normalizedSortDirection = ResolutionSortDirections.Normalize(evidenceSortDirection);
+        var candidateRows = new List<EvidenceProjectionRow>();
 
         if (durableMetadataIds.Count > 0)
         {
@@ -2265,55 +2278,69 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                             SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
                         };
 
-            var rows = await ApplyEvidenceOrdering(query, normalizedSortBy, normalizedSortDirection)
-                .Take(boundedLimit)
-                .ToListAsync(ct);
-
-            return rows.Select(x => new ResolutionEvidenceSummary
-            {
-                EvidenceItemId = x.Id,
-                Summary = string.IsNullOrWhiteSpace(x.SummaryText) ? x.Id.ToString("D") : x.SummaryText.Trim(),
-                TrustFactor = Clamp01(x.Confidence),
-                ObservedAtUtc = x.ObservedAt?.ToUniversalTime(),
-                SenderDisplay = NormalizeSenderDisplay(x.SenderDisplay),
-                SourceRef = x.SourceRef,
-                SourceLabel = x.SourceLabel
-            }).ToList();
+            candidateRows.AddRange(await ApplyEvidenceOrdering(query, normalizedSortBy, normalizedSortDirection)
+                .Take(mergeWindowLimit)
+                .ToListAsync(ct));
         }
-
-        if (!useTrackedPersonEvidence)
+        else if (useTrackedPersonEvidence)
         {
-            return [];
+            var personQuery = from personLink in db.EvidenceItemPersonLinks.AsNoTracking()
+                              join evidence in db.EvidenceItems.AsNoTracking()
+                                  on personLink.EvidenceItemId equals evidence.Id
+                              join sourceObject in db.SourceObjects.AsNoTracking()
+                                  on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
+                              from sourceObject in sourceObjects.DefaultIfEmpty()
+                              join message in db.Messages.AsNoTracking()
+                                  on sourceObject != null ? sourceObject.SourceMessageId : null equals (long?)message.Id into messages
+                              from message in messages.DefaultIfEmpty()
+                              where personLink.ScopeKey == trackedPerson.ScopeKey
+                                  && personLink.PersonId == trackedPerson.PersonId
+                              select new EvidenceProjectionRow
+                              {
+                                  Id = evidence.Id,
+                                  SummaryText = evidence.SummaryText,
+                                  Confidence = evidence.Confidence,
+                                  ObservedAt = evidence.ObservedAt,
+                                  CreatedAt = evidence.CreatedAt,
+                                  SenderDisplay = message != null ? message.SenderName : null,
+                                  SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
+                                  SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
+                              };
+
+            candidateRows.AddRange(await ApplyEvidenceOrdering(personQuery, normalizedSortBy, normalizedSortDirection)
+                .Take(mergeWindowLimit)
+                .ToListAsync(ct));
         }
 
-        var personQuery = from personLink in db.EvidenceItemPersonLinks.AsNoTracking()
-                          join evidence in db.EvidenceItems.AsNoTracking()
-                              on personLink.EvidenceItemId equals evidence.Id
-                          join sourceObject in db.SourceObjects.AsNoTracking()
-                              on evidence.SourceObjectId equals sourceObject.Id into sourceObjects
-                          from sourceObject in sourceObjects.DefaultIfEmpty()
-                          join message in db.Messages.AsNoTracking()
-                              on sourceObject != null ? sourceObject.SourceMessageId : null equals (long?)message.Id into messages
-                          from message in messages.DefaultIfEmpty()
-                          where personLink.ScopeKey == trackedPerson.ScopeKey
-                              && personLink.PersonId == trackedPerson.PersonId
-                          select new EvidenceProjectionRow
-                          {
-                              Id = evidence.Id,
-                              SummaryText = evidence.SummaryText,
-                              Confidence = evidence.Confidence,
-                              ObservedAt = evidence.ObservedAt,
-                              CreatedAt = evidence.CreatedAt,
-                              SenderDisplay = message != null ? message.SenderName : null,
-                              SourceRef = sourceObject != null ? sourceObject.SourceRef : null,
-                              SourceLabel = sourceObject != null ? sourceObject.DisplayLabel : null
-                          };
-
-        var personRows = await ApplyEvidenceOrdering(personQuery, normalizedSortBy, normalizedSortDirection)
-            .Take(boundedLimit)
+        var offlineEventCandidates = await db.OperatorOfflineEvents
+            .AsNoTracking()
+            .Where(x => x.TrackedPersonId == trackedPerson.PersonId
+                && x.ScopeKey == trackedPerson.ScopeKey
+                && x.Status == OperatorOfflineEventStatuses.Saved)
+            .OrderByDescending(x => x.SavedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(OfflineEventEvidenceCandidateLimit)
             .ToListAsync(ct);
+        var offlineEventRows = offlineEventCandidates
+            .Select(x => new EvidenceProjectionRow
+            {
+                Id = x.Id,
+                SummaryText = BuildOfflineEventEvidenceSummary(x.SummaryText, x.ClarificationStateJson),
+                Confidence = x.Confidence ?? 0f,
+                ObservedAt = x.SavedAtUtc ?? x.CapturedAtUtc,
+                CreatedAt = x.CreatedAtUtc,
+                SenderDisplay = x.OperatorDisplay,
+                SourceRef = $"offline_event:{x.Id:D}",
+                SourceLabel = OfflineEventEvidenceSourceLabel
+            })
+            .ToList();
+        candidateRows.AddRange(offlineEventRows);
 
-        return personRows.Select(x => new ResolutionEvidenceSummary
+        var mergedRows = ApplyEvidenceOrdering(candidateRows, normalizedSortBy, normalizedSortDirection)
+            .Take(boundedLimit)
+            .ToList();
+
+        return mergedRows.Select(x => new ResolutionEvidenceSummary
         {
             EvidenceItemId = x.Id,
             Summary = string.IsNullOrWhiteSpace(x.SummaryText) ? x.Id.ToString("D") : x.SummaryText.Trim(),
@@ -2323,6 +2350,18 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             SourceRef = x.SourceRef,
             SourceLabel = x.SourceLabel
         }).ToList();
+    }
+
+    private static string BuildOfflineEventEvidenceSummary(string? summaryText, string? clarificationStateJson)
+    {
+        var normalizedSummary = string.IsNullOrWhiteSpace(summaryText)
+            ? "Saved offline event"
+            : summaryText.Trim();
+        var stopReason = TryReadString(clarificationStateJson, "stopReason");
+
+        return string.IsNullOrWhiteSpace(stopReason)
+            ? normalizedSummary
+            : $"{normalizedSummary} (clarification stop: {stopReason})";
     }
 
     private static string? NormalizeSenderDisplay(string? senderDisplay)
@@ -2348,7 +2387,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             Applied = true,
             UsedFallback = true,
-            FailureReason = "loop_disabled",
+            FailureReason = ResolutionInterpretationFailureReasons.LoopDisabled,
             ContextSufficient = evidence.Count > 0,
             RequestedContextType = ResolutionInterpretationContextTypes.None,
             InterpretationSummary = interpretationSummary,
@@ -2409,6 +2448,31 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                     .ThenByDescending(x => x.CreatedAt)
                     .ThenByDescending(x => x.Confidence)
                 : query.OrderBy(x => x.ObservedAt)
+                    .ThenBy(x => x.CreatedAt)
+                    .ThenBy(x => x.Confidence)
+        };
+    }
+
+    private static IEnumerable<EvidenceProjectionRow> ApplyEvidenceOrdering(
+        IEnumerable<EvidenceProjectionRow> rows,
+        string sortBy,
+        string sortDirection)
+    {
+        var descending = string.Equals(sortDirection, ResolutionSortDirections.Desc, StringComparison.Ordinal);
+        return sortBy switch
+        {
+            ResolutionEvidenceSortFields.TrustFactor => descending
+                ? rows.OrderByDescending(x => x.Confidence)
+                    .ThenByDescending(x => x.ObservedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                : rows.OrderBy(x => x.Confidence)
+                    .ThenBy(x => x.ObservedAt)
+                    .ThenBy(x => x.CreatedAt),
+            _ => descending
+                ? rows.OrderByDescending(x => x.ObservedAt)
+                    .ThenByDescending(x => x.CreatedAt)
+                    .ThenByDescending(x => x.Confidence)
+                : rows.OrderBy(x => x.ObservedAt)
                     .ThenBy(x => x.CreatedAt)
                     .ThenBy(x => x.Confidence)
         };
