@@ -346,8 +346,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "owner-exposure gate executed (2026-04-07): PASS: canonical criticalUnresolvedCount owner exposure confirmed within DTP-013 bounded files/areas; see docs/planning/artifacts/dtp-013a-owner-exposure-gate-2026-04-07.md. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "DTP-012B"
       ]
