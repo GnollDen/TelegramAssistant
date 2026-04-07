@@ -185,6 +185,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     Ensure(finalEnvelope.ConflictSession.FinalVerdict != null, "Final verdict was not produced.");
                     Ensure(finalEnvelope.ConflictSession.AuditTrail.Count > 0, "Conflict-session audit trail is empty.");
                     EnsureAuditContract(finalEnvelope.ConflictSession.AuditTrail);
+                    EnsureStructuredVerdictProofRows(report, finalEnvelope.ConflictSession.FinalVerdict);
 
                     if (!sessionContractSatisfied)
                     {
@@ -275,7 +276,8 @@ public static class AiConflictResolutionSessionV1ProofRunner
 
             report.Passed = report.StartAccepted
                 && report.FinalVerdict != null
-                && report.RequiredAuditKeysPresent;
+                && report.RequiredAuditKeysPresent
+                && report.StructuredVerdictProofRows.All(x => x.Passed);
         }
         catch (Exception ex)
         {
@@ -371,6 +373,90 @@ public static class AiConflictResolutionSessionV1ProofRunner
             }
         }
     }
+
+    private static void EnsureStructuredVerdictProofRows(
+        AiConflictResolutionSessionV1ProofReport report,
+        ResolutionConflictSessionVerdict verdict)
+    {
+        var structured = verdict.StructuredVerdict
+            ?? throw new InvalidOperationException("Final verdict is missing structured_verdict.");
+
+        report.StructuredVerdictProofRows =
+        [
+            BuildStructuredVerdictRow(
+                caseId: "structured_verdict_valid",
+                expectedDecision: "accept",
+                candidate: structured),
+            BuildStructuredVerdictRow(
+                caseId: "structured_verdict_invalid_decision_rejected",
+                expectedDecision: "reject",
+                candidate: CloneStructuredVerdict(structured, decision: "invalid_decision")),
+            BuildStructuredVerdictRow(
+                caseId: "structured_verdict_invalid_publication_state_rejected",
+                expectedDecision: "reject",
+                candidate: CloneStructuredVerdict(structured, publicationState: "invalid_publication_state")),
+            BuildStructuredVerdictRow(
+                caseId: "structured_verdict_missing_scope_item_key_rejected",
+                expectedDecision: "reject",
+                candidate: CloneStructuredVerdict(structured, scopeItemKey: ""))
+        ];
+
+        if (report.StructuredVerdictProofRows.Any(x => !x.Passed))
+        {
+            throw new InvalidOperationException("Structured verdict contract proof rows include failures.");
+        }
+    }
+
+    private static AiConflictResolutionStructuredVerdictProofRow BuildStructuredVerdictRow(
+        string caseId,
+        string expectedDecision,
+        ConflictResolutionStructuredVerdict candidate)
+    {
+        var accepted = ConflictResolutionStructuredVerdictContract.TryValidate(candidate, out var reason);
+        var actualDecision = accepted ? "accept" : "reject";
+        return new AiConflictResolutionStructuredVerdictProofRow
+        {
+            CaseId = caseId,
+            ExpectedDecision = expectedDecision,
+            ActualDecision = actualDecision,
+            Reason = string.IsNullOrWhiteSpace(reason) ? null : reason,
+            Passed = string.Equals(expectedDecision, actualDecision, StringComparison.Ordinal)
+        };
+    }
+
+    private static ConflictResolutionStructuredVerdict CloneStructuredVerdict(
+        ConflictResolutionStructuredVerdict source,
+        string? decision = null,
+        string? publicationState = null,
+        string? scopeItemKey = null)
+    {
+        return new ConflictResolutionStructuredVerdict
+        {
+            VerdictId = source.VerdictId,
+            ScopeKey = source.ScopeKey,
+            ScopeItemKey = scopeItemKey ?? source.ScopeItemKey,
+            CarryForwardCaseId = source.CarryForwardCaseId,
+            Decision = decision ?? source.Decision,
+            PublicationState = publicationState ?? source.PublicationState,
+            ClaimRows = source.ClaimRows
+                .Select(row => new ConflictResolutionStructuredClaimRow
+                {
+                    ClaimType = row.ClaimType,
+                    Summary = row.Summary,
+                    EvidenceRefs = [.. row.EvidenceRefs]
+                })
+                .ToList(),
+            UncertaintyRows = [.. source.UncertaintyRows],
+            NormalizationPlan = new ConflictResolutionStructuredNormalizationPlan
+            {
+                RecommendedAction = source.NormalizationPlan.RecommendedAction,
+                Explanation = source.NormalizationPlan.Explanation,
+                ClarificationPayload = source.NormalizationPlan.ClarificationPayload
+            },
+            EvidenceRefs = [.. source.EvidenceRefs],
+            CreatedAtUtc = source.CreatedAtUtc
+        };
+    }
 }
 
 public sealed class AiConflictResolutionSessionV1ProofReport
@@ -407,6 +493,7 @@ public sealed class AiConflictResolutionSessionV1ProofReport
     public string? StoredSessionFinalActionRequestId { get; set; }
     public bool DeterministicApplyPathConfirmed { get; set; }
     public string? ApplyPathNonBlockingFailureReason { get; set; }
+    public List<AiConflictResolutionStructuredVerdictProofRow> StructuredVerdictProofRows { get; set; } = [];
     public List<AiConflictResolutionSessionV1CandidateAttempt> CandidateAttempts { get; set; } = [];
     public bool Passed { get; set; }
     public string? FatalError { get; set; }
@@ -422,4 +509,13 @@ public sealed class AiConflictResolutionSessionV1CandidateAttempt
     public bool ApplyAccepted { get; set; }
     public bool Passed { get; set; }
     public string? FailureReason { get; set; }
+}
+
+public sealed class AiConflictResolutionStructuredVerdictProofRow
+{
+    public string CaseId { get; set; } = string.Empty;
+    public string ExpectedDecision { get; set; } = string.Empty;
+    public string ActualDecision { get; set; } = string.Empty;
+    public string? Reason { get; set; }
+    public bool Passed { get; set; }
 }

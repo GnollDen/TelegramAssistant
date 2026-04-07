@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TgAssistant.Core.Models;
 
 public static class ResolutionActionTypes
@@ -307,6 +309,214 @@ public class ResolutionConflictSessionVerdict
     public List<string> RemainingUncertainties { get; set; } = [];
     public ResolutionConflictNormalizationProposal NormalizationProposal { get; set; } = new();
     public ResolutionConflictConfidenceCalibration ConfidenceCalibration { get; set; } = new();
+    public ConflictResolutionStructuredVerdict? StructuredVerdict { get; set; }
+}
+
+public static class ConflictResolutionStructuredDecisionTypes
+{
+    public const string Apply = "apply";
+    public const string Defer = "defer";
+    public const string Escalate = "escalate";
+    public const string RejectScope = "reject_scope";
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        Apply,
+        Defer,
+        Escalate,
+        RejectScope
+    };
+
+    public static bool IsSupported(string? value)
+        => Supported.Contains(Normalize(value));
+
+    public static string Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+}
+
+public static class ConflictResolutionStructuredPublicationStates
+{
+    public const string Publishable = "publishable";
+    public const string InsufficientEvidence = "insufficient_evidence";
+    public const string EscalationOnly = "escalation_only";
+    public const string ManualReviewRequired = "manual_review_required";
+
+    private static readonly HashSet<string> Supported = new(StringComparer.Ordinal)
+    {
+        Publishable,
+        InsufficientEvidence,
+        EscalationOnly,
+        ManualReviewRequired
+    };
+
+    public static bool IsSupported(string? value)
+        => Supported.Contains(Normalize(value));
+
+    public static string Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+}
+
+public sealed class ConflictResolutionStructuredVerdict
+{
+    [JsonPropertyName("verdict_id")]
+    public string VerdictId { get; set; } = string.Empty;
+
+    [JsonPropertyName("scope_key")]
+    public string ScopeKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("scope_item_key")]
+    public string ScopeItemKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("carry_forward_case_id")]
+    public Guid? CarryForwardCaseId { get; set; }
+
+    [JsonPropertyName("decision")]
+    public string Decision { get; set; } = ConflictResolutionStructuredDecisionTypes.Defer;
+
+    [JsonPropertyName("publication_state")]
+    public string PublicationState { get; set; } = ConflictResolutionStructuredPublicationStates.ManualReviewRequired;
+
+    [JsonPropertyName("claim_rows")]
+    public List<ConflictResolutionStructuredClaimRow> ClaimRows { get; set; } = [];
+
+    [JsonPropertyName("uncertainty_rows")]
+    public List<string> UncertaintyRows { get; set; } = [];
+
+    [JsonPropertyName("normalization_plan")]
+    public ConflictResolutionStructuredNormalizationPlan NormalizationPlan { get; set; } = new();
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("created_at_utc")]
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class ConflictResolutionStructuredClaimRow
+{
+    [JsonPropertyName("claim_type")]
+    public string ClaimType { get; set; } = ResolutionInterpretationClaimTypes.Hypothesis;
+
+    [JsonPropertyName("summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+}
+
+public sealed class ConflictResolutionStructuredNormalizationPlan
+{
+    [JsonPropertyName("recommended_action")]
+    public string RecommendedAction { get; set; } = ResolutionActionTypes.Clarify;
+
+    [JsonPropertyName("explanation")]
+    public string Explanation { get; set; } = string.Empty;
+
+    [JsonPropertyName("clarification_payload")]
+    public ResolutionClarificationPayload? ClarificationPayload { get; set; }
+}
+
+public static class ConflictResolutionStructuredVerdictContract
+{
+    public static bool TryValidate(ConflictResolutionStructuredVerdict? verdict, out string failureReason)
+    {
+        if (verdict == null)
+        {
+            failureReason = "structured_verdict_required";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(verdict.VerdictId))
+        {
+            failureReason = "structured_verdict_id_required";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(verdict.ScopeKey))
+        {
+            failureReason = "structured_scope_key_required";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(verdict.ScopeItemKey))
+        {
+            failureReason = "structured_scope_item_key_required";
+            return false;
+        }
+
+        if (!ConflictResolutionStructuredDecisionTypes.IsSupported(verdict.Decision))
+        {
+            failureReason = "structured_decision_invalid";
+            return false;
+        }
+
+        if (!ConflictResolutionStructuredPublicationStates.IsSupported(verdict.PublicationState))
+        {
+            failureReason = "structured_publication_state_invalid";
+            return false;
+        }
+
+        if (verdict.ClaimRows == null)
+        {
+            failureReason = "structured_claim_rows_required";
+            return false;
+        }
+
+        if (verdict.UncertaintyRows == null)
+        {
+            failureReason = "structured_uncertainty_rows_required";
+            return false;
+        }
+
+        if (verdict.NormalizationPlan == null)
+        {
+            failureReason = "structured_normalization_plan_required";
+            return false;
+        }
+
+        if (verdict.EvidenceRefs == null)
+        {
+            failureReason = "structured_evidence_refs_required";
+            return false;
+        }
+
+        if (verdict.CreatedAtUtc == default)
+        {
+            failureReason = "structured_created_at_required";
+            return false;
+        }
+
+        for (var i = 0; i < verdict.ClaimRows.Count; i++)
+        {
+            var row = verdict.ClaimRows[i];
+            if (row == null)
+            {
+                failureReason = $"structured_claim_row_{i}_required";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(row.ClaimType))
+            {
+                failureReason = $"structured_claim_row_{i}_claim_type_required";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(row.Summary))
+            {
+                failureReason = $"structured_claim_row_{i}_summary_required";
+                return false;
+            }
+
+            if (row.EvidenceRefs == null)
+            {
+                failureReason = $"structured_claim_row_{i}_evidence_refs_required";
+                return false;
+            }
+        }
+
+        failureReason = string.Empty;
+        return true;
+    }
 }
 
 public class ResolutionConflictSessionCasePacket

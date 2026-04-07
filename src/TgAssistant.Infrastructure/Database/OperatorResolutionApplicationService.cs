@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -12,8 +14,6 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private const string ActiveStatus = "active";
     private const string TrackedPersonSwitchSessionEventType = "tracked_person_switch";
     private const string OfflineEventScopeItemPrefix = "offline_event:";
-    private const string ConflictSessionCanonicalScopeKey = "chat:885574984";
-    private const int ConflictSessionTtlMinutes = 30;
     private const string TemporalHistoryPublicationStatePublishable = "publishable";
     private const string TemporalHistoryPublicationStateInsufficientEvidence = "insufficient_evidence";
     private static readonly HashSet<string> ConflictSessionEligibleReviewSourceKinds = new(StringComparer.Ordinal)
@@ -44,6 +44,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
+    private readonly ConflictResolutionSessionSettings _conflictSessionSettings;
 
     public OperatorResolutionApplicationService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
@@ -52,6 +53,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IConflictResolutionSessionModel conflictResolutionSessionModel,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ITemporalPersonStateRepository temporalPersonStateRepository,
+        IOptions<ConflictResolutionSessionSettings> conflictSessionSettings,
         ILogger<OperatorResolutionApplicationService> logger)
     {
         _dbFactory = dbFactory;
@@ -60,6 +62,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         _conflictResolutionSessionModel = conflictResolutionSessionModel;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _temporalPersonStateRepository = temporalPersonStateRepository;
+        _conflictSessionSettings = conflictSessionSettings.Value ?? new ConflictResolutionSessionSettings();
         _logger = logger;
     }
 
@@ -2120,7 +2123,18 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             };
         }
 
-        if (!string.Equals(trackedPerson.ScopeKey, ConflictSessionCanonicalScopeKey, StringComparison.Ordinal))
+        if (!_conflictSessionSettings.Enabled)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "conflict_session_disabled",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (_conflictSessionSettings.CanonicalScopeOnly
+            && !string.Equals(trackedPerson.ScopeKey, _conflictSessionSettings.CanonicalScopeKey, StringComparison.Ordinal))
         {
             return new OperatorConflictResolutionSessionResultEnvelope
             {
@@ -2206,7 +2220,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 },
                 ct);
 
-            verdict = NormalizeConflictVerdict(modelResult.FinalVerdict, casePacket);
+            verdict = NormalizeConflictVerdict(
+                modelResult.FinalVerdict,
+                casePacket,
+                trackedPerson.ScopeKey,
+                scopeItemKey!,
+                carryForwardCaseId: null,
+                nowUtc);
             question = modelResult.AskFollowUpQuestion ? NormalizeQuestion(modelResult.FollowUpQuestion) : null;
             if (question != null)
             {
@@ -2225,17 +2245,33 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 RetrievalRound = 0,
                 RequestedContextType = ResolutionInterpretationContextTypes.None,
                 Status = "completed",
-                Details = $"Initial conflict-session model call completed. total_tokens={modelResult.TotalTokens}.",
+                Details = $"Initial conflict-session model call completed. total_tokens={modelResult.TotalTokens?.ToString() ?? "n/a"}.",
                 Provider = modelResult.Provider,
                 Model = modelResult.Model,
+                ModelId = modelResult.Model,
+                ModelVersion = modelResult.ModelVersion,
                 RequestId = modelResult.RequestId,
                 LatencyMs = modelResult.LatencyMs,
+                PromptTokens = modelResult.PromptTokens,
+                CompletionTokens = modelResult.CompletionTokens,
+                TotalTokens = modelResult.TotalTokens,
+                CostUsd = modelResult.CostUsd,
+                ContextManifest = BuildConflictSessionContextManifest(casePacket, trackedPerson.ScopeKey, trackedPerson.TrackedPersonId, scopeItemKey!),
+                RetrievalRequests = null,
+                RetrievalResults = null,
+                NormalizationStatus = "initial_verdict_ready",
+                GateDecision = verdict.ResolutionVerdict,
                 ObservedAtUtc = nowUtc
             });
         }
         catch (Exception ex)
         {
-            verdict = BuildFallbackVerdict("initial_model_error");
+            verdict = BuildFallbackVerdict(
+                "initial_model_error",
+                trackedPerson.ScopeKey,
+                scopeItemKey!,
+                carryForwardCaseId: null,
+                nowUtc);
             state = ResolutionConflictSessionStates.Fallback;
             stateReason = "initial_model_error";
             auditTrail.Add(new ResolutionInterpretationAuditEntry
@@ -2245,6 +2281,17 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 RequestedContextType = ResolutionInterpretationContextTypes.None,
                 Status = "model_error",
                 Details = ex.Message,
+                ContextManifest = BuildConflictSessionContextManifest(casePacket, trackedPerson.ScopeKey, trackedPerson.TrackedPersonId, scopeItemKey!),
+                RetrievalRequests = null,
+                RetrievalResults = null,
+                ModelId = null,
+                ModelVersion = null,
+                PromptTokens = null,
+                CompletionTokens = null,
+                TotalTokens = null,
+                CostUsd = null,
+                NormalizationStatus = "fallback",
+                GateDecision = verdict.ResolutionVerdict,
                 ObservedAtUtc = nowUtc
             });
         }
@@ -2274,7 +2321,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal, JsonOptions),
             AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions),
             StartedAtUtc = nowUtc,
-            ExpiresAtUtc = nowUtc.AddMinutes(ConflictSessionTtlMinutes),
+            ExpiresAtUtc = nowUtc.AddMinutes(_conflictSessionSettings.SessionTtlMinutes),
             UpdatedAtUtc = nowUtc,
             CompletedAtUtc = state == ResolutionConflictSessionStates.AwaitingOperatorAnswer ? null : nowUtc
         };
@@ -2371,7 +2418,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             };
         }
 
-        if (sessionRow.AnswerCount >= 1)
+        if (sessionRow.AnswerCount >= _conflictSessionSettings.MaxOperatorTurns)
         {
             return new OperatorConflictResolutionSessionResultEnvelope
             {
@@ -2402,6 +2449,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             Notes = NormalizeOptional(request.Notes),
             AnsweredAtUtc = nowUtc
         };
+        var auditTrail = DeserializeOrDefault<List<ResolutionInterpretationAuditEntry>>(sessionRow.AuditTrailJson) ?? [];
 
         ResolutionConflictSessionModelResult? modelResult = null;
         ResolutionConflictSessionVerdict verdict;
@@ -2419,19 +2467,75 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                     OperatorInput = operatorInput
                 },
                 ct);
-            verdict = NormalizeConflictVerdict(modelResult.FinalVerdict, casePacket);
+            verdict = NormalizeConflictVerdict(
+                modelResult.FinalVerdict,
+                casePacket,
+                sessionRow.ScopeKey,
+                sessionRow.ScopeItemKey,
+                carryForwardCaseId: null,
+                nowUtc);
+            auditTrail.Add(new ResolutionInterpretationAuditEntry
+            {
+                Step = "model_round",
+                RetrievalRound = 0,
+                RequestedContextType = ResolutionInterpretationContextTypes.None,
+                Status = "completed",
+                Details = $"Final conflict-session model call completed. total_tokens={modelResult.TotalTokens?.ToString() ?? "n/a"}.",
+                Provider = modelResult.Provider,
+                Model = modelResult.Model,
+                ModelId = modelResult.Model,
+                ModelVersion = modelResult.ModelVersion,
+                RequestId = modelResult.RequestId,
+                LatencyMs = modelResult.LatencyMs,
+                PromptTokens = modelResult.PromptTokens,
+                CompletionTokens = modelResult.CompletionTokens,
+                TotalTokens = modelResult.TotalTokens,
+                CostUsd = modelResult.CostUsd,
+                ContextManifest = BuildConflictSessionContextManifest(casePacket, sessionRow.ScopeKey, sessionRow.TrackedPersonId, sessionRow.ScopeItemKey),
+                RetrievalRequests = null,
+                RetrievalResults = null,
+                NormalizationStatus = "final_verdict_ready",
+                GateDecision = verdict.ResolutionVerdict,
+                ObservedAtUtc = nowUtc
+            });
         }
         catch (Exception ex)
         {
-            verdict = BuildFallbackVerdict("final_model_error");
+            verdict = BuildFallbackVerdict(
+                "final_model_error",
+                sessionRow.ScopeKey,
+                sessionRow.ScopeItemKey,
+                carryForwardCaseId: null,
+                nowUtc);
             sessionRow.FailureReason = ex.Message;
+            auditTrail.Add(new ResolutionInterpretationAuditEntry
+            {
+                Step = "model_round",
+                RetrievalRound = 0,
+                RequestedContextType = ResolutionInterpretationContextTypes.None,
+                Status = "model_error",
+                Details = ex.Message,
+                ContextManifest = BuildConflictSessionContextManifest(casePacket, sessionRow.ScopeKey, sessionRow.TrackedPersonId, sessionRow.ScopeItemKey),
+                RetrievalRequests = null,
+                RetrievalResults = null,
+                ModelId = null,
+                ModelVersion = null,
+                PromptTokens = null,
+                CompletionTokens = null,
+                TotalTokens = null,
+                CostUsd = null,
+                NormalizationStatus = "fallback",
+                GateDecision = verdict.ResolutionVerdict,
+                ObservedAtUtc = nowUtc
+            });
         }
 
-        sessionRow.AnswerCount = 1;
+        sessionRow.AnswerCount = Math.Clamp(sessionRow.AnswerCount + 1, 0, _conflictSessionSettings.MaxOperatorTurns);
         sessionRow.AnswerJson = JsonSerializer.Serialize(operatorInput, JsonOptions);
-        sessionRow.ModelCallCount = Math.Clamp(sessionRow.ModelCallCount + 1, 0, 2);
+        sessionRow.ModelCallCount = Math.Clamp(sessionRow.ModelCallCount + 1, 0, _conflictSessionSettings.MaxModelCalls);
         sessionRow.VerdictJson = JsonSerializer.Serialize(verdict, JsonOptions);
         sessionRow.NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal, JsonOptions);
+        sessionRow.AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions);
         sessionRow.Revision += 1;
         sessionRow.Status = NormalizeVerdictState(verdict.ResolutionVerdict);
         sessionRow.StateReason = "final_verdict_ready";
@@ -3847,7 +3951,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 
     private static ResolutionConflictSessionVerdict NormalizeConflictVerdict(
         ResolutionConflictSessionVerdict verdict,
-        ResolutionConflictSessionCasePacket casePacket)
+        ResolutionConflictSessionCasePacket casePacket,
+        string scopeKey,
+        string scopeItemKey,
+        Guid? carryForwardCaseId,
+        DateTime nowUtc)
     {
         var knownEvidenceRefs = (casePacket.Evidence ?? [])
             .Select(x => NormalizeOptional(x.SourceRef) ?? $"evidence:{x.EvidenceItemId:D}")
@@ -3876,7 +3984,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             recommendedAction = ResolutionActionTypes.Clarify;
         }
 
-        return new ResolutionConflictSessionVerdict
+        var normalizedVerdict = new ResolutionConflictSessionVerdict
         {
             ResolutionVerdict = NormalizeVerdictState(verdict.ResolutionVerdict),
             ResolvedClaims = normalizedClaims,
@@ -3912,11 +4020,30 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Rationale = NormalizeOptional(verdict.ConfidenceCalibration?.Rationale) ?? string.Empty
             }
         };
+
+        normalizedVerdict.StructuredVerdict = BuildStructuredVerdict(
+            normalizedVerdict,
+            scopeKey,
+            scopeItemKey,
+            carryForwardCaseId,
+            nowUtc);
+
+        if (!ConflictResolutionStructuredVerdictContract.TryValidate(normalizedVerdict.StructuredVerdict, out var failureReason))
+        {
+            throw new InvalidOperationException($"Structured verdict contract validation failed: {failureReason}.");
+        }
+
+        return normalizedVerdict;
     }
 
-    private static ResolutionConflictSessionVerdict BuildFallbackVerdict(string reason)
+    private static ResolutionConflictSessionVerdict BuildFallbackVerdict(
+        string reason,
+        string scopeKey,
+        string scopeItemKey,
+        Guid? carryForwardCaseId,
+        DateTime nowUtc)
     {
-        return new ResolutionConflictSessionVerdict
+        var verdict = new ResolutionConflictSessionVerdict
         {
             ResolutionVerdict = ResolutionConflictSessionStates.Fallback,
             RemainingUncertainties =
@@ -3934,6 +4061,20 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 Rationale = "fallback"
             }
         };
+
+        verdict.StructuredVerdict = BuildStructuredVerdict(
+            verdict,
+            scopeKey,
+            scopeItemKey,
+            carryForwardCaseId,
+            nowUtc);
+
+        if (!ConflictResolutionStructuredVerdictContract.TryValidate(verdict.StructuredVerdict, out var failureReason))
+        {
+            throw new InvalidOperationException($"Fallback structured verdict contract validation failed: {failureReason}.");
+        }
+
+        return verdict;
     }
 
     private static string NormalizeVerdictState(string? verdict)
@@ -3949,6 +4090,78 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return ResolutionConflictSessionStates.NeedsWebReview;
+    }
+
+    private static ConflictResolutionStructuredVerdict BuildStructuredVerdict(
+        ResolutionConflictSessionVerdict normalizedVerdict,
+        string scopeKey,
+        string scopeItemKey,
+        Guid? carryForwardCaseId,
+        DateTime nowUtc)
+    {
+        var decision = ResolveStructuredDecision(normalizedVerdict.ResolutionVerdict);
+        var publicationState = ResolveStructuredPublicationState(normalizedVerdict.ResolutionVerdict, decision);
+        return new ConflictResolutionStructuredVerdict
+        {
+            VerdictId = Guid.NewGuid().ToString("N"),
+            ScopeKey = scopeKey,
+            ScopeItemKey = scopeItemKey,
+            CarryForwardCaseId = carryForwardCaseId,
+            Decision = decision,
+            PublicationState = publicationState,
+            ClaimRows = normalizedVerdict.ResolvedClaims
+                .Select(claim => new ConflictResolutionStructuredClaimRow
+                {
+                    ClaimType = claim.ClaimType,
+                    Summary = claim.Summary,
+                    EvidenceRefs = [.. claim.EvidenceRefs]
+                })
+                .ToList(),
+            UncertaintyRows = [.. normalizedVerdict.RemainingUncertainties],
+            NormalizationPlan = new ConflictResolutionStructuredNormalizationPlan
+            {
+                RecommendedAction = normalizedVerdict.NormalizationProposal.RecommendedAction,
+                Explanation = normalizedVerdict.NormalizationProposal.Explanation,
+                ClarificationPayload = normalizedVerdict.NormalizationProposal.ClarificationPayload
+            },
+            EvidenceRefs = [.. normalizedVerdict.EvidenceRefsUsed],
+            CreatedAtUtc = nowUtc
+        };
+    }
+
+    private static string ResolveStructuredDecision(string resolutionVerdict)
+    {
+        if (string.Equals(resolutionVerdict, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal))
+        {
+            return ConflictResolutionStructuredDecisionTypes.Apply;
+        }
+
+        if (string.Equals(resolutionVerdict, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal))
+        {
+            return ConflictResolutionStructuredDecisionTypes.Escalate;
+        }
+
+        return ConflictResolutionStructuredDecisionTypes.Defer;
+    }
+
+    private static string ResolveStructuredPublicationState(string resolutionVerdict, string decision)
+    {
+        if (string.Equals(resolutionVerdict, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal))
+        {
+            return ConflictResolutionStructuredPublicationStates.Publishable;
+        }
+
+        if (string.Equals(decision, ConflictResolutionStructuredDecisionTypes.Escalate, StringComparison.Ordinal))
+        {
+            return ConflictResolutionStructuredPublicationStates.EscalationOnly;
+        }
+
+        if (string.Equals(resolutionVerdict, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal))
+        {
+            return ConflictResolutionStructuredPublicationStates.InsufficientEvidence;
+        }
+
+        return ConflictResolutionStructuredPublicationStates.ManualReviewRequired;
     }
 
     private static OperatorWorkflowStepContext? BuildConflictSessionStep(DbOperatorResolutionConflictSession row)
@@ -3968,12 +4181,21 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
-    private static ResolutionConflictSessionView MapConflictSession(DbOperatorResolutionConflictSession row)
+    private ResolutionConflictSessionView MapConflictSession(DbOperatorResolutionConflictSession row)
     {
         var casePacket = DeserializeOrDefault<ResolutionConflictSessionCasePacket>(row.CasePacketJson);
         var question = DeserializeOrDefault<ResolutionConflictSessionQuestion>(row.QuestionJson);
         var answer = DeserializeOrDefault<ResolutionConflictSessionOperatorInput>(row.AnswerJson);
         var verdict = DeserializeOrDefault<ResolutionConflictSessionVerdict>(row.VerdictJson);
+        if (verdict != null && verdict.StructuredVerdict == null)
+        {
+            verdict.StructuredVerdict = BuildStructuredVerdict(
+                verdict,
+                row.ScopeKey,
+                row.ScopeItemKey,
+                carryForwardCaseId: null,
+                DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
+        }
         var auditTrail = DeserializeOrDefault<List<ResolutionInterpretationAuditEntry>>(row.AuditTrailJson) ?? [];
         return new ResolutionConflictSessionView
         {
@@ -3993,6 +4215,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             CompletedAtUtc = row.CompletedAtUtc,
             Budgets = new ResolutionConflictSessionBudget
             {
+                MaxModelCalls = _conflictSessionSettings.MaxModelCalls,
+                MaxOperatorQuestions = _conflictSessionSettings.MaxOperatorTurns,
+                MaxOperatorAnswers = _conflictSessionSettings.MaxOperatorTurns,
+                MaxRetrievalRounds = _conflictSessionSettings.MaxRetrievalRounds,
+                TtlSeconds = _conflictSessionSettings.SessionTtlMinutes * 60,
                 UsedModelCalls = row.ModelCallCount,
                 UsedOperatorQuestions = row.QuestionCount,
                 UsedOperatorAnswers = row.AnswerCount
@@ -4003,6 +4230,26 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             FinalVerdict = verdict,
             AuditTrail = auditTrail,
             FailureReason = row.FailureReason
+        };
+    }
+
+    private static object BuildConflictSessionContextManifest(
+        ResolutionConflictSessionCasePacket casePacket,
+        string scopeKey,
+        Guid trackedPersonId,
+        string scopeItemKey)
+    {
+        var item = casePacket.Item;
+        return new
+        {
+            scope_key = scopeKey,
+            tracked_person_id = trackedPersonId,
+            scope_item_key = scopeItemKey,
+            item_type = item.ItemType,
+            source_kind = item.SourceKind,
+            source_ref = item.SourceRef,
+            evidence_count = casePacket.Evidence.Count,
+            note_count = casePacket.Notes.Count
         };
     }
 
