@@ -69,6 +69,29 @@ public static class TemporalSingleValuedFactFamilies
     }
 }
 
+public static class TemporalConditionalFactFamilies
+{
+    public const string ProfilePreference = DossierFieldConditionalFamilies.ProfilePreference;
+    public const string BehaviorPattern = DossierFieldConditionalFamilies.BehaviorPattern;
+    public const string StyleDrift = DossierFieldConditionalFamilies.StyleDrift;
+    public const string PhaseMarker = DossierFieldConditionalFamilies.PhaseMarker;
+
+    public static readonly string[] Ordered =
+    [
+        ProfilePreference,
+        BehaviorPattern,
+        StyleDrift,
+        PhaseMarker
+    ];
+
+    private static readonly HashSet<string> Supported = new(Ordered, StringComparer.Ordinal);
+
+    public static bool Contains(string? factType)
+    {
+        return !string.IsNullOrWhiteSpace(factType) && Supported.Contains(factType);
+    }
+}
+
 public class TemporalPersonState
 {
     [JsonPropertyName("id")]

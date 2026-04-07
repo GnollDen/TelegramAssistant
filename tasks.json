@@ -840,8 +840,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-015 completed: added WS-B5 contract-only baseline for conditional knowledge in `ConditionalKnowledgeModels` with required `ConditionClause` fields, closed operator enum (`eq|neq|contains|in|gte|lte`), baseline rule, exception rule, style-drift marker, and phase-marker models including validity windows, confidence/evidence refs, and explicit `source_ref_ids` + `linked_temporal_state_ids`. Added shared WS-B5 family constants (`profile_preference`, `behavior_pattern`, `style_drift`, `phase_marker`) in dossier and temporal model contracts for deterministic downstream reuse. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-014B"
       ]

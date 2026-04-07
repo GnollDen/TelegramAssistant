@@ -1,5 +1,26 @@
 namespace TgAssistant.Core.Models;
 
+public static class DossierFieldConditionalFamilies
+{
+    public const string ProfilePreference = "profile_preference";
+    public const string BehaviorPattern = "behavior_pattern";
+    public const string StyleDrift = "style_drift";
+    public const string PhaseMarker = "phase_marker";
+
+    public static readonly string[] Ordered =
+    [
+        ProfilePreference,
+        BehaviorPattern,
+        StyleDrift,
+        PhaseMarker
+    ];
+
+    private static readonly HashSet<string> Supported = new(Ordered, StringComparer.Ordinal);
+
+    public static bool IsSupported(string? value)
+        => !string.IsNullOrWhiteSpace(value) && Supported.Contains(value);
+}
+
 public static class DossierFieldApprovalStates
 {
     public const string Approved = "approved";
