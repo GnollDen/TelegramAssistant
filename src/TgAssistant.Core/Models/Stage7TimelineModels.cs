@@ -22,6 +22,11 @@ public static class Stage7ClosureStates
     public const string Closed = "closed";
 }
 
+public static class Stage7TimelineTemporalFactTypes
+{
+    public const string TimelinePrimaryActivity = TemporalSingleValuedFactFamilies.TimelinePrimaryActivity;
+}
+
 public class Stage7TimelineFormationRequest
 {
     public Stage6BootstrapGraphResult BootstrapResult { get; set; } = new();

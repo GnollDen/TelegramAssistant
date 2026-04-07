@@ -498,8 +498,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-004 completed: added temporal person-state contract models with required fields (subject_ref/fact_type/value/valid_from_utc/valid_to_utc/confidence/evidence_refs/state_status/supersedes_state_id/superseded_by_state_id), fact-category constants (stable/temporal/event_conditioned/contested), current-open vs historical-closed helpers, and shared TemporalSingleValuedFactFamilies classifier starter list (profile_status/profile_location/relationship_state/timeline_primary_activity) referenced from Stage7 dossier/profile and timeline model constants. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-003"
       ]

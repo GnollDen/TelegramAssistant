@@ -20,6 +20,13 @@ public static class Stage7ProfileScopes
     public const string Global = "global";
 }
 
+public static class Stage7DossierProfileTemporalFactTypes
+{
+    public const string ProfileStatus = TemporalSingleValuedFactFamilies.ProfileStatus;
+    public const string ProfileLocation = TemporalSingleValuedFactFamilies.ProfileLocation;
+    public const string RelationshipState = TemporalSingleValuedFactFamilies.RelationshipState;
+}
+
 public class Stage7DossierProfileFormationRequest
 {
     public Stage6BootstrapGraphResult BootstrapResult { get; set; } = new();
