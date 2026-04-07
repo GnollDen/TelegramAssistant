@@ -196,6 +196,10 @@ try
     var opint012BSmokeOutput = opint012BSmokeOutputArg is null
         ? null
         : opint012BSmokeOutputArg["--opint-012-b-smoke-output=".Length..];
+    var opintHomeDashboardSmokeOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--opint-home-dashboard-smoke-output=", StringComparison.OrdinalIgnoreCase));
+    var opintHomeDashboardSmokeOutput = opintHomeDashboardSmokeOutputArg is null
+        ? null
+        : opintHomeDashboardSmokeOutputArg["--opint-home-dashboard-smoke-output=".Length..];
     var resolutionInterpretationLoopValidateOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--resolution-interpretation-loop-v1-validate-output=", StringComparison.OrdinalIgnoreCase));
     var resolutionInterpretationLoopValidateOutput = resolutionInterpretationLoopValidateOutputArg is null
         ? null
@@ -230,6 +234,7 @@ try
     var runOpint009DSmoke = args.Any(arg => string.Equals(arg, "--opint-009-d-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint012ASmoke = args.Any(arg => string.Equals(arg, "--opint-012-a-smoke", StringComparison.OrdinalIgnoreCase));
     var runOpint012BSmoke = args.Any(arg => string.Equals(arg, "--opint-012-b-smoke", StringComparison.OrdinalIgnoreCase));
+    var runOpintHomeDashboardSmoke = args.Any(arg => string.Equals(arg, "--opint-home-dashboard-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
@@ -322,6 +327,7 @@ try
         "--opint-009-d-smoke",
         "--opint-012-a-smoke",
         "--opint-012-b-smoke",
+        "--opint-home-dashboard-smoke",
         "--resolution-interpretation-loop-v1-validate",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -637,6 +643,19 @@ try
             report.AllChecksPassed,
             report.RendererUsesDisplayLabelTrustPercent,
             report.NullTrustOmitsPercent);
+        return;
+    }
+
+    if (runOpintHomeDashboardSmoke)
+    {
+        var report = await OpintHomeDashboardSmokeRunner.RunAsync(opintHomeDashboardSmokeOutput, CancellationToken.None);
+        Log.Information(
+            "OPINT home/dashboard smoke requested via --opint-home-dashboard-smoke. output={OutputPath}, passed={Passed}, api_shape={ApiShape}, degraded_sources_order={DegradedSourcesOrder}, target_url_allow_list={TargetUrlAllowList}. Exiting after successful verification.",
+            report.OutputPath,
+            report.AllChecksPassed,
+            report.ApiShapeValidated,
+            report.DegradedSourcesOrderValidated,
+            report.TargetUrlAllowListValidated);
         return;
     }
 

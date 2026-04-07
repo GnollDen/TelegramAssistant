@@ -403,8 +403,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-015A completed: added dedicated OPINT home/dashboard API smoke runner with CLI switch `--opint-home-dashboard-smoke` (optional `--opint-home-dashboard-smoke-output=...`) to assert bounded home summary API shape and approved target URL allow-list via endpoint validator contract, including fixed degradedSources order contract. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-home-dashboard-smoke`; artifact: `src/TgAssistant.Host/artifacts/operator-home/opint-home-dashboard-smoke.json`.",
       "dependencies": [
         "DTP-014"
       ]
