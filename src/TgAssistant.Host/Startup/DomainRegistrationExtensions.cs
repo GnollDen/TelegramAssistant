@@ -70,6 +70,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IRuntimeControlStateService, RuntimeControlStateService>();
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
+        services.AddSingleton<IResolutionCaseReintegrationService, ResolutionCaseReintegrationService>();
         services.AddSingleton<IResolutionInterpretationModel, LlmResolutionInterpretationModel>();
         services.AddSingleton<IConflictResolutionSessionModel, LlmConflictResolutionSessionModel>();
         services.AddSingleton<ResolutionInterpretationLoopV1Service>();
@@ -207,6 +208,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7PairDynamicsRepository, Stage7PairDynamicsRepository>();
         services.AddSingleton<IStage7TimelineRepository, Stage7TimelineRepository>();
         services.AddSingleton<ITemporalPersonStateRepository, TemporalPersonStateRepository>();
+        services.AddSingleton<IResolutionCaseReintegrationLedgerRepository, ResolutionCaseReintegrationLedgerRepository>();
         services.AddSingleton<IStage8RecomputeQueueRepository, Stage8RecomputeQueueRepository>();
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IStage8RelatedConflictRepository, Stage8RelatedConflictRepository>();

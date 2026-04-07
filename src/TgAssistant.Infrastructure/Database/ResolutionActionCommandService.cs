@@ -16,15 +16,18 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
+    private readonly IResolutionCaseReintegrationService _reintegrationService;
     private readonly ILogger<ResolutionActionCommandService> _logger;
 
     public ResolutionActionCommandService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         IResolutionReadService resolutionReadService,
+        IResolutionCaseReintegrationService reintegrationService,
         ILogger<ResolutionActionCommandService> logger)
     {
         _dbFactory = dbFactory;
         _resolutionReadService = resolutionReadService;
+        _reintegrationService = reintegrationService;
         _logger = logger;
     }
 
@@ -286,6 +289,27 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                 target.QueueItemId = enqueueResult.Item.Id;
                 target.TargetRef = enqueueResult.Item.TargetRef;
             }
+
+            var primaryTarget = recomputeContract.Targets.FirstOrDefault();
+            await _reintegrationService.RecordAsync(
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = trackedPerson.ScopeKey,
+                    ScopeItemKey = normalizedScopeItemKey,
+                    TrackedPersonId = trackedPerson.PersonId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                    NextStatus = MapActionToReintegrationStatus(normalizedAction),
+                    ResolutionActionId = actionRow.Id,
+                    ConflictSessionId = conflictSessionId,
+                    RecomputeQueueItemId = primaryTarget?.QueueItemId,
+                    RecomputeTargetFamily = primaryTarget?.TargetFamily,
+                    RecomputeTargetRef = primaryTarget?.TargetRef,
+                    UnresolvedResidueJson = BuildUnresolvedResidueJson(
+                        normalizedAction,
+                        normalizedExplanation,
+                        detail.Item)
+                },
+                ct);
 
             var auditRow = BuildAuditRow(
                 request,
@@ -600,6 +624,38 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
         }
 
         return null;
+    }
+
+    private static string MapActionToReintegrationStatus(string normalizedAction)
+    {
+        return normalizedAction switch
+        {
+            ResolutionActionTypes.Approve => IterativeCaseStatuses.ResolvedByAi,
+            ResolutionActionTypes.Clarify => IterativeCaseStatuses.NeedsMoreContext,
+            ResolutionActionTypes.Defer => IterativeCaseStatuses.DeferredToNextPass,
+            ResolutionActionTypes.Reject => IterativeCaseStatuses.NeedsOperator,
+            _ => IterativeCaseStatuses.Open
+        };
+    }
+
+    private static string? BuildUnresolvedResidueJson(
+        string normalizedAction,
+        string? normalizedExplanation,
+        ResolutionItemDetail item)
+    {
+        if (string.Equals(normalizedAction, ResolutionActionTypes.Approve, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            action = normalizedAction,
+            explanation = normalizedExplanation,
+            item_type = item.ItemType,
+            summary = item.Summary,
+            required_action = item.RequiredAction
+        });
     }
 
     private static DbOperatorResolutionAction BuildAcceptedActionRow(

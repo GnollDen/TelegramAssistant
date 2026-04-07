@@ -221,6 +221,47 @@ public interface ITemporalPersonStateRepository
         CancellationToken ct = default);
 }
 
+public interface IResolutionCaseReintegrationLedgerRepository
+{
+    Task<ResolutionCaseReintegrationLedgerEntry> InsertAsync(
+        ResolutionCaseReintegrationLedgerEntry entry,
+        CancellationToken ct = default);
+
+    Task<ResolutionCaseReintegrationLedgerEntry?> GetLatestByScopeItemAsync(
+        string scopeKey,
+        string scopeItemKey,
+        CancellationToken ct = default);
+
+    Task<ResolutionCaseReintegrationLedgerEntry?> GetLatestByCaseIdAsync(
+        string scopeKey,
+        string carryForwardCaseId,
+        CancellationToken ct = default);
+
+    Task<ResolutionCaseReintegrationLedgerEntry?> GetByIdAsync(
+        Guid id,
+        CancellationToken ct = default);
+
+    Task<List<ResolutionCaseReintegrationLedgerEntry>> QueryAsync(
+        ResolutionCaseReintegrationQuery query,
+        CancellationToken ct = default);
+
+    Task LinkSuccessorAsync(
+        Guid predecessorLedgerEntryId,
+        Guid successorLedgerEntryId,
+        CancellationToken ct = default);
+}
+
+public interface IResolutionCaseReintegrationService
+{
+    Task<ResolutionCaseReintegrationLedgerEntry> RecordAsync(
+        ResolutionCaseReintegrationRecordRequest request,
+        CancellationToken ct = default);
+
+    Task<List<ResolutionCaseReintegrationLedgerEntry>> QueryAsync(
+        ResolutionCaseReintegrationQuery query,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeQueueRepository
 {
     Task<Stage8RecomputeQueueItem> EnqueueAsync(

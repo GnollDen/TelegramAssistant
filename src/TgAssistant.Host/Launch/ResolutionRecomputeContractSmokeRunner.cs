@@ -1,3 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
 using TgAssistant.Infrastructure.Database.Ef;
@@ -6,7 +10,7 @@ namespace TgAssistant.Host.Launch;
 
 public static class ResolutionRecomputeContractSmokeRunner
 {
-    public static void Run()
+    public static async Task RunAsync(CancellationToken ct = default)
     {
         var trackedPersonId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         const string scopeKey = "chat:resolution-recompute-smoke";
@@ -130,6 +134,8 @@ public static class ResolutionRecomputeContractSmokeRunner
             },
             ResolutionRecomputeLifecycleStatuses.Failed,
             lastResultStatus: ModelPassResultStatuses.NeedMoreData);
+
+        await AssertReintegrationLedgerRoundTripAsync(ct);
     }
 
     private static void AssertContract(
@@ -229,5 +235,237 @@ public static class ResolutionRecomputeContractSmokeRunner
         {
             throw new InvalidOperationException($"Resolution recompute contract smoke failed: expected last result status '{lastResultStatus ?? "<null>"}' but got '{projected.LastResultStatus ?? "<null>"}' for '{label}'.");
         }
+    }
+
+    private static async Task AssertReintegrationLedgerRoundTripAsync(CancellationToken ct)
+    {
+        var connectionString = ResolveDatabaseConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Resolution recompute contract smoke failed: Database:ConnectionString is required for repository-backed reintegration validation.");
+        }
+        var ledgerScopeKey = $"chat:resolution-recompute-smoke-ledger:{Guid.NewGuid():N}";
+        var trackedPersonId = Guid.NewGuid();
+
+        var dbInit = new DatabaseInitializer(
+            Options.Create(new TgAssistant.Core.Configuration.DatabaseSettings
+            {
+                ConnectionString = connectionString
+            }),
+            NullLogger<DatabaseInitializer>.Instance);
+        await dbInit.InitializeAsync(ct);
+
+        var options = new DbContextOptionsBuilder<TgAssistantDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
+        await using var dbFactory = new SmokeDbContextFactory(options);
+        await SeedTrackedPersonAsync(dbFactory, ledgerScopeKey, trackedPersonId, ct);
+        var queueRepository = new Stage8RecomputeQueueRepository(dbFactory, NullLogger<Stage8RecomputeQueueRepository>.Instance);
+        var queueItem = await queueRepository.EnqueueAsync(
+            new Stage8RecomputeQueueRequest
+            {
+                ScopeKey = ledgerScopeKey,
+                PersonId = trackedPersonId,
+                TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+                TriggerKind = "resolution_approve",
+                TriggerRef = "resolution_action:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                Priority = 20
+            },
+            ct);
+        if (queueItem.Id == Guid.Empty)
+        {
+            throw new InvalidOperationException("Resolution recompute contract smoke failed: unable to seed recompute queue item for ledger linkage.");
+        }
+
+        var repository = new ResolutionCaseReintegrationLedgerRepository(dbFactory);
+        var service = new ResolutionCaseReintegrationService(repository);
+
+        var unresolved = await service.RecordAsync(
+            new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = ledgerScopeKey,
+                ScopeItemKey = "scope-item:ledger-smoke",
+                TrackedPersonId = trackedPersonId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                NextStatus = IterativeCaseStatuses.NeedsMoreContext,
+                UnresolvedResidueJson = """{"reason":"clarification_missing","source":"smoke"}"""
+            },
+            ct);
+
+        var resolving = await service.RecordAsync(
+            new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = unresolved.ScopeKey,
+                ScopeItemKey = unresolved.ScopeItemKey,
+                TrackedPersonId = unresolved.TrackedPersonId,
+                CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.Stage8RecomputeRequest,
+                NextStatus = IterativeCaseStatuses.ResolvingAi,
+                ExpectedPreviousLedgerEntryId = unresolved.Id
+            },
+            ct);
+
+        var resolved = await service.RecordAsync(
+            new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = unresolved.ScopeKey,
+                ScopeItemKey = unresolved.ScopeItemKey,
+                TrackedPersonId = unresolved.TrackedPersonId,
+                CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                NextStatus = IterativeCaseStatuses.ResolvedByAi,
+                RecomputeQueueItemId = queueItem.Id,
+                RecomputeTargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+                RecomputeTargetRef = $"person:{unresolved.TrackedPersonId:D}",
+                ExpectedPreviousLedgerEntryId = resolving.Id
+            },
+            ct);
+
+        if (resolved.RecomputeQueueItemId != queueItem.Id
+            || !string.Equals(resolved.RecomputeTargetFamily, Stage8RecomputeTargetFamilies.DossierProfile, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Resolution recompute contract smoke failed: repository-backed reintegration linkage tuple did not persist/read back.");
+        }
+
+        await AssertRejectedAsync(
+            service,
+            ReintegrationLedgerFailureReasons.CrossScopeLinkageRejected,
+            new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = ledgerScopeKey,
+                ScopeItemKey = "scope-item:other",
+                TrackedPersonId = trackedPersonId,
+                CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                NextStatus = IterativeCaseStatuses.Open
+            },
+            ct);
+
+        await AssertRejectedAsync(
+            service,
+            ReintegrationLedgerFailureReasons.StaleRecomputeLinkageRejected,
+            new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = unresolved.ScopeKey,
+                ScopeItemKey = unresolved.ScopeItemKey,
+                TrackedPersonId = unresolved.TrackedPersonId,
+                CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                NextStatus = IterativeCaseStatuses.Superseded,
+                ExpectedPreviousLedgerEntryId = unresolved.Id
+            },
+            ct);
+
+        var persistedRows = await service.QueryAsync(
+            new ResolutionCaseReintegrationQuery
+            {
+                ScopeKey = unresolved.ScopeKey,
+                CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                Limit = 10
+            },
+            ct);
+        if (persistedRows.Count < 3)
+        {
+            throw new InvalidOperationException("Resolution recompute contract smoke failed: repository-backed reintegration ledger round-trip returned fewer rows than expected.");
+        }
+    }
+
+    private static async Task AssertRejectedAsync(
+        IResolutionCaseReintegrationService service,
+        string expectedReason,
+        ResolutionCaseReintegrationRecordRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            await service.RecordAsync(request, ct);
+        }
+        catch (InvalidOperationException ex) when (string.Equals(ex.Message, expectedReason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Resolution recompute contract smoke failed: expected rejection '{expectedReason}'.");
+    }
+
+    private static async Task SeedTrackedPersonAsync(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        string scopeKey,
+        Guid personId,
+        CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var exists = await db.Persons.AnyAsync(x => x.Id == personId, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        db.Persons.Add(new DbPerson
+        {
+            Id = personId,
+            ScopeKey = scopeKey,
+            PersonType = "tracked_person",
+            DisplayName = "Resolution Recompute Smoke Person",
+            CanonicalName = "resolution_recompute_smoke_person",
+            Status = "active",
+            MetadataJson = "{}",
+            CreatedAt = nowUtc,
+            UpdatedAt = nowUtc
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static string? ResolveDatabaseConnectionString()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("Database__ConnectionString");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+        {
+            return fromEnv.Trim();
+        }
+
+        var baseDir = AppContext.BaseDirectory;
+        var appSettingsPath = Path.Combine(baseDir, "appsettings.json");
+        if (!File.Exists(appSettingsPath))
+        {
+            appSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "src", "TgAssistant.Host", "appsettings.json");
+        }
+
+        if (!File.Exists(appSettingsPath))
+        {
+            return null;
+        }
+
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(appSettingsPath));
+        if (doc.RootElement.TryGetProperty("Database", out var databaseElement)
+            && databaseElement.TryGetProperty("ConnectionString", out var connectionElement))
+        {
+            var fromFile = connectionElement.GetString();
+            if (!string.IsNullOrWhiteSpace(fromFile))
+            {
+                return fromFile.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private sealed class SmokeDbContextFactory : IDbContextFactory<TgAssistantDbContext>, IAsyncDisposable
+    {
+        private readonly DbContextOptions<TgAssistantDbContext> _options;
+
+        public SmokeDbContextFactory(DbContextOptions<TgAssistantDbContext> options)
+        {
+            _options = options;
+        }
+
+        public TgAssistantDbContext CreateDbContext()
+            => new(_options);
+
+        public Task<TgAssistantDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(CreateDbContext());
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

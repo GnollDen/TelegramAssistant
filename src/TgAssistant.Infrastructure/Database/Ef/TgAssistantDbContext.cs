@@ -74,6 +74,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbOperatorAuditEvent> OperatorAuditEvents => Set<DbOperatorAuditEvent>();
     public DbSet<DbOperatorOfflineEvent> OperatorOfflineEvents => Set<DbOperatorOfflineEvent>();
     public DbSet<DbTemporalPersonState> TemporalPersonStates => Set<DbTemporalPersonState>();
+    public DbSet<DbResolutionCaseReintegrationLedgerEntry> ResolutionCaseReintegrationLedgerEntries => Set<DbResolutionCaseReintegrationLedgerEntry>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -1641,6 +1642,36 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.SubjectRef, x.FactType, x.StateStatus, x.ValidFromUtc });
             e.HasIndex(x => x.SupersedesStateId).HasFilter("supersedes_state_id IS NOT NULL");
             e.HasIndex(x => x.SupersededByStateId).HasFilter("superseded_by_state_id IS NOT NULL");
+        });
+
+        modelBuilder.Entity<DbResolutionCaseReintegrationLedgerEntry>(e =>
+        {
+            e.ToTable("resolution_case_reintegration_ledger");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ReintegrationEntryId).HasColumnName("reintegration_entry_id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.ScopeItemKey).HasColumnName("scope_item_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.CarryForwardCaseId).HasColumnName("carry_forward_case_id");
+            e.Property(x => x.OriginSourceKind).HasColumnName("origin_source_kind");
+            e.Property(x => x.PreviousStatus).HasColumnName("previous_status");
+            e.Property(x => x.NextStatus).HasColumnName("next_status");
+            e.Property(x => x.PredecessorLedgerEntryId).HasColumnName("predecessor_ledger_entry_id");
+            e.Property(x => x.SuccessorLedgerEntryId).HasColumnName("successor_ledger_entry_id");
+            e.Property(x => x.ResolutionActionId).HasColumnName("resolution_action_id");
+            e.Property(x => x.ConflictSessionId).HasColumnName("conflict_session_id");
+            e.Property(x => x.RecomputeQueueItemId).HasColumnName("recompute_queue_item_id");
+            e.Property(x => x.RecomputeTargetFamily).HasColumnName("recompute_target_family");
+            e.Property(x => x.RecomputeTargetRef).HasColumnName("recompute_target_ref");
+            e.Property(x => x.UnresolvedResidueJson).HasColumnName("unresolved_residue_json").HasColumnType("jsonb");
+            e.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.ScopeKey, x.ScopeItemKey, x.RecordedAtUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.CarryForwardCaseId, x.RecordedAtUtc });
+            e.HasIndex(x => x.PredecessorLedgerEntryId).HasFilter("predecessor_ledger_entry_id IS NOT NULL");
+            e.HasIndex(x => x.SuccessorLedgerEntryId).HasFilter("successor_ledger_entry_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

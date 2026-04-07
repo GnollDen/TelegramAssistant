@@ -540,7 +540,7 @@ try
 
     if (runResolutionRecomputeContractSmoke)
     {
-        ResolutionRecomputeContractSmokeRunner.Run();
+        await ResolutionRecomputeContractSmokeRunner.RunAsync();
         Log.Information("Resolution recompute contract smoke requested via --resolution-recompute-contract-smoke. Exiting after successful verification.");
         return;
     }

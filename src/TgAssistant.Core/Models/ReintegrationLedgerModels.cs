@@ -1,4 +1,14 @@
+using System.Text.Json;
+
 namespace TgAssistant.Core.Models;
+
+public static class ReintegrationLedgerFailureReasons
+{
+    public const string CrossScopeLinkageRejected = "cross_scope_linkage_rejected";
+    public const string StaleRecomputeLinkageRejected = "stale_recompute_linkage_rejected";
+    public const string InvalidStatusTransition = "invalid_status_transition";
+    public const string RecomputeTupleRequired = "recompute_tuple_required";
+}
 
 public class ResolutionCaseReintegrationLedgerEntry
 {
@@ -40,7 +50,9 @@ public class ResolutionCaseReintegrationRecordRequest
     public Guid? RecomputeQueueItemId { get; set; }
     public string? RecomputeTargetFamily { get; set; }
     public string? RecomputeTargetRef { get; set; }
+    public JsonElement? UnresolvedResidue { get; set; }
     public string? UnresolvedResidueJson { get; set; }
+    public Guid? ExpectedPreviousLedgerEntryId { get; set; }
     public DateTime RecordedAtUtc { get; set; }
 }
 
