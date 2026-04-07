@@ -4874,48 +4874,22 @@ public static class OperatorWebEndpointExtensions
       });
     }
 
-    function renderClarificationHistory(clarification) {
+    function renderClarificationSummary(detail) {
       const wrapper = document.createElement("section");
       wrapper.className = "detail-block";
-      wrapper.innerHTML = "<h4>Clarification History</h4>";
+      wrapper.innerHTML = "<h4>Clarification Summary</h4>";
 
       const meta = document.createElement("div");
       meta.className = "meta";
       [
-        "Loop: " + titleize(clarification.loopStatus || "unknown"),
-        "Stop: " + titleize(clarification.stopReason || "none"),
-        "Questions: " + (clarification.questionCount || 0),
-        "Answered: " + (clarification.answeredCount || 0),
-        "History: " + (clarification.historyCount || 0),
-        "Last answer: " + formatUtc(clarification.lastAnsweredAtUtc)
+        "History count: " + (detail.clarificationHistoryCount || 0),
+        "Stop reason: " + titleize(detail.stopReason || "none")
       ].forEach(function(text) {
         const tag = document.createElement("span");
         tag.textContent = text;
         meta.appendChild(tag);
       });
       wrapper.appendChild(meta);
-
-      const historyList = document.createElement("div");
-      historyList.className = "history-list";
-      const history = Array.isArray(clarification.history) ? clarification.history : [];
-      if (history.length === 0) {
-        historyList.innerHTML = "<p class='muted'>No clarification answers captured for this offline event.</p>";
-      } else {
-        history.forEach(function(entry) {
-          const item = document.createElement("article");
-          item.className = "history-item";
-          item.innerHTML =
-            "<p><strong>Question:</strong> " + (entry.questionKey || "n/a") + "</p>" +
-            "<p><strong>Answer:</strong> " + (entry.answer || "n/a") + "</p>" +
-            "<p class='muted'>Gain: " + formatPercent(entry.informationGain)
-              + " | New tokens: " + (entry.newTokenCount || 0)
-              + " | Unknown: " + (entry.unknownPattern ? "yes" : "no")
-              + " | Repeat: " + (entry.repetitionDetected ? "yes" : "no")
-              + " | Captured: " + formatUtc(entry.capturedAtUtc) + "</p>";
-          historyList.appendChild(item);
-        });
-      }
-      wrapper.appendChild(historyList);
       return wrapper;
     }
 
@@ -4951,7 +4925,7 @@ public static class OperatorWebEndpointExtensions
       noteLabel.appendChild(noteInput);
       block.appendChild(noteLabel);
 
-      const linkage = detail.timelineLinkage || {};
+      const linkageStatus = detail.linkageTargetFamily && detail.linkageTargetRef ? "linked" : "unlinked";
       const linkageLabel = document.createElement("label");
       linkageLabel.textContent = "Timeline linkage status";
       const linkageStatusSelect = document.createElement("select");
@@ -4959,7 +4933,7 @@ public static class OperatorWebEndpointExtensions
         const option = document.createElement("option");
         option.value = status;
         option.textContent = titleize(status);
-        if ((linkage.linkageStatus || "unlinked") === status) {
+        if (linkageStatus === status) {
           option.selected = true;
         }
         linkageStatusSelect.appendChild(option);
@@ -4972,7 +4946,7 @@ public static class OperatorWebEndpointExtensions
       const linkageTargetFamilyInput = document.createElement("input");
       linkageTargetFamilyInput.type = "text";
       linkageTargetFamilyInput.maxLength = 128;
-      linkageTargetFamilyInput.value = linkage.targetFamily || "";
+      linkageTargetFamilyInput.value = detail.linkageTargetFamily || "";
       linkageTargetFamilyLabel.appendChild(linkageTargetFamilyInput);
       block.appendChild(linkageTargetFamilyLabel);
 
@@ -4981,7 +4955,7 @@ public static class OperatorWebEndpointExtensions
       const linkageTargetRefInput = document.createElement("input");
       linkageTargetRefInput.type = "text";
       linkageTargetRefInput.maxLength = 256;
-      linkageTargetRefInput.value = linkage.targetRef || "";
+      linkageTargetRefInput.value = detail.linkageTargetRef || "";
       linkageTargetRefLabel.appendChild(linkageTargetRefInput);
       block.appendChild(linkageTargetRefLabel);
 
@@ -5023,9 +4997,8 @@ public static class OperatorWebEndpointExtensions
 
           appState.detail = result.offlineEvent;
           feedback.className = "state success";
-          feedback.textContent =
-            "Refinement saved. Event updated at " + formatUtc(result.offlineEvent.updatedAtUtc)
-            + (result.auditEventId ? " (audit " + result.auditEventId + ")." : ".");
+          feedback.textContent = "Refinement saved."
+            + (result.auditEventId ? " Audit event: " + result.auditEventId + "." : "");
           await loadEvents();
           await loadSelectedDetail();
         } catch (error) {
@@ -5075,9 +5048,8 @@ public static class OperatorWebEndpointExtensions
 
           appState.detail = result.offlineEvent;
           feedback.className = "state success";
-          feedback.textContent =
-            "Timeline linkage updated at " + formatUtc(result.offlineEvent.updatedAtUtc)
-            + (result.auditEventId ? " (audit " + result.auditEventId + ")." : ".");
+          feedback.textContent = "Timeline linkage updated."
+            + (result.auditEventId ? " Audit event: " + result.auditEventId + "." : "");
           await loadEvents();
           await loadSelectedDetail();
         } catch (error) {
@@ -5099,27 +5071,24 @@ public static class OperatorWebEndpointExtensions
       summaryBlock.className = "detail-block";
       summaryBlock.innerHTML =
         "<h3>Offline Event Detail</h3>" +
+        "<p><strong>ID:</strong> " + (detail.id || "n/a") + "</p>" +
+        "<p><strong>Scope:</strong> " + (detail.scopeKey || "n/a") + "</p>" +
         "<p><strong>Summary:</strong> " + (detail.summary || "n/a") + "</p>" +
-        "<p><strong>Recording ref:</strong> " + (detail.recordingReference || "none") + "</p>" +
-        "<p><strong>Extracted interpretation:</strong> " + (detail.extractedInterpretation || "No extracted interpretation available.") + "</p>";
+        "<p><strong>Trust:</strong> " + formatPercent(detail.confidence) + "</p>";
       detailContentNode.appendChild(summaryBlock);
 
       const statusBlock = document.createElement("section");
       statusBlock.className = "detail-block";
-      const linkage = detail.timelineLinkage || {};
+      const linkageStatus = detail.linkageTargetFamily && detail.linkageTargetRef ? "linked" : "unlinked";
       statusBlock.innerHTML = "<h4>Status + Linkage</h4>";
       const meta = document.createElement("div");
       meta.className = "meta";
       [
-        "Status: " + titleize(detail.status || "unknown"),
-        "Trust: " + formatPercent(detail.confidence),
-        "Captured: " + formatUtc(detail.capturedAtUtc),
-        "Saved: " + formatUtc(detail.savedAtUtc),
-        "Updated: " + formatUtc(detail.updatedAtUtc),
-        "Linkage: " + titleize(linkage.linkageStatus || "unlinked"),
-        "Target family: " + (linkage.targetFamily || "n/a"),
-        "Target ref: " + (linkage.targetRef || "n/a"),
-        "Linked at: " + formatUtc(linkage.linkedAtUtc)
+        "Linkage status: " + titleize(linkageStatus),
+        "Target family: " + (detail.linkageTargetFamily || "n/a"),
+        "Target ref: " + (detail.linkageTargetRef || "n/a"),
+        "Scope bound: " + (detail.scopeBound ? "yes" : "no"),
+        "Found: " + (detail.found ? "yes" : "no")
       ].forEach(function(text) {
         const tag = document.createElement("span");
         tag.textContent = text;
@@ -5128,7 +5097,7 @@ public static class OperatorWebEndpointExtensions
       statusBlock.appendChild(meta);
       detailContentNode.appendChild(statusBlock);
 
-      detailContentNode.appendChild(renderClarificationHistory(detail.clarification || {}));
+      detailContentNode.appendChild(renderClarificationSummary(detail));
       detailContentNode.appendChild(renderRefinementForm(detail));
       setDetailState("success", "Offline-event detail loaded.");
       syncActiveCard();

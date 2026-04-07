@@ -251,8 +251,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-009B completed: offline-event web detail panel now consumes the bounded single-item offline_event contract used by /detail|/refine|/timeline-linkage, showing summary/trust plus clarification_history_count, stop_reason, and linkage target state without requiring clarification_history payloads; deny-safe detail error handling remains explicit. Verified with dotnet build TelegramAssistant.sln and Telegram__OwnerUserId=885574984 dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-007-b3-smoke.",
       "dependencies": [
         "DTP-009A"
       ]
