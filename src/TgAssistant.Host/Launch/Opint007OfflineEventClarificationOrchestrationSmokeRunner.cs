@@ -26,6 +26,7 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
         var dbFactory = services.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
         var settings = services.GetRequiredService<IOptions<TelegramSettings>>().Value;
         var workflow = services.GetRequiredService<TelegramOperatorWorkflowService>();
+        var sessionStore = services.GetRequiredService<TelegramOperatorSessionStore>();
 
         if (settings.OwnerUserId <= 0)
         {
@@ -157,6 +158,43 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
             report.DraftSaveResult = MapStep(draftSave);
             report.DraftOfflineEventId = TryParseSavedOfflineEventId(report.DraftSaveResult.PrimaryText);
             Ensure(report.DraftOfflineEventId.HasValue, "Draft save response did not include saved event id.");
+            var draftOfflineEventId = report.DraftOfflineEventId.GetValueOrDefault();
+            report.RejectedFinalSaveStoredBefore = await LoadStoredAsync(dbFactory, draftOfflineEventId, ct);
+            Ensure(report.RejectedFinalSaveStoredBefore != null, "Stored draft offline event was not found before rejection validation.");
+            report.RejectedFinalSaveSessionBefore = sessionStore.GetSnapshot(seed.AuthorizedChatId);
+            Ensure(report.RejectedFinalSaveSessionBefore != null, "Session snapshot was not found before rejection validation.");
+
+            var rejectedFinalSave = await workflow.HandleInteractionAsync(
+                new TelegramOperatorInteraction
+                {
+                    ChatId = seed.AuthorizedChatId,
+                    UserId = ownerUserId,
+                    IsPrivateChat = true,
+                    UserDisplayName = "OPINT-007-B3 Operator",
+                    CallbackData = "offline:save-final",
+                    CallbackQueryId = $"offline-save-final-rejected-{runId}"
+                },
+                ct);
+            report.RejectedFinalSaveResult = MapStep(rejectedFinalSave);
+            Ensure(
+                report.RejectedFinalSaveResult.PrimaryText.Contains("Save rejected:", StringComparison.Ordinal),
+                "Rejected final save did not emit an explicit save-rejected note.");
+
+            report.RejectedFinalSaveStoredAfter = await LoadStoredAsync(dbFactory, draftOfflineEventId, ct);
+            Ensure(report.RejectedFinalSaveStoredAfter != null, "Stored draft offline event was not found after rejection validation.");
+            EnsureStoredUnchanged(report.RejectedFinalSaveStoredBefore!, report.RejectedFinalSaveStoredAfter!);
+
+            report.RejectedFinalSaveSessionAfter = sessionStore.GetSnapshot(seed.AuthorizedChatId);
+            Ensure(report.RejectedFinalSaveSessionAfter != null, "Session snapshot was not found after rejection validation.");
+            Ensure(
+                report.RejectedFinalSaveSessionAfter!.ActiveTrackedPersonId == report.RejectedFinalSaveSessionBefore!.ActiveTrackedPersonId,
+                "Rejected final save unexpectedly changed active tracked person in session.");
+            Ensure(
+                string.Equals(report.RejectedFinalSaveSessionAfter.ActiveMode, report.RejectedFinalSaveSessionBefore.ActiveMode, StringComparison.Ordinal),
+                "Rejected final save unexpectedly changed active mode in session.");
+            Ensure(
+                string.Equals(report.RejectedFinalSaveSessionAfter.SurfaceMode, report.RejectedFinalSaveSessionBefore.SurfaceMode, StringComparison.Ordinal),
+                "Rejected final save unexpectedly changed Telegram surface mode.");
 
             var firstClarifyPrompt = await workflow.HandleInteractionAsync(
                 new TelegramOperatorInteraction
@@ -374,8 +412,23 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
             RecordingReference = row.RecordingReference,
             ClarificationStateJson = row.ClarificationStateJson,
             Confidence = row.Confidence,
-            SavedAtUtc = row.SavedAtUtc
+            SavedAtUtc = row.SavedAtUtc,
+            UpdatedAtUtc = row.UpdatedAtUtc
         };
+    }
+
+    private static void EnsureStoredUnchanged(
+        Opint007B3StoredOfflineEvent before,
+        Opint007B3StoredOfflineEvent after)
+    {
+        Ensure(before.OfflineEventId == after.OfflineEventId, "Rejected final save unexpectedly changed offline-event id.");
+        Ensure(string.Equals(before.Status, after.Status, StringComparison.Ordinal), "Rejected final save unexpectedly changed offline-event status.");
+        Ensure(string.Equals(before.Summary, after.Summary, StringComparison.Ordinal), "Rejected final save unexpectedly changed offline-event summary.");
+        Ensure(string.Equals(before.RecordingReference, after.RecordingReference, StringComparison.Ordinal), "Rejected final save unexpectedly changed offline-event recording reference.");
+        Ensure(string.Equals(before.ClarificationStateJson, after.ClarificationStateJson, StringComparison.Ordinal), "Rejected final save unexpectedly changed clarification state payload.");
+        Ensure(before.Confidence == after.Confidence, "Rejected final save unexpectedly changed offline-event confidence.");
+        Ensure(before.SavedAtUtc == after.SavedAtUtc, "Rejected final save unexpectedly changed saved_at_utc.");
+        Ensure(before.UpdatedAtUtc == after.UpdatedAtUtc, "Rejected final save unexpectedly changed updated_at_utc.");
     }
 
     private static async Task<bool> CleanupAsync(
@@ -461,6 +514,11 @@ public sealed class Opint007OfflineEventClarificationOrchestrationSmokeReport
     public Opint007StepResult SecondClarificationAnswer { get; set; } = new();
     public Opint007StepResult DraftSaveResult { get; set; } = new();
     public Guid? DraftOfflineEventId { get; set; }
+    public Opint007StepResult RejectedFinalSaveResult { get; set; } = new();
+    public TelegramOperatorSessionSnapshot? RejectedFinalSaveSessionBefore { get; set; }
+    public TelegramOperatorSessionSnapshot? RejectedFinalSaveSessionAfter { get; set; }
+    public Opint007B3StoredOfflineEvent? RejectedFinalSaveStoredBefore { get; set; }
+    public Opint007B3StoredOfflineEvent? RejectedFinalSaveStoredAfter { get; set; }
     public Opint007StepResult FinalSaveResult { get; set; } = new();
     public Guid? SavedOfflineEventId { get; set; }
     public Opint007B3StoredOfflineEvent? StoredEvent { get; set; }
@@ -478,6 +536,7 @@ public sealed class Opint007B3StoredOfflineEvent
     public string ClarificationStateJson { get; set; } = string.Empty;
     public float? Confidence { get; set; }
     public DateTime? SavedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
 }
 
 internal sealed class Opint007B3SeedState

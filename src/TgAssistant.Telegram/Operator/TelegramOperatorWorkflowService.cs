@@ -1657,7 +1657,7 @@ public sealed class TelegramOperatorWorkflowService
         {
             return CreatePendingOfflineEventInputPrompt(
                 state,
-                "Finish or cancel the pending input before saving.");
+                "Save rejected: finish or cancel the pending input before saving.");
         }
 
         if (state.Session.ActiveTrackedPersonId == Guid.Empty)
@@ -1690,7 +1690,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "Summary is required before saving. Choose Capture Summary.",
+                note: "Save rejected: summary is required before saving. Choose Capture Summary.",
                 ct);
         }
 
@@ -1739,7 +1739,7 @@ public sealed class TelegramOperatorWorkflowService
         {
             return CreatePendingOfflineEventInputPrompt(
                 state,
-                "Finish or cancel the pending input before final save.");
+                "Save rejected: finish or cancel the pending input before final save.");
         }
 
         if (state.Session.ActiveTrackedPersonId == Guid.Empty)
@@ -1778,7 +1778,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "Final save is available after clarification stop conditions are reached.",
+                note: "Save rejected: final save is available after clarification stop conditions are reached.",
                 ct);
         }
 
@@ -1789,7 +1789,7 @@ public sealed class TelegramOperatorWorkflowService
                 state,
                 interaction,
                 nowUtc,
-                note: "Summary is required before final save.",
+                note: "Save rejected: summary is required before final save.",
                 ct);
         }
 

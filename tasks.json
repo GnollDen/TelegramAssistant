@@ -194,8 +194,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "offline save validation paths now emit explicit 'Save rejected' notes; OPINT-007 b3 smoke includes rejected final-save no-write/session-continuity assertions and passes (with Telegram__OwnerUserId override).",
       "dependencies": [
         "DTP-008A"
       ]
