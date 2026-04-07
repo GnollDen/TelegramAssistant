@@ -58,7 +58,7 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             OwnerUserId = ownerUserId,
             AuthorizedChatId = seed.AuthorizedChatId,
             SummaryInput = "Met in person after work; agreed to de-escalate and check in tomorrow.",
-            RecordingReferenceInput = "voice-note://offline/opint-007-b1-sample"
+            RecordingReferenceInput = "  voice-note://offline/opint-007-b1-sample  "
         };
 
         Exception? fatal = null;
@@ -190,6 +190,24 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             Ensure(report.SavedOfflineEventId.HasValue, "Offline save response did not include saved event id.");
             var savedOfflineEventId = report.SavedOfflineEventId.GetValueOrDefault();
 
+            var resaveResponse = await workflow.HandleInteractionAsync(
+                new TelegramOperatorInteraction
+                {
+                    ChatId = seed.AuthorizedChatId,
+                    UserId = ownerUserId,
+                    IsPrivateChat = true,
+                    UserDisplayName = "OPINT-007-B1 Operator",
+                    CallbackData = "offline:save",
+                    CallbackQueryId = $"offline-resave-{runId}"
+                },
+                ct);
+            report.ResaveResult = MapStep(resaveResponse);
+            report.ResavedOfflineEventId = TryParseSavedOfflineEventId(report.ResaveResult.PrimaryText);
+            Ensure(report.ResavedOfflineEventId.HasValue, "Offline re-save response did not include saved event id.");
+            Ensure(
+                report.ResavedOfflineEventId.GetValueOrDefault() == savedOfflineEventId,
+                "Offline draft re-save did not upsert the same persisted offline-event record id.");
+
             var snapshot = sessionStore.GetSnapshot(seed.AuthorizedChatId);
             Ensure(snapshot != null, "Telegram operator session snapshot was not retained.");
             report.SessionSnapshot = snapshot!;
@@ -218,8 +236,11 @@ public static class Opint007OfflineEventCaptureSmokeRunner
                 string.Equals(report.StoredDraft.Summary, report.SummaryInput, StringComparison.Ordinal),
                 "Stored offline-event summary mismatch.");
             Ensure(
-                string.Equals(report.StoredDraft.RecordingReference, report.RecordingReferenceInput, StringComparison.Ordinal),
+                string.Equals(report.StoredDraft.RecordingReference, report.RecordingReferenceInput.Trim(), StringComparison.Ordinal),
                 "Stored offline-event recording reference mismatch.");
+            Ensure(
+                !report.StoredDraft.SavedAtUtc.HasValue,
+                "Stored offline-event draft saved_at_utc must remain null.");
             Ensure(
                 string.Equals(report.StoredDraft.OperatorSessionId, snapshot.OperatorSessionId, StringComparison.Ordinal),
                 "Stored offline-event operator_session_id mismatch.");
@@ -237,12 +258,14 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             {
                 var root = clarificationDoc.RootElement;
                 Ensure(
-                    root.TryGetProperty("questions", out var questionsElement)
+                    (root.TryGetProperty("questions", out var questionsElement)
+                        || root.TryGetProperty("Questions", out questionsElement))
                     && questionsElement.ValueKind == JsonValueKind.Array
                     && questionsElement.GetArrayLength() > 0,
                     "Stored offline-event clarification state is missing ranked questions.");
                 Ensure(
-                    root.TryGetProperty("nextQuestionKey", out var nextQuestionKeyElement)
+                    (root.TryGetProperty("nextQuestionKey", out var nextQuestionKeyElement)
+                        || root.TryGetProperty("NextQuestionKey", out nextQuestionKeyElement))
                     && nextQuestionKeyElement.ValueKind == JsonValueKind.String
                     && !string.IsNullOrWhiteSpace(nextQuestionKeyElement.GetString()),
                     "Stored offline-event clarification state is missing nextQuestionKey.");
@@ -383,7 +406,8 @@ public static class Opint007OfflineEventCaptureSmokeRunner
             Surface = row.Surface,
             CapturePayloadJson = row.CapturePayloadJson,
             ClarificationStateJson = row.ClarificationStateJson,
-            Confidence = row.Confidence
+            Confidence = row.Confidence,
+            SavedAtUtc = row.SavedAtUtc
         };
     }
 
@@ -484,7 +508,9 @@ public sealed class Opint007OfflineEventCaptureSmokeReport
     public Opint007StepResult RecordingPrompt { get; set; } = new();
     public Opint007StepResult RecordingCaptured { get; set; } = new();
     public Opint007StepResult SaveResult { get; set; } = new();
+    public Opint007StepResult ResaveResult { get; set; } = new();
     public Guid? SavedOfflineEventId { get; set; }
+    public Guid? ResavedOfflineEventId { get; set; }
     public TelegramOperatorSessionSnapshot SessionSnapshot { get; set; } = new();
     public Opint007StoredDraft? StoredDraft { get; set; }
     public bool CleanupCompleted { get; set; }
@@ -512,6 +538,7 @@ public sealed class Opint007StoredDraft
     public string CapturePayloadJson { get; set; } = string.Empty;
     public string ClarificationStateJson { get; set; } = string.Empty;
     public float? Confidence { get; set; }
+    public DateTime? SavedAtUtc { get; set; }
 }
 
 internal sealed class Opint007SeedState

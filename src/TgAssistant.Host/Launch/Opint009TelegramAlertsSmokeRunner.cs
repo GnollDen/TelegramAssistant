@@ -466,6 +466,16 @@ public static class Opint009TelegramAlertsSmokeRunner
 
     private sealed class NoopOperatorOfflineEventRepository : IOperatorOfflineEventRepository
     {
+        public Task<OperatorOfflineEventRecord> UpsertDraftAsync(
+            OperatorOfflineEventDraftUpsertRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new OperatorOfflineEventRecord());
+
+        public Task<OperatorOfflineEventRecord> SaveFinalAsync(
+            OperatorOfflineEventFinalSaveRequest request,
+            CancellationToken ct = default)
+            => Task.FromResult(new OperatorOfflineEventRecord());
+
         public Task<OperatorOfflineEventRecord> CreateAsync(OperatorOfflineEventCreateRequest request, CancellationToken ct = default)
             => Task.FromResult(new OperatorOfflineEventRecord());
 

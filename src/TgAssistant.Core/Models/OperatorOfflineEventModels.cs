@@ -41,6 +41,35 @@ public class OperatorOfflineEventCreateRequest : OperatorContractRequestBase
     public DateTime? SavedAtUtc { get; set; }
 }
 
+public class OperatorOfflineEventDraftUpsertRequest : OperatorContractRequestBase
+{
+    public Guid? OfflineEventId { get; set; }
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? RecordingReference { get; set; }
+    public string CapturePayloadJson { get; set; } = "{}";
+    public string ClarificationStateJson { get; set; } = "{}";
+    public string TimelineLinkageJson { get; set; } = "{}";
+    public float? Confidence { get; set; }
+    public DateTime CapturedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class OperatorOfflineEventFinalSaveRequest : OperatorContractRequestBase
+{
+    public Guid? OfflineEventId { get; set; }
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? RecordingReference { get; set; }
+    public string CapturePayloadJson { get; set; } = "{}";
+    public string ClarificationStateJson { get; set; } = "{}";
+    public string TimelineLinkageJson { get; set; } = "{}";
+    public float? Confidence { get; set; }
+    public DateTime CapturedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime SavedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public class OperatorOfflineEventRecord
 {
     public Guid OfflineEventId { get; set; }

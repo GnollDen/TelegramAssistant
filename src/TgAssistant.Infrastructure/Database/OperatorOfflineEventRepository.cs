@@ -24,6 +24,249 @@ public sealed class OperatorOfflineEventRepository : IOperatorOfflineEventReposi
         _dbFactory = dbFactory;
     }
 
+    public async Task<OperatorOfflineEventRecord> UpsertDraftAsync(
+        OperatorOfflineEventDraftUpsertRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var trackedPersonId = request.TrackedPersonId;
+        if (trackedPersonId == Guid.Empty)
+        {
+            throw new ArgumentException("TrackedPersonId is required.", nameof(request));
+        }
+
+        var summary = NormalizeRequired(request.Summary, "Summary is required.", nameof(request));
+        var scopeKey = NormalizeRequired(request.ScopeKey, "ScopeKey is required.", nameof(request));
+        var nowUtc = DateTime.UtcNow;
+        var capturedAtUtc = request.CapturedAtUtc == default ? nowUtc : request.CapturedAtUtc;
+        var operatorIdentity = request.OperatorIdentity ?? new OperatorIdentityContext();
+        var session = request.Session ?? new OperatorSessionContext();
+        var surface = OperatorSurfaceTypes.Normalize(session.Surface);
+        if (!OperatorSurfaceTypes.IsSupported(surface))
+        {
+            throw new ArgumentException("Session.Surface must be a supported operator surface.", nameof(request));
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPersonExists = await db.Persons
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == trackedPersonId && x.ScopeKey == scopeKey && x.Status == ActivePersonStatus, ct);
+        if (!trackedPersonExists)
+        {
+            throw new InvalidOperationException("Tracked person not found or inactive.");
+        }
+
+        DbOperatorOfflineEvent? row = null;
+        if (request.OfflineEventId.HasValue && request.OfflineEventId.Value != Guid.Empty)
+        {
+            row = await db.OperatorOfflineEvents.FirstOrDefaultAsync(x =>
+                x.Id == request.OfflineEventId.Value
+                && x.ScopeKey == scopeKey
+                && x.TrackedPersonId == trackedPersonId,
+                ct);
+        }
+
+        if (row == null)
+        {
+            row = new DbOperatorOfflineEvent
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                SummaryText = summary,
+                RecordingReference = NormalizeOptional(request.RecordingReference),
+                Status = OperatorOfflineEventStatuses.Draft,
+                CapturePayloadJson = NormalizeJson(request.CapturePayloadJson),
+                ClarificationStateJson = NormalizeJson(request.ClarificationStateJson),
+                TimelineLinkageJson = NormalizeJson(request.TimelineLinkageJson),
+                Confidence = request.Confidence,
+                OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown"),
+                OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown"),
+                OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown"),
+                Surface = surface,
+                SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown"),
+                AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown"),
+                AuthTimeUtc = operatorIdentity.AuthTimeUtc == default
+                    ? nowUtc
+                    : operatorIdentity.AuthTimeUtc,
+                SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default
+                    ? nowUtc
+                    : session.AuthenticatedAtUtc,
+                SessionLastSeenAtUtc = session.LastSeenAtUtc == default
+                    ? nowUtc
+                    : session.LastSeenAtUtc,
+                SessionExpiresAtUtc = session.ExpiresAtUtc,
+                ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown"),
+                UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind),
+                UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState),
+                UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc,
+                CapturedAtUtc = capturedAtUtc,
+                SavedAtUtc = null,
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc
+            };
+            db.OperatorOfflineEvents.Add(row);
+        }
+        else
+        {
+            row.SummaryText = summary;
+            row.RecordingReference = NormalizeOptional(request.RecordingReference);
+            row.Status = OperatorOfflineEventStatuses.Draft;
+            row.CapturePayloadJson = NormalizeJson(request.CapturePayloadJson);
+            row.ClarificationStateJson = NormalizeJson(request.ClarificationStateJson);
+            row.Confidence = request.Confidence;
+            row.CapturedAtUtc = capturedAtUtc;
+            row.SavedAtUtc = null;
+            row.OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown");
+            row.OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown");
+            row.OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown");
+            row.Surface = surface;
+            row.SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown");
+            row.AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown");
+            row.AuthTimeUtc = operatorIdentity.AuthTimeUtc == default
+                ? nowUtc
+                : operatorIdentity.AuthTimeUtc;
+            row.SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default
+                ? nowUtc
+                : session.AuthenticatedAtUtc;
+            row.SessionLastSeenAtUtc = session.LastSeenAtUtc == default
+                ? nowUtc
+                : session.LastSeenAtUtc;
+            row.SessionExpiresAtUtc = session.ExpiresAtUtc;
+            row.ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown");
+            row.UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind);
+            row.UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState);
+            row.UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc;
+            row.UpdatedAtUtc = nowUtc;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Map(row);
+    }
+
+    public async Task<OperatorOfflineEventRecord> SaveFinalAsync(
+        OperatorOfflineEventFinalSaveRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var trackedPersonId = request.TrackedPersonId;
+        if (trackedPersonId == Guid.Empty)
+        {
+            throw new ArgumentException("TrackedPersonId is required.", nameof(request));
+        }
+
+        var summary = NormalizeRequired(request.Summary, "Summary is required.", nameof(request));
+        var scopeKey = NormalizeRequired(request.ScopeKey, "ScopeKey is required.", nameof(request));
+        var nowUtc = DateTime.UtcNow;
+        var capturedAtUtc = request.CapturedAtUtc == default ? nowUtc : request.CapturedAtUtc;
+        var savedAtUtc = request.SavedAtUtc == default ? nowUtc : request.SavedAtUtc;
+        var operatorIdentity = request.OperatorIdentity ?? new OperatorIdentityContext();
+        var session = request.Session ?? new OperatorSessionContext();
+        var surface = OperatorSurfaceTypes.Normalize(session.Surface);
+        if (!OperatorSurfaceTypes.IsSupported(surface))
+        {
+            throw new ArgumentException("Session.Surface must be a supported operator surface.", nameof(request));
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPersonExists = await db.Persons
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == trackedPersonId && x.ScopeKey == scopeKey && x.Status == ActivePersonStatus, ct);
+        if (!trackedPersonExists)
+        {
+            throw new InvalidOperationException("Tracked person not found or inactive.");
+        }
+
+        DbOperatorOfflineEvent? row = null;
+        if (request.OfflineEventId.HasValue && request.OfflineEventId.Value != Guid.Empty)
+        {
+            row = await db.OperatorOfflineEvents.FirstOrDefaultAsync(x =>
+                x.Id == request.OfflineEventId.Value
+                && x.ScopeKey == scopeKey
+                && x.TrackedPersonId == trackedPersonId,
+                ct);
+        }
+
+        if (row == null)
+        {
+            row = new DbOperatorOfflineEvent
+            {
+                Id = Guid.NewGuid(),
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                SummaryText = summary,
+                RecordingReference = NormalizeOptional(request.RecordingReference),
+                Status = OperatorOfflineEventStatuses.Saved,
+                CapturePayloadJson = NormalizeJson(request.CapturePayloadJson),
+                ClarificationStateJson = NormalizeJson(request.ClarificationStateJson),
+                TimelineLinkageJson = NormalizeJson(request.TimelineLinkageJson),
+                Confidence = request.Confidence,
+                OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown"),
+                OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown"),
+                OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown"),
+                Surface = surface,
+                SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown"),
+                AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown"),
+                AuthTimeUtc = operatorIdentity.AuthTimeUtc == default
+                    ? nowUtc
+                    : operatorIdentity.AuthTimeUtc,
+                SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default
+                    ? nowUtc
+                    : session.AuthenticatedAtUtc,
+                SessionLastSeenAtUtc = session.LastSeenAtUtc == default
+                    ? nowUtc
+                    : session.LastSeenAtUtc,
+                SessionExpiresAtUtc = session.ExpiresAtUtc,
+                ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown"),
+                UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind),
+                UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState),
+                UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc,
+                CapturedAtUtc = capturedAtUtc,
+                SavedAtUtc = savedAtUtc,
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc
+            };
+            db.OperatorOfflineEvents.Add(row);
+        }
+        else
+        {
+            row.SummaryText = summary;
+            row.RecordingReference = NormalizeOptional(request.RecordingReference);
+            row.Status = OperatorOfflineEventStatuses.Saved;
+            row.CapturePayloadJson = NormalizeJson(request.CapturePayloadJson);
+            row.ClarificationStateJson = NormalizeJson(request.ClarificationStateJson);
+            row.Confidence = request.Confidence;
+            row.CapturedAtUtc = capturedAtUtc;
+            row.SavedAtUtc = savedAtUtc;
+            row.OperatorId = NormalizeRequired(operatorIdentity.OperatorId, "unknown");
+            row.OperatorDisplay = NormalizeRequired(operatorIdentity.OperatorDisplay, "unknown");
+            row.OperatorSessionId = NormalizeRequired(session.OperatorSessionId, "unknown");
+            row.Surface = surface;
+            row.SurfaceSubject = NormalizeRequired(operatorIdentity.SurfaceSubject, "unknown");
+            row.AuthSource = NormalizeRequired(operatorIdentity.AuthSource, "unknown");
+            row.AuthTimeUtc = operatorIdentity.AuthTimeUtc == default
+                ? nowUtc
+                : operatorIdentity.AuthTimeUtc;
+            row.SessionAuthenticatedAtUtc = session.AuthenticatedAtUtc == default
+                ? nowUtc
+                : session.AuthenticatedAtUtc;
+            row.SessionLastSeenAtUtc = session.LastSeenAtUtc == default
+                ? nowUtc
+                : session.LastSeenAtUtc;
+            row.SessionExpiresAtUtc = session.ExpiresAtUtc;
+            row.ActiveMode = NormalizeRequired(OperatorModeTypes.Normalize(session.ActiveMode), "unknown");
+            row.UnfinishedStepKind = NormalizeOptional(session.UnfinishedStep?.StepKind);
+            row.UnfinishedStepState = NormalizeOptional(session.UnfinishedStep?.StepState);
+            row.UnfinishedStepStartedAtUtc = session.UnfinishedStep?.StartedAtUtc;
+            row.UpdatedAtUtc = nowUtc;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Map(row);
+    }
+
     public async Task<OperatorOfflineEventRecord> CreateAsync(
         OperatorOfflineEventCreateRequest request,
         CancellationToken ct = default)

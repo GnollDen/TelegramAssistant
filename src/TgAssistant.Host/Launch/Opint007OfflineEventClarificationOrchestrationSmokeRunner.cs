@@ -143,6 +143,21 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
                 },
                 ct);
 
+            var draftSave = await workflow.HandleInteractionAsync(
+                new TelegramOperatorInteraction
+                {
+                    ChatId = seed.AuthorizedChatId,
+                    UserId = ownerUserId,
+                    IsPrivateChat = true,
+                    UserDisplayName = "OPINT-007-B3 Operator",
+                    CallbackData = "offline:save",
+                    CallbackQueryId = $"offline-save-draft-{runId}"
+                },
+                ct);
+            report.DraftSaveResult = MapStep(draftSave);
+            report.DraftOfflineEventId = TryParseSavedOfflineEventId(report.DraftSaveResult.PrimaryText);
+            Ensure(report.DraftOfflineEventId.HasValue, "Draft save response did not include saved event id.");
+
             var firstClarifyPrompt = await workflow.HandleInteractionAsync(
                 new TelegramOperatorInteraction
                 {
@@ -220,6 +235,9 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
             report.SavedOfflineEventId = TryParseSavedOfflineEventId(report.FinalSaveResult.PrimaryText);
             Ensure(report.SavedOfflineEventId.HasValue, "Final save response did not include saved event id.");
             var savedOfflineEventId = report.SavedOfflineEventId.GetValueOrDefault();
+            Ensure(
+                report.DraftOfflineEventId.GetValueOrDefault() == savedOfflineEventId,
+                "Final save did not preserve the persisted draft offline-event id.");
             report.StoredEvent = await LoadStoredAsync(dbFactory, savedOfflineEventId, ct);
             Ensure(report.StoredEvent != null, "Stored offline event was not found.");
             Ensure(
@@ -228,20 +246,29 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
             Ensure(report.StoredEvent.SavedAtUtc.HasValue, "Stored offline event saved_at_utc was not set.");
             Ensure(report.StoredEvent.Confidence.HasValue, "Stored offline event confidence was not set.");
             Ensure(report.StoredEvent.Confidence > 0f, "Stored offline event confidence was not positive.");
+            Ensure(
+                string.Equals(report.StoredEvent.Summary, report.SummaryInput, StringComparison.Ordinal),
+                "Stored offline event summary changed unexpectedly after final save.");
+            Ensure(
+                string.Equals(report.StoredEvent.RecordingReference, report.RecordingReferenceInput, StringComparison.Ordinal),
+                "Stored offline event recording reference changed unexpectedly after final save.");
 
             using var clarificationDoc = JsonDocument.Parse(report.StoredEvent.ClarificationStateJson);
             var root = clarificationDoc.RootElement;
             Ensure(
-                root.TryGetProperty("history", out var historyElement)
+                (root.TryGetProperty("history", out var historyElement)
+                    || root.TryGetProperty("History", out historyElement))
                 && historyElement.ValueKind == JsonValueKind.Array
                 && historyElement.GetArrayLength() >= 2,
                 "Stored clarification history did not include captured answer entries.");
             Ensure(
-                root.TryGetProperty("stopReason", out var stopReasonElement)
+                (root.TryGetProperty("stopReason", out var stopReasonElement)
+                    || root.TryGetProperty("StopReason", out stopReasonElement))
                 && string.Equals(stopReasonElement.GetString(), OfflineEventClarificationStopReasons.Repetition, StringComparison.Ordinal),
                 "Stored clarification stopReason mismatch.");
             Ensure(
-                root.TryGetProperty("loopStatus", out var loopStatusElement)
+                (root.TryGetProperty("loopStatus", out var loopStatusElement)
+                    || root.TryGetProperty("LoopStatus", out loopStatusElement))
                 && string.Equals(loopStatusElement.GetString(), OfflineEventClarificationLoopStatuses.Stopped, StringComparison.Ordinal),
                 "Stored clarification loopStatus mismatch.");
 
@@ -343,6 +370,8 @@ public static class Opint007OfflineEventClarificationOrchestrationSmokeRunner
         {
             OfflineEventId = row.Id,
             Status = row.Status,
+            Summary = row.SummaryText,
+            RecordingReference = row.RecordingReference,
             ClarificationStateJson = row.ClarificationStateJson,
             Confidence = row.Confidence,
             SavedAtUtc = row.SavedAtUtc
@@ -430,6 +459,8 @@ public sealed class Opint007OfflineEventClarificationOrchestrationSmokeReport
     public Opint007StepResult FirstClarificationAnswer { get; set; } = new();
     public Opint007StepResult SecondClarificationPrompt { get; set; } = new();
     public Opint007StepResult SecondClarificationAnswer { get; set; } = new();
+    public Opint007StepResult DraftSaveResult { get; set; } = new();
+    public Guid? DraftOfflineEventId { get; set; }
     public Opint007StepResult FinalSaveResult { get; set; } = new();
     public Guid? SavedOfflineEventId { get; set; }
     public Opint007B3StoredOfflineEvent? StoredEvent { get; set; }
@@ -442,6 +473,8 @@ public sealed class Opint007B3StoredOfflineEvent
 {
     public Guid OfflineEventId { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? RecordingReference { get; set; }
     public string ClarificationStateJson { get; set; } = string.Empty;
     public float? Confidence { get; set; }
     public DateTime? SavedAtUtc { get; set; }

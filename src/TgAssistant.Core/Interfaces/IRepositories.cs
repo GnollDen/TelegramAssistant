@@ -453,6 +453,14 @@ public interface IOperatorSessionAuditService
 
 public interface IOperatorOfflineEventRepository
 {
+    Task<OperatorOfflineEventRecord> UpsertDraftAsync(
+        OperatorOfflineEventDraftUpsertRequest request,
+        CancellationToken ct = default);
+
+    Task<OperatorOfflineEventRecord> SaveFinalAsync(
+        OperatorOfflineEventFinalSaveRequest request,
+        CancellationToken ct = default);
+
     Task<OperatorOfflineEventRecord> CreateAsync(
         OperatorOfflineEventCreateRequest request,
         CancellationToken ct = default);

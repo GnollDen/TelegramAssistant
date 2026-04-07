@@ -175,8 +175,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "offline:save now upserts draft on a single persisted record id and offline:save-final finalizes that record in place when draft id exists (fallback create when absent); recording_ref is persisted in trimmed canonical form; OPINT-007 b1/b3 smokes updated for draft/final persistence assertions and both pass with Telegram__OwnerUserId override.",
       "dependencies": [
         "DTP-006B"
       ]

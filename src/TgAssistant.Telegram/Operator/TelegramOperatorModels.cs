@@ -130,6 +130,7 @@ internal sealed class TelegramPendingResolutionInput
 
 internal sealed class TelegramOfflineEventDraft
 {
+    public Guid? PersistedOfflineEventId { get; set; }
     public string? Summary { get; set; }
     public string? RecordingReference { get; set; }
     public OfflineEventClarificationState? ClarificationState { get; set; }

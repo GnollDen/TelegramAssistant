@@ -1053,7 +1053,12 @@ public sealed class TelegramOperatorWorkflowService
 
         if (string.Equals(actionType, ResolutionActionTypes.OpenWeb, StringComparison.Ordinal))
         {
-            return await RenderOpenWebHandoffAsync(state, interaction, binding, nowUtc, ct);
+            return await RenderResolutionContextAsync(
+                state,
+                interaction,
+                nowUtc,
+                note: "Обнаружена устаревшая кнопка «В веб». Обновите карточку и используйте ссылку-кнопку с URL.",
+                ct);
         }
 
         return await RenderResolutionContextAsync(
@@ -1689,31 +1694,32 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
-        var request = new OperatorOfflineEventCreateRequest
+        var request = new OperatorOfflineEventDraftUpsertRequest
         {
+            OfflineEventId = state.OfflineEventDraft?.PersistedOfflineEventId,
             TrackedPersonId = state.Session.ActiveTrackedPersonId,
             ScopeKey = state.ActiveTrackedPersonScopeKey!,
             Summary = summary,
             RecordingReference = NormalizeOptional(state.OfflineEventDraft?.RecordingReference),
-            Status = OperatorOfflineEventStatuses.Draft,
             CapturePayloadJson = BuildOfflineEventCapturePayloadJson(state, interaction, nowUtc),
             ClarificationStateJson = BuildOfflineEventClarificationStateJson(state, nowUtc),
             TimelineLinkageJson = "{}",
             Confidence = state.OfflineEventDraft?.ClarificationState?.PartialConfidence,
             CapturedAtUtc = state.OfflineEventDraft!.StartedAtUtc,
-            SavedAtUtc = null,
             OperatorIdentity = BuildAuthorizedIdentity(interaction, nowUtc),
             Session = CloneSession(state.Session)
         };
 
-        var saved = await _operatorOfflineEventRepository.CreateAsync(request, ct);
+        var saved = await _operatorOfflineEventRepository.UpsertDraftAsync(request, ct);
+        state.OfflineEventDraft!.PersistedOfflineEventId = saved.OfflineEventId;
+        state.OfflineEventDraft.Summary = saved.Summary;
+        state.OfflineEventDraft.RecordingReference = saved.RecordingReference;
 
         state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
         state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
         state.Session.ActiveScopeItemKey = $"offline_event:{saved.OfflineEventId:D}";
         state.Session.UnfinishedStep = null;
         state.PendingOfflineEventInput = null;
-        state.OfflineEventDraft = null;
 
         return await RenderOfflineEventContextAsync(
             state,
@@ -1787,13 +1793,13 @@ public sealed class TelegramOperatorWorkflowService
                 ct);
         }
 
-        var request = new OperatorOfflineEventCreateRequest
+        var request = new OperatorOfflineEventFinalSaveRequest
         {
+            OfflineEventId = state.OfflineEventDraft.PersistedOfflineEventId,
             TrackedPersonId = state.Session.ActiveTrackedPersonId,
             ScopeKey = state.ActiveTrackedPersonScopeKey ?? string.Empty,
             Summary = summary,
             RecordingReference = NormalizeOptional(state.OfflineEventDraft.RecordingReference),
-            Status = OperatorOfflineEventStatuses.Saved,
             CapturePayloadJson = BuildOfflineEventCapturePayloadJson(state, interaction, nowUtc),
             ClarificationStateJson = BuildOfflineEventClarificationStateJson(state, nowUtc),
             TimelineLinkageJson = "{}",
@@ -1804,7 +1810,7 @@ public sealed class TelegramOperatorWorkflowService
             Session = CloneSession(state.Session)
         };
 
-        var saved = await _operatorOfflineEventRepository.CreateAsync(request, ct);
+        var saved = await _operatorOfflineEventRepository.SaveFinalAsync(request, ct);
         state.SurfaceMode = TelegramOperatorSurfaceModes.OfflineEvent;
         state.Session.ActiveMode = OperatorModeTypes.OfflineEvent;
         state.Session.ActiveScopeItemKey = $"offline_event:{saved.OfflineEventId:D}";
@@ -2175,6 +2181,30 @@ public sealed class TelegramOperatorWorkflowService
 
         lines.Add("Подробнее: в веб.");
 
+        var openWebUrl = BuildResolutionOpenWebUrl(state.Session, item.ScopeItemKey, nowUtc);
+        var evidenceButtons = new List<List<TelegramOperatorButton>>();
+        if (!string.IsNullOrWhiteSpace(openWebUrl))
+        {
+            evidenceButtons.Add(
+            [
+                new TelegramOperatorButton
+                {
+                    Text = "В веб",
+                    Url = openWebUrl
+                }
+            ]);
+        }
+        else
+        {
+            lines.Add("Ссылка в веб сейчас недоступна.");
+        }
+
+        evidenceButtons.Add(
+        [
+            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
+            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
+        ]);
+
         return new TelegramOperatorResponse
         {
             CallbackNotificationText = "Факты",
@@ -2183,20 +2213,7 @@ public sealed class TelegramOperatorWorkflowService
                 new TelegramOperatorMessage
                 {
                     Text = string.Join(Environment.NewLine, lines),
-                    Buttons =
-                    [
-                        [
-                            new TelegramOperatorButton
-                            {
-                                Text = "В веб",
-                                CallbackData = $"{ResolutionActionCallbackPrefix}{ResolutionActionTypes.OpenWeb}:{binding.Token}"
-                            }
-                        ],
-                        [
-                            new TelegramOperatorButton { Text = "К очереди", CallbackData = "resolution:refresh" },
-                            new TelegramOperatorButton { Text = "Режимы", CallbackData = "mode:menu" }
-                        ]
-                    ]
+                    Buttons = evidenceButtons
                 }
             ]
         };
@@ -2461,6 +2478,7 @@ public sealed class TelegramOperatorWorkflowService
 
         lines.Add("Режим решений");
         lines.Add($"Активный человек: {state.ActiveTrackedPersonDisplayName ?? "не выбран"}");
+        lines.Add($"Active tracked person: {state.ActiveTrackedPersonDisplayName ?? "none"}");
         lines.Add($"Открыто: {queue.Queue.TotalOpenCount} · Показано: {queue.Queue.FilteredCount}");
 
         if (queue.Queue.ItemTypeCounts.Count > 0)
@@ -3336,6 +3354,11 @@ public sealed class TelegramOperatorWorkflowService
                     };
                 }
 
+                if (string.Equals(normalizedAction, ResolutionActionTypes.OpenWeb, StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
                 return new TelegramOperatorButton
                 {
                     Text = FormatActionLabel(
@@ -3344,6 +3367,8 @@ public sealed class TelegramOperatorWorkflowService
                     CallbackData = $"{ResolutionActionCallbackPrefix}{normalizedAction}:{token}"
                 };
             })
+            .Where(button => button != null)
+            .Select(button => button!)
             .ToList();
     }
 
