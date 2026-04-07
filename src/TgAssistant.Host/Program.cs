@@ -208,6 +208,10 @@ try
     var runtimeControlDetailProofOutput = runtimeControlDetailProofOutputArg is null
         ? null
         : runtimeControlDetailProofOutputArg["--runtime-control-detail-proof-output=".Length..];
+    var stageSemanticContractProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--stage-semantic-contract-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var stageSemanticContractProofOutput = stageSemanticContractProofOutputArg is null
+        ? null
+        : stageSemanticContractProofOutputArg["--stage-semantic-contract-proof-output=".Length..];
     var aiConflictSessionV1ProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--ai-conflict-session-v1-proof-output=", StringComparison.OrdinalIgnoreCase));
     var aiConflictSessionV1ProofOutput = aiConflictSessionV1ProofOutputArg is null
         ? null
@@ -237,6 +241,7 @@ try
     var runOpintHomeDashboardSmoke = args.Any(arg => string.Equals(arg, "--opint-home-dashboard-smoke", StringComparison.OrdinalIgnoreCase));
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
+    var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
     var runExternalArchiveSmoke = args.Any(arg => string.Equals(arg, "--external-archive-smoke", StringComparison.OrdinalIgnoreCase));
@@ -329,6 +334,7 @@ try
         "--opint-012-b-smoke",
         "--opint-home-dashboard-smoke",
         "--resolution-interpretation-loop-v1-validate",
+        "--stage-semantic-contract-proof",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
         "--external-archive-smoke"
@@ -674,6 +680,17 @@ try
             report.RequestedContextType,
             report.AuditTrail.Count,
             report.UsedFallback);
+        return;
+    }
+
+    if (runStageSemanticContractProof)
+    {
+        var report = await StageSemanticContractProofRunner.RunAsync(stageSemanticContractProofOutput, CancellationToken.None);
+        Log.Information(
+            "Stage semantic contract proof requested via --stage-semantic-contract-proof. output={OutputPath}, passed={Passed}, case_count={CaseCount}. Exiting after successful verification.",
+            report.OutputPath,
+            report.Passed,
+            report.Cases.Count);
         return;
     }
 

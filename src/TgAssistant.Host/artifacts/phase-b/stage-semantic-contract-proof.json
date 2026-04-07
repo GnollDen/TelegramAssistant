@@ -1,0 +1,48 @@
+{
+  "generated_at_utc": "2026-04-07T12:19:42.6938729Z",
+  "output_path": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/phase-b/stage-semantic-contract-proof.json",
+  "passed": true,
+  "fatal_error": null,
+  "cases": [
+    {
+      "case_id": "s6_to_s7_valid",
+      "input_family": "stage6_bootstrap_graph",
+      "expected_decision": "allow",
+      "actual_decision": "allow",
+      "expected_status": "accepted",
+      "actual_status": "accepted",
+      "reason": "valid",
+      "passed": true
+    },
+    {
+      "case_id": "s7_to_s8_valid",
+      "input_family": "stage7_durable_profile",
+      "expected_decision": "allow",
+      "actual_decision": "allow",
+      "expected_status": "accepted",
+      "actual_status": "accepted",
+      "reason": "valid",
+      "passed": true
+    },
+    {
+      "case_id": "s8_input_family_invalid",
+      "input_family": "stage6_discovery_pool",
+      "expected_decision": "reject",
+      "actual_decision": "reject",
+      "expected_status": "blocked",
+      "actual_status": "blocked",
+      "reason": "stage_contract_violation",
+      "passed": true
+    },
+    {
+      "case_id": "s8_invalid_input_sets_blocked_status",
+      "input_family": "stage7_pair_dynamics",
+      "expected_decision": "reject",
+      "actual_decision": "reject",
+      "expected_status": "blocked",
+      "actual_status": "blocked",
+      "reason": "stage_contract_violation",
+      "passed": true
+    }
+  ]
+}

@@ -479,8 +479,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-003 completed: added StageSemanticContractProofRunner and CLI switch --stage-semantic-contract-proof (plus optional --stage-semantic-contract-proof-output) to produce artifact src/TgAssistant.Host/artifacts/phase-b/stage-semantic-contract-proof.json with required case matrix rows and per-case expected/actual decision+status+reason+passed fields; command fails non-zero on proof failure. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage-semantic-contract-proof.",
       "dependencies": [
         "PHB-002"
       ]
