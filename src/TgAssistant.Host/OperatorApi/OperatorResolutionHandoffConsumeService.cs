@@ -1,30 +1,33 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
+using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Host.OperatorApi;
 
 public sealed class OperatorResolutionHandoffConsumeService
 {
-    private static readonly ConcurrentDictionary<string, DateTime> ConsumedTokenHashes = new(StringComparer.Ordinal);
-
     private readonly WebOperatorAuthSessionResolver _webAuthResolver;
     private readonly WebSettings _webSettings;
     private readonly IOperatorResolutionApplicationService _service;
+    private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
 
     public OperatorResolutionHandoffConsumeService(
         WebOperatorAuthSessionResolver webAuthResolver,
         IOptions<WebSettings> webSettings,
-        IOperatorResolutionApplicationService service)
+        IOperatorResolutionApplicationService service,
+        IDbContextFactory<TgAssistantDbContext> dbFactory)
     {
         _webAuthResolver = webAuthResolver;
         _webSettings = webSettings.Value ?? new WebSettings();
         _service = service;
+        _dbFactory = dbFactory;
     }
 
     public async Task<OperatorResolutionHandoffConsumeExecutionResult> ConsumeAsync(
@@ -123,7 +126,8 @@ public sealed class OperatorResolutionHandoffConsumeService
                 });
         }
 
-        if (IsHandoffTokenReplayed(handoffToken))
+        var reservedTokenHash = await TryReserveHandoffTokenAsync(handoffToken, ttlMinutes, ct);
+        if (reservedTokenHash == null)
         {
             return CreateResult(
                 StatusCodes.Status403Forbidden,
@@ -139,6 +143,7 @@ public sealed class OperatorResolutionHandoffConsumeService
         var auth = await _webAuthResolver.ResolveForHandoffAsync(httpContext, requestedMode, ct);
         if (!auth.Accepted)
         {
+            await ReleaseReservedHandoffTokenAsync(reservedTokenHash, ct);
             return CreateResult(
                 auth.StatusCode,
                 new OperatorResolutionHandoffConsumeResult
@@ -154,6 +159,7 @@ public sealed class OperatorResolutionHandoffConsumeService
         if (currentSession.ActiveTrackedPersonId != Guid.Empty
             && currentSession.ActiveTrackedPersonId != trackedPersonId)
         {
+            await ReleaseReservedHandoffTokenAsync(reservedTokenHash, ct);
             return CreateResult(
                 StatusCodes.Status403Forbidden,
                 new OperatorResolutionHandoffConsumeResult
@@ -168,6 +174,7 @@ public sealed class OperatorResolutionHandoffConsumeService
         if (!string.IsNullOrWhiteSpace(currentSession.ActiveScopeItemKey)
             && !string.Equals(currentSession.ActiveScopeItemKey.Trim(), scopeItemKey, StringComparison.Ordinal))
         {
+            await ReleaseReservedHandoffTokenAsync(reservedTokenHash, ct);
             return CreateResult(
                 StatusCodes.Status403Forbidden,
                 new OperatorResolutionHandoffConsumeResult
@@ -193,6 +200,7 @@ public sealed class OperatorResolutionHandoffConsumeService
                 ct);
             if (!selection.Accepted)
             {
+                await ReleaseReservedHandoffTokenAsync(reservedTokenHash, ct);
                 return CreateResult(
                     ToStatusCode(selection.FailureReason),
                     new OperatorResolutionHandoffConsumeResult
@@ -223,7 +231,6 @@ public sealed class OperatorResolutionHandoffConsumeService
         };
 
         _webAuthResolver.PersistSession(httpContext, handoffResult.Session, handoffResult.ActiveMode);
-        MarkHandoffTokenConsumed(handoffToken, ttlMinutes);
         return CreateResult(StatusCodes.Status200OK, handoffResult);
     }
 
@@ -244,31 +251,47 @@ public sealed class OperatorResolutionHandoffConsumeService
     private static string NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
-    private static bool IsHandoffTokenReplayed(string handoffToken)
+    private async Task<string?> TryReserveHandoffTokenAsync(string handoffToken, int ttlMinutes, CancellationToken ct)
     {
         var tokenHash = HashToken(handoffToken);
         var nowUtc = DateTime.UtcNow;
-
-        foreach (var pair in ConsumedTokenHashes)
+        var expiresAtUtc = nowUtc.AddMinutes(Math.Clamp(ttlMinutes, 1, 24 * 60));
+        try
         {
-            if (pair.Value <= nowUtc)
-            {
-                ConsumedTokenHashes.TryRemove(pair.Key, out _);
-            }
-        }
+            await using var db = await _dbFactory.CreateDbContextAsync(ct);
+            _ = await db.Database.ExecuteSqlInterpolatedAsync(
+                $@"delete from operator_handoff_token_consumptions
+                   where expires_at_utc < {nowUtc};",
+                ct);
 
-        if (ConsumedTokenHashes.TryGetValue(tokenHash, out var existingExpiry) && existingExpiry > nowUtc)
+            _ = await db.Database.ExecuteSqlInterpolatedAsync(
+                $@"insert into operator_handoff_token_consumptions (
+                        id,
+                        token_hash,
+                        consumed_at_utc,
+                        expires_at_utc
+                    ) values (
+                        {Guid.NewGuid()},
+                        {tokenHash},
+                        {nowUtc},
+                        {expiresAtUtc}
+                    );",
+                ct);
+            return tokenHash;
+        }
+        catch (PostgresException ex) when (string.Equals(ex.SqlState, PostgresErrorCodes.UniqueViolation, StringComparison.Ordinal))
         {
-            return true;
+            return null;
         }
-
-        return false;
     }
 
-    private static void MarkHandoffTokenConsumed(string handoffToken, int ttlMinutes)
+    private async Task ReleaseReservedHandoffTokenAsync(string tokenHash, CancellationToken ct)
     {
-        var tokenHash = HashToken(handoffToken);
-        ConsumedTokenHashes[tokenHash] = DateTime.UtcNow.AddMinutes(Math.Clamp(ttlMinutes, 1, 24 * 60));
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        _ = await db.Database.ExecuteSqlInterpolatedAsync(
+            $@"delete from operator_handoff_token_consumptions
+               where token_hash = {tokenHash};",
+            ct);
     }
 
     private static string HashToken(string handoffToken)

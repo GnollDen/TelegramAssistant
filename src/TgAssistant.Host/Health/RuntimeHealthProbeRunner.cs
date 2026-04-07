@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Text.Json;
 using TgAssistant.Core.Configuration;
 using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Infrastructure.LlmGateway;
+using TgAssistant.Host.Launch;
 using TgAssistant.Host.Startup;
 using TgAssistant.Intelligence.Stage5;
 
@@ -12,6 +14,20 @@ namespace TgAssistant.Host.Health;
 
 public static class RuntimeHealthProbeRunner
 {
+    private static readonly string[] RequiredPhaseBGateSteps =
+    [
+        "phase-b-stage-semantic-contract-proof",
+        "phase-b-temporal-person-state-proof",
+        "phase-b-person-history-proof",
+        "phase-b-current-world-proof",
+        "phase-b-conditional-modeling-proof",
+        "phase-b-iterative-reintegration-proof",
+        "phase-b-ai-conflict-session-v1-proof",
+        "phase-b-stage7-dossier-profile-smoke",
+        "phase-b-stage7-timeline-smoke",
+        "phase-b-stage8-recompute-smoke"
+    ];
+
     public static Task RunLivenessCheckAsync(RuntimeRoleSelection selection, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -46,6 +62,60 @@ public static class RuntimeHealthProbeRunner
         {
             var stage5VerificationService = services.GetRequiredService<Stage5VerificationService>();
             await stage5VerificationService.RunAsync(token);
+        }
+
+        EnsurePhaseBAdmissionMarkerExists();
+    }
+
+    private static void EnsurePhaseBAdmissionMarkerExists()
+    {
+        var markerPath = Path.Combine(
+            HostArtifactsPathResolver.ResolveHostArtifactsRoot(),
+            "phase-b",
+            "launch-smoke",
+            "phase-b-launch-gate.marker.json");
+        if (!File.Exists(markerPath))
+        {
+            throw new InvalidOperationException(
+                $"Readiness failed: phase-b launch gate marker is missing at '{markerPath}'. Run --launch-smoke first.");
+        }
+
+        using var document = JsonDocument.Parse(File.ReadAllText(markerPath));
+        var root = document.RootElement;
+        if (!root.TryGetProperty("passed", out var passedNode) || !passedNode.GetBoolean())
+        {
+            throw new InvalidOperationException("Readiness failed: phase-b launch gate marker is not marked as passed.");
+        }
+
+        if (!root.TryGetProperty("generatedAtUtc", out var generatedAtNode)
+            || !DateTime.TryParse(generatedAtNode.GetString(), out var generatedAtUtc))
+        {
+            throw new InvalidOperationException("Readiness failed: phase-b launch gate marker missing generatedAtUtc.");
+        }
+
+        var generatedAtUtcNormalized = DateTime.SpecifyKind(generatedAtUtc, DateTimeKind.Utc);
+        if (generatedAtUtcNormalized < DateTime.UtcNow.AddHours(-24))
+        {
+            throw new InvalidOperationException(
+                $"Readiness failed: phase-b launch gate marker is stale ({generatedAtUtcNormalized:O}).");
+        }
+
+        if (!root.TryGetProperty("requiredPhaseBGateSteps", out var stepsNode) || stepsNode.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException("Readiness failed: phase-b launch gate marker missing required step list.");
+        }
+
+        var recordedSteps = stepsNode.EnumerateArray()
+            .Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => x.GetString() ?? string.Empty)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var requiredStep in RequiredPhaseBGateSteps)
+        {
+            if (!recordedSteps.Contains(requiredStep))
+            {
+                throw new InvalidOperationException(
+                    $"Readiness failed: phase-b launch gate marker does not include required step '{requiredStep}'.");
+            }
         }
     }
 

@@ -2684,6 +2684,30 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             };
         }
 
+        var reserved = await db.OperatorResolutionConflictSessions
+            .Where(x =>
+                x.Id == sessionRow.Id
+                && x.Revision == sessionRow.Revision
+                && x.Status == ResolutionConflictSessionStates.AwaitingOperatorAnswer
+                && x.AnswerCount == sessionRow.AnswerCount
+                && x.AnswerCount < maxFollowUpTurns
+                && x.ExpiresAtUtc > nowUtc)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.AnswerCount, x => x.AnswerCount + 1)
+                .SetProperty(x => x.Revision, x => x.Revision + 1)
+                .SetProperty(x => x.UpdatedAtUtc, nowUtc), ct);
+        if (reserved == 0)
+        {
+            return new OperatorConflictResolutionSessionResultEnvelope
+            {
+                Accepted = false,
+                FailureReason = "conflict_session_not_waiting_for_answer",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await db.Entry(sessionRow).ReloadAsync(ct);
+
         var casePacket = DeserializeOrDefault<ResolutionConflictSessionCasePacket>(sessionRow.CasePacketJson)
             ?? new ResolutionConflictSessionCasePacket();
         var operatorInput = new ResolutionConflictSessionOperatorInput
@@ -2718,7 +2742,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 sessionRow.ScopeItemKey,
                 casePacket,
                 usedQuestionCount: sessionRow.QuestionCount,
-                usedAnswerCount: sessionRow.AnswerCount + 1,
+                usedAnswerCount: sessionRow.AnswerCount,
                 maxOperatorTurns: maxFollowUpTurns,
                 ct);
             var normalizedVerdict = NormalizeConflictVerdict(
@@ -2805,13 +2829,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             });
         }
 
-        sessionRow.AnswerCount = Math.Clamp(sessionRow.AnswerCount + 1, 0, maxFollowUpTurns);
         sessionRow.AnswerJson = JsonSerializer.Serialize(operatorInput, JsonOptions);
         sessionRow.ModelCallCount = Math.Clamp(sessionRow.ModelCallCount + 1, 0, _conflictSessionSettings.MaxModelCalls);
         sessionRow.VerdictJson = JsonSerializer.Serialize(verdict, JsonOptions);
         sessionRow.NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal, JsonOptions);
         sessionRow.AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions);
-        sessionRow.Revision += 1;
         sessionRow.Status = NormalizeVerdictState(verdict.ResolutionVerdict);
         var existingStateReason = NormalizeOptional(sessionRow.StateReason);
         sessionRow.StateReason = string.Equals(sessionRow.Status, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal)

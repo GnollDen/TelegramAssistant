@@ -70,7 +70,9 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IRuntimeControlStateService, RuntimeControlStateService>();
         services.AddSingleton<IStage8RecomputeQueueService, Stage8RecomputeQueueService>();
         services.AddSingleton<IStage8RecomputeTriggerService, Stage8RecomputeTriggerService>();
-        services.AddSingleton<IResolutionCaseReintegrationService, ResolutionCaseReintegrationService>();
+        services.AddSingleton<ResolutionCaseReintegrationService>();
+        services.AddSingleton<IResolutionCaseReintegrationService>(sp => sp.GetRequiredService<ResolutionCaseReintegrationService>());
+        services.AddSingleton<IResolutionCaseReintegrationTransactionalService>(sp => sp.GetRequiredService<ResolutionCaseReintegrationService>());
         services.AddSingleton<IResolutionInterpretationModel, LlmResolutionInterpretationModel>();
         services.AddSingleton<IConflictResolutionSessionModel, LlmConflictResolutionSessionModel>();
         services.AddSingleton<ResolutionInterpretationLoopV1Service>();

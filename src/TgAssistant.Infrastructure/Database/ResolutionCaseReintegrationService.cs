@@ -5,7 +5,7 @@ using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Infrastructure.Database;
 
-public sealed class ResolutionCaseReintegrationService : IResolutionCaseReintegrationService
+public sealed class ResolutionCaseReintegrationService : IResolutionCaseReintegrationService, IResolutionCaseReintegrationTransactionalService
 {
     private readonly IResolutionCaseReintegrationLedgerRepository _repository;
 

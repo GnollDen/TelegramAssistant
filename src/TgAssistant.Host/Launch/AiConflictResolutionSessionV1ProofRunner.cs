@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Core.Interfaces;
@@ -290,6 +291,8 @@ public static class AiConflictResolutionSessionV1ProofRunner
             report.Passed = report.StartAccepted
                 && report.FinalVerdict != null
                 && report.RequiredAuditKeysPresent
+                && report.ApplyAccepted
+                && report.DeterministicApplyPathConfirmed
                 && report.StructuredVerdictProofRows.All(x => x.Passed)
                 && report.ToolProofRows.All(x => x.Passed)
                 && report.ApiSurfaceProofRows.All(x => x.Passed)
@@ -304,7 +307,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
         finally
         {
             Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
-            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            var json = SerializeCanonicalReport(report);
             await File.WriteAllTextAsync(resolvedOutputPath, json, ct);
         }
 
@@ -358,16 +361,71 @@ public static class AiConflictResolutionSessionV1ProofRunner
     {
         if (!string.IsNullOrWhiteSpace(outputPath))
         {
-            return Path.GetFullPath(outputPath.Trim());
+            return HostArtifactsPathResolver.ResolveOutputPath(outputPath.Trim());
         }
 
         return Path.GetFullPath(Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "src",
-            "TgAssistant.Host",
-            "artifacts",
+            HostArtifactsPathResolver.ResolveHostArtifactsRoot(),
             "resolution-interpretation-loop",
             "ai-conflict-resolution-session-v1-proof.json"));
+    }
+
+    private static string SerializeCanonicalReport(AiConflictResolutionSessionV1ProofReport report)
+    {
+        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        json = Regex.Replace(json, @"\bchat:\d+\b", "chat:REDACTED", RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            @"\b[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}\b",
+            "REDACTED_UUID",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(json, @"\b\d{6,}:\d{3,}\b", "REDACTED_REF", RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            @"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b",
+            "REDACTED_UTC",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"request_id\"\\s*:\\s*\")[^\"]*(\")",
+            "$1REDACTED_REQUEST_ID$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(story arc for )[^:\"]+(?= is not eligible|:)",
+            "$1REDACTED_PERSON",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"scope_key\"\\s*:\\s*\")chat:[^\"]*(\")",
+            "$1chat:REDACTED$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"source[_ ]?label\"\\s*:\\s*\")[^\"]*(\")",
+            "$1REDACTED_SOURCE$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"sourceLabel\"\\s*:\\s*\")[^\"]*(\")",
+            "$1REDACTED_SOURCE$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"senderDisplay\"\\s*:\\s*\")[^\"]*(\")",
+            "$1REDACTED_SENDER$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"outputpath\"\\s*:\\s*\")[^\"]*(\")",
+            "$1REDACTED_OUTPUT_PATH$2",
+            RegexOptions.CultureInvariant);
+        json = Regex.Replace(
+            json,
+            "(?i)(\"[a-z0-9_]*id\"\\s*:\\s*\")([0-9a-f]{32})(\")",
+            "$1REDACTED_ID$3",
+            RegexOptions.CultureInvariant);
+        return json;
     }
 
     private static void Ensure(bool condition, string message)

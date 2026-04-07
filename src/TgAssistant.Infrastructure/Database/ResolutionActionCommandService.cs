@@ -16,13 +16,13 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly IResolutionReadService _resolutionReadService;
-    private readonly IResolutionCaseReintegrationService _reintegrationService;
+    private readonly IResolutionCaseReintegrationTransactionalService _reintegrationService;
     private readonly ILogger<ResolutionActionCommandService> _logger;
 
     public ResolutionActionCommandService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         IResolutionReadService resolutionReadService,
-        IResolutionCaseReintegrationService reintegrationService,
+        IResolutionCaseReintegrationTransactionalService reintegrationService,
         ILogger<ResolutionActionCommandService> logger)
     {
         _dbFactory = dbFactory;
@@ -331,14 +331,7 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                     normalizedExplanation,
                     detail.Item)
             };
-            if (_reintegrationService is ResolutionCaseReintegrationService reintegrationService)
-            {
-                await reintegrationService.RecordWithinDbContextAsync(db, reintegrationRequest, ct);
-            }
-            else
-            {
-                await _reintegrationService.RecordAsync(reintegrationRequest, ct);
-            }
+            await _reintegrationService.RecordWithinDbContextAsync(db, reintegrationRequest, ct);
 
             var auditRow = BuildAuditRow(
                 request,

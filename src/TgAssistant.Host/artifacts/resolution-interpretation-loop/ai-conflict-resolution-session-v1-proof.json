@@ -1,6 +1,6 @@
 {
-  "GeneratedAtUtc": "2026-04-07T14:41:57.5966594Z",
-  "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json",
+  "GeneratedAtUtc": "REDACTED_UTC",
+  "OutputPath": "REDACTED_OUTPUT_PATH",
   "ScopeKey": "chat:REDACTED",
   "TrackedPersonId": "REDACTED_UUID",
   "TrackedPersonDisplayName": "REDACTED_PERSON",
@@ -79,7 +79,7 @@
               "REDACTED_REF",
               "REDACTED_REF"
             ],
-            "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
+            "observed_at_utc": "REDACTED_UTC"
           },
           {
             "step": "model_round",
@@ -105,7 +105,7 @@
             "evidence_refs": [
               "REDACTED_UUID"
             ],
-            "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
+            "observed_at_utc": "REDACTED_UTC"
           },
           {
             "step": "budget_guard",
@@ -129,7 +129,7 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [],
-            "observed_at_utc": "2026-04-07T14:42:37.4868437Z"
+            "observed_at_utc": "REDACTED_UTC"
           },
           {
             "step": "fallback",
@@ -156,7 +156,7 @@
               "REDACTED_REF",
               "REDACTED_REF"
             ],
-            "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
+            "observed_at_utc": "REDACTED_UTC"
           }
         ]
       },
@@ -175,10 +175,10 @@
           "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
           "TrustFactor": 1,
-          "ObservedAtUtc": "2026-03-22T11:39:53Z",
-          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "ObservedAtUtc": "REDACTED_UTC",
+          "SenderDisplay": "REDACTED_SENDER",
           "SourceRef": "REDACTED_REF",
-          "SourceLabel": "Realtime message 293950 in chat 885574984",
+          "SourceLabel": "REDACTED_SOURCE",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
           "DecisionLinkage": {
@@ -195,10 +195,10 @@
           "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
           "TrustFactor": 1,
-          "ObservedAtUtc": "2026-03-22T11:39:53Z",
-          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "ObservedAtUtc": "REDACTED_UTC",
+          "SenderDisplay": "REDACTED_SENDER",
           "SourceRef": "REDACTED_REF",
-          "SourceLabel": "Realtime message 293951 in chat 885574984",
+          "SourceLabel": "REDACTED_SOURCE",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
           "DecisionLinkage": {
@@ -215,10 +215,10 @@
           "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
           "TrustFactor": 1,
-          "ObservedAtUtc": "2026-03-22T10:56:37Z",
-          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "ObservedAtUtc": "REDACTED_UTC",
+          "SenderDisplay": "REDACTED_SENDER",
           "SourceRef": "REDACTED_REF",
-          "SourceLabel": "Realtime message 293948 in chat 885574984",
+          "SourceLabel": "REDACTED_SOURCE",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
           "DecisionLinkage": {
@@ -235,10 +235,10 @@
           "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
           "TrustFactor": 1,
-          "ObservedAtUtc": "2026-03-20T18:37:48Z",
-          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "ObservedAtUtc": "REDACTED_UTC",
+          "SenderDisplay": "REDACTED_SENDER",
           "SourceRef": "REDACTED_REF",
-          "SourceLabel": "Realtime message 293894 in chat 885574984",
+          "SourceLabel": "REDACTED_SOURCE",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
           "DecisionLinkage": {
@@ -255,10 +255,10 @@
           "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u043E\u043A\u0435",
           "TrustFactor": 1,
-          "ObservedAtUtc": "2026-03-20T18:31:04Z",
-          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "ObservedAtUtc": "REDACTED_UTC",
+          "SenderDisplay": "REDACTED_SENDER",
           "SourceRef": "REDACTED_REF",
-          "SourceLabel": "Realtime message 293893 in chat 885574984",
+          "SourceLabel": "REDACTED_SOURCE",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
           "DecisionLinkage": {
@@ -288,7 +288,7 @@
       "TrustFactor": 0.85,
       "Status": "attention_required",
       "EvidenceCount": 5,
-      "UpdatedAtUtc": "2026-04-05T18:25:59.674555Z",
+      "UpdatedAtUtc": "REDACTED_UTC",
       "Priority": "medium",
       "RecommendedNextAction": "open-web",
       "AvailableActions": [
@@ -358,7 +358,7 @@
             "REDACTED_REF",
             "REDACTED_REF"
           ],
-          "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
+          "observed_at_utc": "REDACTED_UTC"
         },
         {
           "step": "model_round",
@@ -384,7 +384,7 @@
           "evidence_refs": [
             "REDACTED_UUID"
           ],
-          "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
+          "observed_at_utc": "REDACTED_UTC"
         },
         {
           "step": "budget_guard",
@@ -408,7 +408,7 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [],
-          "observed_at_utc": "2026-04-07T14:42:37.4868437Z"
+          "observed_at_utc": "REDACTED_UTC"
         },
         {
           "step": "fallback",
@@ -435,7 +435,7 @@
             "REDACTED_REF",
             "REDACTED_REF"
           ],
-          "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
+          "observed_at_utc": "REDACTED_UTC"
         }
       ]
     },
@@ -444,10 +444,10 @@
         "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
         "TrustFactor": 1,
-        "ObservedAtUtc": "2026-03-22T11:39:53Z",
-        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "ObservedAtUtc": "REDACTED_UTC",
+        "SenderDisplay": "REDACTED_SENDER",
         "SourceRef": "REDACTED_REF",
-        "SourceLabel": "Realtime message 293950 in chat 885574984",
+        "SourceLabel": "REDACTED_SOURCE",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
         "DecisionLinkage": {
@@ -464,10 +464,10 @@
         "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
         "TrustFactor": 1,
-        "ObservedAtUtc": "2026-03-22T11:39:53Z",
-        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "ObservedAtUtc": "REDACTED_UTC",
+        "SenderDisplay": "REDACTED_SENDER",
         "SourceRef": "REDACTED_REF",
-        "SourceLabel": "Realtime message 293951 in chat 885574984",
+        "SourceLabel": "REDACTED_SOURCE",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
         "DecisionLinkage": {
@@ -484,10 +484,10 @@
         "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
         "TrustFactor": 1,
-        "ObservedAtUtc": "2026-03-22T10:56:37Z",
-        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "ObservedAtUtc": "REDACTED_UTC",
+        "SenderDisplay": "REDACTED_SENDER",
         "SourceRef": "REDACTED_REF",
-        "SourceLabel": "Realtime message 293948 in chat 885574984",
+        "SourceLabel": "REDACTED_SOURCE",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
         "DecisionLinkage": {
@@ -504,10 +504,10 @@
         "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
         "TrustFactor": 1,
-        "ObservedAtUtc": "2026-03-20T18:37:48Z",
-        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "ObservedAtUtc": "REDACTED_UTC",
+        "SenderDisplay": "REDACTED_SENDER",
         "SourceRef": "REDACTED_REF",
-        "SourceLabel": "Realtime message 293894 in chat 885574984",
+        "SourceLabel": "REDACTED_SOURCE",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
         "DecisionLinkage": {
@@ -524,10 +524,10 @@
         "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u043E\u043A\u0435",
         "TrustFactor": 1,
-        "ObservedAtUtc": "2026-03-20T18:31:04Z",
-        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "ObservedAtUtc": "REDACTED_UTC",
+        "SenderDisplay": "REDACTED_SENDER",
         "SourceRef": "REDACTED_REF",
-        "SourceLabel": "Realtime message 293893 in chat 885574984",
+        "SourceLabel": "REDACTED_SOURCE",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
         "DecisionLinkage": {
@@ -581,8 +581,8 @@
       "Rationale": "fallback"
     },
     "StructuredVerdict": {
-      "verdict_id": "0d4dc9c033bf434a8902b4ea511dc71e",
-      "scope_key": "chat:885574984",
+      "verdict_id": "REDACTED_ID",
+      "scope_key": "chat:REDACTED",
       "scope_item_key": "review:durable_object_metadata:REDACTED_UUID",
       "carry_forward_case_id": null,
       "decision": "defer",
@@ -597,7 +597,7 @@
         "clarification_payload": null
       },
       "evidence_refs": [],
-      "created_at_utc": "2026-04-07T14:42:29.8357245Z"
+      "created_at_utc": "REDACTED_UTC"
     }
   },
   "RequiredAuditKeysPresent": true,
@@ -618,7 +618,7 @@
       "ExpectedDecision": "accept",
       "ActualDecision": "accept",
       "Reason": null,
-      "Passed": true
+      "Passed": false
     },
     {
       "CaseId": "structured_verdict_invalid_decision_rejected",
@@ -748,6 +748,6 @@
       "FailureReason": "An error occurred while saving the entity changes. See the inner exception for details."
     }
   ],
-  "Passed": true,
+  "Passed": false,
   "FatalError": null
 }
