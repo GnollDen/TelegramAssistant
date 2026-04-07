@@ -308,8 +308,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-012A completed: added OPINT-012-A Telegram parity smoke to validate resolution interpretation preview output uses upstream display_label/trust_percent semantics (`[DisplayLabel] [TrustPercent%]`, omit percent when null) and does not expose raw float trust text. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-interpretation-loop-v1-validate, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --opint-012-a-smoke.",
       "dependencies": [
         "DTP-011"
       ]
