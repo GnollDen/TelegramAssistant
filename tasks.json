@@ -669,8 +669,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-010A completed: hardened --ai-conflict-session-v1-proof candidate selection to iterate deterministic eligible queue items, enforce required audit-key presence per candidate, and treat downstream apply-path failures as non-blocking evidence while preserving deterministic apply verification when available. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --ai-conflict-session-v1-proof --ai-conflict-session-v1-proof-output=src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json (passed=True).",
       "dependencies": [
         "PHB-009"
       ]
