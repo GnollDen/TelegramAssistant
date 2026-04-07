@@ -613,7 +613,7 @@
         "Run task-specific verify commands"
       ],
       "status": "done",
-      "notes": "PHB-008A completed: added non-legacy reintegration ledger persistence with migration `0057_resolution_case_reintegration_ledger.sql`, EF row/context wiring, `IResolutionCaseReintegrationLedgerRepository` + `ResolutionCaseReintegrationLedgerRepository`, and deterministic `IResolutionCaseReintegrationService` + `ResolutionCaseReintegrationService` as the single ledger write boundary with transition/linkage validation (`cross_scope_linkage_rejected`, `stale_recompute_linkage_rejected`). Wired `ResolutionActionCommandService` accepted path to persist reintegration status/linkage/residue through the service, and extended `--resolution-recompute-contract-smoke` to prove repository-backed ledger round-trip (including unresolved residue, resolved-by-AI recompute tuple persistence, and negative-path rejection rows) against real DB-backed repositories. Verified with `dotnet build TelegramAssistant.sln` and `dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-recompute-contract-smoke`.",
+      "notes": "PHB-008A completed: reintegration ledger schema/repository/service boundary is wired with deterministic transition/linkage validation through ResolutionCaseReintegrationService; resolution actions now persist reintegration residue/linkage via the service; --resolution-recompute-contract-smoke executes repository-backed round-trip with explicit cross_scope_linkage_rejected and stale_recompute_linkage_rejected checks. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-recompute-contract-smoke.",
       "dependencies": [
         "PHB-007"
       ]
