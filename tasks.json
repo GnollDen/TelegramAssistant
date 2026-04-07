@@ -878,8 +878,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-016B completed: Stage7 dossier/profile and timeline producers now persist WS-B5 conditional families through ConditionalKnowledgeRepository with deterministic open-row supersession only when affected values change (`profile_preference`, `behavior_pattern`, `style_drift`, `phase_marker`), and Stage8 recompute smoke now includes repository-backed conditional supersession evidence proving affected rows supersede while unaffected rows remain open. Verified with dotnet build TelegramAssistant.sln, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage7-dossier-profile-smoke, dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage7-timeline-smoke, and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage8-recompute-smoke.",
       "dependencies": [
         "PHB-016A"
       ]

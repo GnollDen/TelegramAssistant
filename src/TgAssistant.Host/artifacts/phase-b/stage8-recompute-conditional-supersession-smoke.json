@@ -1,0 +1,48 @@
+{
+  "generated_at_utc": "2026-04-07T15:52:16.0050776Z",
+  "output_path": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/phase-b/stage8-recompute-conditional-supersession-smoke.json",
+  "passed": true,
+  "fatal_error": null,
+  "rows": [
+    {
+      "case_id": "profile_preference_unaffected_open",
+      "expected_decision": "unchanged",
+      "actual_decision": "unchanged",
+      "old_state_id": "e44fd281-5f40-4cae-b66b-76e4d442fc38",
+      "new_state_id": "e44fd281-5f40-4cae-b66b-76e4d442fc38",
+      "old_state_status": "open",
+      "reason": "targeted_conditional_supersession_verified",
+      "passed": true
+    },
+    {
+      "case_id": "style_drift_unaffected_open",
+      "expected_decision": "unchanged",
+      "actual_decision": "unchanged",
+      "old_state_id": "dc4fb1f3-80d9-417c-8fd7-91d6219a3618",
+      "new_state_id": "dc4fb1f3-80d9-417c-8fd7-91d6219a3618",
+      "old_state_status": "open",
+      "reason": "targeted_conditional_supersession_verified",
+      "passed": true
+    },
+    {
+      "case_id": "behavior_pattern_targeted_supersession",
+      "expected_decision": "superseded",
+      "actual_decision": "superseded",
+      "old_state_id": "9776d68f-45c8-4004-99ac-7606a7ad4a7a",
+      "new_state_id": "0e4da96b-08af-47fb-8faf-d4cc5c9fa8e6",
+      "old_state_status": "superseded",
+      "reason": "targeted_conditional_supersession_verified",
+      "passed": true
+    },
+    {
+      "case_id": "phase_marker_targeted_supersession",
+      "expected_decision": "superseded",
+      "actual_decision": "superseded",
+      "old_state_id": "60b4f53b-4429-424d-8558-2f6532f3efb5",
+      "new_state_id": "f2b1041e-6f89-41b4-ad9b-5797e1f33d7a",
+      "old_state_status": "superseded",
+      "reason": "targeted_conditional_supersession_verified",
+      "passed": true
+    }
+  ]
+}

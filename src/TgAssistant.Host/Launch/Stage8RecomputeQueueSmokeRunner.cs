@@ -425,6 +425,7 @@ public static class Stage8RecomputeQueueSmokeRunner
         }
 
         await AssertRepositoryBackedReintegrationLinkageAsync(ct);
+        await AssertRepositoryBackedConditionalSupersessionAsync(ct);
     }
 
     private static async Task AssertRepositoryBackedReintegrationLinkageAsync(CancellationToken ct)
@@ -646,6 +647,15 @@ public static class Stage8RecomputeQueueSmokeRunner
         string scopeKey,
         Guid personId,
         CancellationToken ct)
+        => await SeedPersonAsync(dbFactory, scopeKey, personId, "tracked_person", "Stage8 Recompute Smoke Person", ct);
+
+    private static async Task SeedPersonAsync(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        string scopeKey,
+        Guid personId,
+        string personType,
+        string displayName,
+        CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var exists = await db.Persons.AnyAsync(x => x.Id == personId, ct);
@@ -659,9 +669,9 @@ public static class Stage8RecomputeQueueSmokeRunner
         {
             Id = personId,
             ScopeKey = scopeKey,
-            PersonType = "tracked_person",
-            DisplayName = "Stage8 Recompute Smoke Person",
-            CanonicalName = "stage8_recompute_smoke_person",
+            PersonType = personType,
+            DisplayName = displayName,
+            CanonicalName = displayName.ToLowerInvariant().Replace(' ', '_'),
             Status = "active",
             MetadataJson = "{}",
             CreatedAt = nowUtc,
@@ -714,6 +724,469 @@ public static class Stage8RecomputeQueueSmokeRunner
             hostArtifactsRoot,
             "phase-b",
             "stage8-recompute-reintegration-linkage-smoke.json"));
+    }
+
+    private static async Task AssertRepositoryBackedConditionalSupersessionAsync(CancellationToken ct)
+    {
+        var resolvedOutputPath = ResolveConditionalSupersessionEvidenceOutputPath();
+        var report = new Stage8ConditionalSupersessionSmokeReport
+        {
+            GeneratedAtUtc = DateTime.UtcNow,
+            OutputPath = resolvedOutputPath
+        };
+
+        Exception? fatal = null;
+        try
+        {
+            var connectionString = ResolveDatabaseConnectionString();
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException("Stage8 recompute queue smoke failed: Database:ConnectionString is required for repository-backed conditional supersession evidence.");
+            }
+
+            var scopeKey = $"chat:stage8-recompute-smoke-conditional:{Guid.NewGuid():N}";
+            var trackedPersonId = Guid.NewGuid();
+            var operatorPersonId = Guid.NewGuid();
+
+            var dbInit = new DatabaseInitializer(
+                Options.Create(new DatabaseSettings
+                {
+                    ConnectionString = connectionString
+                }),
+                NullLogger<DatabaseInitializer>.Instance);
+            await dbInit.InitializeAsync(ct);
+
+            var options = new DbContextOptionsBuilder<TgAssistantDbContext>()
+                .UseNpgsql(connectionString)
+                .Options;
+            await using var dbFactory = new SmokeDbContextFactory(options);
+            await SeedTrackedPersonAsync(dbFactory, scopeKey, trackedPersonId, ct);
+            await SeedPersonAsync(dbFactory, scopeKey, operatorPersonId, "operator_root", "Stage8 Recompute Smoke Operator", ct);
+
+            var temporalRepository = new TemporalPersonStateRepository(dbFactory);
+            var conditionalRepository = new ConditionalKnowledgeRepository(dbFactory);
+            var loggerFactory = LoggerFactory.Create(_ => { });
+            var dossierRepository = new Stage7DossierProfileRepository(
+                dbFactory,
+                temporalRepository,
+                conditionalRepository,
+                loggerFactory.CreateLogger<Stage7DossierProfileRepository>());
+            var timelineRepository = new Stage7TimelineRepository(
+                dbFactory,
+                temporalRepository,
+                conditionalRepository,
+                loggerFactory.CreateLogger<Stage7TimelineRepository>());
+
+            var firstBootstrap = BuildConditionalBootstrap(scopeKey, trackedPersonId, operatorPersonId, includeSliceOutput: true);
+            var firstAudit = BuildConditionalAuditRecord(
+                scopeKey,
+                trackedPersonId,
+                preferenceValue: "coffee",
+                behaviorSummary: "morning_routine",
+                styleDriftLabel: "steady_style");
+            await SeedModelPassAuditRowsAsync(dbFactory, firstAudit, ct);
+            await dossierRepository.UpsertAsync(firstAudit, firstBootstrap, ct);
+            await timelineRepository.UpsertAsync(firstAudit, firstBootstrap, ct);
+
+            var firstOpenStates = await conditionalRepository.QueryOpenScopedAsync(scopeKey, trackedPersonId, DateTime.UtcNow, ct);
+            var firstProfilePreference = FindOpenState(firstOpenStates, DossierFieldConditionalFamilies.ProfilePreference, ConditionalKnowledgeRuleKinds.BaselineRule);
+            var firstBehaviorPattern = FindOpenState(firstOpenStates, DossierFieldConditionalFamilies.BehaviorPattern, ConditionalKnowledgeRuleKinds.BaselineRule);
+            var firstStyleDrift = FindOpenState(firstOpenStates, DossierFieldConditionalFamilies.StyleDrift, ConditionalKnowledgeRuleKinds.StyleDrift);
+            var firstPhaseMarker = FindOpenState(firstOpenStates, DossierFieldConditionalFamilies.PhaseMarker, ConditionalKnowledgeRuleKinds.PhaseMarker);
+            if (firstProfilePreference == null || firstBehaviorPattern == null || firstStyleDrift == null || firstPhaseMarker == null)
+            {
+                throw new InvalidOperationException("Stage8 recompute queue smoke failed: initial conditional rows were not produced by Stage7 repositories.");
+            }
+
+            var secondBootstrap = BuildConditionalBootstrap(scopeKey, trackedPersonId, operatorPersonId, includeSliceOutput: false);
+            var secondAudit = BuildConditionalAuditRecord(
+                scopeKey,
+                trackedPersonId,
+                preferenceValue: "coffee",
+                behaviorSummary: "late_night_routine",
+                styleDriftLabel: "steady_style");
+            await SeedModelPassAuditRowsAsync(dbFactory, secondAudit, ct);
+            await dossierRepository.UpsertAsync(secondAudit, secondBootstrap, ct);
+            await timelineRepository.UpsertAsync(secondAudit, secondBootstrap, ct);
+
+            var secondOpenStates = await conditionalRepository.QueryOpenScopedAsync(scopeKey, trackedPersonId, DateTime.UtcNow, ct);
+            var secondScopedStates = await conditionalRepository.QueryScopedAsync(new ConditionalKnowledgeScopeQuery
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                Limit = 500
+            }, ct);
+
+            var secondProfilePreference = FindOpenState(secondOpenStates, DossierFieldConditionalFamilies.ProfilePreference, ConditionalKnowledgeRuleKinds.BaselineRule);
+            var secondBehaviorPattern = FindOpenState(secondOpenStates, DossierFieldConditionalFamilies.BehaviorPattern, ConditionalKnowledgeRuleKinds.BaselineRule);
+            var secondStyleDrift = FindOpenState(secondOpenStates, DossierFieldConditionalFamilies.StyleDrift, ConditionalKnowledgeRuleKinds.StyleDrift);
+            var secondPhaseMarker = FindOpenState(secondOpenStates, DossierFieldConditionalFamilies.PhaseMarker, ConditionalKnowledgeRuleKinds.PhaseMarker);
+
+            report.Rows.Add(BuildSupersessionRow(
+                caseId: "profile_preference_unaffected_open",
+                expectedDecision: "unchanged",
+                oldOpenState: firstProfilePreference,
+                newOpenState: secondProfilePreference,
+                expectedSuperseded: false,
+                allStates: secondScopedStates));
+            report.Rows.Add(BuildSupersessionRow(
+                caseId: "style_drift_unaffected_open",
+                expectedDecision: "unchanged",
+                oldOpenState: firstStyleDrift,
+                newOpenState: secondStyleDrift,
+                expectedSuperseded: false,
+                allStates: secondScopedStates));
+            report.Rows.Add(BuildSupersessionRow(
+                caseId: "behavior_pattern_targeted_supersession",
+                expectedDecision: "superseded",
+                oldOpenState: firstBehaviorPattern,
+                newOpenState: secondBehaviorPattern,
+                expectedSuperseded: true,
+                allStates: secondScopedStates));
+            report.Rows.Add(BuildSupersessionRow(
+                caseId: "phase_marker_targeted_supersession",
+                expectedDecision: "superseded",
+                oldOpenState: firstPhaseMarker,
+                newOpenState: secondPhaseMarker,
+                expectedSuperseded: true,
+                allStates: secondScopedStates));
+
+            report.Passed = report.Rows.All(x => x.Passed);
+        }
+        catch (Exception ex)
+        {
+            fatal = ex;
+            report.Passed = false;
+            report.FatalError = ex.Message;
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
+            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(resolvedOutputPath, json, ct);
+        }
+
+        if (!report.Passed)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: repository-backed conditional supersession evidence is incomplete.", fatal);
+        }
+    }
+
+    private static Stage8ConditionalSupersessionSmokeRow BuildSupersessionRow(
+        string caseId,
+        string expectedDecision,
+        ConditionalKnowledgeState oldOpenState,
+        ConditionalKnowledgeState? newOpenState,
+        bool expectedSuperseded,
+        IReadOnlyCollection<ConditionalKnowledgeState> allStates)
+    {
+        var oldStateReadback = allStates.FirstOrDefault(x => x.Id == oldOpenState.Id);
+        var superseded = oldStateReadback != null
+            && string.Equals(oldStateReadback.StateStatus, ConditionalKnowledgeStateStatuses.Superseded, StringComparison.Ordinal)
+            && oldStateReadback.SupersededByStateId.HasValue;
+        var unchanged = newOpenState != null && newOpenState.Id == oldOpenState.Id;
+        var changed = newOpenState != null && newOpenState.Id != oldOpenState.Id;
+        var passed = expectedSuperseded
+            ? changed && superseded
+            : unchanged && !superseded;
+
+        return new Stage8ConditionalSupersessionSmokeRow
+        {
+            CaseId = caseId,
+            ExpectedDecision = expectedDecision,
+            ActualDecision = expectedSuperseded
+                ? (changed && superseded ? "superseded" : "unchanged_or_missing")
+                : (unchanged && !superseded ? "unchanged" : "unexpected_supersession"),
+            OldStateId = oldOpenState.Id,
+            NewStateId = newOpenState?.Id,
+            OldStateStatus = oldStateReadback?.StateStatus ?? "missing",
+            Reason = passed
+                ? "targeted_conditional_supersession_verified"
+                : "targeted_conditional_supersession_mismatch",
+            Passed = passed
+        };
+    }
+
+    private static ConditionalKnowledgeState? FindOpenState(
+        IReadOnlyCollection<ConditionalKnowledgeState> states,
+        string factFamily,
+        string ruleKind)
+    {
+        return states
+            .Where(x =>
+                string.Equals(x.FactFamily, factFamily, StringComparison.Ordinal)
+                && string.Equals(x.RuleKind, ruleKind, StringComparison.Ordinal)
+                && string.Equals(x.StateStatus, ConditionalKnowledgeStateStatuses.Open, StringComparison.Ordinal))
+            .OrderByDescending(x => x.ValidFromUtc)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+    }
+
+    private static Stage6BootstrapGraphResult BuildConditionalBootstrap(
+        string scopeKey,
+        Guid trackedPersonId,
+        Guid operatorPersonId,
+        bool includeSliceOutput)
+    {
+        var nowUtc = DateTime.UtcNow;
+        return new Stage6BootstrapGraphResult
+        {
+            ScopeKey = scopeKey,
+            GraphInitialized = true,
+            TrackedPerson = new Stage6BootstrapPersonRef
+            {
+                PersonId = trackedPersonId,
+                ScopeKey = scopeKey,
+                PersonType = "tracked_person",
+                DisplayName = "Conditional Stage8 Smoke Tracked",
+                CanonicalName = "conditional_stage8_smoke_tracked"
+            },
+            OperatorPerson = new Stage6BootstrapPersonRef
+            {
+                PersonId = operatorPersonId,
+                ScopeKey = scopeKey,
+                PersonType = "operator_root",
+                DisplayName = "Conditional Stage8 Smoke Operator",
+                CanonicalName = "conditional_stage8_smoke_operator"
+            },
+            EvidenceCount = 3,
+            LatestEvidenceAtUtc = nowUtc,
+            DiscoveryOutputs = [],
+            AmbiguityOutputs = [],
+            ContradictionOutputs = [],
+            SliceOutputs = includeSliceOutput
+                ? [
+                    new Stage6BootstrapPoolOutput
+                    {
+                        Id = Guid.NewGuid(),
+                        ScopeKey = scopeKey,
+                        TrackedPersonId = trackedPersonId,
+                        OutputType = Stage6BootstrapPoolOutputTypes.BootstrapSlice,
+                        OutputKey = "slice:conditional-stage8-smoke",
+                        Status = "active"
+                    }
+                ]
+                : []
+        };
+    }
+
+    private static ModelPassAuditRecord BuildConditionalAuditRecord(
+        string scopeKey,
+        Guid trackedPersonId,
+        string preferenceValue,
+        string behaviorSummary,
+        string styleDriftLabel)
+    {
+        var runId = Guid.NewGuid();
+        var normalizationRunId = Guid.NewGuid();
+        var nowUtc = DateTime.UtcNow;
+
+        return new ModelPassAuditRecord
+        {
+            ModelPassRunId = runId,
+            NormalizationRunId = normalizationRunId,
+            Envelope = new ModelPassEnvelope
+            {
+                RunId = runId,
+                Stage = "stage7_durable_formation",
+                PassFamily = "conditional_stage8_smoke",
+                RunKind = "smoke",
+                ScopeKey = scopeKey,
+                Scope = new ModelPassScope
+                {
+                    ScopeType = "person_scope",
+                    ScopeRef = $"person:{trackedPersonId:D}"
+                },
+                Target = new ModelPassTarget
+                {
+                    TargetType = "person",
+                    TargetRef = $"person:{trackedPersonId:D}"
+                },
+                PersonId = trackedPersonId,
+                SourceObjectId = null,
+                EvidenceItemId = null,
+                SourceRefs =
+                [
+                    new ModelPassSourceRef
+                    {
+                        SourceType = "smoke",
+                        SourceRef = "conditional-stage8-smoke",
+                        SourceObjectId = null,
+                        EvidenceItemId = null
+                    }
+                ],
+                TruthSummary = new ModelPassTruthSummary
+                {
+                    TruthLayer = ModelNormalizationTruthLayers.CanonicalTruth,
+                    Summary = "Conditional stage8 smoke",
+                    CanonicalRefs = ["smoke:conditional-stage8"]
+                },
+                Budget = ModelPassBudgetCatalog.ConsumeOneIteration(
+                    ModelPassBudgetCatalog.Create("stage7_durable_formation", "conditional_stage8_smoke")),
+                ResultStatus = ModelPassResultStatuses.ResultReady,
+                OutputSummary = new ModelPassOutputSummary
+                {
+                    Summary = "Conditional stage8 smoke output"
+                },
+                StartedAtUtc = nowUtc,
+                FinishedAtUtc = nowUtc
+            },
+            Normalization = new ModelNormalizationResult
+            {
+                ModelPassRunId = runId,
+                ScopeKey = scopeKey,
+                TargetType = "person",
+                TargetRef = $"person:{trackedPersonId:D}",
+                TruthLayer = ModelNormalizationTruthLayers.DerivedButDurable,
+                PersonId = trackedPersonId,
+                SourceObjectId = null,
+                EvidenceItemId = null,
+                Status = ModelPassResultStatuses.ResultReady,
+                CandidateCounts = new ModelNormalizationCandidateCounts
+                {
+                    Facts = 1,
+                    Inferences = 1,
+                    Hypotheses = 1,
+                    Conflicts = 1
+                },
+                NormalizedPayload = new ModelNormalizationPayload
+                {
+                    Facts =
+                    [
+                        new NormalizedFactCandidate
+                        {
+                            Category = "preferences",
+                            Key = "favorite_food",
+                            Value = preferenceValue,
+                            Confidence = 0.81f,
+                            EvidenceRefs = ["smoke:fact:favorites"]
+                        }
+                    ],
+                    Inferences =
+                    [
+                        new NormalizedInferenceCandidate
+                        {
+                            InferenceType = "behavior_pattern",
+                            SubjectType = "person",
+                            SubjectRef = $"person:{trackedPersonId:D}",
+                            Summary = behaviorSummary,
+                            Confidence = 0.77f,
+                            EvidenceRefs = ["smoke:inference:behavior"]
+                        }
+                    ],
+                    Hypotheses =
+                    [
+                        new NormalizedHypothesisCandidate
+                        {
+                            HypothesisType = "style_drift",
+                            SubjectType = "person",
+                            SubjectRef = $"person:{trackedPersonId:D}",
+                            Statement = styleDriftLabel,
+                            Confidence = 0.69f,
+                            EvidenceRefs = ["smoke:hypothesis:style"]
+                        }
+                    ],
+                    Conflicts =
+                    [
+                        new NormalizedConflictCandidate
+                        {
+                            ConflictType = "phase_pressure",
+                            Summary = "timeline transition pressure",
+                            Confidence = 0.53f,
+                            EvidenceRefs = ["smoke:conflict:phase"]
+                        }
+                    ]
+                }
+            }
+        };
+    }
+
+    private static async Task SeedModelPassAuditRowsAsync(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        ModelPassAuditRecord auditRecord,
+        CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var nowUtc = DateTime.UtcNow;
+
+        var hasModelPass = await db.ModelPassRuns
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == auditRecord.ModelPassRunId, ct);
+        if (!hasModelPass)
+        {
+            db.ModelPassRuns.Add(new DbModelPassRun
+            {
+                Id = auditRecord.ModelPassRunId,
+                ScopeKey = auditRecord.Envelope.ScopeKey,
+                Stage = auditRecord.Envelope.Stage,
+                PassFamily = auditRecord.Envelope.PassFamily,
+                RunKind = auditRecord.Envelope.RunKind,
+                Status = "completed",
+                ResultStatus = auditRecord.Envelope.ResultStatus,
+                TargetType = auditRecord.Envelope.Target.TargetType,
+                TargetRef = auditRecord.Envelope.Target.TargetRef,
+                PersonId = auditRecord.Envelope.PersonId,
+                SourceObjectId = null,
+                EvidenceItemId = null,
+                TriggerKind = auditRecord.Envelope.TriggerKind,
+                TriggerRef = auditRecord.Envelope.TriggerRef,
+                SchemaVersion = ModelNormalizationSchema.CurrentVersion,
+                ScopeJson = "{}",
+                SourceRefsJson = "[]",
+                TruthSummaryJson = "{}",
+                ConflictsJson = "[]",
+                UnknownsJson = "[]",
+                InputSummaryJson = "{}",
+                OutputSummaryJson = "{}",
+                MetricsJson = "{}",
+                FailureJson = "{}",
+                StartedAt = auditRecord.Envelope.StartedAtUtc,
+                FinishedAt = auditRecord.Envelope.FinishedAtUtc,
+                CreatedAt = nowUtc
+            });
+        }
+
+        var hasNormalization = await db.NormalizationRuns
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == auditRecord.NormalizationRunId, ct);
+        if (!hasNormalization)
+        {
+            db.NormalizationRuns.Add(new DbNormalizationRun
+            {
+                Id = auditRecord.NormalizationRunId,
+                ModelPassRunId = auditRecord.ModelPassRunId,
+                ScopeKey = auditRecord.Normalization.ScopeKey,
+                Status = auditRecord.Normalization.Status,
+                TargetType = auditRecord.Normalization.TargetType,
+                TargetRef = auditRecord.Normalization.TargetRef,
+                TruthLayer = auditRecord.Normalization.TruthLayer,
+                PersonId = auditRecord.Normalization.PersonId,
+                SourceObjectId = null,
+                EvidenceItemId = null,
+                SchemaVersion = auditRecord.Normalization.SchemaVersion,
+                CandidateCountsJson = "{}",
+                NormalizedPayloadJson = "{}",
+                ConflictsJson = "[]",
+                IssuesJson = "[]",
+                BlockedReason = auditRecord.Normalization.BlockedReason,
+                CreatedAt = nowUtc,
+                FinishedAt = nowUtc
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static string ResolveConditionalSupersessionEvidenceOutputPath()
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        var hostArtifactsRoot = string.Equals(Path.GetFileName(cwd), "TgAssistant.Host", StringComparison.Ordinal)
+            ? Path.Combine(cwd, "artifacts")
+            : Path.Combine(cwd, "src", "TgAssistant.Host", "artifacts");
+        return Path.GetFullPath(Path.Combine(
+            hostArtifactsRoot,
+            "phase-b",
+            "stage8-recompute-conditional-supersession-smoke.json"));
     }
 
     private sealed class SmokeDbContextFactory : IDbContextFactory<TgAssistantDbContext>, IAsyncDisposable
@@ -1493,6 +1966,51 @@ public sealed class Stage8ReintegrationLinkageSmokeRow
 
     [JsonPropertyName("actual_decision")]
     public string ActualDecision { get; set; } = string.Empty;
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = string.Empty;
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
+}
+
+public sealed class Stage8ConditionalSupersessionSmokeReport
+{
+    [JsonPropertyName("generated_at_utc")]
+    public DateTime GeneratedAtUtc { get; set; }
+
+    [JsonPropertyName("output_path")]
+    public string OutputPath { get; set; } = string.Empty;
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
+
+    [JsonPropertyName("fatal_error")]
+    public string? FatalError { get; set; }
+
+    [JsonPropertyName("rows")]
+    public List<Stage8ConditionalSupersessionSmokeRow> Rows { get; set; } = [];
+}
+
+public sealed class Stage8ConditionalSupersessionSmokeRow
+{
+    [JsonPropertyName("case_id")]
+    public string CaseId { get; set; } = string.Empty;
+
+    [JsonPropertyName("expected_decision")]
+    public string ExpectedDecision { get; set; } = string.Empty;
+
+    [JsonPropertyName("actual_decision")]
+    public string ActualDecision { get; set; } = string.Empty;
+
+    [JsonPropertyName("old_state_id")]
+    public Guid OldStateId { get; set; }
+
+    [JsonPropertyName("new_state_id")]
+    public Guid? NewStateId { get; set; }
+
+    [JsonPropertyName("old_state_status")]
+    public string OldStateStatus { get; set; } = string.Empty;
 
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = string.Empty;

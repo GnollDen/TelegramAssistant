@@ -18,15 +18,18 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
 
     private readonly IDbContextFactory<TgAssistantDbContext> _dbFactory;
     private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
+    private readonly IConditionalKnowledgeRepository _conditionalKnowledgeRepository;
     private readonly ILogger<Stage7TimelineRepository> _logger;
 
     public Stage7TimelineRepository(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
         ITemporalPersonStateRepository temporalPersonStateRepository,
+        IConditionalKnowledgeRepository conditionalKnowledgeRepository,
         ILogger<Stage7TimelineRepository> logger)
     {
         _dbFactory = dbFactory;
         _temporalPersonStateRepository = temporalPersonStateRepository;
+        _conditionalKnowledgeRepository = conditionalKnowledgeRepository;
         _logger = logger;
     }
 
@@ -233,6 +236,7 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
 
         await db.SaveChangesAsync(ct);
         await UpsertTimelineTemporalStateAsync(auditRecord, bootstrapResult, episodeClosureState, evidenceItemIds, now, ct);
+        await UpsertTimelineConditionalStatesAsync(auditRecord, bootstrapResult, episodeClosureState, evidenceItemIds, now, ct);
         await transaction.CommitAsync(ct);
 
         _logger.LogInformation(
@@ -394,6 +398,165 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
                 NextStatus = TemporalPersonStateStatuses.Superseded
             },
             ct);
+    }
+
+    private async Task UpsertTimelineConditionalStatesAsync(
+        ModelPassAuditRecord auditRecord,
+        Stage6BootstrapGraphResult bootstrapResult,
+        string episodeClosureState,
+        IReadOnlyCollection<Guid> evidenceItemIds,
+        DateTime validFromUtc,
+        CancellationToken ct)
+    {
+        var trackedPerson = bootstrapResult.TrackedPerson;
+        if (trackedPerson == null || trackedPerson.PersonId == Guid.Empty || string.IsNullOrWhiteSpace(bootstrapResult.ScopeKey))
+        {
+            return;
+        }
+
+        var scopeKey = bootstrapResult.ScopeKey;
+        var trackedPersonId = trackedPerson.PersonId;
+        var subjectRef = string.IsNullOrWhiteSpace(trackedPerson.PersonRef)
+            ? $"person:{trackedPersonId:D}:timeline_episode"
+            : $"{trackedPerson.PersonRef.Trim()}:timeline_episode";
+        var openStates = await _conditionalKnowledgeRepository.QueryOpenScopedAsync(scopeKey, trackedPersonId, validFromUtc, ct);
+        var fallbackEvidenceRefs = evidenceItemIds
+            .Select(x => $"evidence:{x:D}")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var styleSource = auditRecord.Normalization.NormalizedPayload.Hypotheses.FirstOrDefault()?.Statement
+                          ?? auditRecord.Normalization.NormalizedPayload.Inferences.FirstOrDefault()?.Summary
+                          ?? "timeline_stability_baseline";
+        var styleEvidenceRefs = CollectConditionalEvidenceRefs(
+            auditRecord.Normalization.NormalizedPayload.Hypotheses.FirstOrDefault()?.EvidenceRefs
+            ?? auditRecord.Normalization.NormalizedPayload.Inferences.FirstOrDefault()?.EvidenceRefs
+            ?? [],
+            fallbackEvidenceRefs);
+        await UpsertConditionalStateAsync(
+            openStates,
+            scopeKey,
+            trackedPersonId,
+            DossierFieldConditionalFamilies.StyleDrift,
+            subjectRef,
+            ConditionalKnowledgeRuleKinds.StyleDrift,
+            baselineValue: null,
+            exceptionValue: null,
+            styleLabel: styleSource.Trim(),
+            phaseLabel: null,
+            phaseReason: null,
+            sourceRefIds: BuildSourceRefs(auditRecord.ModelPassRunId, "stage7_timeline"),
+            evidenceRefs: styleEvidenceRefs,
+            confidence: auditRecord.Normalization.NormalizedPayload.Hypotheses.FirstOrDefault()?.Confidence,
+            validFromUtc: validFromUtc,
+            ct: ct);
+
+        var phaseEvidenceRefs = CollectConditionalEvidenceRefs(
+            auditRecord.Normalization.NormalizedPayload.Conflicts.SelectMany(x => x.EvidenceRefs).ToArray(),
+            fallbackEvidenceRefs);
+        await UpsertConditionalStateAsync(
+            openStates,
+            scopeKey,
+            trackedPersonId,
+            DossierFieldConditionalFamilies.PhaseMarker,
+            subjectRef,
+            ConditionalKnowledgeRuleKinds.PhaseMarker,
+            baselineValue: null,
+            exceptionValue: null,
+            styleLabel: null,
+            phaseLabel: $"timeline_{episodeClosureState}",
+            phaseReason: ResolvePhaseReason(bootstrapResult),
+            sourceRefIds: BuildSourceRefs(auditRecord.ModelPassRunId, "stage7_timeline"),
+            evidenceRefs: phaseEvidenceRefs,
+            confidence: null,
+            validFromUtc: validFromUtc,
+            ct: ct);
+    }
+
+    private async Task UpsertConditionalStateAsync(
+        List<ConditionalKnowledgeState> openStates,
+        string scopeKey,
+        Guid trackedPersonId,
+        string factFamily,
+        string subjectRef,
+        string ruleKind,
+        string? baselineValue,
+        string? exceptionValue,
+        string? styleLabel,
+        string? phaseLabel,
+        string? phaseReason,
+        IReadOnlyCollection<string> sourceRefIds,
+        IReadOnlyCollection<string> evidenceRefs,
+        float? confidence,
+        DateTime validFromUtc,
+        CancellationToken ct)
+    {
+        if (evidenceRefs.Count == 0)
+        {
+            return;
+        }
+
+        var openState = openStates
+            .Where(x =>
+                string.Equals(x.FactFamily, factFamily, StringComparison.Ordinal)
+                && string.Equals(x.SubjectRef, subjectRef, StringComparison.Ordinal)
+                && string.Equals(x.RuleKind, ruleKind, StringComparison.Ordinal))
+            .OrderByDescending(x => x.ValidFromUtc)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+        if (openState != null
+            && string.Equals(openState.BaselineValue, baselineValue, StringComparison.Ordinal)
+            && string.Equals(openState.ExceptionValue, exceptionValue, StringComparison.Ordinal)
+            && string.Equals(openState.StyleLabel, styleLabel, StringComparison.Ordinal)
+            && string.Equals(openState.PhaseLabel, phaseLabel, StringComparison.Ordinal)
+            && string.Equals(openState.PhaseReason, phaseReason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var inserted = await _conditionalKnowledgeRepository.InsertAsync(
+            new ConditionalKnowledgeWriteRequest
+            {
+                ScopeKey = scopeKey,
+                TrackedPersonId = trackedPersonId,
+                FactFamily = factFamily,
+                SubjectRef = subjectRef,
+                RuleKind = ruleKind,
+                RuleId = Guid.NewGuid(),
+                BaselineValue = baselineValue,
+                ExceptionValue = exceptionValue,
+                StyleLabel = styleLabel,
+                PhaseLabel = phaseLabel,
+                PhaseReason = phaseReason,
+                SourceRefIds = sourceRefIds,
+                EvidenceRefs = evidenceRefs,
+                Confidence = confidence,
+                ValidFromUtc = validFromUtc,
+                StateStatus = ConditionalKnowledgeStateStatuses.Open,
+                SupersedesStateId = openState?.Id,
+                TriggerKind = TemporalTriggerKind,
+                TriggerRef = $"{TemporalTriggerKind}:{factFamily}:{ruleKind}",
+                TriggerModelPassRunId = null
+            },
+            ct);
+
+        if (openState != null)
+        {
+            _ = await _conditionalKnowledgeRepository.UpdateSupersessionAsync(
+                new ConditionalKnowledgeSupersessionUpdateRequest
+                {
+                    ScopeKey = scopeKey,
+                    TrackedPersonId = trackedPersonId,
+                    PreviousStateId = openState.Id,
+                    SupersededByStateId = inserted.Id,
+                    SupersededAtUtc = validFromUtc,
+                    NextStatus = ConditionalKnowledgeStateStatuses.Superseded
+                },
+                ct);
+            openStates.RemoveAll(x => x.Id == openState.Id);
+        }
+
+        openStates.Add(inserted);
     }
 
     private static async Task<DbDurableObjectMetadata> UpsertMetadataAsync(
@@ -837,6 +1000,42 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
 
             evidenceIds.Add(evidenceId);
         }
+    }
+
+    private static IReadOnlyCollection<string> CollectConditionalEvidenceRefs(
+        IReadOnlyCollection<string> primary,
+        IReadOnlyCollection<string> fallback)
+    {
+        return primary
+            .Concat(fallback)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<string> BuildSourceRefs(Guid modelPassRunId, string source)
+    {
+        return
+        [
+            $"model_pass:{modelPassRunId:D}",
+            $"stage7_source:{source}"
+        ];
+    }
+
+    private static string ResolvePhaseReason(Stage6BootstrapGraphResult bootstrapResult)
+    {
+        if (bootstrapResult.ContradictionOutputs.Count > 0)
+        {
+            return "contradiction_pressure";
+        }
+
+        if (bootstrapResult.AmbiguityOutputs.Count > 0)
+        {
+            return "ambiguity_pressure";
+        }
+
+        return "timeline_stable";
     }
 
     private static string BuildMetadataJson(
