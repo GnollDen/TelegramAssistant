@@ -314,25 +314,31 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
             }
 
             var primaryTarget = recomputeContract.Targets.FirstOrDefault();
-            await _reintegrationService.RecordAsync(
-                new ResolutionCaseReintegrationRecordRequest
-                {
-                    ScopeKey = trackedPerson.ScopeKey,
-                    ScopeItemKey = normalizedScopeItemKey,
-                    TrackedPersonId = trackedPerson.PersonId,
-                    OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
-                    NextStatus = MapActionToReintegrationStatus(normalizedAction),
-                    ResolutionActionId = actionRow.Id,
-                    ConflictSessionId = conflictSessionId,
-                    RecomputeQueueItemId = primaryTarget?.QueueItemId,
-                    RecomputeTargetFamily = primaryTarget?.TargetFamily,
-                    RecomputeTargetRef = primaryTarget?.TargetRef,
-                    UnresolvedResidueJson = BuildUnresolvedResidueJson(
-                        normalizedAction,
-                        normalizedExplanation,
-                        detail.Item)
-                },
-                ct);
+            var reintegrationRequest = new ResolutionCaseReintegrationRecordRequest
+            {
+                ScopeKey = trackedPerson.ScopeKey,
+                ScopeItemKey = normalizedScopeItemKey,
+                TrackedPersonId = trackedPerson.PersonId,
+                OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                NextStatus = MapActionToReintegrationStatus(normalizedAction),
+                ResolutionActionId = actionRow.Id,
+                ConflictSessionId = conflictSessionId,
+                RecomputeQueueItemId = primaryTarget?.QueueItemId,
+                RecomputeTargetFamily = primaryTarget?.TargetFamily,
+                RecomputeTargetRef = primaryTarget?.TargetRef,
+                UnresolvedResidueJson = BuildUnresolvedResidueJson(
+                    normalizedAction,
+                    normalizedExplanation,
+                    detail.Item)
+            };
+            if (_reintegrationService is ResolutionCaseReintegrationService reintegrationService)
+            {
+                await reintegrationService.RecordWithinDbContextAsync(db, reintegrationRequest, ct);
+            }
+            else
+            {
+                await _reintegrationService.RecordAsync(reintegrationRequest, ct);
+            }
 
             var auditRow = BuildAuditRow(
                 request,

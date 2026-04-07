@@ -841,6 +841,7 @@ public static class OperatorApiEndpointExtensions
             "unfinished_step_scope_item_mismatch" => StatusCodes.Status403Forbidden,
             "action_not_allowed_from_mode" => StatusCodes.Status403Forbidden,
             "handoff_token_invalid" => StatusCodes.Status403Forbidden,
+            "handoff_token_replayed" => StatusCodes.Status403Forbidden,
             "handoff_signing_secret_missing" => StatusCodes.Status503ServiceUnavailable,
             "tracked_person_not_found_or_inactive" => StatusCodes.Status404NotFound,
             "scope_item_not_found" => StatusCodes.Status404NotFound,

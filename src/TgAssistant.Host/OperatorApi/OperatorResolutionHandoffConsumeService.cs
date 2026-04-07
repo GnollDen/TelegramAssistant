@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using TgAssistant.Core.Configuration;
@@ -8,6 +11,8 @@ namespace TgAssistant.Host.OperatorApi;
 
 public sealed class OperatorResolutionHandoffConsumeService
 {
+    private static readonly ConcurrentDictionary<string, DateTime> ConsumedTokenHashes = new(StringComparer.Ordinal);
+
     private readonly WebOperatorAuthSessionResolver _webAuthResolver;
     private readonly WebSettings _webSettings;
     private readonly IOperatorResolutionApplicationService _service;
@@ -118,6 +123,19 @@ public sealed class OperatorResolutionHandoffConsumeService
                 });
         }
 
+        if (IsHandoffTokenReplayed(handoffToken))
+        {
+            return CreateResult(
+                StatusCodes.Status403Forbidden,
+                new OperatorResolutionHandoffConsumeResult
+                {
+                    Accepted = false,
+                    FailureReason = "handoff_token_replayed",
+                    Session = new OperatorSessionContext(),
+                    ActiveMode = requestedMode
+                });
+        }
+
         var auth = await _webAuthResolver.ResolveForHandoffAsync(httpContext, requestedMode, ct);
         if (!auth.Accepted)
         {
@@ -205,6 +223,7 @@ public sealed class OperatorResolutionHandoffConsumeService
         };
 
         _webAuthResolver.PersistSession(httpContext, handoffResult.Session, handoffResult.ActiveMode);
+        MarkHandoffTokenConsumed(handoffToken, ttlMinutes);
         return CreateResult(StatusCodes.Status200OK, handoffResult);
     }
 
@@ -224,6 +243,39 @@ public sealed class OperatorResolutionHandoffConsumeService
 
     private static string NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static bool IsHandoffTokenReplayed(string handoffToken)
+    {
+        var tokenHash = HashToken(handoffToken);
+        var nowUtc = DateTime.UtcNow;
+
+        foreach (var pair in ConsumedTokenHashes)
+        {
+            if (pair.Value <= nowUtc)
+            {
+                ConsumedTokenHashes.TryRemove(pair.Key, out _);
+            }
+        }
+
+        if (ConsumedTokenHashes.TryGetValue(tokenHash, out var existingExpiry) && existingExpiry > nowUtc)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void MarkHandoffTokenConsumed(string handoffToken, int ttlMinutes)
+    {
+        var tokenHash = HashToken(handoffToken);
+        ConsumedTokenHashes[tokenHash] = DateTime.UtcNow.AddMinutes(Math.Clamp(ttlMinutes, 1, 24 * 60));
+    }
+
+    private static string HashToken(string handoffToken)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(handoffToken));
+        return Convert.ToHexString(bytes);
+    }
 }
 
 public sealed class OperatorResolutionHandoffConsumeExecutionResult

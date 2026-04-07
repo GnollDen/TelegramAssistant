@@ -3345,6 +3345,20 @@ public static class OperatorWebEndpointExtensions
       return value.replaceAll("_", " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
     }
 
+    function appendLabeledParagraph(parent, label, value, className) {
+      const paragraph = document.createElement("p");
+      if (className) {
+        paragraph.className = className;
+      }
+
+      const strong = document.createElement("strong");
+      strong.textContent = label;
+      paragraph.appendChild(strong);
+      paragraph.appendChild(document.createTextNode(" " + (value || "")));
+      parent.appendChild(paragraph);
+      return paragraph;
+    }
+
     function describeFailureReason(reason) {
       const normalized = (reason || "unknown_error").toLowerCase();
       switch (normalized) {
@@ -3354,6 +3368,8 @@ public static class OperatorWebEndpointExtensions
           return "Session expired. Refresh and authenticate again.";
         case "handoff_token_invalid":
           return "Open in Web handoff is invalid or expired. Return to Telegram and open the link again.";
+        case "handoff_token_replayed":
+          return "Open in Web handoff link was already consumed. Return to Telegram and generate a new link.";
         case "session_active_tracked_person_mismatch":
           return "Handoff tracked person differs from current session scope. Use Apply scope explicitly.";
         case "session_scope_item_mismatch":
@@ -3992,21 +4008,30 @@ public static class OperatorWebEndpointExtensions
 
       const summaryBlock = document.createElement("section");
       summaryBlock.className = "detail-block";
-      summaryBlock.innerHTML =
-        "<h4>" + operatorTitle + "</h4>" +
-        "<p><strong>Что произошло:</strong> " + operatorSummary + "</p>" +
-        "<p><strong>Почему нужен ответ оператора:</strong> " + operatorWhy + "</p>" +
-        (operatorPrompt ? "<p><strong>Что сделать:</strong> " + operatorPrompt + "</p>" : "");
+      const summaryTitle = document.createElement("h4");
+      summaryTitle.textContent = operatorTitle;
+      summaryBlock.appendChild(summaryTitle);
+      appendLabeledParagraph(summaryBlock, "Что произошло:", operatorSummary);
+      appendLabeledParagraph(summaryBlock, "Почему нужен ответ оператора:", operatorWhy);
+      if (operatorPrompt) {
+        appendLabeledParagraph(summaryBlock, "Что сделать:", operatorPrompt);
+      }
       detailContentNode.appendChild(summaryBlock);
 
       const rationaleBlock = document.createElement("section");
       rationaleBlock.className = "detail-block";
-      rationaleBlock.innerHTML =
-        "<h4>Что известно для решения</h4>" +
-        "<p><strong>Почему сообщения показаны:</strong> " + evidenceRationaleSummary + "</p>" +
-        "<p><strong>Что известно точно:</strong> " + autoResolutionGap + "</p>" +
-        "<p><strong>Какое решение нужно сейчас:</strong> " + operatorDecisionFocus + "</p>" +
-        (rationaleIsHeuristic ? "<p class='muted'>Сообщения ниже подобраны эвристически и не доказывают сбой сами по себе.</p>" : "");
+      const rationaleTitle = document.createElement("h4");
+      rationaleTitle.textContent = "Что известно для решения";
+      rationaleBlock.appendChild(rationaleTitle);
+      appendLabeledParagraph(rationaleBlock, "Почему сообщения показаны:", evidenceRationaleSummary);
+      appendLabeledParagraph(rationaleBlock, "Что известно точно:", autoResolutionGap);
+      appendLabeledParagraph(rationaleBlock, "Какое решение нужно сейчас:", operatorDecisionFocus);
+      if (rationaleIsHeuristic) {
+        const muted = document.createElement("p");
+        muted.className = "muted";
+        muted.textContent = "Сообщения ниже подобраны эвристически и не доказывают сбой сами по себе.";
+        rationaleBlock.appendChild(muted);
+      }
       detailContentNode.appendChild(rationaleBlock);
 
       const interpretationBlock = renderInterpretationPreview(item);
@@ -4070,11 +4095,12 @@ public static class OperatorWebEndpointExtensions
 
       const provenanceBlock = document.createElement("section");
       provenanceBlock.className = "detail-block";
-      provenanceBlock.innerHTML =
-        "<h4>Provenance</h4>" +
-        "<p><strong>Source kind:</strong> " + (item.sourceKind || "n/a") + "</p>" +
-        "<p><strong>Source ref:</strong> " + (item.sourceRef || "n/a") + "</p>" +
-        "<p><strong>Required action:</strong> " + titleize(item.requiredAction || "none") + "</p>";
+      const provenanceTitle = document.createElement("h4");
+      provenanceTitle.textContent = "Provenance";
+      provenanceBlock.appendChild(provenanceTitle);
+      appendLabeledParagraph(provenanceBlock, "Source kind:", item.sourceKind || "n/a");
+      appendLabeledParagraph(provenanceBlock, "Source ref:", item.sourceRef || "n/a");
+      appendLabeledParagraph(provenanceBlock, "Required action:", titleize(item.requiredAction || "none"));
       detailContentNode.appendChild(provenanceBlock);
 
       const actionsBlock = document.createElement("section");
@@ -4260,7 +4286,11 @@ public static class OperatorWebEndpointExtensions
           : "";
         if (sessionState === "awaiting_operator_answer" && sessionPayload.operatorQuestion) {
           conflictQuestionWrap.style.display = "";
-          conflictQuestionText.innerHTML = "<strong>AI follow-up:</strong> " + (sessionPayload.operatorQuestion.questionText || "No question text.");
+          conflictQuestionText.textContent = "";
+          const questionLabel = document.createElement("strong");
+          questionLabel.textContent = "AI follow-up:";
+          conflictQuestionText.appendChild(questionLabel);
+          conflictQuestionText.appendChild(document.createTextNode(" " + (sessionPayload.operatorQuestion.questionText || "No question text.")));
           setConflictSessionState("success", "AI asked one bounded follow-up question.");
           return;
         }
@@ -4854,17 +4884,9 @@ public static class OperatorWebEndpointExtensions
       }
 
       evidenceFocusNode.innerHTML = "";
-      const summary = document.createElement("p");
-      summary.innerHTML = "<strong>Summary:</strong> " + (entry.summary || "No summary.");
-      evidenceFocusNode.appendChild(summary);
-
-      const trust = document.createElement("p");
-      trust.innerHTML = "<strong>Сигнал уверенности:</strong> " + formatEvidenceTrustCue(entry);
-      evidenceFocusNode.appendChild(trust);
-
-      const observed = document.createElement("p");
-      observed.innerHTML = "<strong>Observed:</strong> " + formatUtc(entry.observedAtUtc);
-      evidenceFocusNode.appendChild(observed);
+      appendLabeledParagraph(evidenceFocusNode, "Summary:", entry.summary || "No summary.");
+      appendLabeledParagraph(evidenceFocusNode, "Сигнал уверенности:", formatEvidenceTrustCue(entry));
+      appendLabeledParagraph(evidenceFocusNode, "Observed:", formatUtc(entry.observedAtUtc));
 
       const sender = document.createElement("p");
       const senderLabel = document.createElement("strong");
@@ -4873,23 +4895,14 @@ public static class OperatorWebEndpointExtensions
       sender.appendChild(document.createTextNode(" " + (entry.senderDisplay || "не определен")));
       evidenceFocusNode.appendChild(sender);
 
-      const source = document.createElement("p");
-      source.innerHTML = "<strong>Provenance:</strong> " + (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a");
-      evidenceFocusNode.appendChild(source);
-
-      const evidenceId = document.createElement("p");
-      evidenceId.innerHTML = "<strong>Evidence ID:</strong> " + (entry.evidenceItemId || "n/a");
-      evidenceFocusNode.appendChild(evidenceId);
-
-      const relevance = document.createElement("p");
-      relevance.innerHTML = "<strong>Почему показано:</strong> "
-        + (entry.relevanceHint || "Контекстный сигнал для ручной проверки.")
-        + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : "");
-      evidenceFocusNode.appendChild(relevance);
-
-      const decisionLink = document.createElement("p");
-      decisionLink.innerHTML = "<strong>Эвристическая связь с решением:</strong> " + formatDecisionLinkage(entry.decisionLinkage);
-      evidenceFocusNode.appendChild(decisionLink);
+      appendLabeledParagraph(evidenceFocusNode, "Provenance:", (entry.sourceLabel || "n/a") + " | " + (entry.sourceRef || "n/a"));
+      appendLabeledParagraph(evidenceFocusNode, "Evidence ID:", entry.evidenceItemId || "n/a");
+      appendLabeledParagraph(
+        evidenceFocusNode,
+        "Почему показано:",
+        (entry.relevanceHint || "Контекстный сигнал для ручной проверки.")
+        + (entry.relevanceHintIsHeuristic !== false ? " (эвристика)" : ""));
+      appendLabeledParagraph(evidenceFocusNode, "Эвристическая связь с решением:", formatDecisionLinkage(entry.decisionLinkage));
 
       evidencePrevButton.disabled = index <= 0;
       evidenceNextButton.disabled = index >= entries.length - 1;
