@@ -269,12 +269,15 @@ public static class ConflictResolutionSessionToolDecisions
     public const string Accepted = "accepted";
     public const string ToolNotAllowed = "tool_not_allowed";
     public const string CrossScopeToolRequestRejected = "cross_scope_tool_request_rejected";
+    public const string FollowUpBudgetExceededRejected = "followup_budget_exceeded_rejected";
 }
 
 public static class ConflictResolutionSessionToolContract
 {
     public const int MaxToolRequestsPerRound = 4;
     public const int MaxRequestItemsPerTool = 5;
+    public const int MaxFollowUpQuestions = 1;
+    public const int MaxFollowUpAnswers = 1;
 
     public static bool TryNormalize(
         ResolutionConflictSessionToolRequest? request,
@@ -311,6 +314,35 @@ public static class ConflictResolutionSessionToolContract
         if (!string.Equals(normalized.RequestScope, scopeItemKey, StringComparison.Ordinal))
         {
             decision = ConflictResolutionSessionToolDecisions.CrossScopeToolRequestRejected;
+            return false;
+        }
+
+        decision = ConflictResolutionSessionToolDecisions.Accepted;
+        return true;
+    }
+
+    public static bool TryValidateFollowUpBudget(
+        string toolName,
+        int usedQuestions,
+        int usedAnswers,
+        int maxQuestions,
+        int maxAnswers,
+        out string decision)
+    {
+        if (!string.Equals(
+                ConflictResolutionSessionToolNames.Normalize(toolName),
+                ConflictResolutionSessionToolNames.AskOperatorQuestion,
+                StringComparison.Ordinal))
+        {
+            decision = ConflictResolutionSessionToolDecisions.Accepted;
+            return true;
+        }
+
+        var normalizedMaxQuestions = Math.Clamp(maxQuestions, 1, MaxFollowUpQuestions);
+        var normalizedMaxAnswers = Math.Clamp(maxAnswers, 1, MaxFollowUpAnswers);
+        if (usedQuestions >= normalizedMaxQuestions || usedAnswers >= normalizedMaxAnswers)
+        {
+            decision = ConflictResolutionSessionToolDecisions.FollowUpBudgetExceededRejected;
             return false;
         }
 

@@ -2228,6 +2228,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 trackedPerson.ScopeKey,
                 scopeItemKey!,
                 casePacket,
+                usedQuestionCount: 0,
+                usedAnswerCount: 0,
+                maxOperatorTurns: GetMaxFollowUpTurns(),
                 ct);
 
             verdict = NormalizeConflictVerdict(
@@ -2449,7 +2452,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             };
         }
 
-        if (sessionRow.AnswerCount >= _conflictSessionSettings.MaxOperatorTurns)
+        var maxFollowUpTurns = GetMaxFollowUpTurns();
+        if (sessionRow.AnswerCount >= maxFollowUpTurns)
         {
             return new OperatorConflictResolutionSessionResultEnvelope
             {
@@ -2503,6 +2507,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 sessionRow.ScopeKey,
                 sessionRow.ScopeItemKey,
                 casePacket,
+                usedQuestionCount: sessionRow.QuestionCount,
+                usedAnswerCount: sessionRow.AnswerCount + 1,
+                maxOperatorTurns: maxFollowUpTurns,
                 ct);
             verdict = NormalizeConflictVerdict(
                 modelResult.FinalVerdict,
@@ -2579,7 +2586,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             });
         }
 
-        sessionRow.AnswerCount = Math.Clamp(sessionRow.AnswerCount + 1, 0, _conflictSessionSettings.MaxOperatorTurns);
+        sessionRow.AnswerCount = Math.Clamp(sessionRow.AnswerCount + 1, 0, maxFollowUpTurns);
         sessionRow.AnswerJson = JsonSerializer.Serialize(operatorInput, JsonOptions);
         sessionRow.ModelCallCount = Math.Clamp(sessionRow.ModelCallCount + 1, 0, _conflictSessionSettings.MaxModelCalls);
         sessionRow.VerdictJson = JsonSerializer.Serialize(verdict, JsonOptions);
@@ -3913,6 +3920,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         string scopeKey,
         string scopeItemKey,
         ResolutionConflictSessionCasePacket casePacket,
+        int usedQuestionCount,
+        int usedAnswerCount,
+        int maxOperatorTurns,
         CancellationToken ct)
     {
         var outcome = new ConflictSessionToolExecutionOutcome();
@@ -3920,6 +3930,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         {
             return outcome;
         }
+
+        var normalizedMaxTurns = Math.Clamp(
+            maxOperatorTurns,
+            1,
+            ConflictResolutionSessionToolContract.MaxFollowUpQuestions);
+        var questionUsage = Math.Clamp(usedQuestionCount, 0, normalizedMaxTurns);
+        var answerUsage = Math.Clamp(usedAnswerCount, 0, normalizedMaxTurns);
 
         foreach (var request in requestedTools.Take(ConflictResolutionSessionToolContract.MaxToolRequestsPerRound))
         {
@@ -3929,27 +3946,30 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                     out var normalized,
                     out var decision))
             {
-                var rejectedRequestManifest = new ResolutionConflictSessionToolRequestManifest
-                {
-                    ToolName = ConflictResolutionSessionToolNames.Normalize(request?.ToolName),
-                    RequestScope = NormalizeOptional(request?.RequestScope) ?? string.Empty,
-                    RequestItems = (request?.RequestItems ?? [])
-                        .Where(item => !string.IsNullOrWhiteSpace(item))
-                        .Select(item => item.Trim())
-                        .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
-                        .ToList()
-                };
-                outcome.RequestManifests.Add(rejectedRequestManifest);
-                outcome.ResponseManifests.Add(new ResolutionConflictSessionToolResponseManifest
-                {
-                    ToolName = rejectedRequestManifest.ToolName,
-                    RequestScope = rejectedRequestManifest.RequestScope,
-                    RequestItems = [.. rejectedRequestManifest.RequestItems],
-                    Decision = decision,
-                    ResponseRefs = []
-                });
+                AppendRejectedToolOutcome(outcome, request, decision);
                 outcome.RejectionDecision ??= decision;
                 continue;
+            }
+
+            if (!ConflictResolutionSessionToolContract.TryValidateFollowUpBudget(
+                    normalized.ToolName,
+                    questionUsage,
+                    answerUsage,
+                    normalizedMaxTurns,
+                    normalizedMaxTurns,
+                    out var followUpDecision))
+            {
+                AppendRejectedToolOutcome(outcome, normalized, followUpDecision);
+                outcome.RejectionDecision ??= followUpDecision;
+                continue;
+            }
+
+            if (string.Equals(
+                    normalized.ToolName,
+                    ConflictResolutionSessionToolNames.AskOperatorQuestion,
+                    StringComparison.Ordinal))
+            {
+                questionUsage = Math.Clamp(questionUsage + 1, 0, normalizedMaxTurns);
             }
 
             var refs = await ExecuteConflictSessionToolAsync(
@@ -3975,6 +3995,32 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return outcome;
+    }
+
+    private static void AppendRejectedToolOutcome(
+        ConflictSessionToolExecutionOutcome outcome,
+        ResolutionConflictSessionToolRequest? request,
+        string decision)
+    {
+        var rejectedRequestManifest = new ResolutionConflictSessionToolRequestManifest
+        {
+            ToolName = ConflictResolutionSessionToolNames.Normalize(request?.ToolName),
+            RequestScope = NormalizeOptional(request?.RequestScope) ?? string.Empty,
+            RequestItems = (request?.RequestItems ?? [])
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Select(item => item.Trim())
+                .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+                .ToList()
+        };
+        outcome.RequestManifests.Add(rejectedRequestManifest);
+        outcome.ResponseManifests.Add(new ResolutionConflictSessionToolResponseManifest
+        {
+            ToolName = rejectedRequestManifest.ToolName,
+            RequestScope = rejectedRequestManifest.RequestScope,
+            RequestItems = [.. rejectedRequestManifest.RequestItems],
+            Decision = decision,
+            ResponseRefs = []
+        });
     }
 
     private async Task<List<string>> ExecuteConflictSessionToolAsync(
@@ -4472,6 +4518,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 
     private ResolutionConflictSessionView MapConflictSession(DbOperatorResolutionConflictSession row)
     {
+        var maxFollowUpTurns = GetMaxFollowUpTurns();
         var casePacket = DeserializeOrDefault<ResolutionConflictSessionCasePacket>(row.CasePacketJson);
         var question = DeserializeOrDefault<ResolutionConflictSessionQuestion>(row.QuestionJson);
         var answer = DeserializeOrDefault<ResolutionConflictSessionOperatorInput>(row.AnswerJson);
@@ -4505,8 +4552,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             Budgets = new ResolutionConflictSessionBudget
             {
                 MaxModelCalls = _conflictSessionSettings.MaxModelCalls,
-                MaxOperatorQuestions = _conflictSessionSettings.MaxOperatorTurns,
-                MaxOperatorAnswers = _conflictSessionSettings.MaxOperatorTurns,
+                MaxOperatorQuestions = maxFollowUpTurns,
+                MaxOperatorAnswers = maxFollowUpTurns,
                 MaxRetrievalRounds = _conflictSessionSettings.MaxRetrievalRounds,
                 TtlSeconds = _conflictSessionSettings.SessionTtlMinutes * 60,
                 UsedModelCalls = row.ModelCallCount,
@@ -4520,6 +4567,14 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             AuditTrail = auditTrail,
             FailureReason = row.FailureReason
         };
+    }
+
+    private int GetMaxFollowUpTurns()
+    {
+        return Math.Clamp(
+            _conflictSessionSettings.MaxOperatorTurns,
+            1,
+            ConflictResolutionSessionToolContract.MaxFollowUpQuestions);
     }
 
     private static object BuildConflictSessionContextManifest(

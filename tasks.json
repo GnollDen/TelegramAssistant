@@ -726,8 +726,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-011B completed: enforced explicit one-question/one-answer follow-up budget gate on conflict-session `ask_operator_question` tool requests with deterministic reject reason `followup_budget_exceeded_rejected`, applied same bounded max-turn budget in session response guard/view budget projection, and extended --ai-conflict-session-v1-proof tool matrix with `followup_budget_exceeded_rejected` row. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --ai-conflict-session-v1-proof --ai-conflict-session-v1-proof-output=src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json (passed=True).",
       "dependencies": [
         "PHB-011A"
       ]

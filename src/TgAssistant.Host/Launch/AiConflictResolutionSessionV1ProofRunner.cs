@@ -495,7 +495,19 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     RequestScope = "scope:other",
                     RequestItems = ["885574984:293950"]
                 },
-                scopeItemKey: scopeItemKey)
+                scopeItemKey: scopeItemKey),
+            BuildToolProofRow(
+                caseId: "followup_budget_exceeded_rejected",
+                expectedDecision: ConflictResolutionSessionToolDecisions.FollowUpBudgetExceededRejected,
+                request: new ResolutionConflictSessionToolRequest
+                {
+                    ToolName = ConflictResolutionSessionToolNames.AskOperatorQuestion,
+                    RequestScope = scopeItemKey,
+                    RequestItems = ["Can you confirm this contradiction?"]
+                },
+                scopeItemKey: scopeItemKey,
+                usedQuestionCount: ConflictResolutionSessionToolContract.MaxFollowUpQuestions,
+                usedAnswerCount: ConflictResolutionSessionToolContract.MaxFollowUpAnswers)
         ];
 
         if (report.ToolProofRows.Any(x => !x.Passed))
@@ -508,7 +520,9 @@ public static class AiConflictResolutionSessionV1ProofRunner
         string caseId,
         string expectedDecision,
         ResolutionConflictSessionToolRequest request,
-        string scopeItemKey)
+        string scopeItemKey,
+        int usedQuestionCount = 0,
+        int usedAnswerCount = 0)
     {
         var accepted = ConflictResolutionSessionToolContract.TryNormalize(
             request,
@@ -516,6 +530,18 @@ public static class AiConflictResolutionSessionV1ProofRunner
             out _,
             out var decision);
         var actualDecision = accepted ? ConflictResolutionSessionToolDecisions.Accepted : decision;
+        if (accepted
+            && !ConflictResolutionSessionToolContract.TryValidateFollowUpBudget(
+                request.ToolName,
+                usedQuestionCount,
+                usedAnswerCount,
+                ConflictResolutionSessionToolContract.MaxFollowUpQuestions,
+                ConflictResolutionSessionToolContract.MaxFollowUpAnswers,
+                out var followUpDecision))
+        {
+            actualDecision = followUpDecision;
+        }
+
         return new AiConflictResolutionToolProofRow
         {
             CaseId = caseId,
