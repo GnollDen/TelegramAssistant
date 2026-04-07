@@ -176,6 +176,11 @@ public interface IStage7PairDynamicsRepository
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapGraphResult bootstrapResult,
         CancellationToken ct = default);
+
+    Task<CurrentWorldPairDynamicsReadSurface?> GetCurrentWorldReadSurfaceAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        CancellationToken ct = default);
 }
 
 public interface IStage7PairDynamicsService
@@ -190,6 +195,11 @@ public interface IStage7TimelineRepository
     Task<Stage7TimelineFormationResult> UpsertAsync(
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapGraphResult bootstrapResult,
+        CancellationToken ct = default);
+
+    Task<CurrentWorldTimelineReadSurface?> GetCurrentWorldReadSurfaceAsync(
+        string scopeKey,
+        Guid trackedPersonId,
         CancellationToken ct = default);
 }
 
@@ -210,6 +220,12 @@ public interface ITemporalPersonStateRepository
         TemporalPersonStateScopeQuery query,
         CancellationToken ct = default);
 
+    Task<List<TemporalPersonState>> QueryOpenScopedAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        DateTime asOfUtc,
+        CancellationToken ct = default);
+
     Task<TemporalPersonState?> GetOpenStateAsync(
         string scopeKey,
         string subjectRef,
@@ -218,6 +234,13 @@ public interface ITemporalPersonStateRepository
 
     Task<TemporalPersonState?> UpdateSupersessionAsync(
         TemporalPersonStateSupersessionUpdateRequest request,
+        CancellationToken ct = default);
+}
+
+public interface ICurrentWorldApproximationReadService
+{
+    Task<CurrentWorldApproximationSnapshot> BuildSnapshotAsync(
+        CurrentWorldApproximationReadRequest request,
         CancellationToken ct = default);
 }
 

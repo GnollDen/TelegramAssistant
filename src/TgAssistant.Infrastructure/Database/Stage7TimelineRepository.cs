@@ -259,6 +259,77 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
         };
     }
 
+    public async Task<CurrentWorldTimelineReadSurface?> GetCurrentWorldReadSurfaceAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(scopeKey))
+        {
+            throw new ArgumentException("ScopeKey is required.", nameof(scopeKey));
+        }
+
+        if (trackedPersonId == Guid.Empty)
+        {
+            throw new ArgumentException("TrackedPersonId is required.", nameof(trackedPersonId));
+        }
+
+        var normalizedScope = scopeKey.Trim();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var timelineRow = await db.DurableTimelineEpisodes
+            .AsNoTracking()
+            .Where(x =>
+                x.ScopeKey == normalizedScope
+                && x.PersonId == trackedPersonId
+                && x.EpisodeType == Stage7TimelineEpisodeTypes.BootstrapEpisode
+                && x.Status == ActiveStatus)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (timelineRow == null)
+        {
+            return null;
+        }
+
+        var metadata = await db.DurableObjectMetadata
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == timelineRow.DurableObjectMetadataId, ct);
+        var evidenceRefs = await db.DurableObjectEvidenceLinks
+            .AsNoTracking()
+            .Where(x =>
+                x.DurableObjectMetadataId == timelineRow.DurableObjectMetadataId
+                && x.ScopeKey == normalizedScope
+                && x.LinkRole == TimelineEpisodeEvidenceLinkRole)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .Select(x => $"evidence:{x.EvidenceItemId:D}")
+            .Distinct()
+            .ToListAsync(ct);
+
+        var sourceRefIds = new List<string>
+        {
+            $"durable_timeline_episode:{timelineRow.Id:D}"
+        };
+        if (timelineRow.LastModelPassRunId.HasValue)
+        {
+            sourceRefIds.Add($"model_pass:{timelineRow.LastModelPassRunId.Value:D}");
+        }
+
+        return new CurrentWorldTimelineReadSurface
+        {
+            DurableTimelineEpisodeId = timelineRow.Id,
+            ScopeKey = timelineRow.ScopeKey,
+            TrackedPersonId = timelineRow.PersonId,
+            RelatedPersonId = timelineRow.RelatedPersonId,
+            ClosureState = timelineRow.ClosureState,
+            TimelinePrimaryActivityHint = TryExtractTimelinePrimaryActivityHint(timelineRow.PayloadJson),
+            HasContradictionMarkers = HasContradictionMarkers(metadata?.ContradictionMarkersJson),
+            EvidenceRefs = evidenceRefs,
+            SourceRefIds = sourceRefIds,
+            UpdatedAtUtc = timelineRow.UpdatedAt
+        };
+    }
+
     private async Task UpsertTimelineTemporalStateAsync(
         ModelPassAuditRecord auditRecord,
         Stage6BootstrapGraphResult bootstrapResult,
@@ -1178,5 +1249,62 @@ public class Stage7TimelineRepository : IStage7TimelineRepository
             PayloadJson = row.PayloadJson,
             CreatedAt = row.CreatedAt
         };
+    }
+
+    private static bool HasContradictionMarkers(string? contradictionMarkersJson)
+    {
+        if (string.IsNullOrWhiteSpace(contradictionMarkersJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(contradictionMarkersJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                && document.RootElement.GetArrayLength() > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? TryExtractTimelinePrimaryActivityHint(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (!document.RootElement.TryGetProperty("inferences", out var inferences)
+                || inferences.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var inference in inferences.EnumerateArray())
+            {
+                if (!inference.TryGetProperty("summary", out var summaryElement))
+                {
+                    continue;
+                }
+
+                var summary = summaryElement.GetString();
+                if (!string.IsNullOrWhiteSpace(summary))
+                {
+                    return summary.Trim();
+                }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 }

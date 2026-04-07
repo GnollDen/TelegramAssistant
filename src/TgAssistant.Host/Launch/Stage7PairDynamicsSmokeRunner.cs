@@ -206,6 +206,14 @@ public static class Stage7PairDynamicsSmokeRunner
                 ]
             });
         }
+
+        public Task<CurrentWorldPairDynamicsReadSurface?> GetCurrentWorldReadSurfaceAsync(
+            string scopeKey,
+            Guid trackedPersonId,
+            CancellationToken ct = default)
+        {
+            return Task.FromResult<CurrentWorldPairDynamicsReadSurface?>(null);
+        }
     }
 
     private sealed class InMemoryModelPassAuditStore : IModelPassAuditStore

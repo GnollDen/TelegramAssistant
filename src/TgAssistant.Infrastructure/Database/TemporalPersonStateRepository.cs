@@ -197,6 +197,33 @@ public sealed class TemporalPersonStateRepository : ITemporalPersonStateReposito
         return rows.Select(Map).ToList();
     }
 
+    public async Task<List<TemporalPersonState>> QueryOpenScopedAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        DateTime asOfUtc,
+        CancellationToken ct = default)
+    {
+        var normalizedScope = NormalizeRequired(scopeKey, nameof(scopeKey));
+        if (trackedPersonId == Guid.Empty)
+        {
+            throw new ArgumentException("TrackedPersonId is required.", nameof(trackedPersonId));
+        }
+
+        var query = new TemporalPersonStateScopeQuery
+        {
+            ScopeKey = normalizedScope,
+            TrackedPersonId = trackedPersonId,
+            Limit = 500
+        };
+
+        var rows = await QueryScopedAsync(query, ct);
+        return rows
+            .Where(x => TemporalPersonStateContract.IsCurrentOpenState(x, asOfUtc))
+            .OrderByDescending(x => x.ValidFromUtc)
+            .ThenByDescending(x => x.Id)
+            .ToList();
+    }
+
     public async Task<TemporalPersonState?> GetOpenStateAsync(
         string scopeKey,
         string subjectRef,

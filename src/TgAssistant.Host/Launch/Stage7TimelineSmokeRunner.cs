@@ -547,6 +547,14 @@ public static class Stage7TimelineSmokeRunner
             });
         }
 
+        public Task<CurrentWorldTimelineReadSurface?> GetCurrentWorldReadSurfaceAsync(
+            string scopeKey,
+            Guid trackedPersonId,
+            CancellationToken ct = default)
+        {
+            return Task.FromResult<CurrentWorldTimelineReadSurface?>(null);
+        }
+
         private Guid GetOrCreateMetadataId(string key)
         {
             if (_metadataIds.TryGetValue(key, out var id))

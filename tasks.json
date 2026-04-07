@@ -783,8 +783,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-013 completed: added WS-B4 current-world approximation contract models (`CurrentWorldApproximationSnapshot`, `ActivePersonRow`, `InactivePersonRow`, `RelationshipStateRow`, `ActiveConditionRow`, `RecentChangeRow`) with required ids/refs/timestamps and required `publication_state` on every DTO, plus shared publication/read-state constants. Added read-only `CurrentWorldApproximationReadService` that recomputes on read from temporal + pair-dynamics + timeline seams (no durable writer/cache) and surfaces unresolved/insufficient-evidence outcomes via uncertainty refs when contradictions or cross-surface disagreement are present. Extended repository seams for deterministic B4 reads (`IStage7PairDynamicsRepository.GetCurrentWorldReadSurfaceAsync`, `IStage7TimelineRepository.GetCurrentWorldReadSurfaceAsync`, `ITemporalPersonStateRepository.QueryOpenScopedAsync`) and registered `ICurrentWorldApproximationReadService`; smoke in-memory repos updated for interface parity. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-012B"
       ]

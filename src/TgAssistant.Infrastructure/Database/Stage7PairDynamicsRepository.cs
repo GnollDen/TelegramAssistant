@@ -135,6 +135,76 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
         };
     }
 
+    public async Task<CurrentWorldPairDynamicsReadSurface?> GetCurrentWorldReadSurfaceAsync(
+        string scopeKey,
+        Guid trackedPersonId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(scopeKey))
+        {
+            throw new ArgumentException("ScopeKey is required.", nameof(scopeKey));
+        }
+
+        if (trackedPersonId == Guid.Empty)
+        {
+            throw new ArgumentException("TrackedPersonId is required.", nameof(trackedPersonId));
+        }
+
+        var normalizedScope = scopeKey.Trim();
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var pairRow = await db.DurablePairDynamics
+            .AsNoTracking()
+            .Where(x =>
+                x.ScopeKey == normalizedScope
+                && x.RightPersonId == trackedPersonId
+                && x.PairDynamicsType == Stage7PairDynamicsTypes.OperatorTrackedPair
+                && x.Status == ActiveStatus)
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (pairRow == null)
+        {
+            return null;
+        }
+
+        var metadata = await db.DurableObjectMetadata
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == pairRow.DurableObjectMetadataId, ct);
+        var evidenceRefs = await db.DurableObjectEvidenceLinks
+            .AsNoTracking()
+            .Where(x =>
+                x.DurableObjectMetadataId == pairRow.DurableObjectMetadataId
+                && x.ScopeKey == normalizedScope
+                && x.LinkRole == EvidenceLinkRole)
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .Select(x => $"evidence:{x.EvidenceItemId:D}")
+            .Distinct()
+            .ToListAsync(ct);
+
+        var sourceRefIds = new List<string>
+        {
+            $"durable_pair_dynamics:{pairRow.Id:D}"
+        };
+        if (pairRow.LastModelPassRunId.HasValue)
+        {
+            sourceRefIds.Add($"model_pass:{pairRow.LastModelPassRunId.Value:D}");
+        }
+
+        return new CurrentWorldPairDynamicsReadSurface
+        {
+            DurablePairDynamicsId = pairRow.Id,
+            ScopeKey = pairRow.ScopeKey,
+            TrackedPersonId = pairRow.RightPersonId,
+            RelatedPersonId = pairRow.LeftPersonId,
+            RelationshipStateHint = TryExtractRelationshipStateHint(pairRow.PayloadJson),
+            HasContradictionMarkers = HasContradictionMarkers(metadata?.ContradictionMarkersJson),
+            EvidenceRefs = evidenceRefs,
+            SourceRefIds = sourceRefIds,
+            UpdatedAtUtc = pairRow.UpdatedAt
+        };
+    }
+
     private static async Task<DbDurableObjectMetadata> UpsertMetadataAsync(
         TgAssistantDbContext db,
         string scopeKey,
@@ -505,5 +575,66 @@ public class Stage7PairDynamicsRepository : IStage7PairDynamicsRepository
             PayloadJson = row.PayloadJson,
             CreatedAt = row.CreatedAt
         };
+    }
+
+    private static bool HasContradictionMarkers(string? contradictionMarkersJson)
+    {
+        if (string.IsNullOrWhiteSpace(contradictionMarkersJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(contradictionMarkersJson);
+            return document.RootElement.ValueKind == JsonValueKind.Array
+                && document.RootElement.GetArrayLength() > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? TryExtractRelationshipStateHint(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            if (!document.RootElement.TryGetProperty("dimensions", out var dimensions)
+                || dimensions.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var dimension in dimensions.EnumerateArray())
+            {
+                if (!dimension.TryGetProperty("key", out var keyElement)
+                    || !string.Equals(keyElement.GetString(), TemporalSingleValuedFactFamilies.RelationshipState, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (dimension.TryGetProperty("value", out var valueElement))
+                {
+                    var value = valueElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        return value.Trim();
+                    }
+                }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 }

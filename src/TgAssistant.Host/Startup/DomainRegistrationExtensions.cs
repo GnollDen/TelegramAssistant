@@ -76,6 +76,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<ResolutionInterpretationLoopV1Service>();
         services.AddSingleton<IResolutionInterpretationLoopService, ResolutionInterpretationLoopService>();
         services.AddSingleton<IResolutionReadService, ResolutionReadProjectionService>();
+        services.AddSingleton<ICurrentWorldApproximationReadService, CurrentWorldApproximationReadService>();
         services.AddSingleton<IResolutionActionService, ResolutionActionCommandService>();
         services.AddSingleton<IOperatorResolutionApplicationService, OperatorResolutionApplicationService>();
         services.AddSingleton<IOperatorAlertPolicyService, OperatorAlertPolicyService>();
