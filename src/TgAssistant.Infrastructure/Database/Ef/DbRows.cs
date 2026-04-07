@@ -1151,6 +1151,29 @@ public class DbOperatorOfflineEvent
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+public class DbTemporalPersonState
+{
+    public Guid Id { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string SubjectRef { get; set; } = string.Empty;
+    public string FactType { get; set; } = string.Empty;
+    public string FactCategory { get; set; } = TemporalPersonStateFactCategories.Stable;
+    public string Value { get; set; } = string.Empty;
+    public DateTime ValidFromUtc { get; set; }
+    public DateTime? ValidToUtc { get; set; }
+    public float? Confidence { get; set; }
+    public string EvidenceRefsJson { get; set; } = "[]";
+    public string StateStatus { get; set; } = TemporalPersonStateStatuses.Open;
+    public Guid? SupersedesStateId { get; set; }
+    public Guid? SupersededByStateId { get; set; }
+    public string TriggerKind { get; set; } = "manual";
+    public string? TriggerRef { get; set; }
+    public Guid? TriggerModelPassRunId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 public class DbPeriod
 {
     public Guid Id { get; set; }

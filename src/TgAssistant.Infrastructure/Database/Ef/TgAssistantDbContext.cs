@@ -73,6 +73,7 @@ public class TgAssistantDbContext : DbContext
     public DbSet<DbOperatorResolutionConflictSession> OperatorResolutionConflictSessions => Set<DbOperatorResolutionConflictSession>();
     public DbSet<DbOperatorAuditEvent> OperatorAuditEvents => Set<DbOperatorAuditEvent>();
     public DbSet<DbOperatorOfflineEvent> OperatorOfflineEvents => Set<DbOperatorOfflineEvent>();
+    public DbSet<DbTemporalPersonState> TemporalPersonStates => Set<DbTemporalPersonState>();
     public DbSet<DbBudgetOperationalState> BudgetOperationalStates => Set<DbBudgetOperationalState>();
     public DbSet<DbChatCoordinationState> ChatCoordinationStates => Set<DbChatCoordinationState>();
     public DbSet<DbChatPhaseGuard> ChatPhaseGuards => Set<DbChatPhaseGuard>();
@@ -1611,6 +1612,35 @@ public class TgAssistantDbContext : DbContext
             e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.UpdatedAtUtc });
             e.HasIndex(x => new { x.OperatorSessionId, x.CreatedAtUtc });
             e.HasIndex(x => new { x.ScopeKey, x.Status, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<DbTemporalPersonState>(e =>
+        {
+            e.ToTable("temporal_person_states");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ScopeKey).HasColumnName("scope_key");
+            e.Property(x => x.TrackedPersonId).HasColumnName("tracked_person_id");
+            e.Property(x => x.SubjectRef).HasColumnName("subject_ref");
+            e.Property(x => x.FactType).HasColumnName("fact_type");
+            e.Property(x => x.FactCategory).HasColumnName("fact_category");
+            e.Property(x => x.Value).HasColumnName("value");
+            e.Property(x => x.ValidFromUtc).HasColumnName("valid_from_utc");
+            e.Property(x => x.ValidToUtc).HasColumnName("valid_to_utc");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.EvidenceRefsJson).HasColumnName("evidence_refs_json").HasColumnType("jsonb");
+            e.Property(x => x.StateStatus).HasColumnName("state_status");
+            e.Property(x => x.SupersedesStateId).HasColumnName("supersedes_state_id");
+            e.Property(x => x.SupersededByStateId).HasColumnName("superseded_by_state_id");
+            e.Property(x => x.TriggerKind).HasColumnName("trigger_kind");
+            e.Property(x => x.TriggerRef).HasColumnName("trigger_ref");
+            e.Property(x => x.TriggerModelPassRunId).HasColumnName("trigger_model_pass_run_id");
+            e.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            e.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            e.HasIndex(x => new { x.ScopeKey, x.TrackedPersonId, x.FactType, x.ValidFromUtc });
+            e.HasIndex(x => new { x.ScopeKey, x.SubjectRef, x.FactType, x.StateStatus, x.ValidFromUtc });
+            e.HasIndex(x => x.SupersedesStateId).HasFilter("supersedes_state_id IS NOT NULL");
+            e.HasIndex(x => x.SupersededByStateId).HasFilter("superseded_by_state_id IS NOT NULL");
         });
 
         // Frozen legacy domain/Stage6 mappings stay in the DbContext for compatibility and cleanup work only.

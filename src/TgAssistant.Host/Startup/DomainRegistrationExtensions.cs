@@ -206,6 +206,7 @@ public static partial class ServiceRegistrationExtensions
         services.AddSingleton<IStage7DossierProfileRepository, Stage7DossierProfileRepository>();
         services.AddSingleton<IStage7PairDynamicsRepository, Stage7PairDynamicsRepository>();
         services.AddSingleton<IStage7TimelineRepository, Stage7TimelineRepository>();
+        services.AddSingleton<ITemporalPersonStateRepository, TemporalPersonStateRepository>();
         services.AddSingleton<IStage8RecomputeQueueRepository, Stage8RecomputeQueueRepository>();
         services.AddSingleton<IStage8OutcomeGateRepository, Stage8OutcomeGateRepository>();
         services.AddSingleton<IStage8RelatedConflictRepository, Stage8RelatedConflictRepository>();

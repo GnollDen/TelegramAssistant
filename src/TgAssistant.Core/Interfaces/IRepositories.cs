@@ -200,6 +200,27 @@ public interface IStage7TimelineService
         CancellationToken ct = default);
 }
 
+public interface ITemporalPersonStateRepository
+{
+    Task<TemporalPersonState> InsertAsync(
+        TemporalPersonStateWriteRequest request,
+        CancellationToken ct = default);
+
+    Task<List<TemporalPersonState>> QueryScopedAsync(
+        TemporalPersonStateScopeQuery query,
+        CancellationToken ct = default);
+
+    Task<TemporalPersonState?> GetOpenStateAsync(
+        string scopeKey,
+        string subjectRef,
+        string factType,
+        CancellationToken ct = default);
+
+    Task<TemporalPersonState?> UpdateSupersessionAsync(
+        TemporalPersonStateSupersessionUpdateRequest request,
+        CancellationToken ct = default);
+}
+
 public interface IStage8RecomputeQueueRepository
 {
     Task<Stage8RecomputeQueueItem> EnqueueAsync(

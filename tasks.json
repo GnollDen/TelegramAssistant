@@ -517,8 +517,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-005 completed: added temporal person-state persistence with new migration/table (`0056_temporal_person_states.sql`), EF row/context wiring, `ITemporalPersonStateRepository` contract, and `TemporalPersonStateRepository` implementation covering scoped insert/query/open-state lookup/supersession update with deterministic trigger metadata plus single-valued open-state uniqueness enforcement (`TemporalSingleValuedFactFamilies`) and explicit supersession-link validation. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-004"
       ]

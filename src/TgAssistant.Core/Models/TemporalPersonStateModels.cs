@@ -109,6 +109,62 @@ public class TemporalPersonState
 
     [JsonPropertyName("superseded_by_state_id")]
     public Guid? SupersededByStateId { get; set; }
+
+    [JsonPropertyName("tracked_person_id")]
+    public Guid TrackedPersonId { get; set; }
+
+    [JsonPropertyName("trigger_kind")]
+    public string TriggerKind { get; set; } = "manual";
+
+    [JsonPropertyName("trigger_ref")]
+    public string? TriggerRef { get; set; }
+
+    [JsonPropertyName("trigger_model_pass_run_id")]
+    public Guid? TriggerModelPassRunId { get; set; }
+
+    [JsonPropertyName("created_at_utc")]
+    public DateTime CreatedAtUtc { get; set; }
+
+    [JsonPropertyName("updated_at_utc")]
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class TemporalPersonStateWriteRequest
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string SubjectRef { get; set; } = string.Empty;
+    public string FactType { get; set; } = string.Empty;
+    public string FactCategory { get; set; } = TemporalPersonStateFactCategories.Stable;
+    public string Value { get; set; } = string.Empty;
+    public DateTime ValidFromUtc { get; set; }
+    public DateTime? ValidToUtc { get; set; }
+    public float? Confidence { get; set; }
+    public IReadOnlyCollection<string>? EvidenceRefs { get; set; }
+    public string StateStatus { get; set; } = TemporalPersonStateStatuses.Open;
+    public Guid? SupersedesStateId { get; set; }
+    public string TriggerKind { get; set; } = "manual";
+    public string? TriggerRef { get; set; }
+    public Guid? TriggerModelPassRunId { get; set; }
+}
+
+public class TemporalPersonStateScopeQuery
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string? SubjectRef { get; set; }
+    public string? FactType { get; set; }
+    public int Limit { get; set; } = 200;
+}
+
+public class TemporalPersonStateSupersessionUpdateRequest
+{
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public Guid PreviousStateId { get; set; }
+    public Guid SupersededByStateId { get; set; }
+    public DateTime SupersededAtUtc { get; set; }
+    public string NextStatus { get; set; } = TemporalPersonStateStatuses.Superseded;
 }
 
 public static class TemporalPersonStateContract
