@@ -1,0 +1,715 @@
+{
+  "GeneratedAtUtc": "2026-04-07T14:23:23.1928668Z",
+  "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json",
+  "ScopeKey": "chat:885574984",
+  "TrackedPersonId": "80c384f3-a79f-4356-b832-45e636353f59",
+  "TrackedPersonDisplayName": "\u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430",
+  "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+  "ItemType": "review",
+  "SourceKind": "durable_object_metadata",
+  "StartAccepted": true,
+  "ConflictSessionId": "f59700c0-9d4e-4bee-a70c-05631ed1b240",
+  "StartState": "fallback",
+  "StartStateReason": "initial_model_error",
+  "AuditEntriesAfterStart": 1,
+  "InitialCasePacket": {
+    "Item": {
+      "SourceKind": "durable_object_metadata",
+      "SourceRef": "13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "RequiredAction": null,
+      "EvidenceRationaleSummary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "AutoResolutionGap": "Deterministic fallback applied because \u0027usage_unavailable\u0027.",
+      "OperatorDecisionFocus": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture.",
+      "RationaleIsHeuristic": true,
+      "InterpretationLoop": {
+        "Applied": true,
+        "UsedFallback": true,
+        "context_sufficient": true,
+        "requested_context_type": "none",
+        "interpretation_summary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+        "key_claims": [
+          {
+            "claim_type": "inference",
+            "display_label": "Inference",
+            "trust_percent": null,
+            "summary": "Bounded evidence still supports surfacing \u0027story arc promotion blocked\u0027 for operator attention.",
+            "evidence_refs": [
+              "885574984:293950"
+            ]
+          }
+        ],
+        "explicit_uncertainties": [
+          "Deterministic fallback applied because \u0027usage_unavailable\u0027."
+        ],
+        "review_recommendation": {
+          "decision": "review",
+          "display_label": "Recommendation",
+          "trust_percent": null,
+          "reason": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture."
+        },
+        "evidence_refs_used": [
+          "885574984:293950",
+          "885574984:293951"
+        ],
+        "FailureReason": "usage_unavailable",
+        "AuditTrail": [
+          {
+            "step": "context_manifest",
+            "retrieval_round": 0,
+            "requested_context_type": "none",
+            "status": "recorded",
+            "details": "Initial bounded context contains 3 evidence refs, 2 notes, and 1 durable summaries.",
+            "provider": null,
+            "model": null,
+            "model_id": null,
+            "model_version": null,
+            "request_id": null,
+            "latency_ms": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "total_tokens": null,
+            "cost_usd": null,
+            "context_manifest": null,
+            "retrieval_requests": null,
+            "retrieval_results": null,
+            "normalization_status": null,
+            "gate_decision": null,
+            "evidence_refs": [
+              "885574984:293950",
+              "885574984:293951",
+              "885574984:293948"
+            ],
+            "observed_at_utc": "2026-04-07T14:23:50.6745152Z"
+          },
+          {
+            "step": "model_round",
+            "retrieval_round": 0,
+            "requested_context_type": "additional_evidence",
+            "status": "completed",
+            "details": "Initial model response received. total_tokens=2515.",
+            "provider": "codex-lb",
+            "model": "gpt-5.4-mini",
+            "model_id": null,
+            "model_version": null,
+            "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
+            "latency_ms": 4083,
+            "prompt_tokens": 2111,
+            "completion_tokens": 404,
+            "total_tokens": 2515,
+            "cost_usd": null,
+            "context_manifest": null,
+            "retrieval_requests": null,
+            "retrieval_results": null,
+            "normalization_status": null,
+            "gate_decision": null,
+            "evidence_refs": [
+              "13bd21fe-fb7a-4575-b834-27041d8ad063",
+              "885574984:293948",
+              "885574984:293950",
+              "885574984:293951"
+            ],
+            "observed_at_utc": "2026-04-07T14:23:54.7597583Z"
+          },
+          {
+            "step": "budget_guard",
+            "retrieval_round": 0,
+            "requested_context_type": "additional_evidence",
+            "status": "breached",
+            "details": "Budget ceiling reached after initial model round: usage_unavailable.",
+            "provider": "codex-lb",
+            "model": "gpt-5.4-mini",
+            "model_id": null,
+            "model_version": null,
+            "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
+            "latency_ms": 4083,
+            "prompt_tokens": 2111,
+            "completion_tokens": 404,
+            "total_tokens": 2515,
+            "cost_usd": null,
+            "context_manifest": null,
+            "retrieval_requests": null,
+            "retrieval_results": null,
+            "normalization_status": null,
+            "gate_decision": null,
+            "evidence_refs": [],
+            "observed_at_utc": "2026-04-07T14:23:54.7597718Z"
+          },
+          {
+            "step": "fallback",
+            "retrieval_round": 0,
+            "requested_context_type": "none",
+            "status": "applied",
+            "details": "Deterministic fallback applied: usage_unavailable.",
+            "provider": null,
+            "model": null,
+            "model_id": null,
+            "model_version": null,
+            "request_id": null,
+            "latency_ms": null,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "total_tokens": null,
+            "cost_usd": null,
+            "context_manifest": null,
+            "retrieval_requests": null,
+            "retrieval_results": null,
+            "normalization_status": null,
+            "gate_decision": null,
+            "evidence_refs": [
+              "885574984:293950",
+              "885574984:293951"
+            ],
+            "observed_at_utc": "2026-04-07T14:23:54.7598083Z"
+          }
+        ]
+      },
+      "Notes": [
+        {
+          "Kind": "promotion_state",
+          "Text": "Promotion state: promotion_blocked; truth layer: proposal_layer."
+        },
+        {
+          "Kind": "summary",
+          "Text": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
+        }
+      ],
+      "Evidence": [
+        {
+          "EvidenceItemId": "628aa683-c9a1-415e-bc59-edc4a0ee0c3c",
+          "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
+          "TrustFactor": 1,
+          "ObservedAtUtc": "2026-03-22T11:39:53Z",
+          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "SourceRef": "885574984:293950",
+          "SourceLabel": "Realtime message 293950 in chat 885574984",
+          "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+          "RelevanceHintIsHeuristic": true,
+          "DecisionLinkage": {
+            "LinkType": "decision_unit",
+            "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+            "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "Stance": "supports",
+            "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0434\u0435\u0440\u0436\u0430\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439, \u0447\u0442\u043E\u0431\u044B \u0431\u044B\u0442\u044C \u043E\u0434\u043D\u043E\u0439 \u0438\u0437 bounded-\u043E\u043F\u043E\u0440 \u0440\u0443\u0447\u043D\u043E\u0433\u043E \u0440\u0435\u0448\u0435\u043D\u0438\u044F. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "IsHeuristic": true,
+            "HeuristicCalibration": "medium"
+          }
+        },
+        {
+          "EvidenceItemId": "5e7a59a2-7b4c-429f-ba3b-1f85fa65d007",
+          "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
+          "TrustFactor": 1,
+          "ObservedAtUtc": "2026-03-22T11:39:53Z",
+          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "SourceRef": "885574984:293951",
+          "SourceLabel": "Realtime message 293951 in chat 885574984",
+          "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+          "RelevanceHintIsHeuristic": true,
+          "DecisionLinkage": {
+            "LinkType": "decision_unit",
+            "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+            "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "Stance": "supports",
+            "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "IsHeuristic": true,
+            "HeuristicCalibration": "low"
+          }
+        },
+        {
+          "EvidenceItemId": "ae774282-dd1f-461d-8d6e-bd999bb32fb4",
+          "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
+          "TrustFactor": 1,
+          "ObservedAtUtc": "2026-03-22T10:56:37Z",
+          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "SourceRef": "885574984:293948",
+          "SourceLabel": "Realtime message 293948 in chat 885574984",
+          "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+          "RelevanceHintIsHeuristic": true,
+          "DecisionLinkage": {
+            "LinkType": "decision_unit",
+            "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+            "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "Stance": "supports",
+            "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "IsHeuristic": true,
+            "HeuristicCalibration": "low"
+          }
+        },
+        {
+          "EvidenceItemId": "937c240f-97bf-4815-9121-38d8f47741f5",
+          "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
+          "TrustFactor": 1,
+          "ObservedAtUtc": "2026-03-20T18:37:48Z",
+          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "SourceRef": "885574984:293894",
+          "SourceLabel": "Realtime message 293894 in chat 885574984",
+          "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+          "RelevanceHintIsHeuristic": true,
+          "DecisionLinkage": {
+            "LinkType": "decision_unit",
+            "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+            "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "Stance": "supports",
+            "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "IsHeuristic": true,
+            "HeuristicCalibration": "low"
+          }
+        },
+        {
+          "EvidenceItemId": "9ee75539-cb26-49f1-9fdf-546b2fc2f9a8",
+          "Summary": "\u043E\u043A\u0435",
+          "TrustFactor": 1,
+          "ObservedAtUtc": "2026-03-20T18:31:04Z",
+          "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+          "SourceRef": "885574984:293893",
+          "SourceLabel": "Realtime message 293893 in chat 885574984",
+          "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+          "RelevanceHintIsHeuristic": true,
+          "DecisionLinkage": {
+            "LinkType": "decision_unit",
+            "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+            "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "Stance": "supports",
+            "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+            "IsHeuristic": true,
+            "HeuristicCalibration": "low"
+          }
+        }
+      ],
+      "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "ItemType": "review",
+      "Title": "story arc promotion blocked",
+      "Summary": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "WhyItMatters": "This durable object is held below canonical truth and needs operator review before downstream surfaces rely on it.",
+      "HumanShortTitle": "\u041D\u0443\u0436\u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430: \u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430",
+      "WhatHappened": "\u041E\u0431\u044A\u0435\u043A\u0442 \u043D\u0435 \u043F\u0440\u043E\u0448\u0435\u043B \u0434\u0430\u043B\u044C\u0448\u0435 \u0432 \u043A\u0430\u043D\u043E\u043D\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u0441\u043B\u043E\u0439 \u0438 \u043E\u0441\u0442\u0430\u043B\u0441\u044F \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+      "WhyOperatorAnswerNeeded": "\u0410\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u043A\u0430 \u043E\u0441\u0442\u0430\u0432\u0438\u043B\u0430 \u043E\u0431\u044A\u0435\u043A\u0442 \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435, \u043F\u0440\u0435\u0436\u0434\u0435 \u0447\u0435\u043C \u043D\u0430 \u043D\u0435\u0433\u043E \u0441\u043C\u043E\u0433\u0443\u0442 \u043E\u043F\u0438\u0440\u0430\u0442\u044C\u0441\u044F \u0434\u0440\u0443\u0433\u0438\u0435 \u043F\u043E\u0432\u0435\u0440\u0445\u043D\u043E\u0441\u0442\u0438.",
+      "WhatToDoPrompt": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+      "EvidenceHint": "\u0421\u0432\u044F\u0437\u0430\u043D\u043E 5 \u0444\u0430\u043A\u0442\u043E\u0432.",
+      "SecondaryText": "\u0414\u043E\u0432\u0435\u0440\u0438\u0435 85% \u00B7 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0432\u043D\u0438\u043C\u0430\u043D\u0438\u044F \u00B7 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E 2026-04-05 18:25 UTC",
+      "AffectedFamily": "story_arc",
+      "AffectedObjectRef": "pair:0ba107de-8fcf-4968-8cae-c2caab0b22c3:80c384f3-a79f-4356-b832-45e636353f59:story_arc:operator_tracked_arc",
+      "TrustFactor": 0.85,
+      "Status": "attention_required",
+      "EvidenceCount": 5,
+      "UpdatedAtUtc": "2026-04-05T18:25:59.674555Z",
+      "Priority": "medium",
+      "RecommendedNextAction": "open-web",
+      "AvailableActions": [
+        "approve",
+        "reject",
+        "defer",
+        "clarify",
+        "evidence",
+        "open-web"
+      ]
+    },
+    "InterpretationLoop": {
+      "Applied": true,
+      "UsedFallback": true,
+      "context_sufficient": true,
+      "requested_context_type": "none",
+      "interpretation_summary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "key_claims": [
+        {
+          "claim_type": "inference",
+          "display_label": "Inference",
+          "trust_percent": null,
+          "summary": "Bounded evidence still supports surfacing \u0027story arc promotion blocked\u0027 for operator attention.",
+          "evidence_refs": [
+            "885574984:293950"
+          ]
+        }
+      ],
+      "explicit_uncertainties": [
+        "Deterministic fallback applied because \u0027usage_unavailable\u0027."
+      ],
+      "review_recommendation": {
+        "decision": "review",
+        "display_label": "Recommendation",
+        "trust_percent": null,
+        "reason": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture."
+      },
+      "evidence_refs_used": [
+        "885574984:293950",
+        "885574984:293951"
+      ],
+      "FailureReason": "usage_unavailable",
+      "AuditTrail": [
+        {
+          "step": "context_manifest",
+          "retrieval_round": 0,
+          "requested_context_type": "none",
+          "status": "recorded",
+          "details": "Initial bounded context contains 3 evidence refs, 2 notes, and 1 durable summaries.",
+          "provider": null,
+          "model": null,
+          "model_id": null,
+          "model_version": null,
+          "request_id": null,
+          "latency_ms": null,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "total_tokens": null,
+          "cost_usd": null,
+          "context_manifest": null,
+          "retrieval_requests": null,
+          "retrieval_results": null,
+          "normalization_status": null,
+          "gate_decision": null,
+          "evidence_refs": [
+            "885574984:293950",
+            "885574984:293951",
+            "885574984:293948"
+          ],
+          "observed_at_utc": "2026-04-07T14:23:50.6745152Z"
+        },
+        {
+          "step": "model_round",
+          "retrieval_round": 0,
+          "requested_context_type": "additional_evidence",
+          "status": "completed",
+          "details": "Initial model response received. total_tokens=2515.",
+          "provider": "codex-lb",
+          "model": "gpt-5.4-mini",
+          "model_id": null,
+          "model_version": null,
+          "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
+          "latency_ms": 4083,
+          "prompt_tokens": 2111,
+          "completion_tokens": 404,
+          "total_tokens": 2515,
+          "cost_usd": null,
+          "context_manifest": null,
+          "retrieval_requests": null,
+          "retrieval_results": null,
+          "normalization_status": null,
+          "gate_decision": null,
+          "evidence_refs": [
+            "13bd21fe-fb7a-4575-b834-27041d8ad063",
+            "885574984:293948",
+            "885574984:293950",
+            "885574984:293951"
+          ],
+          "observed_at_utc": "2026-04-07T14:23:54.7597583Z"
+        },
+        {
+          "step": "budget_guard",
+          "retrieval_round": 0,
+          "requested_context_type": "additional_evidence",
+          "status": "breached",
+          "details": "Budget ceiling reached after initial model round: usage_unavailable.",
+          "provider": "codex-lb",
+          "model": "gpt-5.4-mini",
+          "model_id": null,
+          "model_version": null,
+          "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
+          "latency_ms": 4083,
+          "prompt_tokens": 2111,
+          "completion_tokens": 404,
+          "total_tokens": 2515,
+          "cost_usd": null,
+          "context_manifest": null,
+          "retrieval_requests": null,
+          "retrieval_results": null,
+          "normalization_status": null,
+          "gate_decision": null,
+          "evidence_refs": [],
+          "observed_at_utc": "2026-04-07T14:23:54.7597718Z"
+        },
+        {
+          "step": "fallback",
+          "retrieval_round": 0,
+          "requested_context_type": "none",
+          "status": "applied",
+          "details": "Deterministic fallback applied: usage_unavailable.",
+          "provider": null,
+          "model": null,
+          "model_id": null,
+          "model_version": null,
+          "request_id": null,
+          "latency_ms": null,
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "total_tokens": null,
+          "cost_usd": null,
+          "context_manifest": null,
+          "retrieval_requests": null,
+          "retrieval_results": null,
+          "normalization_status": null,
+          "gate_decision": null,
+          "evidence_refs": [
+            "885574984:293950",
+            "885574984:293951"
+          ],
+          "observed_at_utc": "2026-04-07T14:23:54.7598083Z"
+        }
+      ]
+    },
+    "Evidence": [
+      {
+        "EvidenceItemId": "628aa683-c9a1-415e-bc59-edc4a0ee0c3c",
+        "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
+        "TrustFactor": 1,
+        "ObservedAtUtc": "2026-03-22T11:39:53Z",
+        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "SourceRef": "885574984:293950",
+        "SourceLabel": "Realtime message 293950 in chat 885574984",
+        "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+        "RelevanceHintIsHeuristic": true,
+        "DecisionLinkage": {
+          "LinkType": "decision_unit",
+          "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+          "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "Stance": "supports",
+          "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0434\u0435\u0440\u0436\u0430\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0430\u0442\u0435\u043B\u044C\u043D\u044B\u0439, \u0447\u0442\u043E\u0431\u044B \u0431\u044B\u0442\u044C \u043E\u0434\u043D\u043E\u0439 \u0438\u0437 bounded-\u043E\u043F\u043E\u0440 \u0440\u0443\u0447\u043D\u043E\u0433\u043E \u0440\u0435\u0448\u0435\u043D\u0438\u044F. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "IsHeuristic": true,
+          "HeuristicCalibration": "medium"
+        }
+      },
+      {
+        "EvidenceItemId": "5e7a59a2-7b4c-429f-ba3b-1f85fa65d007",
+        "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
+        "TrustFactor": 1,
+        "ObservedAtUtc": "2026-03-22T11:39:53Z",
+        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "SourceRef": "885574984:293951",
+        "SourceLabel": "Realtime message 293951 in chat 885574984",
+        "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+        "RelevanceHintIsHeuristic": true,
+        "DecisionLinkage": {
+          "LinkType": "decision_unit",
+          "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+          "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "Stance": "supports",
+          "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "IsHeuristic": true,
+          "HeuristicCalibration": "low"
+        }
+      },
+      {
+        "EvidenceItemId": "ae774282-dd1f-461d-8d6e-bd999bb32fb4",
+        "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
+        "TrustFactor": 1,
+        "ObservedAtUtc": "2026-03-22T10:56:37Z",
+        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "SourceRef": "885574984:293948",
+        "SourceLabel": "Realtime message 293948 in chat 885574984",
+        "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+        "RelevanceHintIsHeuristic": true,
+        "DecisionLinkage": {
+          "LinkType": "decision_unit",
+          "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+          "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "Stance": "supports",
+          "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "IsHeuristic": true,
+          "HeuristicCalibration": "low"
+        }
+      },
+      {
+        "EvidenceItemId": "937c240f-97bf-4815-9121-38d8f47741f5",
+        "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
+        "TrustFactor": 1,
+        "ObservedAtUtc": "2026-03-20T18:37:48Z",
+        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "SourceRef": "885574984:293894",
+        "SourceLabel": "Realtime message 293894 in chat 885574984",
+        "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+        "RelevanceHintIsHeuristic": true,
+        "DecisionLinkage": {
+          "LinkType": "decision_unit",
+          "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+          "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "Stance": "supports",
+          "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "IsHeuristic": true,
+          "HeuristicCalibration": "low"
+        }
+      },
+      {
+        "EvidenceItemId": "9ee75539-cb26-49f1-9fdf-546b2fc2f9a8",
+        "Summary": "\u043E\u043A\u0435",
+        "TrustFactor": 1,
+        "ObservedAtUtc": "2026-03-20T18:31:04Z",
+        "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
+        "SourceRef": "885574984:293893",
+        "SourceLabel": "Realtime message 293893 in chat 885574984",
+        "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
+        "RelevanceHintIsHeuristic": true,
+        "DecisionLinkage": {
+          "LinkType": "decision_unit",
+          "LinkTarget": "\u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0431\u0435\u0437 \u0434\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0439 \u0440\u0443\u0447\u043D\u043E\u0439 \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0438",
+          "ReviewQuestion": "\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "Stance": "supports",
+          "Summary": "\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u0432 \u0434\u043E\u043A\u0430\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u0443\u044E \u0431\u0430\u0437\u0443 \u043E\u0431\u044A\u0435\u043A\u0442\u0430 \u00AB\u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430\u00BB \u0438 \u043C\u043E\u0436\u0435\u0442 \u043B\u0438\u0448\u044C \u0441\u043B\u0430\u0431\u043E \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0442\u044C \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0435\u0433\u043E \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435: \u044D\u0442\u043E \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0439 \u0438\u043B\u0438 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0444\u0440\u0430\u0433\u043C\u0435\u043D\u0442 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0430, \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043E\u043F\u043E\u0440\u0430 \u043D\u0430 \u043D\u0435\u0433\u043E \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0430. \u0412\u043E\u043F\u0440\u043E\u0441 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u0430: \u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0412 \u0432\u0435\u0431\u00BB \u0438 \u0440\u0435\u0448\u0438\u0442\u0435, \u043C\u043E\u0436\u043D\u043E \u043B\u0438 \u043F\u0440\u043E\u0434\u0432\u0438\u0433\u0430\u0442\u044C \u043E\u0431\u044A\u0435\u043A\u0442 \u0434\u0430\u043B\u044C\u0448\u0435 \u0438\u043B\u0438 \u0435\u0433\u043E \u043D\u0443\u0436\u043D\u043E \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
+          "IsHeuristic": true,
+          "HeuristicCalibration": "low"
+        }
+      }
+    ],
+    "Notes": [
+      {
+        "Kind": "promotion_state",
+        "Text": "Promotion state: promotion_blocked; truth layer: proposal_layer."
+      },
+      {
+        "Kind": "summary",
+        "Text": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
+      }
+    ],
+    "DurableContextSummaries": [
+      "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture.",
+      "Deterministic fallback applied because \u0027usage_unavailable\u0027."
+    ]
+  },
+  "OperatorQuestion": null,
+  "OperatorAnswerCaptured": false,
+  "OperatorAnswer": null,
+  "FinalState": "fallback",
+  "AuditEntriesFinal": 1,
+  "FinalVerdict": {
+    "ResolutionVerdict": "fallback",
+    "ResolvedClaims": [],
+    "RejectedClaims": [],
+    "EvidenceRefsUsed": [],
+    "OperatorInputsUsed": [],
+    "RemainingUncertainties": [
+      "AI conflict session returned a fallback result; operator manual review is required."
+    ],
+    "NormalizationProposal": {
+      "RecommendedAction": "clarify",
+      "Explanation": "Fallback: initial_model_error",
+      "ClarificationPayload": null
+    },
+    "ConfidenceCalibration": {
+      "ConfidenceScore": 0,
+      "Rationale": "fallback"
+    },
+    "StructuredVerdict": {
+      "verdict_id": "2091ce254a9e4c31ae7434d294f4bea2",
+      "scope_key": "chat:885574984",
+      "scope_item_key": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "carry_forward_case_id": null,
+      "decision": "escalate",
+      "publication_state": "escalation_only",
+      "claim_rows": [],
+      "uncertainty_rows": [
+        "AI conflict session returned a fallback result; operator manual review is required."
+      ],
+      "normalization_plan": {
+        "recommended_action": "clarify",
+        "explanation": "Fallback: initial_model_error",
+        "clarification_payload": null
+      },
+      "evidence_refs": [],
+      "created_at_utc": "2026-04-07T14:23:50.6184987Z"
+    }
+  },
+  "RequiredAuditKeysPresent": true,
+  "ApplyAccepted": false,
+  "ApplyActionId": null,
+  "ApplyActionType": null,
+  "ApplyConflictSessionId": null,
+  "StoredActionConflictLinkPresent": false,
+  "StoredActionConflictRevision": null,
+  "StoredSessionStatus": null,
+  "StoredSessionFinalActionId": null,
+  "StoredSessionFinalActionRequestId": null,
+  "DeterministicApplyPathConfirmed": false,
+  "ApplyPathNonBlockingFailureReason": "An error occurred while saving the entity changes. See the inner exception for details.",
+  "StructuredVerdictProofRows": [
+    {
+      "CaseId": "structured_verdict_valid",
+      "ExpectedDecision": "accept",
+      "ActualDecision": "accept",
+      "Reason": null,
+      "Passed": true
+    },
+    {
+      "CaseId": "structured_verdict_invalid_decision_rejected",
+      "ExpectedDecision": "reject",
+      "ActualDecision": "reject",
+      "Reason": "structured_decision_invalid",
+      "Passed": true
+    },
+    {
+      "CaseId": "structured_verdict_invalid_publication_state_rejected",
+      "ExpectedDecision": "reject",
+      "ActualDecision": "reject",
+      "Reason": "structured_publication_state_invalid",
+      "Passed": true
+    },
+    {
+      "CaseId": "structured_verdict_missing_scope_item_key_rejected",
+      "ExpectedDecision": "reject",
+      "ActualDecision": "reject",
+      "Reason": "structured_scope_item_key_required",
+      "Passed": true
+    }
+  ],
+  "ToolProofRows": [
+    {
+      "CaseId": "allowed_tool_get_evidence_refs_accepted",
+      "ExpectedDecision": "accepted",
+      "ActualDecision": "accepted",
+      "Passed": true
+    },
+    {
+      "CaseId": "tool_not_allowed_rejected",
+      "ExpectedDecision": "tool_not_allowed",
+      "ActualDecision": "tool_not_allowed",
+      "Passed": true
+    },
+    {
+      "CaseId": "cross_scope_tool_request_rejected",
+      "ExpectedDecision": "cross_scope_tool_request_rejected",
+      "ActualDecision": "cross_scope_tool_request_rejected",
+      "Passed": true
+    }
+  ],
+  "CandidateAttempts": [
+    {
+      "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "ItemType": "review",
+      "SourceKind": "durable_object_metadata",
+      "StartAccepted": true,
+      "OperatorAnswerCaptured": false,
+      "ApplyAccepted": false,
+      "Passed": false,
+      "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
+    },
+    {
+      "ScopeItemKey": "review:durable_object_metadata:ad12413d-520c-43ec-abc5-7e71e73908cb",
+      "ItemType": "review",
+      "SourceKind": "durable_object_metadata",
+      "StartAccepted": true,
+      "OperatorAnswerCaptured": false,
+      "ApplyAccepted": false,
+      "Passed": false,
+      "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
+    },
+    {
+      "ScopeItemKey": "review:durable_object_metadata:d9ab9326-6953-41d1-aefa-fd2a3c23cbf1",
+      "ItemType": "review",
+      "SourceKind": "durable_object_metadata",
+      "StartAccepted": true,
+      "OperatorAnswerCaptured": false,
+      "ApplyAccepted": false,
+      "Passed": false,
+      "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
+    },
+    {
+      "ScopeItemKey": "review:durable_object_metadata:ea10b742-1023-461d-9ad9-97a5dff26aff",
+      "ItemType": "review",
+      "SourceKind": "durable_object_metadata",
+      "StartAccepted": true,
+      "OperatorAnswerCaptured": false,
+      "ApplyAccepted": false,
+      "Passed": false,
+      "FailureReason": "An error occurred while saving the entity changes. See the inner exception for details."
+    }
+  ],
+  "Passed": true,
+  "FatalError": null
+}

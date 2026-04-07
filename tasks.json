@@ -707,8 +707,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-011A completed: added typed WS-B3 conflict-session tool contracts (request/manifest models + whitelist/reject constants), extended AI conflict-session model schema/output parsing for `tool_requests`, and wired deterministic tool execution in OperatorResolutionApplicationService through scoped seams (`IMessageRepository` + existing resolution case packet/read path) with persisted retrieval request/response manifests (`tool_name`, `request_scope`, `request_items`, `decision`, `response_refs`) captured in audit rows. Disallowed tools deterministically reject as `tool_not_allowed`; cross-scope requests reject as `cross_scope_tool_request_rejected`. Extended --ai-conflict-session-v1-proof with explicit PHB-011A tool contract rows for allowed/disallowed/cross-scope tool requests. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --runtime-role=ops --ai-conflict-session-v1-proof --ai-conflict-session-v1-proof-output=src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json (passed=True).",
       "dependencies": [
         "PHB-010B"
       ]

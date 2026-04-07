@@ -242,6 +242,83 @@ public static class ResolutionConflictSessionContract
     public const string StepKind = "resolution_conflict_session_v1";
 }
 
+public static class ConflictResolutionSessionToolNames
+{
+    public const string GetNeighborMessages = "get_neighbor_messages";
+    public const string GetEvidenceRefs = "get_evidence_refs";
+    public const string GetDurableContext = "get_durable_context";
+    public const string AskOperatorQuestion = "ask_operator_question";
+
+    public static IReadOnlyList<string> Allowed { get; } =
+    [
+        GetNeighborMessages,
+        GetEvidenceRefs,
+        GetDurableContext,
+        AskOperatorQuestion
+    ];
+
+    public static string Normalize(string? toolName)
+        => string.IsNullOrWhiteSpace(toolName) ? string.Empty : toolName.Trim().ToLowerInvariant();
+
+    public static bool IsAllowed(string? toolName)
+        => Allowed.Contains(Normalize(toolName), StringComparer.Ordinal);
+}
+
+public static class ConflictResolutionSessionToolDecisions
+{
+    public const string Accepted = "accepted";
+    public const string ToolNotAllowed = "tool_not_allowed";
+    public const string CrossScopeToolRequestRejected = "cross_scope_tool_request_rejected";
+}
+
+public static class ConflictResolutionSessionToolContract
+{
+    public const int MaxToolRequestsPerRound = 4;
+    public const int MaxRequestItemsPerTool = 5;
+
+    public static bool TryNormalize(
+        ResolutionConflictSessionToolRequest? request,
+        string expectedScopeItemKey,
+        out ResolutionConflictSessionToolRequest normalized,
+        out string decision)
+    {
+        normalized = new ResolutionConflictSessionToolRequest();
+        var scopeItemKey = string.IsNullOrWhiteSpace(expectedScopeItemKey)
+            ? string.Empty
+            : expectedScopeItemKey.Trim();
+        if (request == null)
+        {
+            decision = ConflictResolutionSessionToolDecisions.ToolNotAllowed;
+            return false;
+        }
+
+        normalized.ToolName = ConflictResolutionSessionToolNames.Normalize(request.ToolName);
+        normalized.RequestScope = string.IsNullOrWhiteSpace(request.RequestScope)
+            ? string.Empty
+            : request.RequestScope.Trim();
+        normalized.RequestItems = (request.RequestItems ?? [])
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
+            .Take(MaxRequestItemsPerTool)
+            .ToList();
+
+        if (!ConflictResolutionSessionToolNames.IsAllowed(normalized.ToolName))
+        {
+            decision = ConflictResolutionSessionToolDecisions.ToolNotAllowed;
+            return false;
+        }
+
+        if (!string.Equals(normalized.RequestScope, scopeItemKey, StringComparison.Ordinal))
+        {
+            decision = ConflictResolutionSessionToolDecisions.CrossScopeToolRequestRejected;
+            return false;
+        }
+
+        decision = ConflictResolutionSessionToolDecisions.Accepted;
+        return true;
+    }
+}
+
 public class ResolutionConflictSessionBudget
 {
     public int MaxModelCalls { get; set; } = 2;
@@ -253,6 +330,48 @@ public class ResolutionConflictSessionBudget
     public int MaxRetrievalRounds { get; set; } = 0;
     public int UsedRetrievalRounds { get; set; }
     public int TtlSeconds { get; set; } = 1800;
+}
+
+public class ResolutionConflictSessionToolRequest
+{
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_scope")]
+    public string RequestScope { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_items")]
+    public List<string> RequestItems { get; set; } = [];
+}
+
+public class ResolutionConflictSessionToolRequestManifest
+{
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_scope")]
+    public string RequestScope { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_items")]
+    public List<string> RequestItems { get; set; } = [];
+}
+
+public class ResolutionConflictSessionToolResponseManifest
+{
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_scope")]
+    public string RequestScope { get; set; } = string.Empty;
+
+    [JsonPropertyName("request_items")]
+    public List<string> RequestItems { get; set; } = [];
+
+    [JsonPropertyName("decision")]
+    public string Decision { get; set; } = ConflictResolutionSessionToolDecisions.Accepted;
+
+    [JsonPropertyName("response_refs")]
+    public List<string> ResponseRefs { get; set; } = [];
 }
 
 public class ResolutionConflictSessionQuestion

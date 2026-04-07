@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -7,7 +9,7 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessionModel
 {
-    private const string TaskKey = "ai_conflict_resolution_session_v1";
+    private const string DefaultTaskKey = "ai_conflict_resolution_session_v1";
     private const string SchemaName = "ai_conflict_resolution_session_v1";
     private const string SchemaJson = """
         {
@@ -30,6 +32,19 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
                   "required": ["question_key", "question_text", "answer_kind", "notes"]
                 }
               ]
+            },
+            "tool_requests": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "tool_name": { "type": "string" },
+                  "request_scope": { "type": "string" },
+                  "request_items": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["tool_name", "request_scope", "request_items"]
+              }
             },
             "resolution_verdict": {
               "type": "string",
@@ -87,6 +102,7 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
           "required": [
             "ask_follow_up_question",
             "follow_up_question",
+            "tool_requests",
             "resolution_verdict",
             "resolved_claims",
             "rejected_claims",
@@ -107,13 +123,23 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
 
     private readonly ILlmGateway _gateway;
     private readonly ILogger<LlmConflictResolutionSessionModel> _logger;
+    private readonly string _taskKey;
+    private readonly int _maxOutputTokens;
+    private readonly int _requestTimeoutMs;
 
     public LlmConflictResolutionSessionModel(
         ILlmGateway gateway,
+        IOptions<ConflictResolutionSessionSettings> settings,
         ILogger<LlmConflictResolutionSessionModel> logger)
     {
         _gateway = gateway;
         _logger = logger;
+        var resolvedSettings = settings.Value ?? new ConflictResolutionSessionSettings();
+        _taskKey = string.IsNullOrWhiteSpace(resolvedSettings.ModelTaskKey)
+            ? DefaultTaskKey
+            : resolvedSettings.ModelTaskKey.Trim();
+        _maxOutputTokens = Math.Max(1, resolvedSettings.MaxOutputTokens);
+        _requestTimeoutMs = Math.Max(1000, resolvedSettings.ModelTimeoutMs);
     }
 
     public async Task<ResolutionConflictSessionModelResult> ResolveAsync(
@@ -144,12 +170,24 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
                     AnswerKind = string.IsNullOrWhiteSpace(parsed.FollowUpQuestion.AnswerKind) ? "free_text" : parsed.FollowUpQuestion.AnswerKind.Trim(),
                     Notes = parsed.FollowUpQuestion.Notes
                 },
+            ToolRequests = (parsed.ToolRequests ?? [])
+                .Select(request => new ResolutionConflictSessionToolRequest
+                {
+                    ToolName = request.ToolName ?? string.Empty,
+                    RequestScope = request.RequestScope ?? string.Empty,
+                    RequestItems = request.RequestItems ?? []
+                })
+                .ToList(),
             FinalVerdict = BuildVerdict(parsed),
             Provider = response.Provider,
             Model = response.Model,
+            ModelVersion = null,
             RequestId = response.RequestId,
             LatencyMs = response.LatencyMs,
-            TotalTokens = response.Usage.TotalTokens ?? 0
+            PromptTokens = response.Usage.PromptTokens,
+            CompletionTokens = response.Usage.CompletionTokens,
+            TotalTokens = response.Usage.TotalTokens,
+            CostUsd = response.Usage.CostUsd
         };
 
         _logger.LogInformation(
@@ -160,7 +198,7 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
             result.Provider,
             result.Model,
             result.LatencyMs,
-            result.TotalTokens);
+            result.TotalTokens ?? 0);
 
         return result;
     }
@@ -212,7 +250,7 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
         };
     }
 
-    private static LlmGatewayRequest BuildGatewayRequest(ResolutionConflictSessionModelRequest request)
+    private LlmGatewayRequest BuildGatewayRequest(ResolutionConflictSessionModelRequest request)
     {
         var payload = new
         {
@@ -222,13 +260,15 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
             scope_item_key = request.ScopeItemKey,
             case_packet = request.CasePacket,
             operator_question = request.OperatorQuestion,
-            operator_input = request.OperatorInput
+            operator_input = request.OperatorInput,
+            tool_responses = request.ToolResponses,
+            allowed_tools = ConflictResolutionSessionToolNames.Allowed
         };
 
         return new LlmGatewayRequest
         {
             Modality = LlmModality.TextChat,
-            TaskKey = TaskKey,
+            TaskKey = _taskKey,
             ResponseMode = LlmResponseMode.JsonObject,
             StructuredOutputSchema = new LlmStructuredOutputSchema
             {
@@ -238,13 +278,13 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
             },
             Limits = new LlmExecutionLimits
             {
-                MaxTokens = 900,
+                MaxTokens = _maxOutputTokens,
                 Temperature = 0.1f,
-                TimeoutMs = 15000
+                TimeoutMs = _requestTimeoutMs
             },
             Trace = new LlmTraceContext
             {
-                PathKey = TaskKey,
+                PathKey = _taskKey,
                 ScopeTags = [request.ScopeKey, request.ScopeItemKey, request.Stage],
                 IsOptionalPath = true
             },
@@ -257,6 +297,8 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
                     Work only with provided bounded case data.
                     Ask at most one follow-up question.
                     If stage is final, do not ask follow-up question.
+                    If more context is needed, emit tool_requests only from allowed_tools.
+                    Every tool request must use request_scope exactly equal to scope_item_key.
                     If evidence remains insufficient, return needs_web_review or insufficient_context with explicit uncertainties.
                     Never propose actions outside approve/reject/defer/clarify.
                     """),
@@ -271,6 +313,7 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
     {
         public bool AskFollowUpQuestion { get; set; }
         public ModelQuestion? FollowUpQuestion { get; set; }
+        public List<ModelToolRequest>? ToolRequests { get; set; }
         public string ResolutionVerdict { get; set; } = "needs_web_review";
         public List<ModelClaim> ResolvedClaims { get; set; } = [];
         public List<ModelRejectedClaim> RejectedClaims { get; set; } = [];
@@ -287,6 +330,13 @@ public sealed class LlmConflictResolutionSessionModel : IConflictResolutionSessi
         public string? QuestionText { get; set; }
         public string? AnswerKind { get; set; }
         public string? Notes { get; set; }
+    }
+
+    private sealed class ModelToolRequest
+    {
+        public string? ToolName { get; set; }
+        public string? RequestScope { get; set; }
+        public List<string>? RequestItems { get; set; }
     }
 
     private sealed class ModelClaim

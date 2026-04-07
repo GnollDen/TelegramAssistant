@@ -41,6 +41,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly IResolutionReadService _resolutionReadService;
     private readonly IResolutionActionService _resolutionActionService;
     private readonly IConflictResolutionSessionModel _conflictResolutionSessionModel;
+    private readonly IMessageRepository _messageRepository;
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
@@ -51,6 +52,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IResolutionReadService resolutionReadService,
         IResolutionActionService resolutionActionService,
         IConflictResolutionSessionModel conflictResolutionSessionModel,
+        IMessageRepository messageRepository,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ITemporalPersonStateRepository temporalPersonStateRepository,
         IOptions<ConflictResolutionSessionSettings> conflictSessionSettings,
@@ -60,6 +62,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         _resolutionReadService = resolutionReadService;
         _resolutionActionService = resolutionActionService;
         _conflictResolutionSessionModel = conflictResolutionSessionModel;
+        _messageRepository = messageRepository;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _temporalPersonStateRepository = temporalPersonStateRepository;
         _conflictSessionSettings = conflictSessionSettings.Value ?? new ConflictResolutionSessionSettings();
@@ -2220,6 +2223,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 },
                 ct);
 
+            var toolExecution = await ExecuteConflictSessionToolsAsync(
+                modelResult.ToolRequests,
+                trackedPerson.ScopeKey,
+                scopeItemKey!,
+                casePacket,
+                ct);
+
             verdict = NormalizeConflictVerdict(
                 modelResult.FinalVerdict,
                 casePacket,
@@ -2228,6 +2238,14 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 carryForwardCaseId: null,
                 nowUtc);
             question = modelResult.AskFollowUpQuestion ? NormalizeQuestion(modelResult.FollowUpQuestion) : null;
+            if (question == null
+                && TryBuildQuestionFromToolRequest(
+                    toolExecution.AcceptedRequests,
+                    scopeItemKey!,
+                    out var toolQuestion))
+            {
+                question = toolQuestion;
+            }
             if (question != null)
             {
                 state = ResolutionConflictSessionStates.AwaitingOperatorAnswer;
@@ -2237,6 +2255,19 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             {
                 state = NormalizeVerdictState(verdict.ResolutionVerdict);
                 stateReason = "initial_verdict_ready";
+            }
+
+            if (!string.IsNullOrWhiteSpace(toolExecution.RejectionDecision))
+            {
+                verdict = BuildFallbackVerdict(
+                    toolExecution.RejectionDecision!,
+                    trackedPerson.ScopeKey,
+                    scopeItemKey!,
+                    carryForwardCaseId: null,
+                    nowUtc);
+                state = ResolutionConflictSessionStates.Fallback;
+                stateReason = toolExecution.RejectionDecision!;
+                question = null;
             }
 
             auditTrail.Add(new ResolutionInterpretationAuditEntry
@@ -2257,9 +2288,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 TotalTokens = modelResult.TotalTokens,
                 CostUsd = modelResult.CostUsd,
                 ContextManifest = BuildConflictSessionContextManifest(casePacket, trackedPerson.ScopeKey, trackedPerson.TrackedPersonId, scopeItemKey!),
-                RetrievalRequests = null,
-                RetrievalResults = null,
-                NormalizationStatus = "initial_verdict_ready",
+                RetrievalRequests = toolExecution.RequestManifests,
+                RetrievalResults = toolExecution.ResponseManifests,
+                NormalizationStatus = stateReason,
                 GateDecision = verdict.ResolutionVerdict,
                 ObservedAtUtc = nowUtc
             });
@@ -2467,6 +2498,12 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                     OperatorInput = operatorInput
                 },
                 ct);
+            var toolExecution = await ExecuteConflictSessionToolsAsync(
+                modelResult.ToolRequests,
+                sessionRow.ScopeKey,
+                sessionRow.ScopeItemKey,
+                casePacket,
+                ct);
             verdict = NormalizeConflictVerdict(
                 modelResult.FinalVerdict,
                 casePacket,
@@ -2474,6 +2511,16 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 sessionRow.ScopeItemKey,
                 carryForwardCaseId: null,
                 nowUtc);
+            if (!string.IsNullOrWhiteSpace(toolExecution.RejectionDecision))
+            {
+                verdict = BuildFallbackVerdict(
+                    toolExecution.RejectionDecision!,
+                    sessionRow.ScopeKey,
+                    sessionRow.ScopeItemKey,
+                    carryForwardCaseId: null,
+                    nowUtc);
+                sessionRow.StateReason = toolExecution.RejectionDecision;
+            }
             auditTrail.Add(new ResolutionInterpretationAuditEntry
             {
                 Step = "model_round",
@@ -2492,9 +2539,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 TotalTokens = modelResult.TotalTokens,
                 CostUsd = modelResult.CostUsd,
                 ContextManifest = BuildConflictSessionContextManifest(casePacket, sessionRow.ScopeKey, sessionRow.TrackedPersonId, sessionRow.ScopeItemKey),
-                RetrievalRequests = null,
-                RetrievalResults = null,
-                NormalizationStatus = "final_verdict_ready",
+                RetrievalRequests = toolExecution.RequestManifests,
+                RetrievalResults = toolExecution.ResponseManifests,
+                NormalizationStatus = string.IsNullOrWhiteSpace(toolExecution.RejectionDecision)
+                    ? "final_verdict_ready"
+                    : toolExecution.RejectionDecision,
                 GateDecision = verdict.ResolutionVerdict,
                 ObservedAtUtc = nowUtc
             });
@@ -2538,7 +2587,9 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         sessionRow.AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions);
         sessionRow.Revision += 1;
         sessionRow.Status = NormalizeVerdictState(verdict.ResolutionVerdict);
-        sessionRow.StateReason = "final_verdict_ready";
+        sessionRow.StateReason = string.Equals(sessionRow.Status, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal)
+            ? (NormalizeOptional(sessionRow.StateReason) ?? "final_model_error")
+            : "final_verdict_ready";
         sessionRow.UpdatedAtUtc = nowUtc;
         sessionRow.CompletedAtUtc = nowUtc;
         await db.SaveChangesAsync(ct);
@@ -3855,6 +3906,244 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private async Task<ConflictSessionToolExecutionOutcome> ExecuteConflictSessionToolsAsync(
+        IReadOnlyCollection<ResolutionConflictSessionToolRequest>? requestedTools,
+        string scopeKey,
+        string scopeItemKey,
+        ResolutionConflictSessionCasePacket casePacket,
+        CancellationToken ct)
+    {
+        var outcome = new ConflictSessionToolExecutionOutcome();
+        if (requestedTools == null || requestedTools.Count == 0)
+        {
+            return outcome;
+        }
+
+        foreach (var request in requestedTools.Take(ConflictResolutionSessionToolContract.MaxToolRequestsPerRound))
+        {
+            if (!ConflictResolutionSessionToolContract.TryNormalize(
+                    request,
+                    scopeItemKey,
+                    out var normalized,
+                    out var decision))
+            {
+                var rejectedRequestManifest = new ResolutionConflictSessionToolRequestManifest
+                {
+                    ToolName = ConflictResolutionSessionToolNames.Normalize(request?.ToolName),
+                    RequestScope = NormalizeOptional(request?.RequestScope) ?? string.Empty,
+                    RequestItems = (request?.RequestItems ?? [])
+                        .Where(item => !string.IsNullOrWhiteSpace(item))
+                        .Select(item => item.Trim())
+                        .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+                        .ToList()
+                };
+                outcome.RequestManifests.Add(rejectedRequestManifest);
+                outcome.ResponseManifests.Add(new ResolutionConflictSessionToolResponseManifest
+                {
+                    ToolName = rejectedRequestManifest.ToolName,
+                    RequestScope = rejectedRequestManifest.RequestScope,
+                    RequestItems = [.. rejectedRequestManifest.RequestItems],
+                    Decision = decision,
+                    ResponseRefs = []
+                });
+                outcome.RejectionDecision ??= decision;
+                continue;
+            }
+
+            var refs = await ExecuteConflictSessionToolAsync(
+                normalized,
+                scopeKey,
+                casePacket,
+                ct);
+            outcome.AcceptedRequests.Add(normalized);
+            outcome.RequestManifests.Add(new ResolutionConflictSessionToolRequestManifest
+            {
+                ToolName = normalized.ToolName,
+                RequestScope = normalized.RequestScope,
+                RequestItems = [.. normalized.RequestItems]
+            });
+            outcome.ResponseManifests.Add(new ResolutionConflictSessionToolResponseManifest
+            {
+                ToolName = normalized.ToolName,
+                RequestScope = normalized.RequestScope,
+                RequestItems = [.. normalized.RequestItems],
+                Decision = ConflictResolutionSessionToolDecisions.Accepted,
+                ResponseRefs = refs
+            });
+        }
+
+        return outcome;
+    }
+
+    private async Task<List<string>> ExecuteConflictSessionToolAsync(
+        ResolutionConflictSessionToolRequest request,
+        string scopeKey,
+        ResolutionConflictSessionCasePacket casePacket,
+        CancellationToken ct)
+    {
+        switch (request.ToolName)
+        {
+            case ConflictResolutionSessionToolNames.GetEvidenceRefs:
+                return (casePacket.Evidence ?? [])
+                    .Select(evidence => NormalizeOptional(evidence.SourceRef) ?? $"evidence:{evidence.EvidenceItemId:D}")
+                    .Where(refValue => !string.IsNullOrWhiteSpace(refValue))
+                    .Distinct(StringComparer.Ordinal)
+                    .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+                    .ToList();
+            case ConflictResolutionSessionToolNames.GetDurableContext:
+                return (casePacket.DurableContextSummaries ?? [])
+                    .Where(summary => !string.IsNullOrWhiteSpace(summary))
+                    .Select(summary => summary.Trim())
+                    .Distinct(StringComparer.Ordinal)
+                    .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+                    .ToList();
+            case ConflictResolutionSessionToolNames.GetNeighborMessages:
+                return await ResolveNeighborMessageRefsAsync(scopeKey, request, casePacket, ct);
+            case ConflictResolutionSessionToolNames.AskOperatorQuestion:
+                return (request.RequestItems ?? [])
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Select(item => item.Trim())
+                    .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+                    .ToList();
+            default:
+                return [];
+        }
+    }
+
+    private async Task<List<string>> ResolveNeighborMessageRefsAsync(
+        string scopeKey,
+        ResolutionConflictSessionToolRequest request,
+        ResolutionConflictSessionCasePacket casePacket,
+        CancellationToken ct)
+    {
+        if (!TryParseScopeChatId(scopeKey, out var chatId))
+        {
+            return [];
+        }
+
+        var centerRef = request.RequestItems.FirstOrDefault(item => TryParseChatMessageRef(item, out _, out _));
+        if (string.IsNullOrWhiteSpace(centerRef))
+        {
+            centerRef = (casePacket.Evidence ?? [])
+                .Select(evidence => evidence.SourceRef)
+                .FirstOrDefault(item => TryParseChatMessageRef(item, out _, out _));
+        }
+
+        if (!TryParseChatMessageRef(centerRef, out var centerChatId, out var centerTelegramMessageId))
+        {
+            return [];
+        }
+
+        if (centerChatId != chatId)
+        {
+            return [];
+        }
+
+        var centerLookup = await _messageRepository.GetByTelegramMessageIdsAsync(
+            chatId,
+            MessageSource.Realtime,
+            [centerTelegramMessageId],
+            ct);
+        if (!centerLookup.TryGetValue(centerTelegramMessageId, out var centerMessage))
+        {
+            return [];
+        }
+
+        var window = await _messageRepository.GetChatWindowAroundAsync(
+            chatId,
+            centerMessage.Id,
+            beforeCount: 2,
+            afterCount: 2,
+            ct);
+        return window
+            .Where(message => message.ChatId == chatId)
+            .Select(message => $"{message.ChatId}:{message.TelegramMessageId}")
+            .Distinct(StringComparer.Ordinal)
+            .Take(ConflictResolutionSessionToolContract.MaxRequestItemsPerTool)
+            .ToList();
+    }
+
+    private static bool TryBuildQuestionFromToolRequest(
+        IReadOnlyCollection<ResolutionConflictSessionToolRequest> acceptedRequests,
+        string scopeItemKey,
+        out ResolutionConflictSessionQuestion? question)
+    {
+        question = null;
+        var questionRequest = acceptedRequests
+            .FirstOrDefault(request => string.Equals(
+                request.ToolName,
+                ConflictResolutionSessionToolNames.AskOperatorQuestion,
+                StringComparison.Ordinal));
+        if (questionRequest == null)
+        {
+            return false;
+        }
+
+        var questionText = questionRequest.RequestItems.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item));
+        if (string.IsNullOrWhiteSpace(questionText))
+        {
+            return false;
+        }
+
+        var answerKind = questionRequest.RequestItems.Skip(1).FirstOrDefault(item => !string.IsNullOrWhiteSpace(item));
+        var notes = questionRequest.RequestItems.Skip(2).FirstOrDefault(item => !string.IsNullOrWhiteSpace(item));
+        question = new ResolutionConflictSessionQuestion
+        {
+            QuestionKey = $"tool:{scopeItemKey}",
+            QuestionText = questionText.Trim(),
+            AnswerKind = string.IsNullOrWhiteSpace(answerKind) ? "free_text" : answerKind.Trim(),
+            Notes = NormalizeOptional(notes)
+        };
+        return true;
+    }
+
+    private static bool TryParseScopeChatId(string scopeKey, out long chatId)
+    {
+        chatId = 0;
+        if (string.IsNullOrWhiteSpace(scopeKey))
+        {
+            return false;
+        }
+
+        var normalized = scopeKey.Trim();
+        if (!normalized.StartsWith("chat:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return long.TryParse(normalized["chat:".Length..], out chatId) && chatId > 0;
+    }
+
+    private static bool TryParseChatMessageRef(string? sourceRef, out long chatId, out long telegramMessageId)
+    {
+        chatId = 0;
+        telegramMessageId = 0;
+        var normalized = NormalizeOptional(sourceRef);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        var parts = normalized.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2)
+        {
+            return false;
+        }
+
+        return long.TryParse(parts[0], out chatId)
+            && chatId > 0
+            && long.TryParse(parts[1], out telegramMessageId)
+            && telegramMessageId > 0;
+    }
+
+    private sealed class ConflictSessionToolExecutionOutcome
+    {
+        public List<ResolutionConflictSessionToolRequest> AcceptedRequests { get; } = [];
+        public List<ResolutionConflictSessionToolRequestManifest> RequestManifests { get; } = [];
+        public List<ResolutionConflictSessionToolResponseManifest> ResponseManifests { get; } = [];
+        public string? RejectionDecision { get; set; }
     }
 
     private static string? ValidateConflictSessionStartRequest(

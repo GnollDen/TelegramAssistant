@@ -342,6 +342,12 @@ public class ResolutionInterpretationAuditEntry
     [JsonPropertyName("model")]
     public string? Model { get; set; }
 
+    [JsonPropertyName("model_id")]
+    public string? ModelId { get; set; }
+
+    [JsonPropertyName("model_version")]
+    public string? ModelVersion { get; set; }
+
     [JsonPropertyName("request_id")]
     public string? RequestId { get; set; }
 
@@ -359,6 +365,21 @@ public class ResolutionInterpretationAuditEntry
 
     [JsonPropertyName("cost_usd")]
     public decimal? CostUsd { get; set; }
+
+    [JsonPropertyName("context_manifest")]
+    public object? ContextManifest { get; set; }
+
+    [JsonPropertyName("retrieval_requests")]
+    public object? RetrievalRequests { get; set; }
+
+    [JsonPropertyName("retrieval_results")]
+    public object? RetrievalResults { get; set; }
+
+    [JsonPropertyName("normalization_status")]
+    public string? NormalizationStatus { get; set; }
+
+    [JsonPropertyName("gate_decision")]
+    public string? GateDecision { get; set; }
 
     [JsonPropertyName("evidence_refs")]
     public List<string> EvidenceRefs { get; set; } = [];
@@ -414,18 +435,24 @@ public class ResolutionConflictSessionModelRequest
     public ResolutionConflictSessionCasePacket CasePacket { get; set; } = new();
     public ResolutionConflictSessionQuestion? OperatorQuestion { get; set; }
     public ResolutionConflictSessionOperatorInput? OperatorInput { get; set; }
+    public List<ResolutionConflictSessionToolResponseManifest> ToolResponses { get; set; } = [];
 }
 
 public class ResolutionConflictSessionModelResult
 {
     public bool AskFollowUpQuestion { get; set; }
     public ResolutionConflictSessionQuestion? FollowUpQuestion { get; set; }
+    public List<ResolutionConflictSessionToolRequest> ToolRequests { get; set; } = [];
     public ResolutionConflictSessionVerdict FinalVerdict { get; set; } = new();
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
+    public string? ModelVersion { get; set; }
     public string? RequestId { get; set; }
     public int LatencyMs { get; set; }
-    public int TotalTokens { get; set; }
+    public int? PromptTokens { get; set; }
+    public int? CompletionTokens { get; set; }
+    public int? TotalTokens { get; set; }
+    public decimal? CostUsd { get; set; }
 }
 
 public class ResolutionDetailNote

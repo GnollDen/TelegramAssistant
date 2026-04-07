@@ -186,6 +186,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     Ensure(finalEnvelope.ConflictSession.AuditTrail.Count > 0, "Conflict-session audit trail is empty.");
                     EnsureAuditContract(finalEnvelope.ConflictSession.AuditTrail);
                     EnsureStructuredVerdictProofRows(report, finalEnvelope.ConflictSession.FinalVerdict);
+                    EnsureToolContractProofRows(report, finalEnvelope.ConflictSession.ScopeItemKey);
 
                     if (!sessionContractSatisfied)
                     {
@@ -277,7 +278,8 @@ public static class AiConflictResolutionSessionV1ProofRunner
             report.Passed = report.StartAccepted
                 && report.FinalVerdict != null
                 && report.RequiredAuditKeysPresent
-                && report.StructuredVerdictProofRows.All(x => x.Passed);
+                && report.StructuredVerdictProofRows.All(x => x.Passed)
+                && report.ToolProofRows.All(x => x.Passed);
         }
         catch (Exception ex)
         {
@@ -457,6 +459,71 @@ public static class AiConflictResolutionSessionV1ProofRunner
             CreatedAtUtc = source.CreatedAtUtc
         };
     }
+
+    private static void EnsureToolContractProofRows(
+        AiConflictResolutionSessionV1ProofReport report,
+        string scopeItemKey)
+    {
+        report.ToolProofRows =
+        [
+            BuildToolProofRow(
+                caseId: "allowed_tool_get_evidence_refs_accepted",
+                expectedDecision: ConflictResolutionSessionToolDecisions.Accepted,
+                request: new ResolutionConflictSessionToolRequest
+                {
+                    ToolName = ConflictResolutionSessionToolNames.GetEvidenceRefs,
+                    RequestScope = scopeItemKey,
+                    RequestItems = []
+                },
+                scopeItemKey: scopeItemKey),
+            BuildToolProofRow(
+                caseId: "tool_not_allowed_rejected",
+                expectedDecision: ConflictResolutionSessionToolDecisions.ToolNotAllowed,
+                request: new ResolutionConflictSessionToolRequest
+                {
+                    ToolName = "raw_sql_tool",
+                    RequestScope = scopeItemKey,
+                    RequestItems = ["select * from messages"]
+                },
+                scopeItemKey: scopeItemKey),
+            BuildToolProofRow(
+                caseId: "cross_scope_tool_request_rejected",
+                expectedDecision: ConflictResolutionSessionToolDecisions.CrossScopeToolRequestRejected,
+                request: new ResolutionConflictSessionToolRequest
+                {
+                    ToolName = ConflictResolutionSessionToolNames.GetNeighborMessages,
+                    RequestScope = "scope:other",
+                    RequestItems = ["885574984:293950"]
+                },
+                scopeItemKey: scopeItemKey)
+        ];
+
+        if (report.ToolProofRows.Any(x => !x.Passed))
+        {
+            throw new InvalidOperationException("Conflict-session tool contract proof rows include failures.");
+        }
+    }
+
+    private static AiConflictResolutionToolProofRow BuildToolProofRow(
+        string caseId,
+        string expectedDecision,
+        ResolutionConflictSessionToolRequest request,
+        string scopeItemKey)
+    {
+        var accepted = ConflictResolutionSessionToolContract.TryNormalize(
+            request,
+            scopeItemKey,
+            out _,
+            out var decision);
+        var actualDecision = accepted ? ConflictResolutionSessionToolDecisions.Accepted : decision;
+        return new AiConflictResolutionToolProofRow
+        {
+            CaseId = caseId,
+            ExpectedDecision = expectedDecision,
+            ActualDecision = actualDecision,
+            Passed = string.Equals(expectedDecision, actualDecision, StringComparison.Ordinal)
+        };
+    }
 }
 
 public sealed class AiConflictResolutionSessionV1ProofReport
@@ -494,6 +561,7 @@ public sealed class AiConflictResolutionSessionV1ProofReport
     public bool DeterministicApplyPathConfirmed { get; set; }
     public string? ApplyPathNonBlockingFailureReason { get; set; }
     public List<AiConflictResolutionStructuredVerdictProofRow> StructuredVerdictProofRows { get; set; } = [];
+    public List<AiConflictResolutionToolProofRow> ToolProofRows { get; set; } = [];
     public List<AiConflictResolutionSessionV1CandidateAttempt> CandidateAttempts { get; set; } = [];
     public bool Passed { get; set; }
     public string? FatalError { get; set; }
@@ -517,5 +585,13 @@ public sealed class AiConflictResolutionStructuredVerdictProofRow
     public string ExpectedDecision { get; set; } = string.Empty;
     public string ActualDecision { get; set; } = string.Empty;
     public string? Reason { get; set; }
+    public bool Passed { get; set; }
+}
+
+public sealed class AiConflictResolutionToolProofRow
+{
+    public string CaseId { get; set; } = string.Empty;
+    public string ExpectedDecision { get; set; } = string.Empty;
+    public string ActualDecision { get; set; } = string.Empty;
     public bool Passed { get; set; }
 }
