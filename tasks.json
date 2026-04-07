@@ -821,8 +821,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-014B completed: extended --current-world-approximation-proof with deterministic web section contract checks for Current World tab markers, bounded API route wiring (`/api/operator/person-workspace/current-world/query`), honesty-state copy for publishable/unresolved/insufficient-evidence outcomes, and explicit inactive+dropped-out render copy. Proof artifact now includes `web_proof_rows` linked to current-world case ids, and proof pass requires both API case rows and web proof rows to pass. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --current-world-approximation-proof; artifact: src/TgAssistant.Host/artifacts/phase-b/current-world-approximation-proof.json.",
       "dependencies": [
         "PHB-014A"
       ]

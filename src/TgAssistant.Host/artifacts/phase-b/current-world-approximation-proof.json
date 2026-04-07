@@ -1,14 +1,14 @@
 {
-  "generated_at_utc": "2026-04-07T15:16:58.0000158Z",
+  "generated_at_utc": "2026-04-07T15:23:04.4612801Z",
   "output_path": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/phase-b/current-world-approximation-proof.json",
   "passed": true,
   "fatal_error": null,
   "cases": [
     {
       "case_id": "publishable",
-      "scope_key": "proof:phb_014a:publishable:20260407151658116:1069121a63b64ec9bdf6d95ede359744",
-      "tracked_person_id": "1cdc0e67-cb78-4a93-bb85-9ed62738b472",
-      "as_of_utc": "2026-04-07T15:17:00.1669639Z",
+      "scope_key": "proof:phb_014a:publishable:20260407152304556:258be1dafbd24a41bb7459def26b95cc",
+      "tracked_person_id": "302d9606-4453-4294-b589-3826bc0144dd",
+      "as_of_utc": "2026-04-07T15:23:06.8774435Z",
       "expected_http_status": 200,
       "actual_http_status": 200,
       "expected_publication_state": "publishable",
@@ -24,9 +24,9 @@
     },
     {
       "case_id": "disagreement_unresolved",
-      "scope_key": "proof:phb_014a:disagreement:20260407151700377:a971ce89ca6b41eaadefda1e3e21ed85",
-      "tracked_person_id": "1e2f3aba-3105-414b-8e9c-cdadd7e5d72b",
-      "as_of_utc": "2026-04-07T15:17:00.5064065Z",
+      "scope_key": "proof:phb_014a:disagreement:20260407152307091:57d006d9627d4afeb67f006548af008d",
+      "tracked_person_id": "ed59a6f2-f5ee-45b5-91f4-473223a80f35",
+      "as_of_utc": "2026-04-07T15:23:07.2294122Z",
       "expected_http_status": 200,
       "actual_http_status": 200,
       "expected_publication_state": "unresolved",
@@ -42,9 +42,9 @@
     },
     {
       "case_id": "insufficient_evidence",
-      "scope_key": "proof:phb_014a:insufficient:20260407151700625:5c44dfb70c5641e79a5b7b4bf4de8d9f",
-      "tracked_person_id": "631172f4-97f7-40f5-82c4-9b8b2f788fef",
-      "as_of_utc": "2026-04-07T15:17:00.6408492Z",
+      "scope_key": "proof:phb_014a:insufficient:20260407152307346:b028a5872c9e4dfe9ed98efe99cde527",
+      "tracked_person_id": "e85decaf-0095-4450-a6c8-73bfa4e70246",
+      "as_of_utc": "2026-04-07T15:23:07.3658223Z",
       "expected_http_status": 200,
       "actual_http_status": 200,
       "expected_publication_state": "insufficient_evidence",
@@ -60,9 +60,9 @@
     },
     {
       "case_id": "inactive_or_dropped_out_person_coverage",
-      "scope_key": "proof:phb_014a:inactive:20260407151700658:f53fe8e3834c41be8a2110893131c3be",
-      "tracked_person_id": "3422a56a-8351-454e-bcfe-f7fb7f13984a",
-      "as_of_utc": "2026-04-07T15:17:00.6831263Z",
+      "scope_key": "proof:phb_014a:inactive:20260407152307393:9294cedc68134c60a4807b4a1a45addc",
+      "tracked_person_id": "6ad771de-7cf9-4908-98df-2f84bc603726",
+      "as_of_utc": "2026-04-07T15:23:07.4178243Z",
       "expected_http_status": 200,
       "actual_http_status": 200,
       "expected_publication_state": "publishable",
@@ -78,9 +78,9 @@
     },
     {
       "case_id": "unauth_or_cross_scope_rejected",
-      "scope_key": "proof:phb_014a:cross_scope:20260407151700702:cf530a0da2334a56828bd3cb2e30f7fa",
-      "tracked_person_id": "64df4f40-a267-47a3-b5c1-a83a82ae45fd",
-      "as_of_utc": "2026-04-07T15:17:00.720469Z",
+      "scope_key": "proof:phb_014a:cross_scope:20260407152307450:4d27e6d03621401497c18597dec7863d",
+      "tracked_person_id": "8ca88f84-c260-4cd6-8bfd-01b4fc53abf6",
+      "as_of_utc": "2026-04-07T15:23:07.4673003Z",
       "expected_http_status": 403,
       "actual_http_status": 403,
       "expected_publication_state": "session_active_tracked_person_mismatch",
@@ -92,6 +92,44 @@
       "active_condition_count": 0,
       "recent_change_count": 0,
       "reason": "current_world_query_rejects_cross_scope_session_mismatch",
+      "passed": true
+    }
+  ],
+  "web_proof_rows": [
+    {
+      "case_id": "publishable",
+      "check_id": "current_world_tab_marker_present",
+      "reason": "web_shell_exposes_current_world_tab_and_content_region",
+      "passed": true
+    },
+    {
+      "case_id": "publishable",
+      "check_id": "current_world_api_route_wired",
+      "reason": "web_shell_calls_bounded_current_world_api_route",
+      "passed": true
+    },
+    {
+      "case_id": "publishable",
+      "check_id": "current_world_publishable_honesty_copy",
+      "reason": "web_shell_surfaces_publishable_state_copy_without_claiming_semantic_ownership",
+      "passed": true
+    },
+    {
+      "case_id": "disagreement_unresolved",
+      "check_id": "current_world_unresolved_honesty_copy",
+      "reason": "web_shell_surfaces_unresolved_disagreement_without_winner_selection",
+      "passed": true
+    },
+    {
+      "case_id": "insufficient_evidence",
+      "check_id": "current_world_insufficient_evidence_honesty_copy",
+      "reason": "web_shell_surfaces_insufficient_evidence_honesty_state",
+      "passed": true
+    },
+    {
+      "case_id": "inactive_or_dropped_out_person_coverage",
+      "check_id": "current_world_inactive_dropped_out_render_contract",
+      "reason": "web_shell_has_explicit_inactive_and_dropped_out_render_copy",
       "passed": true
     }
   ]

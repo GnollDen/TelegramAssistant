@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 using TgAssistant.Host.OperatorApi;
+using TgAssistant.Host.OperatorWeb;
 using TgAssistant.Infrastructure.Database.Ef;
 
 namespace TgAssistant.Host.Launch;
@@ -42,8 +43,9 @@ public static class CurrentWorldApproximationProofRunner
             await RunInsufficientEvidenceCaseAsync(report, appService, dbFactory, ct);
             await RunInactiveDroppedOutCoverageCaseAsync(report, appService, temporalRepository, dbFactory, ct);
             await RunCrossScopeRejectedCaseAsync(report, appService, dbFactory, ct);
+            RunWebContractProofRows(report);
 
-            report.Passed = report.Cases.All(x => x.Passed);
+            report.Passed = report.Cases.All(x => x.Passed) && report.WebProofRows.All(x => x.Passed);
         }
         catch (Exception ex)
         {
@@ -369,6 +371,78 @@ public static class CurrentWorldApproximationProofRunner
     private static int ResolveHttpStatus(bool accepted, string? failureReason)
         => accepted ? StatusCodes.Status200OK : OperatorApiEndpointExtensions.MapFailureStatusCodeForTesting(failureReason);
 
+    private static void RunWebContractProofRows(CurrentWorldApproximationProofReport report)
+    {
+        var html = typeof(OperatorWebEndpointExtensions)
+            .GetField("OperatorPersonWorkspaceShellHtml", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?.GetRawConstantValue() as string;
+
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("Current-world approximation web proof failed: person-workspace shell HTML constant not found.");
+        }
+
+        AddWebProofRow(
+            report,
+            caseId: "publishable",
+            checkId: "current_world_tab_marker_present",
+            reason: "web_shell_exposes_current_world_tab_and_content_region",
+            passed: html.Contains("id=\"tab-current-world\"", StringComparison.Ordinal)
+                && html.Contains("id=\"current-world-content\"", StringComparison.Ordinal));
+
+        AddWebProofRow(
+            report,
+            caseId: "publishable",
+            checkId: "current_world_api_route_wired",
+            reason: "web_shell_calls_bounded_current_world_api_route",
+            passed: html.Contains("operatorPostJson(\"/api/operator/person-workspace/current-world/query\"", StringComparison.Ordinal));
+
+        AddWebProofRow(
+            report,
+            caseId: "publishable",
+            checkId: "current_world_publishable_honesty_copy",
+            reason: "web_shell_surfaces_publishable_state_copy_without_claiming_semantic_ownership",
+            passed: html.Contains("Current-world output is publishable and composed from bounded temporal/pair/timeline read surfaces.", StringComparison.Ordinal));
+
+        AddWebProofRow(
+            report,
+            caseId: "disagreement_unresolved",
+            checkId: "current_world_unresolved_honesty_copy",
+            reason: "web_shell_surfaces_unresolved_disagreement_without_winner_selection",
+            passed: html.Contains("Current-world output is unresolved due to cross-surface disagreement; no semantic winner is selected.", StringComparison.Ordinal));
+
+        AddWebProofRow(
+            report,
+            caseId: "insufficient_evidence",
+            checkId: "current_world_insufficient_evidence_honesty_copy",
+            reason: "web_shell_surfaces_insufficient_evidence_honesty_state",
+            passed: html.Contains("Current-world output is explicitly insufficient_evidence; publishable content is intentionally withheld.", StringComparison.Ordinal));
+
+        AddWebProofRow(
+            report,
+            caseId: "inactive_or_dropped_out_person_coverage",
+            checkId: "current_world_inactive_dropped_out_render_contract",
+            reason: "web_shell_has_explicit_inactive_and_dropped_out_render_copy",
+            passed: html.Contains("<h3>Inactive Person:", StringComparison.Ordinal)
+                && html.Contains("<p><strong>Dropped out:</strong>", StringComparison.Ordinal));
+    }
+
+    private static void AddWebProofRow(
+        CurrentWorldApproximationProofReport report,
+        string caseId,
+        string checkId,
+        string reason,
+        bool passed)
+    {
+        report.WebProofRows.Add(new CurrentWorldApproximationWebProofRow
+        {
+            CaseId = caseId,
+            CheckId = checkId,
+            Reason = reason,
+            Passed = passed
+        });
+    }
+
     private static string BuildScopeKey(string caseKey)
         => $"proof:phb_014a:{caseKey}:{DateTime.UtcNow:yyyyMMddHHmmssfff}:{Guid.NewGuid():N}";
 
@@ -575,6 +649,9 @@ public sealed class CurrentWorldApproximationProofReport
 
     [JsonPropertyName("cases")]
     public List<CurrentWorldApproximationProofCase> Cases { get; set; } = [];
+
+    [JsonPropertyName("web_proof_rows")]
+    public List<CurrentWorldApproximationWebProofRow> WebProofRows { get; set; } = [];
 }
 
 public sealed class CurrentWorldApproximationProofCase
@@ -620,6 +697,21 @@ public sealed class CurrentWorldApproximationProofCase
 
     [JsonPropertyName("recent_change_count")]
     public int RecentChangeCount { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = string.Empty;
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
+}
+
+public sealed class CurrentWorldApproximationWebProofRow
+{
+    [JsonPropertyName("case_id")]
+    public string CaseId { get; set; } = string.Empty;
+
+    [JsonPropertyName("check_id")]
+    public string CheckId { get; set; } = string.Empty;
 
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = string.Empty;
