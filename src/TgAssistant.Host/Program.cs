@@ -216,6 +216,10 @@ try
     var personHistoryProofOutput = personHistoryProofOutputArg is null
         ? null
         : personHistoryProofOutputArg["--person-history-proof-output=".Length..];
+    var currentWorldApproximationProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--current-world-approximation-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var currentWorldApproximationProofOutput = currentWorldApproximationProofOutputArg is null
+        ? null
+        : currentWorldApproximationProofOutputArg["--current-world-approximation-proof-output=".Length..];
     var iterativeReintegrationProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--iterative-reintegration-proof-output=", StringComparison.OrdinalIgnoreCase));
     var iterativeReintegrationProofOutput = iterativeReintegrationProofOutputArg is null
         ? null
@@ -255,6 +259,7 @@ try
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runTemporalPersonStateProof = args.Any(arg => string.Equals(arg, "--temporal-person-state-proof", StringComparison.OrdinalIgnoreCase));
     var runPersonHistoryProof = args.Any(arg => string.Equals(arg, "--person-history-proof", StringComparison.OrdinalIgnoreCase));
+    var runCurrentWorldApproximationProof = args.Any(arg => string.Equals(arg, "--current-world-approximation-proof", StringComparison.OrdinalIgnoreCase));
     var runIterativeReintegrationProof = args.Any(arg => string.Equals(arg, "--iterative-reintegration-proof", StringComparison.OrdinalIgnoreCase));
     var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
@@ -351,6 +356,7 @@ try
         "--resolution-interpretation-loop-v1-validate",
         "--temporal-person-state-proof",
         "--person-history-proof",
+        "--current-world-approximation-proof",
         "--stage-semantic-contract-proof",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -798,6 +804,20 @@ try
                 report.Passed,
                 report.Cases.Count,
                 report.ScopeKey);
+            return;
+        }
+
+        if (runCurrentWorldApproximationProof)
+        {
+            var report = await CurrentWorldApproximationProofRunner.RunAsync(
+                host.Services,
+                currentWorldApproximationProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Current-world approximation proof requested via --current-world-approximation-proof. output={OutputPath}, passed={Passed}, case_count={CaseCount}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.Cases.Count);
             return;
         }
 

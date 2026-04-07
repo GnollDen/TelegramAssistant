@@ -473,6 +473,10 @@ public interface IOperatorResolutionApplicationService
         OperatorPersonWorkspaceHistoryQueryRequest request,
         CancellationToken ct = default);
 
+    Task<OperatorPersonWorkspaceCurrentWorldQueryResult> QueryPersonWorkspaceCurrentWorldAsync(
+        OperatorPersonWorkspaceCurrentWorldQueryRequest request,
+        CancellationToken ct = default);
+
     Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
         OperatorResolutionQueueQueryRequest request,
         CancellationToken ct = default);

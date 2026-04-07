@@ -964,7 +964,7 @@ public static class OperatorWebEndpointExtensions
     </section>
     <section class="panel">
       <h2>Sections</h2>
-      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, Revisions, and Resolution are live from bounded operator contracts.</p>
+      <p class="muted">Person-scoped tab shell is stable; Summary, Dossier, Profile, Pair Dynamics, Timeline, Evidence, Revisions, Resolution, and Current World are live from bounded operator contracts.</p>
       <div id="tabs" class="tabs"></div>
     </section>
     <section id="tab-summary" class="panel tab-panel active">
@@ -999,6 +999,10 @@ public static class OperatorWebEndpointExtensions
       <h2>Resolution</h2>
       <div id="resolution-content" class="state empty">Resolution drilldown is waiting for workspace data.</div>
     </section>
+    <section id="tab-current-world" class="panel tab-panel">
+      <h2>Current World</h2>
+      <div id="current-world-content" class="state empty">Current-world approximation is waiting for workspace data.</div>
+    </section>
     <section id="tab-placeholder" class="panel tab-panel">
       <h2 id="placeholder-title">Section</h2>
       <p id="placeholder-text" class="muted">This section is pending in later OPINT-008 slices.</p>
@@ -1020,6 +1024,7 @@ public static class OperatorWebEndpointExtensions
     const evidenceContentNode = document.getElementById("evidence-content");
     const revisionsContentNode = document.getElementById("revisions-content");
     const resolutionContentNode = document.getElementById("resolution-content");
+    const currentWorldContentNode = document.getElementById("current-world-content");
     const summaryPanel = document.getElementById("tab-summary");
     const dossierPanel = document.getElementById("tab-dossier");
     const profilePanel = document.getElementById("tab-profile");
@@ -1028,6 +1033,7 @@ public static class OperatorWebEndpointExtensions
     const evidencePanel = document.getElementById("tab-evidence");
     const revisionsPanel = document.getElementById("tab-revisions");
     const resolutionPanel = document.getElementById("tab-resolution");
+    const currentWorldPanel = document.getElementById("tab-current-world");
     const placeholderPanel = document.getElementById("tab-placeholder");
     const placeholderTitleNode = document.getElementById("placeholder-title");
     const placeholderTextNode = document.getElementById("placeholder-text");
@@ -1044,6 +1050,7 @@ public static class OperatorWebEndpointExtensions
       evidence: null,
       revisions: null,
       resolution: null,
+      currentWorld: null,
       activeSection: "summary"
     };
 
@@ -2113,6 +2120,131 @@ public static class OperatorWebEndpointExtensions
       resolutionContentNode.appendChild(updatedNote);
     }
 
+    function renderCurrentWorldSection() {
+      const currentWorld = state.currentWorld;
+      if (!currentWorld) {
+        currentWorldContentNode.className = "state empty";
+        currentWorldContentNode.textContent = "Current-world approximation data is unavailable.";
+        return;
+      }
+
+      const snapshot = currentWorld.snapshot || {};
+      const activeRows = Array.isArray(snapshot.activePersonRows) ? snapshot.activePersonRows : [];
+      const inactiveRows = Array.isArray(snapshot.inactivePersonRows) ? snapshot.inactivePersonRows : [];
+      const relationRows = Array.isArray(snapshot.relationshipStateRows) ? snapshot.relationshipStateRows : [];
+      const conditionRows = Array.isArray(snapshot.activeConditionRows) ? snapshot.activeConditionRows : [];
+      const changeRows = Array.isArray(snapshot.recentChangeRows) ? snapshot.recentChangeRows : [];
+      const uncertaintyRefs = Array.isArray(currentWorld.uncertaintyRefs) ? currentWorld.uncertaintyRefs : [];
+      const publicationState = currentWorld.publicationState || "insufficient_evidence";
+      const isDegraded = publicationState === "insufficient_evidence" || publicationState === "unresolved";
+
+      currentWorldContentNode.className = isDegraded ? "state degraded" : "";
+      currentWorldContentNode.innerHTML = "";
+
+      const metrics = document.createElement("div");
+      metrics.className = "metrics";
+      [
+        { label: "Publication", value: titleize(publicationState) },
+        { label: "Read State", value: titleize(currentWorld.readState || "unknown") },
+        { label: "Active Persons", value: String(currentWorld.activePersonCount || 0) },
+        { label: "Inactive Persons", value: String(currentWorld.inactivePersonCount || 0) },
+        { label: "Dropped Out", value: String(currentWorld.droppedOutPersonCount || 0) },
+        { label: "Active Relations", value: String(currentWorld.activeRelationCount || 0) },
+        { label: "Active Conditions", value: String(currentWorld.activeConditionCount || 0) },
+        { label: "Recent Changes", value: String(currentWorld.recentChangeCount || 0) }
+      ].forEach(function(metric) {
+        const card = document.createElement("article");
+        card.className = "metric";
+        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        metrics.appendChild(card);
+      });
+      currentWorldContentNode.appendChild(metrics);
+
+      if (uncertaintyRefs.length > 0) {
+        const uncertaintyBlock = document.createElement("div");
+        uncertaintyBlock.className = "chip-list";
+        uncertaintyRefs.forEach(function(ref) {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = ref;
+          uncertaintyBlock.appendChild(chip);
+        });
+        currentWorldContentNode.appendChild(uncertaintyBlock);
+      }
+
+      const rowGrid = document.createElement("div");
+      rowGrid.className = "card-grid";
+      activeRows.forEach(function(row) {
+        const card = document.createElement("article");
+        card.className = "family-card";
+        card.innerHTML =
+          "<h3>Active Person: " + (row.subjectRef || "unknown") + "</h3>" +
+          "<p><strong>Status:</strong> " + titleize(row.stateLabel || "unknown") + "</p>" +
+          "<p><strong>Window:</strong> " + formatUtc(row.validFromUtc) + " -> " + formatUtc(row.validToUtc) + "</p>" +
+          "<p><strong>Evidence refs:</strong> " + ((row.evidenceRefs || []).length || 0) + " | <strong>Source refs:</strong> " + ((row.sourceRefIds || []).length || 0) + "</p>";
+        rowGrid.appendChild(card);
+      });
+      inactiveRows.forEach(function(row) {
+        const card = document.createElement("article");
+        card.className = "family-card";
+        card.innerHTML =
+          "<h3>Inactive Person: " + (row.subjectRef || "unknown") + "</h3>" +
+          "<p><strong>Reason:</strong> " + titleize(row.inactiveReason || "unknown") + "</p>" +
+          "<p><strong>Dropped out:</strong> " + (row.droppedOutFlag ? "yes" : "no") + " | <strong>Last seen:</strong> " + formatUtc(row.lastSeenUtc) + "</p>" +
+          "<p><strong>Window:</strong> " + formatUtc(row.validFromUtc) + " -> " + formatUtc(row.validToUtc) + "</p>";
+        rowGrid.appendChild(card);
+      });
+      relationRows.forEach(function(row) {
+        const card = document.createElement("article");
+        card.className = "family-card";
+        card.innerHTML =
+          "<h3>Relationship</h3>" +
+          "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+          "<p><strong>Related:</strong> " + (row.relatedSubjectRef || "unknown") + "</p>" +
+          "<p><strong>State:</strong> " + titleize(row.relationshipState || "unknown") + "</p>";
+        rowGrid.appendChild(card);
+      });
+      conditionRows.forEach(function(row) {
+        const card = document.createElement("article");
+        card.className = "family-card";
+        card.innerHTML =
+          "<h3>Condition</h3>" +
+          "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+          "<p><strong>Type:</strong> " + titleize(row.conditionType || "unknown") + "</p>" +
+          "<p><strong>Value:</strong> " + (row.conditionValue || "n/a") + "</p>";
+        rowGrid.appendChild(card);
+      });
+      changeRows.forEach(function(row) {
+        const card = document.createElement("article");
+        card.className = "family-card";
+        card.innerHTML =
+          "<h3>Recent Change</h3>" +
+          "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+          "<p><strong>Type:</strong> " + titleize(row.changeType || "unknown") + "</p>" +
+          "<p><strong>Summary:</strong> " + (row.changeSummary || "n/a") + "</p>" +
+          "<p><strong>Changed:</strong> " + formatUtc(row.changedAtUtc) + "</p>";
+        rowGrid.appendChild(card);
+      });
+      if (!rowGrid.children.length) {
+        const empty = document.createElement("div");
+        empty.className = "state empty";
+        empty.textContent = "No publishable current-world rows are available for this scope.";
+        rowGrid.appendChild(empty);
+      }
+      currentWorldContentNode.appendChild(rowGrid);
+
+      const note = document.createElement("p");
+      note.className = "muted";
+      if (publicationState === "insufficient_evidence") {
+        note.textContent = "Current-world output is explicitly insufficient_evidence; publishable content is intentionally withheld.";
+      } else if (publicationState === "unresolved") {
+        note.textContent = "Current-world output is unresolved due to cross-surface disagreement; no semantic winner is selected.";
+      } else {
+        note.textContent = "Current-world output is publishable and composed from bounded temporal/pair/timeline read surfaces.";
+      }
+      currentWorldContentNode.appendChild(note);
+    }
+
     function renderPlaceholderSection() {
       const sections = state.workspace && Array.isArray(state.workspace.sections)
         ? state.workspace.sections
@@ -2256,6 +2388,23 @@ public static class OperatorWebEndpointExtensions
       renderResolutionSection();
     }
 
+    async function ensureCurrentWorldLoaded(forceReload) {
+      if (!state.trackedPersonId) {
+        throw new Error("trackedPersonId query parameter is required.");
+      }
+      if (!forceReload && state.currentWorld) {
+        return;
+      }
+
+      currentWorldContentNode.className = "state loading";
+      currentWorldContentNode.textContent = "Loading bounded current-world approximation...";
+      const result = await operatorPostJson("/api/operator/person-workspace/current-world/query", {
+        trackedPersonId: state.trackedPersonId
+      });
+      state.currentWorld = result.currentWorld || null;
+      renderCurrentWorldSection();
+    }
+
     function renderActiveSection() {
       const showSummary = state.activeSection === "summary";
       const showDossier = state.activeSection === "dossier";
@@ -2265,6 +2414,7 @@ public static class OperatorWebEndpointExtensions
       const showEvidence = state.activeSection === "evidence";
       const showRevisions = state.activeSection === "revisions";
       const showResolution = state.activeSection === "resolution";
+      const showCurrentWorld = state.activeSection === "current_world";
       summaryPanel.classList.toggle("active", showSummary);
       dossierPanel.classList.toggle("active", showDossier);
       profilePanel.classList.toggle("active", showProfile);
@@ -2273,7 +2423,8 @@ public static class OperatorWebEndpointExtensions
       evidencePanel.classList.toggle("active", showEvidence);
       revisionsPanel.classList.toggle("active", showRevisions);
       resolutionPanel.classList.toggle("active", showResolution);
-      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence && !showRevisions && !showResolution);
+      currentWorldPanel.classList.toggle("active", showCurrentWorld);
+      placeholderPanel.classList.toggle("active", !showSummary && !showDossier && !showProfile && !showPairDynamics && !showTimeline && !showEvidence && !showRevisions && !showResolution && !showCurrentWorld);
       if (showSummary) {
         renderSummarySection();
       } else if (showDossier) {
@@ -2311,6 +2462,11 @@ public static class OperatorWebEndpointExtensions
           resolutionContentNode.className = "state error";
           resolutionContentNode.textContent = "Resolution drilldown load failed: " + (error.message || "unknown_error");
         });
+      } else if (showCurrentWorld) {
+        ensureCurrentWorldLoaded(false).catch(function(error) {
+          currentWorldContentNode.className = "state error";
+          currentWorldContentNode.textContent = "Current-world load failed: " + (error.message || "unknown_error");
+        });
       } else {
         renderPlaceholderSection();
       }
@@ -2334,6 +2490,7 @@ public static class OperatorWebEndpointExtensions
       state.evidence = null;
       state.revisions = null;
       state.resolution = null;
+      state.currentWorld = null;
       renderPersonLine();
       renderSnapshotBlock();
       renderTabs();

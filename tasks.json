@@ -802,8 +802,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-014A completed: added authenticated POST /api/operator/person-workspace/current-world/query with tracked-person scope enforcement (including cross-scope mismatch rejection), extended person-workspace web shell with live Current World tab/section rendering publication/read state plus active/inactive/dropped-out people, relations, conditions, changes, and uncertainty-driven degraded messaging, and added --current-world-approximation-proof (optional --current-world-approximation-proof-output) with required matrix rows (publishable, disagreement_unresolved, insufficient_evidence, inactive_or_dropped_out_person_coverage, unauth_or_cross_scope_rejected) and expected/actual HTTP status + publication-state assertions. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --current-world-approximation-proof; artifact: src/TgAssistant.Host/artifacts/phase-b/current-world-approximation-proof.json.",
       "dependencies": [
         "PHB-013"
       ]

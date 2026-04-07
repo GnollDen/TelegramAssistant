@@ -402,6 +402,9 @@ public static class Opint009TelegramAlertsSmokeRunner
         public Task<OperatorPersonWorkspaceHistoryQueryResult> QueryPersonWorkspaceHistoryAsync(OperatorPersonWorkspaceHistoryQueryRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-B smoke should not query person workspace history.");
 
+        public Task<OperatorPersonWorkspaceCurrentWorldQueryResult> QueryPersonWorkspaceCurrentWorldAsync(OperatorPersonWorkspaceCurrentWorldQueryRequest request, CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-009-B smoke should not query person workspace current world.");
+
         public Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(OperatorOfflineEventQueryApiRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-B smoke should not query offline events.");
 

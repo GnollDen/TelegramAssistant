@@ -196,6 +196,11 @@ public class OperatorPersonWorkspaceHistoryQueryRequest : OperatorContractReques
     public int Limit { get; set; } = 200;
 }
 
+public class OperatorPersonWorkspaceCurrentWorldQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -266,6 +271,14 @@ public class OperatorPersonWorkspaceHistoryQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceHistorySectionView History { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceCurrentWorldQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceCurrentWorldSectionView CurrentWorld { get; set; } = new();
 }
 
 public static class TemporalPersonHistoryPublicationStates
@@ -465,6 +478,24 @@ public class OperatorPersonWorkspaceHistorySectionView
     public int OpenRows { get; set; }
     public int HistoricalRows { get; set; }
     public List<TemporalPersonHistoryRow> Rows { get; set; } = [];
+}
+
+public class OperatorPersonWorkspaceCurrentWorldSectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public DateTime AsOfUtc { get; set; }
+    public string PublicationState { get; set; } = CurrentWorldApproximationPublicationStates.InsufficientEvidence;
+    public string ReadState { get; set; } = CurrentWorldApproximationReadStates.RecomputedOnRead;
+    public int ActivePersonCount { get; set; }
+    public int InactivePersonCount { get; set; }
+    public int DroppedOutPersonCount { get; set; }
+    public int ActiveRelationCount { get; set; }
+    public int ActiveConditionCount { get; set; }
+    public int RecentChangeCount { get; set; }
+    public List<string> UncertaintyRefs { get; set; } = [];
+    public CurrentWorldApproximationSnapshot Snapshot { get; set; } = new();
 }
 
 public class TemporalPersonHistoryRow

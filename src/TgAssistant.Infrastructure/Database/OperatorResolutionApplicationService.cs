@@ -44,6 +44,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly IMessageRepository _messageRepository;
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
     private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
+    private readonly ICurrentWorldApproximationReadService _currentWorldApproximationReadService;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
     private readonly ConflictResolutionSessionSettings _conflictSessionSettings;
 
@@ -55,6 +56,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IMessageRepository messageRepository,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ITemporalPersonStateRepository temporalPersonStateRepository,
+        ICurrentWorldApproximationReadService currentWorldApproximationReadService,
         IOptions<ConflictResolutionSessionSettings> conflictSessionSettings,
         ILogger<OperatorResolutionApplicationService> logger)
     {
@@ -65,6 +67,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         _messageRepository = messageRepository;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _temporalPersonStateRepository = temporalPersonStateRepository;
+        _currentWorldApproximationReadService = currentWorldApproximationReadService;
         _conflictSessionSettings = conflictSessionSettings.Value ?? new ConflictResolutionSessionSettings();
         _logger = logger;
     }
@@ -1928,6 +1931,111 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 OpenRows = openRows,
                 HistoricalRows = historyRows.Count - openRows,
                 Rows = historyRows
+            }
+        };
+    }
+
+    public async Task<OperatorPersonWorkspaceCurrentWorldQueryResult> QueryPersonWorkspaceCurrentWorldAsync(
+        OperatorPersonWorkspaceCurrentWorldQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceCurrentWorldQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceCurrentWorldQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (request.Session.ActiveTrackedPersonId != Guid.Empty
+            && request.Session.ActiveTrackedPersonId != trackedPersonId.Value)
+        {
+            return new OperatorPersonWorkspaceCurrentWorldQueryResult
+            {
+                Accepted = false,
+                FailureReason = "session_active_tracked_person_mismatch",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceCurrentWorldQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var snapshot = await _currentWorldApproximationReadService.BuildSnapshotAsync(
+            new CurrentWorldApproximationReadRequest
+            {
+                ScopeKey = trackedPerson.ScopeKey,
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                AsOfUtc = nowUtc
+            },
+            ct);
+
+        var inactivePersonCount = snapshot.InactivePersonRows.Count;
+        var droppedOutPersonCount = snapshot.InactivePersonRows.Count(x => x.DroppedOutFlag);
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceCurrentWorldQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            CurrentWorld = new OperatorPersonWorkspaceCurrentWorldSectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                ScopeKey = trackedPerson.ScopeKey,
+                AsOfUtc = snapshot.AsOfUtc,
+                PublicationState = snapshot.PublicationState,
+                ReadState = snapshot.ReadState,
+                ActivePersonCount = snapshot.ActivePersonRows.Count,
+                InactivePersonCount = inactivePersonCount,
+                DroppedOutPersonCount = droppedOutPersonCount,
+                ActiveRelationCount = snapshot.RelationshipStateRows.Count,
+                ActiveConditionCount = snapshot.ActiveConditionRows.Count,
+                RecentChangeCount = snapshot.RecentChangeRows.Count,
+                UncertaintyRefs = [.. snapshot.UncertaintyRefs],
+                Snapshot = snapshot
             }
         };
     }
@@ -4807,7 +4915,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             new OperatorWorkspaceSectionState { SectionKey = "timeline", Label = "Timeline", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "evidence", Label = "Evidence", Status = "ready", Available = true },
             new OperatorWorkspaceSectionState { SectionKey = "revisions", Label = "Revisions", Status = "ready", Available = true },
-            new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "ready", Available = true }
+            new OperatorWorkspaceSectionState { SectionKey = "resolution", Label = "Resolution", Status = "ready", Available = true },
+            new OperatorWorkspaceSectionState { SectionKey = "current_world", Label = "Current World", Status = "ready", Available = true }
         ];
     }
 
