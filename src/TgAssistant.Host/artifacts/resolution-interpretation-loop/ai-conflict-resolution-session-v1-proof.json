@@ -1,23 +1,23 @@
 {
   "GeneratedAtUtc": "2026-04-07T14:41:57.5966594Z",
   "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json",
-  "ScopeKey": "chat:885574984",
-  "TrackedPersonId": "80c384f3-a79f-4356-b832-45e636353f59",
-  "TrackedPersonDisplayName": "\u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430",
-  "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+  "ScopeKey": "chat:REDACTED",
+  "TrackedPersonId": "REDACTED_UUID",
+  "TrackedPersonDisplayName": "REDACTED_PERSON",
+  "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
   "ItemType": "review",
   "SourceKind": "durable_object_metadata",
   "StartAccepted": true,
-  "ConflictSessionId": "78db70c2-3fdd-4704-af0e-e7f7ac7d22df",
+  "ConflictSessionId": "REDACTED_UUID",
   "StartState": "fallback",
   "StartStateReason": "fallback_manual_review_required",
   "AuditEntriesAfterStart": 1,
   "InitialCasePacket": {
     "Item": {
       "SourceKind": "durable_object_metadata",
-      "SourceRef": "13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "SourceRef": "REDACTED_UUID",
       "RequiredAction": null,
-      "EvidenceRationaleSummary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "EvidenceRationaleSummary": "story arc promotion blocked: story arc for REDACTED_PERSON is not eligible for canonical promotion.",
       "AutoResolutionGap": "Deterministic fallback applied because \u0027usage_unavailable\u0027.",
       "OperatorDecisionFocus": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture.",
       "RationaleIsHeuristic": true,
@@ -26,7 +26,7 @@
         "UsedFallback": true,
         "context_sufficient": true,
         "requested_context_type": "none",
-        "interpretation_summary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+        "interpretation_summary": "story arc promotion blocked: story arc for REDACTED_PERSON is not eligible for canonical promotion.",
         "key_claims": [
           {
             "claim_type": "inference",
@@ -34,7 +34,7 @@
             "trust_percent": null,
             "summary": "Bounded evidence still supports surfacing \u0027story arc promotion blocked\u0027 for operator attention.",
             "evidence_refs": [
-              "885574984:293950"
+              "REDACTED_REF"
             ]
           }
         ],
@@ -48,8 +48,8 @@
           "reason": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture."
         },
         "evidence_refs_used": [
-          "885574984:293950",
-          "885574984:293951"
+          "REDACTED_REF",
+          "REDACTED_REF"
         ],
         "FailureReason": "usage_unavailable",
         "AuditTrail": [
@@ -75,9 +75,9 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [
-              "885574984:293950",
-              "885574984:293951",
-              "885574984:293948"
+              "REDACTED_REF",
+              "REDACTED_REF",
+              "REDACTED_REF"
             ],
             "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
           },
@@ -91,7 +91,7 @@
             "model": "gpt-5.4-mini",
             "model_id": null,
             "model_version": null,
-            "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+            "request_id": "REDACTED_REQUEST_ID",
             "latency_ms": 7611,
             "prompt_tokens": 2111,
             "completion_tokens": 539,
@@ -103,7 +103,7 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [
-              "13bd21fe-fb7a-4575-b834-27041d8ad063"
+              "REDACTED_UUID"
             ],
             "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
           },
@@ -117,7 +117,7 @@
             "model": "gpt-5.4-mini",
             "model_id": null,
             "model_version": null,
-            "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+            "request_id": "REDACTED_REQUEST_ID",
             "latency_ms": 7611,
             "prompt_tokens": 2111,
             "completion_tokens": 539,
@@ -153,8 +153,8 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [
-              "885574984:293950",
-              "885574984:293951"
+              "REDACTED_REF",
+              "REDACTED_REF"
             ],
             "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
           }
@@ -167,17 +167,17 @@
         },
         {
           "Kind": "summary",
-          "Text": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
+          "Text": "story arc for REDACTED_PERSON: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
         }
       ],
       "Evidence": [
         {
-          "EvidenceItemId": "628aa683-c9a1-415e-bc59-edc4a0ee0c3c",
+          "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
           "TrustFactor": 1,
           "ObservedAtUtc": "2026-03-22T11:39:53Z",
           "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-          "SourceRef": "885574984:293950",
+          "SourceRef": "REDACTED_REF",
           "SourceLabel": "Realtime message 293950 in chat 885574984",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
@@ -192,12 +192,12 @@
           }
         },
         {
-          "EvidenceItemId": "5e7a59a2-7b4c-429f-ba3b-1f85fa65d007",
+          "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
           "TrustFactor": 1,
           "ObservedAtUtc": "2026-03-22T11:39:53Z",
           "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-          "SourceRef": "885574984:293951",
+          "SourceRef": "REDACTED_REF",
           "SourceLabel": "Realtime message 293951 in chat 885574984",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
@@ -212,12 +212,12 @@
           }
         },
         {
-          "EvidenceItemId": "ae774282-dd1f-461d-8d6e-bd999bb32fb4",
+          "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
           "TrustFactor": 1,
           "ObservedAtUtc": "2026-03-22T10:56:37Z",
           "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-          "SourceRef": "885574984:293948",
+          "SourceRef": "REDACTED_REF",
           "SourceLabel": "Realtime message 293948 in chat 885574984",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
@@ -232,12 +232,12 @@
           }
         },
         {
-          "EvidenceItemId": "937c240f-97bf-4815-9121-38d8f47741f5",
+          "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
           "TrustFactor": 1,
           "ObservedAtUtc": "2026-03-20T18:37:48Z",
           "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-          "SourceRef": "885574984:293894",
+          "SourceRef": "REDACTED_REF",
           "SourceLabel": "Realtime message 293894 in chat 885574984",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
@@ -252,12 +252,12 @@
           }
         },
         {
-          "EvidenceItemId": "9ee75539-cb26-49f1-9fdf-546b2fc2f9a8",
+          "EvidenceItemId": "REDACTED_UUID",
           "Summary": "\u043E\u043A\u0435",
           "TrustFactor": 1,
           "ObservedAtUtc": "2026-03-20T18:31:04Z",
           "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-          "SourceRef": "885574984:293893",
+          "SourceRef": "REDACTED_REF",
           "SourceLabel": "Realtime message 293893 in chat 885574984",
           "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
           "RelevanceHintIsHeuristic": true,
@@ -272,10 +272,10 @@
           }
         }
       ],
-      "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
       "ItemType": "review",
       "Title": "story arc promotion blocked",
-      "Summary": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "Summary": "story arc for REDACTED_PERSON is not eligible for canonical promotion.",
       "WhyItMatters": "This durable object is held below canonical truth and needs operator review before downstream surfaces rely on it.",
       "HumanShortTitle": "\u041D\u0443\u0436\u043D\u0430 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430: \u0441\u044E\u0436\u0435\u0442\u043D\u0430\u044F \u0430\u0440\u043A\u0430",
       "WhatHappened": "\u041E\u0431\u044A\u0435\u043A\u0442 \u043D\u0435 \u043F\u0440\u043E\u0448\u0435\u043B \u0434\u0430\u043B\u044C\u0448\u0435 \u0432 \u043A\u0430\u043D\u043E\u043D\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u0441\u043B\u043E\u0439 \u0438 \u043E\u0441\u0442\u0430\u043B\u0441\u044F \u043D\u0430 \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0435.",
@@ -284,7 +284,7 @@
       "EvidenceHint": "\u0421\u0432\u044F\u0437\u0430\u043D\u043E 5 \u0444\u0430\u043A\u0442\u043E\u0432.",
       "SecondaryText": "\u0414\u043E\u0432\u0435\u0440\u0438\u0435 85% \u00B7 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0432\u043D\u0438\u043C\u0430\u043D\u0438\u044F \u00B7 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E 2026-04-05 18:25 UTC",
       "AffectedFamily": "story_arc",
-      "AffectedObjectRef": "pair:0ba107de-8fcf-4968-8cae-c2caab0b22c3:80c384f3-a79f-4356-b832-45e636353f59:story_arc:operator_tracked_arc",
+      "AffectedObjectRef": "pair:REDACTED_UUID:REDACTED_UUID:story_arc:operator_tracked_arc",
       "TrustFactor": 0.85,
       "Status": "attention_required",
       "EvidenceCount": 5,
@@ -305,7 +305,7 @@
       "UsedFallback": true,
       "context_sufficient": true,
       "requested_context_type": "none",
-      "interpretation_summary": "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "interpretation_summary": "story arc promotion blocked: story arc for REDACTED_PERSON is not eligible for canonical promotion.",
       "key_claims": [
         {
           "claim_type": "inference",
@@ -313,7 +313,7 @@
           "trust_percent": null,
           "summary": "Bounded evidence still supports surfacing \u0027story arc promotion blocked\u0027 for operator attention.",
           "evidence_refs": [
-            "885574984:293950"
+            "REDACTED_REF"
           ]
         }
       ],
@@ -327,8 +327,8 @@
         "reason": "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture."
       },
       "evidence_refs_used": [
-        "885574984:293950",
-        "885574984:293951"
+        "REDACTED_REF",
+        "REDACTED_REF"
       ],
       "FailureReason": "usage_unavailable",
       "AuditTrail": [
@@ -354,9 +354,9 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [
-            "885574984:293950",
-            "885574984:293951",
-            "885574984:293948"
+            "REDACTED_REF",
+            "REDACTED_REF",
+            "REDACTED_REF"
           ],
           "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
         },
@@ -370,7 +370,7 @@
           "model": "gpt-5.4-mini",
           "model_id": null,
           "model_version": null,
-          "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+          "request_id": "REDACTED_REQUEST_ID",
           "latency_ms": 7611,
           "prompt_tokens": 2111,
           "completion_tokens": 539,
@@ -382,7 +382,7 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [
-            "13bd21fe-fb7a-4575-b834-27041d8ad063"
+            "REDACTED_UUID"
           ],
           "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
         },
@@ -396,7 +396,7 @@
           "model": "gpt-5.4-mini",
           "model_id": null,
           "model_version": null,
-          "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+          "request_id": "REDACTED_REQUEST_ID",
           "latency_ms": 7611,
           "prompt_tokens": 2111,
           "completion_tokens": 539,
@@ -432,8 +432,8 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [
-            "885574984:293950",
-            "885574984:293951"
+            "REDACTED_REF",
+            "REDACTED_REF"
           ],
           "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
         }
@@ -441,12 +441,12 @@
     },
     "Evidence": [
       {
-        "EvidenceItemId": "628aa683-c9a1-415e-bc59-edc4a0ee0c3c",
+        "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u043D\u0443 \u0430 \u0440\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u0438 \u0442\u0443\u0442 \u043F\u0440\u0438 \u0447\u0435\u043C?",
         "TrustFactor": 1,
         "ObservedAtUtc": "2026-03-22T11:39:53Z",
         "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-        "SourceRef": "885574984:293950",
+        "SourceRef": "REDACTED_REF",
         "SourceLabel": "Realtime message 293950 in chat 885574984",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
@@ -461,12 +461,12 @@
         }
       },
       {
-        "EvidenceItemId": "5e7a59a2-7b4c-429f-ba3b-1f85fa65d007",
+        "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0435\u0441\u043B\u0438 \u043C\u0430\u0440\u043A\u0435\u0442\u043E\u043B\u043E\u0433 \u0432 \u0433\u043B\u0430\u0437\u0430 \u0435\u0431\u0435\u0442\u0441\u044F",
         "TrustFactor": 1,
         "ObservedAtUtc": "2026-03-22T11:39:53Z",
         "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-        "SourceRef": "885574984:293951",
+        "SourceRef": "REDACTED_REF",
         "SourceLabel": "Realtime message 293951 in chat 885574984",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
@@ -481,12 +481,12 @@
         }
       },
       {
-        "EvidenceItemId": "ae774282-dd1f-461d-8d6e-bd999bb32fb4",
+        "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0430 \u0447\u0435 \u043D\u0435 \u0442\u0430\u043A \u0441 \u0440\u0430\u0437\u0440\u0430\u0431\u0430\u043C\u0438",
         "TrustFactor": 1,
         "ObservedAtUtc": "2026-03-22T10:56:37Z",
         "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-        "SourceRef": "885574984:293948",
+        "SourceRef": "REDACTED_REF",
         "SourceLabel": "Realtime message 293948 in chat 885574984",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
@@ -501,12 +501,12 @@
         }
       },
       {
-        "EvidenceItemId": "937c240f-97bf-4815-9121-38d8f47741f5",
+        "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u0434\u0430\u0439 \u0433\u0435\u043E\u043C\u0435\u0442\u043A\u0443",
         "TrustFactor": 1,
         "ObservedAtUtc": "2026-03-20T18:37:48Z",
         "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-        "SourceRef": "885574984:293894",
+        "SourceRef": "REDACTED_REF",
         "SourceLabel": "Realtime message 293894 in chat 885574984",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
@@ -521,12 +521,12 @@
         }
       },
       {
-        "EvidenceItemId": "9ee75539-cb26-49f1-9fdf-546b2fc2f9a8",
+        "EvidenceItemId": "REDACTED_UUID",
         "Summary": "\u043E\u043A\u0435",
         "TrustFactor": 1,
         "ObservedAtUtc": "2026-03-20T18:31:04Z",
         "SenderDisplay": "\u0410\u043B\u0451\u043D\u0430 \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430",
-        "SourceRef": "885574984:293893",
+        "SourceRef": "REDACTED_REF",
         "SourceLabel": "Realtime message 293893 in chat 885574984",
         "RelevanceHint": "\u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u043D\u044B\u0439 \u0441\u0438\u0433\u043D\u0430\u043B \u0434\u043B\u044F \u0440\u0443\u0447\u043D\u043E\u0439 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438; \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043A\u0430\u043A \u0447\u0430\u0441\u0442\u044C \u044D\u0432\u0440\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0433\u043E \u043E\u0442\u0431\u043E\u0440\u0430.",
         "RelevanceHintIsHeuristic": true,
@@ -548,11 +548,11 @@
       },
       {
         "Kind": "summary",
-        "Text": "story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
+        "Text": "story arc for REDACTED_PERSON: 5 evidence, 0 contradictions, 0 ambiguities, 0 linked people."
       }
     ],
     "DurableContextSummaries": [
-      "story arc promotion blocked: story arc for \u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430 is not eligible for canonical promotion.",
+      "story arc promotion blocked: story arc for REDACTED_PERSON is not eligible for canonical promotion.",
       "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture.",
       "Deterministic fallback applied because \u0027usage_unavailable\u0027."
     ]
@@ -583,7 +583,7 @@
     "StructuredVerdict": {
       "verdict_id": "0d4dc9c033bf434a8902b4ea511dc71e",
       "scope_key": "chat:885574984",
-      "scope_item_key": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "scope_item_key": "review:durable_object_metadata:REDACTED_UUID",
       "carry_forward_case_id": null,
       "decision": "defer",
       "publication_state": "manual_review_required",
@@ -708,7 +708,7 @@
   ],
   "CandidateAttempts": [
     {
-      "ScopeItemKey": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
+      "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
       "ItemType": "review",
       "SourceKind": "durable_object_metadata",
       "StartAccepted": true,
@@ -718,7 +718,7 @@
       "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
     },
     {
-      "ScopeItemKey": "review:durable_object_metadata:ad12413d-520c-43ec-abc5-7e71e73908cb",
+      "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
       "ItemType": "review",
       "SourceKind": "durable_object_metadata",
       "StartAccepted": true,
@@ -728,7 +728,7 @@
       "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
     },
     {
-      "ScopeItemKey": "review:durable_object_metadata:d9ab9326-6953-41d1-aefa-fd2a3c23cbf1",
+      "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
       "ItemType": "review",
       "SourceKind": "durable_object_metadata",
       "StartAccepted": true,
@@ -738,7 +738,7 @@
       "FailureReason": "Action apply via existing path failed: recompute_target_mapping_unsupported"
     },
     {
-      "ScopeItemKey": "review:durable_object_metadata:ea10b742-1023-461d-9ad9-97a5dff26aff",
+      "ScopeItemKey": "review:durable_object_metadata:REDACTED_UUID",
       "ItemType": "review",
       "SourceKind": "durable_object_metadata",
       "StartAccepted": true,

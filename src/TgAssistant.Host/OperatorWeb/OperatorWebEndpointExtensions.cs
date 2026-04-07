@@ -573,6 +573,33 @@ public static class OperatorWebEndpointExtensions
       document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
     }
 
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function sanitizeJsonValue(value) {
+      if (typeof value === "string") {
+        return escapeHtml(value);
+      }
+      if (Array.isArray(value)) {
+        return value.map(function(entry) { return sanitizeJsonValue(entry); });
+      }
+      if (!value || typeof value !== "object") {
+        return value;
+      }
+
+      const sanitized = {};
+      Object.keys(value).forEach(function(key) {
+        sanitized[key] = sanitizeJsonValue(value[key]);
+      });
+      return sanitized;
+    }
+
     async function operatorPostJson(path, body) {
       const token = readAccessToken();
       const headers = {
@@ -600,7 +627,7 @@ public static class OperatorWebEndpointExtensions
         throw new Error(reason);
       }
 
-      return payload || {};
+      return sanitizeJsonValue(payload || {});
     }
 
     function renderCounts(payload) {
@@ -1243,6 +1270,33 @@ public static class OperatorWebEndpointExtensions
       document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
     }
 
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function sanitizeJsonValue(value) {
+      if (typeof value === "string") {
+        return escapeHtml(value);
+      }
+      if (Array.isArray(value)) {
+        return value.map(function(entry) { return sanitizeJsonValue(entry); });
+      }
+      if (!value || typeof value !== "object") {
+        return value;
+      }
+
+      const sanitized = {};
+      Object.keys(value).forEach(function(key) {
+        sanitized[key] = sanitizeJsonValue(value[key]);
+      });
+      return sanitized;
+    }
+
     function resolveHeaders() {
       const token = readAccessToken();
       const headers = {
@@ -1280,7 +1334,7 @@ public static class OperatorWebEndpointExtensions
         throw error;
       }
 
-      return body || {};
+      return sanitizeJsonValue(body || {});
     }
 
     function renderPersonLine() {
@@ -1442,15 +1496,19 @@ public static class OperatorWebEndpointExtensions
       families.forEach(function(card) {
         const node = document.createElement("article");
         node.className = "family-card";
-        node.innerHTML =
-          "<h3>" + (card.label || titleize(card.family || "unknown")) + "</h3>" +
-          "<p><strong>Trust:</strong> " + formatPercent(card.trust) + " | <strong>Uncertainty:</strong> " + formatPercent(card.uncertainty) + "</p>" +
-          "<p><strong>Confidence:</strong> " + formatPercent(card.confidence) + " | <strong>Coverage:</strong> " + formatPercent(card.coverage) + "</p>" +
-          "<p><strong>Freshness:</strong> " + formatPercent(card.freshness) + " | <strong>Stability:</strong> " + formatPercent(card.stability) + "</p>" +
-          "<p><strong>Objects:</strong> " + (card.objectCount || 0) + " | <strong>Contradictions:</strong> " + (card.contradictionCount || 0) + "</p>" +
-          "<p><strong>Provenance:</strong> evidence links " + (card.evidenceLinkCount || 0) + ", truth " + titleize(card.truthLayer || "unknown") + ", promotion " + titleize(card.promotionState || "unknown") + "</p>" +
-          "<p><strong>Latest update:</strong> " + formatUtc(card.latestUpdatedAtUtc) + "</p>" +
-          "<p><strong>Latest summary:</strong> " + (card.latestSummary || "n/a") + "</p>";
+        const title = document.createElement("h3");
+        title.textContent = card.label || titleize(card.family || "unknown");
+        node.appendChild(title);
+        appendLabeledParagraph(node, "Trust:", formatPercent(card.trust) + " | Uncertainty: " + formatPercent(card.uncertainty));
+        appendLabeledParagraph(node, "Confidence:", formatPercent(card.confidence) + " | Coverage: " + formatPercent(card.coverage));
+        appendLabeledParagraph(node, "Freshness:", formatPercent(card.freshness) + " | Stability: " + formatPercent(card.stability));
+        appendLabeledParagraph(node, "Objects:", String(card.objectCount || 0) + " | Contradictions: " + String(card.contradictionCount || 0));
+        appendLabeledParagraph(
+          node,
+          "Provenance:",
+          "evidence links " + (card.evidenceLinkCount || 0) + ", truth " + titleize(card.truthLayer || "unknown") + ", promotion " + titleize(card.promotionState || "unknown"));
+        appendLabeledParagraph(node, "Latest update:", formatUtc(card.latestUpdatedAtUtc));
+        appendLabeledParagraph(node, "Latest summary:", card.latestSummary || "n/a");
         familyGrid.appendChild(node);
       });
       if (!familyGrid.children.length) {
@@ -1470,14 +1528,13 @@ public static class OperatorWebEndpointExtensions
       provenance.forEach(function(item) {
         const node = document.createElement("article");
         node.className = "prov-item";
-        node.innerHTML =
-          "<p><strong>Family:</strong> " + titleize(item.family || "unknown") + "</p>" +
-          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
-          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
-          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
-          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
-          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
-          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        appendLabeledParagraph(node, "Family:", titleize(item.family || "unknown"));
+        appendLabeledParagraph(node, "Object key:", item.objectKey || "n/a");
+        appendLabeledParagraph(node, "Durable metadata:", item.durableObjectMetadataId || "n/a");
+        appendLabeledParagraph(node, "Model pass run:", item.lastModelPassRunId || "n/a");
+        appendLabeledParagraph(node, "Evidence links:", String(item.evidenceLinkCount || 0));
+        appendLabeledParagraph(node, "Updated:", formatUtc(item.updatedAtUtc));
+        appendLabeledParagraph(node, "Summary:", item.summary || "n/a");
         provList.appendChild(node);
       });
       if (!provList.children.length) {
@@ -1875,7 +1932,12 @@ public static class OperatorWebEndpointExtensions
       ].forEach(function(metric) {
         const card = document.createElement("article");
         card.className = "metric";
-        card.innerHTML = "<small>" + metric.label + "</small><strong>" + metric.value + "</strong>";
+        const labelNode = document.createElement("small");
+        labelNode.textContent = metric.label;
+        card.appendChild(labelNode);
+        const valueNode = document.createElement("strong");
+        valueNode.textContent = metric.value;
+        card.appendChild(valueNode);
         metrics.appendChild(card);
       });
       evidenceContentNode.appendChild(metrics);
@@ -1885,16 +1947,20 @@ public static class OperatorWebEndpointExtensions
       links.forEach(function(link) {
         const node = document.createElement("article");
         node.className = "family-card";
-        node.innerHTML =
-          "<h3>" + titleize(link.durableObjectFamily || "durable") + " / " + (link.durableObjectKey || "n/a") + "</h3>" +
-          "<p><strong>Why this durable object exists:</strong> " + (link.evidenceSummary || "Evidence-backed durable conclusion.") + "</p>" +
-          "<p><strong>Link role:</strong> " + titleize(link.linkRole || "linked") + " | <strong>Evidence kind:</strong> " + titleize(link.evidenceKind || "unknown") + "</p>" +
-          "<p><strong>Durable trust:</strong> " + formatPercent(link.durableConfidence) + " | <strong>Evidence confidence:</strong> " + formatPercent(link.evidenceConfidence) + "</p>" +
-          "<p><strong>Durable truth:</strong> " + titleize(link.durableTruthLayer || "unknown") + " | <strong>Promotion:</strong> " + titleize(link.durablePromotionState || "unknown") + "</p>" +
-          "<p><strong>Evidence truth:</strong> " + titleize(link.evidenceTruthLayer || "unknown") + " | <strong>Observed:</strong> " + formatUtc(link.observedAtUtc || link.sourceOccurredAtUtc) + "</p>" +
-          "<p><strong>Drilldown seeds:</strong> metadata " + (link.durableObjectMetadataId || "n/a") + ", evidence " + (link.evidenceItemId || "n/a") + ", source " + (link.sourceObjectId || "n/a") + ", model pass " + (link.lastModelPassRunId || "n/a") + "</p>" +
-          "<p><strong>Source:</strong> " + titleize(link.sourceKind || "unknown") + " / " + (link.sourceDisplayLabel || "n/a") + " / ref " + (link.sourceRef || "n/a") + "</p>" +
-          "<p><strong>Linked:</strong> " + formatUtc(link.linkedAtUtc) + "</p>";
+        const title = document.createElement("h3");
+        title.textContent = titleize(link.durableObjectFamily || "durable") + " / " + (link.durableObjectKey || "n/a");
+        node.appendChild(title);
+        appendLabeledParagraph(node, "Why this durable object exists:", link.evidenceSummary || "Evidence-backed durable conclusion.");
+        appendLabeledParagraph(node, "Link role:", titleize(link.linkRole || "linked") + " | Evidence kind: " + titleize(link.evidenceKind || "unknown"));
+        appendLabeledParagraph(node, "Durable trust:", formatPercent(link.durableConfidence) + " | Evidence confidence: " + formatPercent(link.evidenceConfidence));
+        appendLabeledParagraph(node, "Durable truth:", titleize(link.durableTruthLayer || "unknown") + " | Promotion: " + titleize(link.durablePromotionState || "unknown"));
+        appendLabeledParagraph(node, "Evidence truth:", titleize(link.evidenceTruthLayer || "unknown") + " | Observed: " + formatUtc(link.observedAtUtc || link.sourceOccurredAtUtc));
+        appendLabeledParagraph(
+          node,
+          "Drilldown seeds:",
+          "metadata " + (link.durableObjectMetadataId || "n/a") + ", evidence " + (link.evidenceItemId || "n/a") + ", source " + (link.sourceObjectId || "n/a") + ", model pass " + (link.lastModelPassRunId || "n/a"));
+        appendLabeledParagraph(node, "Source:", titleize(link.sourceKind || "unknown") + " / " + (link.sourceDisplayLabel || "n/a") + " / ref " + (link.sourceRef || "n/a"));
+        appendLabeledParagraph(node, "Linked:", formatUtc(link.linkedAtUtc));
         linkGrid.appendChild(node);
       });
       if (!linkGrid.children.length) {
@@ -1914,14 +1980,13 @@ public static class OperatorWebEndpointExtensions
       provenance.forEach(function(item) {
         const node = document.createElement("article");
         node.className = "prov-item";
-        node.innerHTML =
-          "<p><strong>Family:</strong> " + titleize(item.family || "unknown") + "</p>" +
-          "<p><strong>Object key:</strong> " + (item.objectKey || "n/a") + "</p>" +
-          "<p><strong>Durable metadata:</strong> " + (item.durableObjectMetadataId || "n/a") + "</p>" +
-          "<p><strong>Model pass run:</strong> " + (item.lastModelPassRunId || "n/a") + "</p>" +
-          "<p><strong>Evidence links:</strong> " + (item.evidenceLinkCount || 0) + "</p>" +
-          "<p><strong>Updated:</strong> " + formatUtc(item.updatedAtUtc) + "</p>" +
-          "<p><strong>Summary:</strong> " + (item.summary || "n/a") + "</p>";
+        appendLabeledParagraph(node, "Family:", titleize(item.family || "unknown"));
+        appendLabeledParagraph(node, "Object key:", item.objectKey || "n/a");
+        appendLabeledParagraph(node, "Durable metadata:", item.durableObjectMetadataId || "n/a");
+        appendLabeledParagraph(node, "Model pass run:", item.lastModelPassRunId || "n/a");
+        appendLabeledParagraph(node, "Evidence links:", String(item.evidenceLinkCount || 0));
+        appendLabeledParagraph(node, "Updated:", formatUtc(item.updatedAtUtc));
+        appendLabeledParagraph(node, "Summary:", item.summary || "n/a");
         provList.appendChild(node);
       });
       if (!provList.children.length) {
@@ -3752,6 +3817,33 @@ public static class OperatorWebEndpointExtensions
       document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
     }
 
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function sanitizeJsonValue(value) {
+      if (typeof value === "string") {
+        return escapeHtml(value);
+      }
+      if (Array.isArray(value)) {
+        return value.map(function(entry) { return sanitizeJsonValue(entry); });
+      }
+      if (!value || typeof value !== "object") {
+        return value;
+      }
+
+      const sanitized = {};
+      Object.keys(value).forEach(function(key) {
+        sanitized[key] = sanitizeJsonValue(value[key]);
+      });
+      return sanitized;
+    }
+
     function resolveHeaders() {
       const token = readAccessToken();
       const headers = {
@@ -3790,7 +3882,7 @@ public static class OperatorWebEndpointExtensions
         throw error;
       }
 
-      return body || {};
+      return sanitizeJsonValue(body || {});
     }
 
     function renderTrackedPersons(queryResult) {
@@ -5343,6 +5435,33 @@ public static class OperatorWebEndpointExtensions
       document.cookie = "tga_operator_key=" + encodeURIComponent(token) + "; path=/; SameSite=Lax";
     }
 
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function sanitizeJsonValue(value) {
+      if (typeof value === "string") {
+        return escapeHtml(value);
+      }
+      if (Array.isArray(value)) {
+        return value.map(function(entry) { return sanitizeJsonValue(entry); });
+      }
+      if (!value || typeof value !== "object") {
+        return value;
+      }
+
+      const sanitized = {};
+      Object.keys(value).forEach(function(key) {
+        sanitized[key] = sanitizeJsonValue(value[key]);
+      });
+      return sanitized;
+    }
+
     function resolveHeaders() {
       const token = readAccessToken();
       const headers = { "accept": "application/json", "content-type": "application/json" };
@@ -5376,7 +5495,7 @@ public static class OperatorWebEndpointExtensions
         throw error;
       }
 
-      return body || {};
+      return sanitizeJsonValue(body || {});
     }
 
     function renderTrackedPersons(result) {
