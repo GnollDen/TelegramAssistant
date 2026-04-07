@@ -11,7 +11,7 @@ Top-level routing:
 1. `README.md` (repository overview, points here for planning authority)
 2. `docs/planning/README.md` (this file, active planning index)
 3. PRD authority documents listed below
-4. Backlog authority files (`tasks.json`, `task_slices.json`)
+4. Backlog historical evidence files (`tasks.json`, `task_slices.json`) for lineage only
 
 ## PRD Authority
 
@@ -54,12 +54,20 @@ Top-level routing:
 
 ### Design addenda
 
+- Planning-input-only for follow-up Phase-B task-pack generation (not execution authority by itself): [AI_CENTRIC_REQUIREMENTS_SUPPLEMENT_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/AI_CENTRIC_REQUIREMENTS_SUPPLEMENT_2026-04-06.md)
 - Proposed bounded design: [AI_CONFLICT_RESOLUTION_SESSION_DESIGN_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/AI_CONFLICT_RESOLUTION_SESSION_DESIGN_2026-04-06.md)
 
-## Backlog Authority
+## Backlog Historical Evidence
 
-- [tasks.json](/home/codex/projects/TelegramAssistant/tasks.json)
-- [task_slices.json](/home/codex/projects/TelegramAssistant/task_slices.json)
+- [tasks.json](/home/codex/projects/TelegramAssistant/tasks.json) (historical baseline evidence; not live execution authority)
+- [task_slices.json](/home/codex/projects/TelegramAssistant/task_slices.json) (historical baseline evidence; not live execution authority)
+
+Current state note:
+- Backlog files are baseline/historical evidence for this date and are not the live execution queue.
+- Current execution routing for follow-up planning/implementation is:
+  1. [MASTER_PROJECT_STATUS_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/MASTER_PROJECT_STATUS_2026-04-06.md)
+  2. [DETAILED_IMPLEMENTATION_TASK_PACK_PHASE_B_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/DETAILED_IMPLEMENTATION_TASK_PACK_PHASE_B_2026-04-06.md)
+  3. [COMPACT_EXECUTION_CONTEXT_2026-04-06.md](/home/codex/projects/TelegramAssistant/docs/planning/COMPACT_EXECUTION_CONTEXT_2026-04-06.md)
 
 ## Runtime and Baseline Authority
 

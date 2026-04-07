@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -7,7 +9,7 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class LlmResolutionInterpretationModel : IResolutionInterpretationModel
 {
-    private const string TaskKey = "resolution_interpretation_loop_v1";
+    private const string DefaultTaskKey = "resolution_interpretation_loop_v1";
     private const string SchemaName = "resolution_interpretation_loop_v1";
     private const string SchemaJson = """
         {
@@ -80,13 +82,23 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
 
     private readonly ILlmGateway _gateway;
     private readonly ILogger<LlmResolutionInterpretationModel> _logger;
+    private readonly string _taskKey;
+    private readonly int _maxOutputTokens;
+    private readonly int _requestTimeoutMs;
 
     public LlmResolutionInterpretationModel(
         ILlmGateway gateway,
+        IOptions<ResolutionInterpretationLoopSettings> settings,
         ILogger<LlmResolutionInterpretationModel> logger)
     {
         _gateway = gateway;
         _logger = logger;
+        var resolvedSettings = settings.Value ?? new ResolutionInterpretationLoopSettings();
+        _taskKey = string.IsNullOrWhiteSpace(resolvedSettings.TaskKey)
+            ? DefaultTaskKey
+            : resolvedSettings.TaskKey.Trim();
+        _maxOutputTokens = Math.Max(1, resolvedSettings.MaxOutputTokens);
+        _requestTimeoutMs = Math.Max(1000, resolvedSettings.RequestTimeoutMs);
     }
 
     public async Task<ResolutionInterpretationModelResponse> InterpretAsync(
@@ -99,11 +111,23 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
         var payload = response.Output.StructuredPayloadJson ?? response.Output.Text;
         if (string.IsNullOrWhiteSpace(payload))
         {
-            throw new InvalidOperationException("Resolution interpretation model returned an empty payload.");
+            throw new ResolutionInterpretationSchemaException(
+                $"Resolution interpretation model returned an empty payload ({ResolutionInterpretationFailureReasons.SchemaInvalid}).");
         }
 
-        var interpretation = JsonSerializer.Deserialize<ResolutionInterpretationLoopResult>(payload, SerializerOptions)
-            ?? throw new InvalidOperationException("Resolution interpretation model payload could not be deserialized.");
+        ResolutionInterpretationLoopResult interpretation;
+        try
+        {
+            interpretation = JsonSerializer.Deserialize<ResolutionInterpretationLoopResult>(payload, SerializerOptions)
+                ?? throw new ResolutionInterpretationSchemaException(
+                    $"Resolution interpretation model payload could not be deserialized ({ResolutionInterpretationFailureReasons.SchemaInvalid}).");
+        }
+        catch (JsonException ex)
+        {
+            throw new ResolutionInterpretationSchemaException(
+                $"Resolution interpretation model payload is not valid structured JSON ({ResolutionInterpretationFailureReasons.SchemaInvalid}).",
+                ex);
+        }
 
         _logger.LogInformation(
             "Resolution interpretation loop model call completed: scope={ScopeKey}, scope_item_key={ScopeItemKey}, retrieval_round={RetrievalRound}, provider={Provider}, model={Model}, latency_ms={LatencyMs}, total_tokens={TotalTokens}",
@@ -122,11 +146,14 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
             Model = response.Model,
             RequestId = response.RequestId,
             LatencyMs = response.LatencyMs,
-            TotalTokens = response.Usage.TotalTokens ?? 0
+            PromptTokens = response.Usage.PromptTokens,
+            CompletionTokens = response.Usage.CompletionTokens,
+            TotalTokens = response.Usage.TotalTokens,
+            CostUsd = response.Usage.CostUsd
         };
     }
 
-    private static LlmGatewayRequest BuildGatewayRequest(ResolutionInterpretationModelRequest request)
+    private LlmGatewayRequest BuildGatewayRequest(ResolutionInterpretationModelRequest request)
     {
         var payload = new
         {
@@ -171,7 +198,7 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
         return new LlmGatewayRequest
         {
             Modality = LlmModality.TextChat,
-            TaskKey = TaskKey,
+            TaskKey = _taskKey,
             ResponseMode = LlmResponseMode.JsonObject,
             StructuredOutputSchema = new LlmStructuredOutputSchema
             {
@@ -181,13 +208,13 @@ public sealed class LlmResolutionInterpretationModel : IResolutionInterpretation
             },
             Limits = new LlmExecutionLimits
             {
-                MaxTokens = 800,
+                MaxTokens = _maxOutputTokens,
                 Temperature = 0.1f,
-                TimeoutMs = 15000
+                TimeoutMs = _requestTimeoutMs
             },
             Trace = new LlmTraceContext
             {
-                PathKey = TaskKey,
+                PathKey = _taskKey,
                 ScopeTags = [request.ScopeKey, request.ScopeItemKey],
                 IsOptionalPath = true
             },

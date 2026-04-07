@@ -42,6 +42,14 @@ Use a single planning authority entrypoint:
 dotnet build TelegramAssistant.sln
 ```
 
+## Testing Policy
+
+Container-first testing is mandatory for runtime behavior checks.
+
+- Policy: `docs/runbooks/container-first-testing-policy.md`
+- Short rule: rebuild `app` image and run behavior tests through `docker compose run --rm app ...`
+- Non-container runs are code checks only and cannot be used to confirm application behavior.
+
 ### MCP server
 
 ```bash

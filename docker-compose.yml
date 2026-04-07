@@ -52,7 +52,7 @@ services:
       # Clean-slate baseline: preserved substrate/runtime shell only.
       ASPNETCORE_URLS: ${WEB_BIND_URL:-http://0.0.0.0:5091}
       Runtime__Role: ${RUNTIME_ROLE:-ingest,stage5,maintenance,ops}
-      Web__Url: ${WEB_URL:-http://127.0.0.1:5091}
+      Web__Url: ${WEB_URL:-http://10.0.1.15:5091}
       Web__RequireOperatorAccessToken: ${WEB_REQUIRE_OPERATOR_ACCESS_TOKEN:-true}
       Web__AllowSyntheticScopes: ${WEB_ALLOW_SYNTHETIC_SCOPES:-false}
       Web__OperatorAccessToken: ${WEB_OPERATOR_ACCESS_TOKEN:-}

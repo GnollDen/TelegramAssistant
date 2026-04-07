@@ -74,16 +74,20 @@ This stage creates a rough map, not final truth.
 
 Enrich per slice:
 
-- build profile and pair context
+- build transient profile and pair enrichment context
 - tighten boundaries
 - refine episodes and candidate identity/relationship context
 
-This stage improves context quality for later reasoning.
+Stage 6 may assemble transient enrichment context only. It does not own durable dossier/profile, pair-dynamics, timeline, or case-formation outputs.
 
 ### Stage 7
 
 Form cases on enriched context:
 
+- own durable dossier/profile outputs
+- own durable pair-dynamics outputs
+- own durable timeline outputs
+- own case-formation outputs
 - explicit claims
 - contradictions
 - uncertainty clusters

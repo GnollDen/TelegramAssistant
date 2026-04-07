@@ -432,6 +432,29 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         };
     }
 
+    public OperatorHomeSummaryReadModel BuildOperatorHomeSummaryReadModel(
+        ResolutionQueueResult queueResult,
+        bool isDegradedSummary = false)
+    {
+        ArgumentNullException.ThrowIfNull(queueResult);
+
+        var criticalFromFacet = queueResult.PriorityCounts
+            .FirstOrDefault(facet => string.Equals(facet.Key, ResolutionItemPriorities.Critical, StringComparison.Ordinal))
+            ?.Count ?? 0;
+        var criticalUnresolvedCount = criticalFromFacet > 0
+            ? criticalFromFacet
+            : queueResult.Items.Count(item => string.Equals(item.Priority, ResolutionItemPriorities.Critical, StringComparison.Ordinal));
+
+        return new OperatorHomeSummaryReadModel
+        {
+            CriticalUnresolvedCountOwner = OperatorHomeSummaryOwners.CriticalUnresolvedCount,
+            CriticalUnresolvedCount = criticalUnresolvedCount,
+            TotalUnresolvedCount = queueResult.TotalOpenCount,
+            IsDegradedSummary = isDegradedSummary,
+            GeneratedAtUtc = DateTime.UtcNow
+        };
+    }
+
     private static List<ProjectedResolutionItem> BuildProjectedItems(
         TrackedPersonScope trackedPerson,
         RuntimeControlStateContext? runtimeState,

@@ -355,6 +355,32 @@ public class ResolutionInterpretationLoopSettings
     public string? ModelHint { get; set; }
 }
 
+public class ConflictResolutionSessionSettings
+{
+    public const string Section = "ConflictResolutionSession";
+    public bool Enabled { get; set; } = true;
+    public bool CanonicalScopeOnly { get; set; } = true;
+    public string CanonicalScopeKey { get; set; } = "chat:885574984";
+    public int SessionTtlMinutes { get; set; } = 30;
+    public int MaxModelCalls { get; set; } = 2;
+    public int MaxRetrievalRounds { get; set; } = 0;
+    public int MaxOperatorTurns { get; set; } = 1;
+    public int MaxInputTokens { get; set; } = 4000;
+    public int MaxOutputTokens { get; set; } = 800;
+    public int MaxTotalTokens { get; set; } = 4800;
+    public decimal MaxCostUsdPerSession { get; set; } = 0.20m;
+    public string ModelTaskKey { get; set; } = "ai_conflict_resolution_session_v1";
+    public int ModelTimeoutMs { get; set; } = 15000;
+    public string? ModelHint { get; set; }
+}
+
+public class OperatorHomeSummarySettings
+{
+    public const string Section = "OperatorHomeSummary";
+    public bool Enabled { get; set; } = true;
+    public bool ForceDegradedSummary { get; set; }
+}
+
 public class AggregationSettings
 {
     public const string Section = "Aggregation";

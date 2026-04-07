@@ -5,6 +5,9 @@ Mode: `single-active-agent sequential orchestration`
 
 ## Task Pack Scope And Rules
 
+- Junior-execution overlay for this pack:
+  - `docs/planning/artifacts/task-by-task-junior-hardening-2026-04-06.md`
+  - Use this overlay as authoritative for split/preflight/verification precision.
 - Authority is limited to:
   - `docs/planning/README.md`
   - `docs/planning/MASTER_PROJECT_STATUS_2026-04-06.md`

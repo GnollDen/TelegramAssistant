@@ -2171,6 +2171,7 @@ public sealed class TelegramOperatorWorkflowService
             $"Карточка: {ResolveResolutionCardTitle(item)}",
             BuildEvidenceSelectionSummary(item, Math.Min(item.Evidence.Count, EvidencePreviewLimit))
         };
+        AddInterpretationPreviewLines(lines, item);
         foreach (var (evidence, index) in item.Evidence.Take(EvidencePreviewLimit).Select((value, index) => (value, index)))
         {
             lines.Add($"{index + 1}. {BuildEvidencePreviewSnippet(evidence)}");
@@ -3032,6 +3033,71 @@ public sealed class TelegramOperatorWorkflowService
             item.WhatHappened,
             "текущая интерпретация остается неоднозначной");
         return $"Показано {shownCount} из {totalCount}: эти факты поясняют, почему карточка вынесена на решение оператора ({TrimForInline(reason, 128)}).";
+    }
+
+    private static void AddInterpretationPreviewLines(List<string> lines, ResolutionItemDetail item)
+    {
+        var interpretation = item.InterpretationLoop;
+        if (interpretation == null)
+        {
+            return;
+        }
+
+        var keyClaims = interpretation.KeyClaims
+            .Where(claim => !string.IsNullOrWhiteSpace(claim.Summary))
+            .ToList();
+        var recommendation = interpretation.ReviewRecommendation;
+        var hasRecommendationReason = !string.IsNullOrWhiteSpace(recommendation?.Reason);
+        if (keyClaims.Count == 0 && !hasRecommendationReason)
+        {
+            return;
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("Интерпретация:");
+
+        foreach (var claim in keyClaims.Take(3))
+        {
+            var prefix = BuildDisplayLabelTrustPrefix(claim.DisplayLabel, claim.TrustPercent);
+            var summary = TrimForInline(claim.Summary, 140);
+            lines.Add(string.IsNullOrWhiteSpace(prefix) ? summary : $"{prefix} {summary}");
+            if (claim.EvidenceRefs.Count > 0)
+            {
+                lines.Add($"   refs: {string.Join(", ", claim.EvidenceRefs.Take(3))}");
+            }
+        }
+
+        if (hasRecommendationReason && recommendation != null)
+        {
+            var prefix = BuildDisplayLabelTrustPrefix(recommendation.DisplayLabel, recommendation.TrustPercent);
+            var reason = TrimForInline(recommendation.Reason, 140);
+            lines.Add(string.IsNullOrWhiteSpace(prefix)
+                ? $"Рекомендация: {reason}"
+                : $"Рекомендация: {prefix} {reason}");
+        }
+    }
+
+    private static string BuildDisplayLabelTrustPrefix(string? displayLabel, int? trustPercent)
+    {
+        var normalizedLabel = NormalizeOptional(displayLabel);
+        var hasLabel = !string.IsNullOrWhiteSpace(normalizedLabel);
+        if (!trustPercent.HasValue && !hasLabel)
+        {
+            return string.Empty;
+        }
+
+        if (!trustPercent.HasValue)
+        {
+            return $"[{normalizedLabel}]";
+        }
+
+        var trustToken = $"[{OperatorTruthTrustFormatter.FormatTrustPercent(trustPercent.Value)}]";
+        if (!hasLabel)
+        {
+            return trustToken;
+        }
+
+        return $"[{normalizedLabel}] {trustToken}";
     }
 
     private static string BuildEvidencePreviewSnippet(ResolutionEvidenceSummary evidence)

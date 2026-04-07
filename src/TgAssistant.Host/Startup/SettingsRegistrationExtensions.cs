@@ -26,6 +26,7 @@ public static partial class ServiceRegistrationExtensions
         services.Configure<RiskyOperationSafetySettings>(config.GetSection(RiskyOperationSafetySettings.Section));
         services.Configure<AnalysisSettings>(config.GetSection(AnalysisSettings.Section));
         services.Configure<ResolutionInterpretationLoopSettings>(config.GetSection(ResolutionInterpretationLoopSettings.Section));
+        services.Configure<ConflictResolutionSessionSettings>(config.GetSection(ConflictResolutionSessionSettings.Section));
         services.Configure<AggregationSettings>(config.GetSection(AggregationSettings.Section));
         services.Configure<MergeSettings>(config.GetSection(MergeSettings.Section));
         services.Configure<MonitoringSettings>(config.GetSection(MonitoringSettings.Section));
@@ -163,6 +164,28 @@ public static partial class ServiceRegistrationExtensions
                     }
                 }
             }
+        });
+
+        services.PostConfigure<ConflictResolutionSessionSettings>(s =>
+        {
+            s.CanonicalScopeKey = string.IsNullOrWhiteSpace(s.CanonicalScopeKey)
+                ? "chat:885574984"
+                : s.CanonicalScopeKey.Trim();
+            s.SessionTtlMinutes = Math.Max(1, s.SessionTtlMinutes);
+            s.MaxModelCalls = Math.Max(1, s.MaxModelCalls);
+            s.MaxRetrievalRounds = Math.Max(0, s.MaxRetrievalRounds);
+            s.MaxOperatorTurns = Math.Max(1, s.MaxOperatorTurns);
+            s.MaxInputTokens = Math.Max(1, s.MaxInputTokens);
+            s.MaxOutputTokens = Math.Max(1, s.MaxOutputTokens);
+            s.MaxTotalTokens = Math.Max(
+                Math.Max(1, s.MaxTotalTokens),
+                s.MaxInputTokens + s.MaxOutputTokens);
+            s.MaxCostUsdPerSession = s.MaxCostUsdPerSession < 0m ? 0m : s.MaxCostUsdPerSession;
+            s.ModelTaskKey = string.IsNullOrWhiteSpace(s.ModelTaskKey)
+                ? "ai_conflict_resolution_session_v1"
+                : s.ModelTaskKey.Trim();
+            s.ModelTimeoutMs = Math.Max(1000, s.ModelTimeoutMs);
+            s.ModelHint = string.IsNullOrWhiteSpace(s.ModelHint) ? null : s.ModelHint.Trim();
         });
 
         if (includeLegacyStage6ClusterDiagnostics)

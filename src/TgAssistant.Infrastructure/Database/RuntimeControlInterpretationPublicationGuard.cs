@@ -59,6 +59,8 @@ public static class RuntimeControlInterpretationPublicationGuard
             ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
             {
                 Decision = ResolutionInterpretationReviewRecommendations.Review,
+                DisplayLabel = OperatorAssistantTruthLabels.Recommendation,
+                TrustPercent = null,
                 Reason = InsufficientEvidenceDecision
             },
             EvidenceRefsUsed = [],
