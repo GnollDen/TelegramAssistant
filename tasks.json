@@ -441,8 +441,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-001 completed: added StageSemanticContractModels with canonical stage/owned_output_family/accepted_input_family/handoff_reason constants, Stage6->Stage7 and Stage7->Stage8 handoff validators, and semantic-to-routing mappings into Stage7DurableObjectFamilies/Stage8RecomputeTargetFamilies (including explicit stage6_discovery_pool and stage7_pair_dynamics coverage, with stage7_case_pool intentionally unmapped to runtime families in this task). Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "DTP-015B"
       ]
