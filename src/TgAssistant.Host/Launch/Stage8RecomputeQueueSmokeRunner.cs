@@ -1,6 +1,14 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using TgAssistant.Core.Interfaces;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Models;
+using TgAssistant.Infrastructure.Database;
+using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Intelligence.Stage8Recompute;
 
 namespace TgAssistant.Host.Launch;
@@ -415,6 +423,315 @@ public static class Stage8RecomputeQueueSmokeRunner
         {
             throw new InvalidOperationException("Stage8 recompute queue smoke failed: safe-mode runtime control state did not defer execution.");
         }
+
+        await AssertRepositoryBackedReintegrationLinkageAsync(ct);
+    }
+
+    private static async Task AssertRepositoryBackedReintegrationLinkageAsync(CancellationToken ct)
+    {
+        var resolvedOutputPath = ResolveReintegrationEvidenceOutputPath();
+        var report = new Stage8ReintegrationLinkageSmokeReport
+        {
+            GeneratedAtUtc = DateTime.UtcNow,
+            OutputPath = resolvedOutputPath
+        };
+
+        Exception? fatal = null;
+        try
+        {
+            var connectionString = ResolveDatabaseConnectionString();
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException("Stage8 recompute queue smoke failed: Database:ConnectionString is required for repository-backed reintegration linkage evidence.");
+            }
+
+            var scopeKey = $"chat:stage8-recompute-smoke-ledger:{Guid.NewGuid():N}";
+            var trackedPersonId = Guid.NewGuid();
+
+            var dbInit = new DatabaseInitializer(
+                Options.Create(new DatabaseSettings
+                {
+                    ConnectionString = connectionString
+                }),
+                NullLogger<DatabaseInitializer>.Instance);
+            await dbInit.InitializeAsync(ct);
+
+            var options = new DbContextOptionsBuilder<TgAssistantDbContext>()
+                .UseNpgsql(connectionString)
+                .Options;
+            await using var dbFactory = new SmokeDbContextFactory(options);
+            await SeedTrackedPersonAsync(dbFactory, scopeKey, trackedPersonId, ct);
+
+            var queueRepository = new Stage8RecomputeQueueRepository(dbFactory, NullLogger<Stage8RecomputeQueueRepository>.Instance);
+            var queueItem = await queueRepository.EnqueueAsync(
+                new Stage8RecomputeQueueRequest
+                {
+                    ScopeKey = scopeKey,
+                    PersonId = trackedPersonId,
+                    TargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+                    TriggerKind = "stage8_recompute_smoke",
+                    TriggerRef = "phb-008b"
+                },
+                ct);
+            if (queueItem.Id == Guid.Empty)
+            {
+                throw new InvalidOperationException("Stage8 recompute queue smoke failed: repository-backed queue item did not persist.");
+            }
+
+            var reintegrationRepository = new ResolutionCaseReintegrationLedgerRepository(dbFactory);
+            var reintegrationService = new ResolutionCaseReintegrationService(reintegrationRepository);
+
+            var unresolved = await reintegrationService.RecordAsync(
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = scopeKey,
+                    ScopeItemKey = "scope-item:stage8-recompute-smoke",
+                    TrackedPersonId = trackedPersonId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                    NextStatus = IterativeCaseStatuses.Open,
+                    UnresolvedResidueJson = """{"reason":"stage8_queue_smoke_open"}"""
+                },
+                ct);
+
+            var resolving = await reintegrationService.RecordAsync(
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = unresolved.ScopeKey,
+                    ScopeItemKey = unresolved.ScopeItemKey,
+                    TrackedPersonId = unresolved.TrackedPersonId,
+                    CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.Stage8RecomputeRequest,
+                    NextStatus = IterativeCaseStatuses.ResolvingAi,
+                    ExpectedPreviousLedgerEntryId = unresolved.Id
+                },
+                ct);
+
+            var resolved = await reintegrationService.RecordAsync(
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = unresolved.ScopeKey,
+                    ScopeItemKey = unresolved.ScopeItemKey,
+                    TrackedPersonId = unresolved.TrackedPersonId,
+                    CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.Stage8RecomputeRequest,
+                    NextStatus = IterativeCaseStatuses.ResolvedByAi,
+                    RecomputeQueueItemId = queueItem.Id,
+                    RecomputeTargetFamily = Stage8RecomputeTargetFamilies.DossierProfile,
+                    RecomputeTargetRef = $"person:{unresolved.TrackedPersonId:D}",
+                    ExpectedPreviousLedgerEntryId = resolving.Id
+                },
+                ct);
+
+            var roundTripPassed = resolved.RecomputeQueueItemId == queueItem.Id
+                                  && string.Equals(resolved.RecomputeTargetFamily, Stage8RecomputeTargetFamilies.DossierProfile, StringComparison.Ordinal)
+                                  && string.Equals(resolved.RecomputeTargetRef, $"person:{trackedPersonId:D}", StringComparison.Ordinal);
+            report.Rows.Add(new Stage8ReintegrationLinkageSmokeRow
+            {
+                CaseId = "repository_round_trip",
+                ExpectedDecision = "allow",
+                ActualDecision = roundTripPassed ? "allow" : "reject",
+                Reason = roundTripPassed ? "persisted_linkage_tuple" : "linkage_tuple_mismatch",
+                Passed = roundTripPassed
+            });
+
+            var persistedRows = await reintegrationService.QueryAsync(
+                new ResolutionCaseReintegrationQuery
+                {
+                    ScopeKey = scopeKey,
+                    CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                    Limit = 10
+                },
+                ct);
+            var readbackPassed = persistedRows.Count >= 2
+                                 && persistedRows.Any(x => x.Id == unresolved.Id)
+                                 && persistedRows.Any(x => x.Id == resolved.Id);
+            report.Rows.Add(new Stage8ReintegrationLinkageSmokeRow
+            {
+                CaseId = "repository_readback",
+                ExpectedDecision = "allow",
+                ActualDecision = readbackPassed ? "allow" : "reject",
+                Reason = readbackPassed ? "service_query_returned_persisted_rows" : "missing_persisted_rows",
+                Passed = readbackPassed
+            });
+
+            var crossScopeRejected = await ExpectRejectedReasonAsync(
+                reintegrationService,
+                ReintegrationLedgerFailureReasons.CrossScopeLinkageRejected,
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = scopeKey,
+                    ScopeItemKey = "scope-item:stage8-recompute-smoke-other",
+                    TrackedPersonId = trackedPersonId,
+                    CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                    NextStatus = IterativeCaseStatuses.Open
+                },
+                ct);
+            report.Rows.Add(new Stage8ReintegrationLinkageSmokeRow
+            {
+                CaseId = "cross_scope_linkage_rejected",
+                ExpectedDecision = "reject",
+                ActualDecision = crossScopeRejected ? "reject" : "allow",
+                Reason = crossScopeRejected
+                    ? ReintegrationLedgerFailureReasons.CrossScopeLinkageRejected
+                    : "unexpectedly_accepted",
+                Passed = crossScopeRejected
+            });
+
+            var staleRejected = await ExpectRejectedReasonAsync(
+                reintegrationService,
+                ReintegrationLedgerFailureReasons.StaleRecomputeLinkageRejected,
+                new ResolutionCaseReintegrationRecordRequest
+                {
+                    ScopeKey = unresolved.ScopeKey,
+                    ScopeItemKey = unresolved.ScopeItemKey,
+                    TrackedPersonId = unresolved.TrackedPersonId,
+                    CarryForwardCaseId = unresolved.CarryForwardCaseId,
+                    OriginSourceKind = ReintegrationOriginSourceKinds.ResolutionAction,
+                    NextStatus = IterativeCaseStatuses.Superseded,
+                    ExpectedPreviousLedgerEntryId = unresolved.Id
+                },
+                ct);
+            report.Rows.Add(new Stage8ReintegrationLinkageSmokeRow
+            {
+                CaseId = "stale_recompute_linkage_rejected",
+                ExpectedDecision = "reject",
+                ActualDecision = staleRejected ? "reject" : "allow",
+                Reason = staleRejected
+                    ? ReintegrationLedgerFailureReasons.StaleRecomputeLinkageRejected
+                    : "unexpectedly_accepted",
+                Passed = staleRejected
+            });
+
+            report.Passed = report.Rows.All(x => x.Passed);
+        }
+        catch (Exception ex)
+        {
+            fatal = ex;
+            report.Passed = false;
+            report.FatalError = ex.Message;
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(resolvedOutputPath)!);
+            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(resolvedOutputPath, json, ct);
+        }
+
+        if (!report.Passed)
+        {
+            throw new InvalidOperationException("Stage8 recompute queue smoke failed: repository-backed reintegration linkage evidence is incomplete.", fatal);
+        }
+    }
+
+    private static async Task<bool> ExpectRejectedReasonAsync(
+        IResolutionCaseReintegrationService service,
+        string expectedReason,
+        ResolutionCaseReintegrationRecordRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            await service.RecordAsync(request, ct);
+            return false;
+        }
+        catch (InvalidOperationException ex) when (string.Equals(ex.Message, expectedReason, StringComparison.Ordinal))
+        {
+            return true;
+        }
+    }
+
+    private static async Task SeedTrackedPersonAsync(
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        string scopeKey,
+        Guid personId,
+        CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var exists = await db.Persons.AnyAsync(x => x.Id == personId, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        db.Persons.Add(new DbPerson
+        {
+            Id = personId,
+            ScopeKey = scopeKey,
+            PersonType = "tracked_person",
+            DisplayName = "Stage8 Recompute Smoke Person",
+            CanonicalName = "stage8_recompute_smoke_person",
+            Status = "active",
+            MetadataJson = "{}",
+            CreatedAt = nowUtc,
+            UpdatedAt = nowUtc
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static string? ResolveDatabaseConnectionString()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("Database__ConnectionString");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+        {
+            return fromEnv.Trim();
+        }
+
+        var baseDir = AppContext.BaseDirectory;
+        var appSettingsPath = Path.Combine(baseDir, "appsettings.json");
+        if (!File.Exists(appSettingsPath))
+        {
+            appSettingsPath = Path.Combine(Directory.GetCurrentDirectory(), "src", "TgAssistant.Host", "appsettings.json");
+        }
+
+        if (!File.Exists(appSettingsPath))
+        {
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(appSettingsPath));
+        if (doc.RootElement.TryGetProperty("Database", out var databaseElement)
+            && databaseElement.TryGetProperty("ConnectionString", out var connectionElement))
+        {
+            var fromFile = connectionElement.GetString();
+            if (!string.IsNullOrWhiteSpace(fromFile))
+            {
+                return fromFile.Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static string ResolveReintegrationEvidenceOutputPath()
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        var hostArtifactsRoot = string.Equals(Path.GetFileName(cwd), "TgAssistant.Host", StringComparison.Ordinal)
+            ? Path.Combine(cwd, "artifacts")
+            : Path.Combine(cwd, "src", "TgAssistant.Host", "artifacts");
+        return Path.GetFullPath(Path.Combine(
+            hostArtifactsRoot,
+            "phase-b",
+            "stage8-recompute-reintegration-linkage-smoke.json"));
+    }
+
+    private sealed class SmokeDbContextFactory : IDbContextFactory<TgAssistantDbContext>, IAsyncDisposable
+    {
+        private readonly DbContextOptions<TgAssistantDbContext> _options;
+
+        public SmokeDbContextFactory(DbContextOptions<TgAssistantDbContext> options)
+        {
+            _options = options;
+        }
+
+        public TgAssistantDbContext CreateDbContext()
+            => new(_options);
+
+        public Task<TgAssistantDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(CreateDbContext());
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class InMemoryStage8RecomputeQueueRepository : IStage8RecomputeQueueRepository
@@ -1146,4 +1463,40 @@ public static class Stage8RecomputeQueueSmokeRunner
                     && string.Equals(x.Status, ClarificationBranchStatuses.Open, StringComparison.Ordinal))
                 .ToList());
     }
+}
+
+public sealed class Stage8ReintegrationLinkageSmokeReport
+{
+    [JsonPropertyName("generated_at_utc")]
+    public DateTime GeneratedAtUtc { get; set; }
+
+    [JsonPropertyName("output_path")]
+    public string OutputPath { get; set; } = string.Empty;
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
+
+    [JsonPropertyName("fatal_error")]
+    public string? FatalError { get; set; }
+
+    [JsonPropertyName("rows")]
+    public List<Stage8ReintegrationLinkageSmokeRow> Rows { get; set; } = [];
+}
+
+public sealed class Stage8ReintegrationLinkageSmokeRow
+{
+    [JsonPropertyName("case_id")]
+    public string CaseId { get; set; } = string.Empty;
+
+    [JsonPropertyName("expected_decision")]
+    public string ExpectedDecision { get; set; } = string.Empty;
+
+    [JsonPropertyName("actual_decision")]
+    public string ActualDecision { get; set; } = string.Empty;
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = string.Empty;
+
+    [JsonPropertyName("passed")]
+    public bool Passed { get; set; }
 }

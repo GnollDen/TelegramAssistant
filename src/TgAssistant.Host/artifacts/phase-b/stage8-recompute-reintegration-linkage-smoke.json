@@ -1,0 +1,36 @@
+{
+  "generated_at_utc": "2026-04-07T13:34:51.2115961Z",
+  "output_path": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/phase-b/stage8-recompute-reintegration-linkage-smoke.json",
+  "passed": true,
+  "fatal_error": null,
+  "rows": [
+    {
+      "case_id": "repository_round_trip",
+      "expected_decision": "allow",
+      "actual_decision": "allow",
+      "reason": "persisted_linkage_tuple",
+      "passed": true
+    },
+    {
+      "case_id": "repository_readback",
+      "expected_decision": "allow",
+      "actual_decision": "allow",
+      "reason": "service_query_returned_persisted_rows",
+      "passed": true
+    },
+    {
+      "case_id": "cross_scope_linkage_rejected",
+      "expected_decision": "reject",
+      "actual_decision": "reject",
+      "reason": "cross_scope_linkage_rejected",
+      "passed": true
+    },
+    {
+      "case_id": "stale_recompute_linkage_rejected",
+      "expected_decision": "reject",
+      "actual_decision": "reject",
+      "reason": "stale_recompute_linkage_rejected",
+      "passed": true
+    }
+  ]
+}

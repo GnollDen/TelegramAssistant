@@ -631,8 +631,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-008B completed: extended --stage8-recompute-smoke to include repository-backed reintegration linkage evidence through ResolutionCaseReintegrationService + ResolutionCaseReintegrationLedgerRepository (no in-memory shortcuts), including persisted recompute tuple readback and explicit cross_scope_linkage_rejected/stale_recompute_linkage_rejected rejection rows. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --stage8-recompute-smoke; artifact: src/TgAssistant.Host/artifacts/phase-b/stage8-recompute-reintegration-linkage-smoke.json.",
       "dependencies": [
         "PHB-008A"
       ]
