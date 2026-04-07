@@ -3937,7 +3937,22 @@ public static class OperatorWebEndpointExtensions
         }
 
         const sessionState = sessionPayload.state || "unknown";
+        const stateReason = sessionPayload.stateReason || null;
         const verdict = sessionPayload.finalVerdict || null;
+        const structuredVerdict = verdict && verdict.structuredVerdict ? verdict.structuredVerdict : null;
+        const publicationState = structuredVerdict && structuredVerdict.publicationState
+          ? structuredVerdict.publicationState
+          : null;
+        const surfacedStateParts = [];
+        if (stateReason) {
+          surfacedStateParts.push("reason: " + stateReason);
+        }
+        if (publicationState) {
+          surfacedStateParts.push("publication: " + publicationState);
+        }
+        const surfacedStateSuffix = surfacedStateParts.length > 0
+          ? " (" + surfacedStateParts.join(", ") + ")"
+          : "";
         if (sessionState === "awaiting_operator_answer" && sessionPayload.operatorQuestion) {
           conflictQuestionWrap.style.display = "";
           conflictQuestionText.innerHTML = "<strong>AI follow-up:</strong> " + (sessionPayload.operatorQuestion.questionText || "No question text.");
@@ -3949,11 +3964,11 @@ public static class OperatorWebEndpointExtensions
           conflictVerdictNode.textContent = JSON.stringify(verdict, null, 2);
           if (sessionState === "ready_for_commit") {
             conflictApplyButton.style.display = "";
-            setConflictSessionState("success", "Final AI verdict is ready for deterministic apply handoff.");
+            setConflictSessionState("success", "Final AI verdict is ready for deterministic apply handoff." + surfacedStateSuffix);
           } else if (sessionState === "needs_web_review" || sessionState === "fallback") {
-            setConflictSessionState("empty", "AI returned unresolved/fallback verdict; continue with manual bounded action.");
+            setConflictSessionState("empty", "AI returned unresolved/fallback verdict; continue with manual bounded action." + surfacedStateSuffix);
           } else {
-            setConflictSessionState("empty", "AI session completed with non-apply state: " + sessionState + ".");
+            setConflictSessionState("empty", "AI session completed with non-apply state: " + sessionState + surfacedStateSuffix + ".");
           }
           return;
         }

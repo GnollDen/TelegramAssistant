@@ -188,6 +188,17 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     EnsureStructuredVerdictProofRows(report, finalEnvelope.ConflictSession.FinalVerdict);
                     EnsureToolContractProofRows(report, finalEnvelope.ConflictSession.ScopeItemKey);
                     EnsureFallbackMappingProofRows(report);
+                    await EnsureApiSurfaceProofRowsAsync(
+                        report,
+                        dbFactory,
+                        appService,
+                        identity,
+                        finalEnvelope.Session,
+                        trackedPerson.Id,
+                        finalEnvelope.ConflictSession.ScopeItemKey,
+                        candidate.Detail.ItemType,
+                        candidate.Detail.SourceKind,
+                        ct);
 
                     if (!sessionContractSatisfied)
                     {
@@ -281,6 +292,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                 && report.RequiredAuditKeysPresent
                 && report.StructuredVerdictProofRows.All(x => x.Passed)
                 && report.ToolProofRows.All(x => x.Passed)
+                && report.ApiSurfaceProofRows.All(x => x.Passed)
                 && report.FallbackMappingProofRows.All(x => x.Passed);
         }
         catch (Exception ex)
@@ -550,6 +562,218 @@ public static class AiConflictResolutionSessionV1ProofRunner
         }
     }
 
+    private static async Task EnsureApiSurfaceProofRowsAsync(
+        AiConflictResolutionSessionV1ProofReport report,
+        IDbContextFactory<TgAssistantDbContext> dbFactory,
+        IOperatorResolutionApplicationService appService,
+        OperatorIdentityContext identity,
+        OperatorSessionContext session,
+        Guid trackedPersonId,
+        string scopeItemKey,
+        string itemType,
+        string sourceKind,
+        CancellationToken ct)
+    {
+        var fixtures = new[]
+        {
+            new ApiSurfaceFixture(
+                "query_surface_fallback_manual_review",
+                ResolutionConflictSessionStates.Fallback,
+                ConflictResolutionSessionFallbackReasons.ManualReviewRequired,
+                ConflictResolutionStructuredPublicationStates.ManualReviewRequired,
+                ConflictResolutionStructuredDecisionTypes.Defer),
+            new ApiSurfaceFixture(
+                "query_surface_needs_web_review_insufficient_evidence",
+                ResolutionConflictSessionStates.NeedsWebReview,
+                ConflictResolutionSessionFallbackReasons.InsufficientEvidence,
+                ConflictResolutionStructuredPublicationStates.InsufficientEvidence,
+                ConflictResolutionStructuredDecisionTypes.Defer)
+        };
+
+        var nowUtc = DateTime.UtcNow;
+        var fixtureRows = new List<DbOperatorResolutionConflictSession>();
+        try
+        {
+            await using (var writeDb = await dbFactory.CreateDbContextAsync(ct))
+            {
+                foreach (var fixture in fixtures)
+                {
+                    var verdict = BuildApiSurfaceFixtureVerdict(
+                        scopeItemKey,
+                        nowUtc,
+                        fixture.ExpectedState,
+                        fixture.ExpectedStateReason,
+                        fixture.ExpectedPublicationState,
+                        fixture.ExpectedDecision);
+                    var row = new DbOperatorResolutionConflictSession
+                    {
+                        Id = Guid.NewGuid(),
+                        RequestId = $"ai-conflict-v1-proof:surface:{fixture.CaseId}:{Guid.NewGuid():N}",
+                        ScopeKey = ScopeKey,
+                        TrackedPersonId = trackedPersonId,
+                        ScopeItemKey = scopeItemKey,
+                        ItemType = itemType,
+                        SourceKind = sourceKind,
+                        SourceRef = $"proof:{fixture.CaseId}",
+                        OperatorId = identity.OperatorId,
+                        OperatorSessionId = session.OperatorSessionId,
+                        Surface = OperatorSurfaceTypes.Web,
+                        Status = fixture.ExpectedState,
+                        StateReason = fixture.ExpectedStateReason,
+                        Revision = 1,
+                        QuestionCount = 0,
+                        AnswerCount = 0,
+                        ModelCallCount = 1,
+                        CasePacketJson = JsonSerializer.Serialize(new ResolutionConflictSessionCasePacket
+                        {
+                            Item = new ResolutionItemDetail
+                            {
+                                ScopeItemKey = scopeItemKey,
+                                ItemType = itemType,
+                                SourceKind = sourceKind,
+                                SourceRef = $"proof:{fixture.CaseId}"
+                            },
+                            Evidence = [],
+                            Notes = [],
+                            DurableContextSummaries = []
+                        }),
+                        VerdictJson = JsonSerializer.Serialize(verdict),
+                        NormalizationProposalJson = JsonSerializer.Serialize(verdict.NormalizationProposal),
+                        AuditTrailJson = "[]",
+                        StartedAtUtc = nowUtc.AddMinutes(-1),
+                        ExpiresAtUtc = nowUtc.AddMinutes(20),
+                        UpdatedAtUtc = nowUtc,
+                        CompletedAtUtc = nowUtc
+                    };
+
+                    fixtureRows.Add(row);
+                    writeDb.OperatorResolutionConflictSessions.Add(row);
+                }
+
+                await writeDb.SaveChangesAsync(ct);
+            }
+
+            var querySession = new OperatorSessionContext
+            {
+                OperatorSessionId = session.OperatorSessionId,
+                Surface = session.Surface,
+                AuthenticatedAtUtc = session.AuthenticatedAtUtc,
+                LastSeenAtUtc = nowUtc,
+                ExpiresAtUtc = session.ExpiresAtUtc,
+                ActiveMode = OperatorModeTypes.ResolutionDetail,
+                ActiveTrackedPersonId = trackedPersonId,
+                ActiveScopeItemKey = scopeItemKey
+            };
+
+            foreach (var fixture in fixtures)
+            {
+                var row = fixtureRows.First(x => x.StateReason == fixture.ExpectedStateReason && x.Status == fixture.ExpectedState);
+                var queryResult = await appService.QueryConflictResolutionSessionAsync(
+                    new OperatorConflictResolutionSessionQueryRequest
+                    {
+                        OperatorIdentity = identity,
+                        Session = querySession,
+                        ConflictSessionId = row.Id
+                    },
+                    ct);
+
+                var actualState = queryResult.ConflictSession?.State;
+                var actualStateReason = queryResult.ConflictSession?.StateReason;
+                var actualPublicationState = queryResult.ConflictSession?.FinalVerdict?.StructuredVerdict?.PublicationState;
+                var passed = queryResult.Accepted
+                    && queryResult.ConflictSession != null
+                    && string.Equals(fixture.ExpectedState, actualState, StringComparison.Ordinal)
+                    && string.Equals(fixture.ExpectedStateReason, actualStateReason, StringComparison.Ordinal)
+                    && string.Equals(fixture.ExpectedPublicationState, actualPublicationState, StringComparison.Ordinal);
+
+                report.ApiSurfaceProofRows.Add(new AiConflictResolutionApiSurfaceProofRow
+                {
+                    CaseId = fixture.CaseId,
+                    ExpectedState = fixture.ExpectedState,
+                    ActualState = actualState ?? string.Empty,
+                    ExpectedStateReason = fixture.ExpectedStateReason,
+                    ActualStateReason = actualStateReason ?? string.Empty,
+                    ExpectedPublicationState = fixture.ExpectedPublicationState,
+                    ActualPublicationState = actualPublicationState ?? string.Empty,
+                    Passed = passed,
+                    FailureReason = passed ? null : queryResult.FailureReason ?? "query_surface_contract_mismatch"
+                });
+            }
+        }
+        finally
+        {
+            if (fixtureRows.Count > 0)
+            {
+                await using var cleanupDb = await dbFactory.CreateDbContextAsync(ct);
+                var ids = fixtureRows.Select(x => x.Id).ToList();
+                if (ids.Count > 0)
+                {
+                    var rows = await cleanupDb.OperatorResolutionConflictSessions
+                        .Where(x => ids.Contains(x.Id))
+                        .ToListAsync(ct);
+                    if (rows.Count > 0)
+                    {
+                        cleanupDb.OperatorResolutionConflictSessions.RemoveRange(rows);
+                        await cleanupDb.SaveChangesAsync(ct);
+                    }
+                }
+            }
+        }
+
+        if (report.ApiSurfaceProofRows.Any(x => !x.Passed))
+        {
+            throw new InvalidOperationException("Conflict-session API surface proof rows include failures.");
+        }
+    }
+
+    private static ResolutionConflictSessionVerdict BuildApiSurfaceFixtureVerdict(
+        string scopeItemKey,
+        DateTime nowUtc,
+        string state,
+        string fallbackReason,
+        string publicationState,
+        string decision)
+    {
+        var verdict = new ResolutionConflictSessionVerdict
+        {
+            ResolutionVerdict = state,
+            RemainingUncertainties =
+            [
+                $"AI conflict session returned deterministic fallback: {fallbackReason}."
+            ],
+            NormalizationProposal = new ResolutionConflictNormalizationProposal
+            {
+                RecommendedAction = ResolutionActionTypes.Clarify,
+                Explanation = $"Fallback: {fallbackReason}"
+            },
+            ConfidenceCalibration = new ResolutionConflictConfidenceCalibration
+            {
+                ConfidenceScore = 0f,
+                Rationale = "fallback"
+            }
+        };
+        verdict.StructuredVerdict = new ConflictResolutionStructuredVerdict
+        {
+            VerdictId = Guid.NewGuid().ToString("N"),
+            ScopeKey = ScopeKey,
+            ScopeItemKey = scopeItemKey,
+            CarryForwardCaseId = null,
+            Decision = decision,
+            PublicationState = publicationState,
+            ClaimRows = [],
+            UncertaintyRows = [.. verdict.RemainingUncertainties],
+            NormalizationPlan = new ConflictResolutionStructuredNormalizationPlan
+            {
+                RecommendedAction = verdict.NormalizationProposal.RecommendedAction,
+                Explanation = verdict.NormalizationProposal.Explanation,
+                ClarificationPayload = null
+            },
+            EvidenceRefs = [],
+            CreatedAtUtc = nowUtc
+        };
+        return verdict;
+    }
+
     private static AiConflictResolutionFallbackMappingProofRow BuildFallbackMappingRow(
         string caseId,
         string violationReason,
@@ -643,6 +867,7 @@ public sealed class AiConflictResolutionSessionV1ProofReport
     public string? ApplyPathNonBlockingFailureReason { get; set; }
     public List<AiConflictResolutionStructuredVerdictProofRow> StructuredVerdictProofRows { get; set; } = [];
     public List<AiConflictResolutionToolProofRow> ToolProofRows { get; set; } = [];
+    public List<AiConflictResolutionApiSurfaceProofRow> ApiSurfaceProofRows { get; set; } = [];
     public List<AiConflictResolutionFallbackMappingProofRow> FallbackMappingProofRows { get; set; } = [];
     public List<AiConflictResolutionSessionV1CandidateAttempt> CandidateAttempts { get; set; } = [];
     public bool Passed { get; set; }
@@ -678,6 +903,19 @@ public sealed class AiConflictResolutionToolProofRow
     public bool Passed { get; set; }
 }
 
+public sealed class AiConflictResolutionApiSurfaceProofRow
+{
+    public string CaseId { get; set; } = string.Empty;
+    public string ExpectedState { get; set; } = string.Empty;
+    public string ActualState { get; set; } = string.Empty;
+    public string ExpectedStateReason { get; set; } = string.Empty;
+    public string ActualStateReason { get; set; } = string.Empty;
+    public string ExpectedPublicationState { get; set; } = string.Empty;
+    public string ActualPublicationState { get; set; } = string.Empty;
+    public string? FailureReason { get; set; }
+    public bool Passed { get; set; }
+}
+
 public sealed class AiConflictResolutionFallbackMappingProofRow
 {
     public string CaseId { get; set; } = string.Empty;
@@ -688,3 +926,10 @@ public sealed class AiConflictResolutionFallbackMappingProofRow
     public string ActualPublicationState { get; set; } = string.Empty;
     public bool Passed { get; set; }
 }
+
+internal sealed record ApiSurfaceFixture(
+    string CaseId,
+    string ExpectedState,
+    string ExpectedStateReason,
+    string ExpectedPublicationState,
+    string ExpectedDecision);
