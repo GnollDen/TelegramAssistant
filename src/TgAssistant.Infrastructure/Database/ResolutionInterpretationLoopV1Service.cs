@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using TgAssistant.Core.Configuration;
 using TgAssistant.Core.Interfaces;
 using TgAssistant.Core.Models;
 
@@ -6,21 +8,28 @@ namespace TgAssistant.Infrastructure.Database;
 
 public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpretationLoopService
 {
-    private const string EnabledScopeKey = "chat:885574984";
-    private const int MaxAdditionalRetrievalRounds = 1;
-    private const int InitialEvidenceCount = 2;
-    private const int AdditionalEvidenceCount = 3;
-    private const int AdditionalDurableContextCount = 2;
-
     private readonly IResolutionInterpretationModel _model;
     private readonly ILogger<ResolutionInterpretationLoopV1Service> _logger;
+    private readonly ResolutionInterpretationLoopSettings _settings;
+    private readonly string _canonicalScopeKey;
+    private readonly int _maxAdditionalRetrievalRounds;
+    private readonly int _maxInitialEvidenceItems;
+    private readonly int _maxRequestedContextItems;
 
     public ResolutionInterpretationLoopV1Service(
         IResolutionInterpretationModel model,
+        IOptions<ResolutionInterpretationLoopSettings> settings,
         ILogger<ResolutionInterpretationLoopV1Service> logger)
     {
         _model = model;
+        _settings = settings.Value ?? new ResolutionInterpretationLoopSettings();
         _logger = logger;
+        _canonicalScopeKey = string.IsNullOrWhiteSpace(_settings.CanonicalScopeKey)
+            ? "chat:885574984"
+            : _settings.CanonicalScopeKey.Trim();
+        _maxAdditionalRetrievalRounds = Math.Max(1, _settings.MaxAdditionalRetrievalRounds);
+        _maxInitialEvidenceItems = Math.Max(1, _settings.MaxInitialEvidenceItems);
+        _maxRequestedContextItems = Math.Max(1, _settings.MaxRequestedContextItems);
     }
 
     public async Task<ResolutionInterpretationLoopResult> InterpretAsync(
@@ -34,6 +43,8 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             .Select(BuildEvidenceRef)
             .Distinct(StringComparer.Ordinal)
             .ToHashSet(StringComparer.Ordinal);
+        var cumulativeTotalTokens = 0;
+        var cumulativeCostUsd = 0m;
 
         AddAuditEntry(
             auditTrail,
@@ -41,10 +52,10 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             retrievalRound: 0,
             requestedContextType: ResolutionInterpretationContextTypes.None,
             status: "recorded",
-            details: $"Initial bounded context contains {Math.Min(request.Evidence.Count, InitialEvidenceCount)} evidence refs, {request.Notes.Count} notes, and {request.DurableContextSummaries.Count} durable summaries.",
-            evidenceRefs: request.Evidence.Take(InitialEvidenceCount).Select(BuildEvidenceRef));
+            details: $"Initial bounded context contains {Math.Min(request.Evidence.Count, _maxInitialEvidenceItems)} evidence refs, {request.Notes.Count} notes, and {request.DurableContextSummaries.Count} durable summaries.",
+            evidenceRefs: request.Evidence.Take(_maxInitialEvidenceItems).Select(BuildEvidenceRef));
 
-        if (!string.Equals(request.ScopeKey, EnabledScopeKey, StringComparison.Ordinal))
+        if (!_settings.Enabled)
         {
             AddAuditEntry(
                 auditTrail,
@@ -52,11 +63,37 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 retrievalRound: 0,
                 requestedContextType: ResolutionInterpretationContextTypes.None,
                 status: "skipped",
-                details: $"ResolutionInterpretationLoopV1 is enabled only for '{EnabledScopeKey}'.");
-            return BuildFallback(request, "scope_not_enabled", auditTrail, knownEvidenceRefs);
+                details: "ResolutionInterpretationLoopV1 is disabled by runtime settings.");
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.LoopDisabled, auditTrail, knownEvidenceRefs);
         }
 
-        var initialContext = BuildInitialContext(request);
+        if (_settings.CanonicalScopeOnly
+            && !string.Equals(request.ScopeKey, _canonicalScopeKey, StringComparison.Ordinal))
+        {
+            AddAuditEntry(
+                auditTrail,
+                step: "scope_gate",
+                retrievalRound: 0,
+                requestedContextType: ResolutionInterpretationContextTypes.None,
+                status: "skipped",
+                details: $"ResolutionInterpretationLoopV1 is enabled only for '{_canonicalScopeKey}'.");
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.ScopeRejected, auditTrail, knownEvidenceRefs);
+        }
+
+        var budgetConfigurationFailure = ValidateBudgetConfiguration();
+        if (budgetConfigurationFailure is not null)
+        {
+            AddAuditEntry(
+                auditTrail,
+                step: "budget_guard",
+                retrievalRound: 0,
+                requestedContextType: ResolutionInterpretationContextTypes.None,
+                status: "invalid_configuration",
+                details: $"Budget guard failed before model execution: {budgetConfigurationFailure}.");
+            return BuildFallback(request, budgetConfigurationFailure, auditTrail, knownEvidenceRefs);
+        }
+
+        var initialContext = BuildInitialContext(request, _maxInitialEvidenceItems);
         ResolutionInterpretationModelResponse initialResponse;
         try
         {
@@ -72,6 +109,22 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 },
                 ct);
         }
+        catch (ResolutionInterpretationSchemaException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Resolution interpretation loop initial model payload failed schema validation: scope={ScopeKey}, scope_item_key={ScopeItemKey}",
+                request.ScopeKey,
+                request.ScopeItemKey);
+            AddAuditEntry(
+                auditTrail,
+                step: "model_round",
+                retrievalRound: 0,
+                requestedContextType: ResolutionInterpretationContextTypes.None,
+                status: "model_error",
+                details: ex.Message);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.SchemaInvalid, auditTrail, knownEvidenceRefs);
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(
@@ -86,7 +139,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 requestedContextType: ResolutionInterpretationContextTypes.None,
                 status: "model_error",
                 details: ex.Message);
-            return BuildFallback(request, "initial_model_error", auditTrail, knownEvidenceRefs);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.RetrievalFailed, auditTrail, knownEvidenceRefs);
         }
 
         AddAuditEntry(
@@ -100,7 +153,35 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             model: initialResponse.Model,
             requestId: initialResponse.RequestId,
             latencyMs: initialResponse.LatencyMs,
+            promptTokens: initialResponse.PromptTokens,
+            completionTokens: initialResponse.CompletionTokens,
+            totalTokens: initialResponse.TotalTokens,
+            costUsd: initialResponse.CostUsd,
             evidenceRefs: initialResponse.Interpretation.EvidenceRefsUsed);
+
+        var initialBudgetFailure = TryEvaluateBudgetFailure(
+            initialResponse,
+            ref cumulativeTotalTokens,
+            ref cumulativeCostUsd);
+        if (initialBudgetFailure is not null)
+        {
+            AddAuditEntry(
+                auditTrail,
+                step: "budget_guard",
+                retrievalRound: 0,
+                requestedContextType: initialResponse.Interpretation.RequestedContextType,
+                status: "breached",
+                details: $"Budget ceiling reached after initial model round: {initialBudgetFailure}.",
+                provider: initialResponse.Provider,
+                model: initialResponse.Model,
+                requestId: initialResponse.RequestId,
+                latencyMs: initialResponse.LatencyMs,
+                promptTokens: initialResponse.PromptTokens,
+                completionTokens: initialResponse.CompletionTokens,
+                totalTokens: initialResponse.TotalTokens,
+                costUsd: initialResponse.CostUsd);
+            return BuildFallback(request, initialBudgetFailure, auditTrail, knownEvidenceRefs);
+        }
 
         var normalizedInitial = NormalizeResult(request, initialResponse.Interpretation, knownEvidenceRefs);
         if (normalizedInitial.ContextSufficient
@@ -123,7 +204,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 requestedContextType: requestedContextType,
                 status: "rejected",
                 details: "Requested context type was not admitted by the bounded whitelist.");
-            return BuildFallback(request, "requested_context_type_rejected", auditTrail, knownEvidenceRefs);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.ScopeRejected, auditTrail, knownEvidenceRefs);
         }
 
         var additionalContext = BuildAdditionalContext(request, requestedContextType);
@@ -136,7 +217,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 requestedContextType: requestedContextType,
                 status: "empty",
                 details: $"Requested context '{requestedContextType}' had no bounded data available.");
-            return BuildFallback(request, "requested_context_unavailable", auditTrail, knownEvidenceRefs);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.RetrievalFailed, auditTrail, knownEvidenceRefs);
         }
 
         AddAuditEntry(
@@ -156,12 +237,29 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 {
                     ScopeKey = request.ScopeKey,
                     ScopeItemKey = request.ScopeItemKey,
-                    RetrievalRound = MaxAdditionalRetrievalRounds,
+                    RetrievalRound = _maxAdditionalRetrievalRounds,
                     AllowedContextTypes = ResolutionInterpretationContextTypes.All,
                     Context = initialContext,
                     AdditionalContext = additionalContext
                 },
                 ct);
+        }
+        catch (ResolutionInterpretationSchemaException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Resolution interpretation loop final model payload failed schema validation: scope={ScopeKey}, scope_item_key={ScopeItemKey}, requested_context_type={RequestedContextType}",
+                request.ScopeKey,
+                request.ScopeItemKey,
+                requestedContextType);
+            AddAuditEntry(
+                auditTrail,
+                step: "model_round",
+                retrievalRound: 1,
+                requestedContextType: requestedContextType,
+                status: "model_error",
+                details: ex.Message);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.SchemaInvalid, auditTrail, knownEvidenceRefs);
         }
         catch (Exception ex)
         {
@@ -178,7 +276,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 requestedContextType: requestedContextType,
                 status: "model_error",
                 details: ex.Message);
-            return BuildFallback(request, "final_model_error", auditTrail, knownEvidenceRefs);
+            return BuildFallback(request, ResolutionInterpretationFailureReasons.RetrievalFailed, auditTrail, knownEvidenceRefs);
         }
 
         AddAuditEntry(
@@ -192,7 +290,35 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             model: finalResponse.Model,
             requestId: finalResponse.RequestId,
             latencyMs: finalResponse.LatencyMs,
+            promptTokens: finalResponse.PromptTokens,
+            completionTokens: finalResponse.CompletionTokens,
+            totalTokens: finalResponse.TotalTokens,
+            costUsd: finalResponse.CostUsd,
             evidenceRefs: finalResponse.Interpretation.EvidenceRefsUsed);
+
+        var finalBudgetFailure = TryEvaluateBudgetFailure(
+            finalResponse,
+            ref cumulativeTotalTokens,
+            ref cumulativeCostUsd);
+        if (finalBudgetFailure is not null)
+        {
+            AddAuditEntry(
+                auditTrail,
+                step: "budget_guard",
+                retrievalRound: 1,
+                requestedContextType: requestedContextType,
+                status: "breached",
+                details: $"Budget ceiling reached after final model round: {finalBudgetFailure}.",
+                provider: finalResponse.Provider,
+                model: finalResponse.Model,
+                requestId: finalResponse.RequestId,
+                latencyMs: finalResponse.LatencyMs,
+                promptTokens: finalResponse.PromptTokens,
+                completionTokens: finalResponse.CompletionTokens,
+                totalTokens: finalResponse.TotalTokens,
+                costUsd: finalResponse.CostUsd);
+            return BuildFallback(request, finalBudgetFailure, auditTrail, knownEvidenceRefs);
+        }
 
         var normalizedFinal = NormalizeResult(request, finalResponse.Interpretation, knownEvidenceRefs);
         normalizedFinal.Applied = true;
@@ -201,7 +327,9 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
         return normalizedFinal;
     }
 
-    private static ResolutionInterpretationLoopRequest BuildInitialContext(ResolutionInterpretationLoopRequest request)
+    private static ResolutionInterpretationLoopRequest BuildInitialContext(
+        ResolutionInterpretationLoopRequest request,
+        int maxInitialEvidenceItems)
     {
         return new ResolutionInterpretationLoopRequest
         {
@@ -213,12 +341,12 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             SourceRef = request.SourceRef,
             RequiredAction = request.RequiredAction,
             Notes = request.Notes.Take(6).Select(CloneNote).ToList(),
-            Evidence = request.Evidence.Take(InitialEvidenceCount).Select(CloneEvidence).ToList(),
+            Evidence = request.Evidence.Take(maxInitialEvidenceItems).Select(CloneEvidence).ToList(),
             DurableContextSummaries = request.DurableContextSummaries.Take(1).ToList()
         };
     }
 
-    private static ResolutionInterpretationAdditionalContext BuildAdditionalContext(
+    private ResolutionInterpretationAdditionalContext BuildAdditionalContext(
         ResolutionInterpretationLoopRequest request,
         string requestedContextType)
     {
@@ -227,8 +355,8 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             ResolutionInterpretationContextTypes.AdditionalEvidence => new ResolutionInterpretationAdditionalContext
             {
                 Evidence = request.Evidence
-                    .Skip(InitialEvidenceCount)
-                    .Take(AdditionalEvidenceCount)
+                    .Skip(_maxInitialEvidenceItems)
+                    .Take(_maxRequestedContextItems)
                     .Select(CloneEvidence)
                     .ToList()
             },
@@ -236,7 +364,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             {
                 DurableContextSummaries = request.DurableContextSummaries
                     .Skip(1)
-                    .Take(AdditionalDurableContextCount)
+                    .Take(_maxRequestedContextItems)
                     .ToList()
             },
             _ => new ResolutionInterpretationAdditionalContext()
@@ -245,6 +373,72 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
 
     private static bool HasAdditionalContext(ResolutionInterpretationAdditionalContext context)
         => context.Evidence.Count > 0 || context.DurableContextSummaries.Count > 0;
+
+    private string? ValidateBudgetConfiguration()
+    {
+        if (_settings.MaxInputTokens <= 0
+            || _settings.MaxOutputTokens <= 0
+            || _settings.MaxTotalTokens <= 0
+            || _settings.MaxCostUsdPerLoop <= 0m)
+        {
+            return InvalidBudgetConfiguration;
+        }
+
+        return null;
+    }
+
+    private string? TryEvaluateBudgetFailure(
+        ResolutionInterpretationModelResponse response,
+        ref int cumulativeTotalTokens,
+        ref decimal cumulativeCostUsd)
+    {
+        if (response.PromptTokens.HasValue && response.PromptTokens.Value > _settings.MaxInputTokens)
+        {
+            return InputTokenBudgetExceeded;
+        }
+
+        if (response.CompletionTokens.HasValue && response.CompletionTokens.Value > _settings.MaxOutputTokens)
+        {
+            return OutputTokenBudgetExceeded;
+        }
+
+        if (response.TotalTokens.HasValue)
+        {
+            cumulativeTotalTokens += response.TotalTokens.Value;
+        }
+
+        if (response.CostUsd.HasValue)
+        {
+            cumulativeCostUsd += response.CostUsd.Value;
+        }
+
+        if (cumulativeTotalTokens > _settings.MaxTotalTokens)
+        {
+            return TotalTokenBudgetExceeded;
+        }
+
+        if (cumulativeCostUsd > _settings.MaxCostUsdPerLoop)
+        {
+            return CostBudgetExceeded;
+        }
+
+        if (!response.PromptTokens.HasValue
+            || !response.CompletionTokens.HasValue
+            || !response.TotalTokens.HasValue
+            || !response.CostUsd.HasValue)
+        {
+            return UsageUnavailable;
+        }
+
+        return ValidateBudgetConfiguration();
+    }
+
+    private static string InputTokenBudgetExceeded => ResolutionInterpretationFailureReasons.InputTokenBudgetExceeded;
+    private static string OutputTokenBudgetExceeded => ResolutionInterpretationFailureReasons.OutputTokenBudgetExceeded;
+    private static string TotalTokenBudgetExceeded => ResolutionInterpretationFailureReasons.TotalTokenBudgetExceeded;
+    private static string CostBudgetExceeded => ResolutionInterpretationFailureReasons.CostBudgetExceeded;
+    private static string UsageUnavailable => ResolutionInterpretationFailureReasons.UsageUnavailable;
+    private static string InvalidBudgetConfiguration => ResolutionInterpretationFailureReasons.InvalidBudgetConfiguration;
 
     private static ResolutionInterpretationLoopResult NormalizeResult(
         ResolutionInterpretationLoopRequest request,
@@ -273,21 +467,30 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 continue;
             }
 
+            var normalizedClaimType = ResolutionInterpretationClaimTypes.Normalize(claim.ClaimType);
             var evidenceRefs = claim.EvidenceRefs
                 .Select(NormalizeEvidenceRef)
                 .Where(x => x != null && knownEvidenceRefs.Contains(x))
                 .Cast<string>()
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
-            if (evidenceRefs.Count == 0)
+
+            if (evidenceRefs.Count == 0 && !HasExplicitUncertaintySignal(normalizedClaimType))
             {
                 uncertainties.Add($"Claim omitted due to missing evidence refs: {summary}");
                 continue;
             }
 
+            if (evidenceRefs.Count == 0)
+            {
+                uncertainties.Add($"Uncertainty retained as {normalizedClaimType} without direct evidence refs: {summary}");
+            }
+
             claims.Add(new ResolutionInterpretationClaim
             {
-                ClaimType = ResolutionInterpretationClaimTypes.Normalize(claim.ClaimType),
+                ClaimType = normalizedClaimType,
+                DisplayLabel = ResolutionInterpretationClaimTypes.ToDisplayLabel(normalizedClaimType),
+                TrustPercent = DeriveTrustPercent(claim.Confidence),
                 Summary = summary,
                 EvidenceRefs = evidenceRefs
             });
@@ -345,6 +548,8 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
             {
                 Decision = normalizedReviewDecision,
+                DisplayLabel = OperatorAssistantTruthLabels.Recommendation,
+                TrustPercent = DeriveTrustPercent(raw.ReviewRecommendation?.Confidence),
                 Reason = reviewReason
             },
             EvidenceRefsUsed = evidenceRefsUsed
@@ -378,6 +583,8 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             claims.Add(new ResolutionInterpretationClaim
             {
                 ClaimType = ResolutionInterpretationClaimTypes.Inference,
+                DisplayLabel = OperatorAssistantTruthLabels.Inference,
+                TrustPercent = null,
                 Summary = $"Bounded evidence still supports surfacing '{request.Item.Title}' for operator attention.",
                 EvidenceRefs = [evidenceRefs[0]]
             });
@@ -405,11 +612,23 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
             {
                 Decision = ResolutionInterpretationReviewRecommendations.Review,
+                DisplayLabel = OperatorAssistantTruthLabels.Recommendation,
+                TrustPercent = null,
                 Reason = "The existing deterministic projection already surfaced this item for operator review, so the fallback path preserves that review posture."
             },
             EvidenceRefsUsed = evidenceRefs,
             AuditTrail = auditTrail
         };
+    }
+
+    private static int? DeriveTrustPercent(float? confidence)
+    {
+        if (confidence.HasValue)
+        {
+            return OperatorTruthTrustFormatter.ToTrustPercent(confidence.Value);
+        }
+
+        return null;
     }
 
     private static string BuildFallbackSummary(ResolutionInterpretationLoopRequest request)
@@ -439,7 +658,11 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
         string? provider = null,
         string? model = null,
         string? requestId = null,
-        int? latencyMs = null)
+        int? latencyMs = null,
+        int? promptTokens = null,
+        int? completionTokens = null,
+        int? totalTokens = null,
+        decimal? costUsd = null)
     {
         auditTrail.Add(new ResolutionInterpretationAuditEntry
         {
@@ -452,6 +675,10 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             Model = model,
             RequestId = requestId,
             LatencyMs = latencyMs,
+            PromptTokens = promptTokens,
+            CompletionTokens = completionTokens,
+            TotalTokens = totalTokens,
+            CostUsd = costUsd,
             EvidenceRefs = evidenceRefs?
                 .Select(NormalizeEvidenceRef)
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -548,4 +775,8 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             ? trimmed
             : trimmed[..maxLength].TrimEnd();
     }
+
+    private static bool HasExplicitUncertaintySignal(string claimType)
+        => string.Equals(claimType, ResolutionInterpretationClaimTypes.Inference, StringComparison.Ordinal)
+           || string.Equals(claimType, ResolutionInterpretationClaimTypes.Hypothesis, StringComparison.Ordinal);
 }

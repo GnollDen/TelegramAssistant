@@ -289,8 +289,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "DTP-011 completed: resolution interpretation claims and review recommendation now surface operator-facing display_label plus nullable trust_percent derived only from bounded confidence (null when confidence absent); validation runner now proves Inference/Hypothesis uncertainty labeling and trust mapping. Verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --resolution-interpretation-loop-v1-validate.",
       "dependencies": [
         "DTP-010"
       ]

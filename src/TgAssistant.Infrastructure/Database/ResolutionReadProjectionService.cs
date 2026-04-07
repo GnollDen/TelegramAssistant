@@ -323,6 +323,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                         ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
                         {
                             Decision = ResolutionInterpretationReviewRecommendations.Review,
+                            DisplayLabel = OperatorAssistantTruthLabels.Recommendation,
+                            TrustPercent = null,
                             Reason = "Existing deterministic projection keeps this item in operator review."
                         },
                         EvidenceRefsUsed = evidence
@@ -2398,6 +2400,8 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             ReviewRecommendation = new ResolutionInterpretationReviewRecommendation
             {
                 Decision = ResolutionInterpretationReviewRecommendations.Review,
+                DisplayLabel = OperatorAssistantTruthLabels.Recommendation,
+                TrustPercent = null,
                 Reason = "Existing deterministic projection keeps this item in operator review while the interpretation loop is disabled."
             },
             EvidenceRefsUsed = evidence

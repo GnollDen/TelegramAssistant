@@ -248,6 +248,16 @@ public class ResolutionInterpretationClaim
     [JsonPropertyName("claim_type")]
     public string ClaimType { get; set; } = ResolutionInterpretationClaimTypes.Hypothesis;
 
+    [JsonPropertyName("display_label")]
+    public string DisplayLabel { get; set; } = OperatorAssistantTruthLabels.Hypothesis;
+
+    [JsonPropertyName("trust_percent")]
+    public int? TrustPercent { get; set; }
+
+    [JsonPropertyName("confidence")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public float? Confidence { get; set; }
+
     [JsonPropertyName("summary")]
     public string Summary { get; set; } = string.Empty;
 
@@ -294,6 +304,16 @@ public class ResolutionInterpretationReviewRecommendation
 {
     [JsonPropertyName("decision")]
     public string Decision { get; set; } = ResolutionInterpretationReviewRecommendations.Review;
+
+    [JsonPropertyName("display_label")]
+    public string DisplayLabel { get; set; } = OperatorAssistantTruthLabels.Recommendation;
+
+    [JsonPropertyName("trust_percent")]
+    public int? TrustPercent { get; set; }
+
+    [JsonPropertyName("confidence")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public float? Confidence { get; set; }
 
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = string.Empty;
