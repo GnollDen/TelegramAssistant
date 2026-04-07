@@ -309,6 +309,33 @@ public static class WsB5ResponsePublicationStates
         => !string.IsNullOrWhiteSpace(value) && Supported.Contains(value);
 }
 
+public static class WsB5ConditionalRenderModes
+{
+    public const string BaselineRule = "baseline-rule";
+    public const string ExceptionRule = "exception-rule";
+    public const string ActiveNowConditional = "active-now-conditional";
+    public const string PhaseMarker = "phase-marker";
+    public const string HonestyState = "honesty-state";
+
+    public static readonly string[] Ordered =
+    [
+        BaselineRule,
+        ExceptionRule,
+        ActiveNowConditional,
+        PhaseMarker,
+        HonestyState
+    ];
+}
+
+public class CurrentWorldConditionalHonestyStateView
+{
+    public string RenderMode { get; set; } = WsB5ConditionalRenderModes.HonestyState;
+    public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+    public string Headline { get; set; } = "Insufficient Evidence";
+    public string Message { get; set; } = "Conditional outputs are present only as bounded non-publishable rows.";
+    public string Reason { get; set; } = "current_world:insufficient_evidence";
+}
+
 public class OperatorPersonWorkspaceView
 {
     public OperatorTrackedPersonScopeSummary? TrackedPerson { get; set; }
@@ -520,6 +547,7 @@ public class OperatorPersonWorkspaceCurrentWorldSectionView
     public List<ConditionalExceptionRuleRow> ExceptionRules { get; set; } = [];
     public List<ActiveNowConditionalRow> ActiveNowConditionals { get; set; } = [];
     public List<ConditionalPhaseMarkerRow> PhaseMarkers { get; set; } = [];
+    public CurrentWorldConditionalHonestyStateView ConditionalHonestyState { get; set; } = new();
     public CurrentWorldApproximationSnapshot Snapshot { get; set; } = new();
 }
 

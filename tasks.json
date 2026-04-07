@@ -935,8 +935,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-018A completed: current-world WS-B5 conditional surfacing now exposes deterministic render-mode metadata (`baseline-rule`, `exception-rule`, `active-now-conditional`, `phase-marker`, `honesty-state`) and dedicated `conditionalHonestyState` API payload (`publicationState`, `headline`, `message`, `reason`) for adapter-only shaping in OperatorResolutionApplicationService. Web Current World rendering now consumes API-provided render modes/honesty state, keeps baseline/exception/active-now/phase rows distinct, and explicitly surfaces non-publishable honesty states (`insufficient_evidence`, `escalation_only`, `manual_review_required`) without unsupported certainty. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-017"
       ]

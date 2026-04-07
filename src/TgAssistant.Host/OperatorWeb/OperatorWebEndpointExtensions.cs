@@ -2134,8 +2134,16 @@ public static class OperatorWebEndpointExtensions
       const relationRows = Array.isArray(snapshot.relationshipStateRows) ? snapshot.relationshipStateRows : [];
       const conditionRows = Array.isArray(snapshot.activeConditionRows) ? snapshot.activeConditionRows : [];
       const changeRows = Array.isArray(snapshot.recentChangeRows) ? snapshot.recentChangeRows : [];
+      const baselineRules = Array.isArray(currentWorld.baselineRules) ? currentWorld.baselineRules : [];
+      const exceptionRules = Array.isArray(currentWorld.exceptionRules) ? currentWorld.exceptionRules : [];
+      const activeNowConditionals = Array.isArray(currentWorld.activeNowConditionals) ? currentWorld.activeNowConditionals : [];
+      const phaseMarkers = Array.isArray(currentWorld.phaseMarkers) ? currentWorld.phaseMarkers : [];
+      const conditionalHonestyState = currentWorld.conditionalHonestyState || null;
       const uncertaintyRefs = Array.isArray(currentWorld.uncertaintyRefs) ? currentWorld.uncertaintyRefs : [];
       const publicationState = currentWorld.publicationState || "insufficient_evidence";
+      const conditionalPublicationState = conditionalHonestyState && typeof conditionalHonestyState.publicationState === "string"
+        ? conditionalHonestyState.publicationState
+        : "insufficient_evidence";
       const isDegraded = publicationState === "insufficient_evidence" || publicationState === "unresolved";
 
       currentWorldContentNode.className = isDegraded ? "state degraded" : "";
@@ -2233,10 +2241,150 @@ public static class OperatorWebEndpointExtensions
       }
       currentWorldContentNode.appendChild(rowGrid);
 
+      const conditionalContainer = document.createElement("section");
+      conditionalContainer.id = "current-world-conditional-modeling";
+      conditionalContainer.className = "stack";
+
+      function appendConditionalSection(sectionId, heading, rows, fallbackRenderMode, renderRow) {
+        const section = document.createElement("article");
+        section.id = sectionId;
+        section.className = "family-card";
+
+        const title = document.createElement("h3");
+        title.textContent = heading;
+        section.appendChild(title);
+
+        if (!rows.length) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No rows are available for this render mode.";
+          section.appendChild(empty);
+          conditionalContainer.appendChild(section);
+          return;
+        }
+
+        rows.forEach(function(row) {
+          const card = document.createElement("div");
+          card.className = "family-card";
+          const renderMode = typeof row.renderMode === "string" ? row.renderMode : fallbackRenderMode;
+          card.setAttribute("data-render-mode", renderMode);
+          renderRow(card, row);
+          section.appendChild(card);
+        });
+
+        conditionalContainer.appendChild(section);
+      }
+
+      appendConditionalSection(
+        "current-world-baseline-rules",
+        "Conditional Baseline Rules",
+        baselineRules,
+        "baseline-rule",
+        function(card, row) {
+          card.innerHTML =
+            "<p><strong>Rule:</strong> " + (row.ruleId || "n/a") + "</p>" +
+            "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+            "<p><strong>Family:</strong> " + titleize(row.factFamily || "unknown") + "</p>" +
+            "<p><strong>Baseline:</strong> " + (row.baselineValue || "n/a") + "</p>" +
+            "<p><strong>Publication:</strong> " + titleize(row.publicationState || "insufficient_evidence") + "</p>";
+        });
+
+      appendConditionalSection(
+        "current-world-exception-rules",
+        "Conditional Exception Rules",
+        exceptionRules,
+        "exception-rule",
+        function(card, row) {
+          card.innerHTML =
+            "<p><strong>Exception:</strong> " + (row.exceptionId || "n/a") + "</p>" +
+            "<p><strong>Rule:</strong> " + (row.ruleId || "n/a") + "</p>" +
+            "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+            "<p><strong>Family:</strong> " + titleize(row.factFamily || "unknown") + "</p>" +
+            "<p><strong>Exception value:</strong> " + (row.exceptionValue || "n/a") + "</p>" +
+            "<p><strong>Publication:</strong> " + titleize(row.publicationState || "insufficient_evidence") + "</p>";
+        });
+
+      appendConditionalSection(
+        "current-world-active-now-conditionals",
+        "Active-now Conditionals",
+        activeNowConditionals,
+        "active-now-conditional",
+        function(card, row) {
+          card.innerHTML =
+            "<p><strong>Rule kind:</strong> " + titleize(row.ruleKind || "unknown") + "</p>" +
+            "<p><strong>Rule:</strong> " + (row.ruleId || "n/a") + "</p>" +
+            "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+            "<p><strong>Family:</strong> " + titleize(row.factFamily || "unknown") + "</p>" +
+            "<p><strong>Resolved value:</strong> " + (row.resolvedValue || "n/a") + "</p>" +
+            "<p><strong>Publication:</strong> " + titleize(row.publicationState || "insufficient_evidence") + "</p>";
+        });
+
+      appendConditionalSection(
+        "current-world-phase-markers",
+        "Conditional Phase Markers",
+        phaseMarkers,
+        "phase-marker",
+        function(card, row) {
+          card.innerHTML =
+            "<p><strong>Phase marker:</strong> " + (row.phaseMarkerId || "n/a") + "</p>" +
+            "<p><strong>Subject:</strong> " + (row.subjectRef || "unknown") + "</p>" +
+            "<p><strong>Label:</strong> " + (row.phaseLabel || "n/a") + "</p>" +
+            "<p><strong>Reason:</strong> " + (row.phaseReason || "n/a") + "</p>" +
+            "<p><strong>Window:</strong> " + formatUtc(row.validFromUtc) + " -> " + formatUtc(row.validToUtc) + "</p>" +
+            "<p><strong>Publication:</strong> " + titleize(row.publicationState || "insufficient_evidence") + "</p>";
+        });
+
+      const honestySection = document.createElement("article");
+      honestySection.id = "current-world-honesty-state";
+      honestySection.className = "family-card";
+      const honestyTitle = document.createElement("h3");
+      honestyTitle.textContent = "Conditional Honesty State";
+      honestySection.appendChild(honestyTitle);
+
+      const honestyRow = document.createElement("div");
+      honestyRow.className = "family-card";
+      const honestyRenderMode = conditionalHonestyState && typeof conditionalHonestyState.renderMode === "string"
+        ? conditionalHonestyState.renderMode
+        : "honesty-state";
+      honestyRow.setAttribute("data-render-mode", honestyRenderMode);
+      if (conditionalHonestyState) {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> " + (conditionalHonestyState.headline || titleize(conditionalPublicationState)) + "</p>" +
+          "<p><strong>Publication:</strong> " + titleize(conditionalPublicationState) + "</p>" +
+          "<p>" + (conditionalHonestyState.message || "Conditional outputs are scope-bound for publication honesty.") + "</p>";
+      } else if (conditionalPublicationState === "insufficient_evidence") {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> Insufficient Evidence</p>" +
+          "<p>Conditional outputs are present only as bounded non-publishable rows.</p>";
+      } else if (conditionalPublicationState === "manual_review_required") {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> Manual Review Required</p>" +
+          "<p>Conditional outputs remain bounded and require manual review before closure.</p>";
+      } else if (conditionalPublicationState === "escalation_only") {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> Escalation Only</p>" +
+          "<p>Conditional outputs require escalation and are not surfaced as strong publishable claims.</p>";
+      } else if (publicationState === "unresolved") {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> Unresolved</p>" +
+          "<p>Conditional outputs remain scope-bound, with disagreement surfaced without forced certainty.</p>";
+      } else {
+        honestyRow.innerHTML =
+          "<p><strong>State:</strong> Publishable</p>" +
+          "<p>Conditional outputs are publishable with bounded evidence-linked rows.</p>";
+      }
+      honestySection.appendChild(honestyRow);
+      conditionalContainer.appendChild(honestySection);
+      currentWorldContentNode.appendChild(conditionalContainer);
+
       const note = document.createElement("p");
       note.className = "muted";
-      if (publicationState === "insufficient_evidence") {
+      if (conditionalPublicationState === "insufficient_evidence") {
         note.textContent = "Current-world output is explicitly insufficient_evidence; publishable content is intentionally withheld.";
+      } else if (conditionalPublicationState === "manual_review_required") {
+        note.textContent = "Current-world conditional outputs require manual review and are intentionally non-publishable.";
+      } else if (conditionalPublicationState === "escalation_only") {
+        note.textContent = "Current-world conditional outputs are escalation_only and avoid unsupported certainty.";
       } else if (publicationState === "unresolved") {
         note.textContent = "Current-world output is unresolved due to cross-surface disagreement; no semantic winner is selected.";
       } else {

@@ -290,6 +290,9 @@ public sealed class ConditionalBaselineRuleRow
 
     [JsonPropertyName("publication_state")]
     public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+
+    [JsonPropertyName("render_mode")]
+    public string RenderMode { get; set; } = WsB5ConditionalRenderModes.BaselineRule;
 }
 
 public sealed class ConditionalExceptionRuleRow
@@ -341,6 +344,9 @@ public sealed class ConditionalExceptionRuleRow
 
     [JsonPropertyName("publication_state")]
     public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+
+    [JsonPropertyName("render_mode")]
+    public string RenderMode { get; set; } = WsB5ConditionalRenderModes.ExceptionRule;
 }
 
 public sealed class ActiveNowConditionalRow
@@ -392,6 +398,9 @@ public sealed class ActiveNowConditionalRow
 
     [JsonPropertyName("publication_state")]
     public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+
+    [JsonPropertyName("render_mode")]
+    public string RenderMode { get; set; } = WsB5ConditionalRenderModes.ActiveNowConditional;
 }
 
 public sealed class ConditionalPhaseMarkerRow
@@ -440,6 +449,9 @@ public sealed class ConditionalPhaseMarkerRow
 
     [JsonPropertyName("publication_state")]
     public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+
+    [JsonPropertyName("render_mode")]
+    public string RenderMode { get; set; } = WsB5ConditionalRenderModes.PhaseMarker;
 }
 
 public sealed class CurrentWorldPairDynamicsReadSurface

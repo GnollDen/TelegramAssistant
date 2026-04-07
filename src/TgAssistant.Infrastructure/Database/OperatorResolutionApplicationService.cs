@@ -2039,9 +2039,78 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 ExceptionRules = [.. snapshot.ConditionalExceptionRuleRows],
                 ActiveNowConditionals = [.. snapshot.ActiveNowConditionalRows],
                 PhaseMarkers = [.. snapshot.ConditionalPhaseMarkerRows],
+                ConditionalHonestyState = ResolveConditionalHonestyState(snapshot),
                 Snapshot = snapshot
             }
         };
+    }
+
+    private static CurrentWorldConditionalHonestyStateView ResolveConditionalHonestyState(CurrentWorldApproximationSnapshot snapshot)
+    {
+        var publicationState = ResolveConditionalPublicationState(snapshot);
+        return publicationState switch
+        {
+            WsB5ResponsePublicationStates.Publishable => new CurrentWorldConditionalHonestyStateView
+            {
+                RenderMode = WsB5ConditionalRenderModes.HonestyState,
+                PublicationState = WsB5ResponsePublicationStates.Publishable,
+                Headline = "Publishable",
+                Message = "Conditional outputs are publishable with bounded evidence-linked rows.",
+                Reason = "current_world:publishable"
+            },
+            WsB5ResponsePublicationStates.EscalationOnly => new CurrentWorldConditionalHonestyStateView
+            {
+                RenderMode = WsB5ConditionalRenderModes.HonestyState,
+                PublicationState = WsB5ResponsePublicationStates.EscalationOnly,
+                Headline = "Escalation Only",
+                Message = "Conditional outputs require escalation and are not presented as strong publishable claims.",
+                Reason = "current_world:escalation_only"
+            },
+            WsB5ResponsePublicationStates.ManualReviewRequired => new CurrentWorldConditionalHonestyStateView
+            {
+                RenderMode = WsB5ConditionalRenderModes.HonestyState,
+                PublicationState = WsB5ResponsePublicationStates.ManualReviewRequired,
+                Headline = "Manual Review Required",
+                Message = "Conditional outputs remain bounded and require manual review before closure.",
+                Reason = "current_world:manual_review_required"
+            },
+            _ => new CurrentWorldConditionalHonestyStateView
+            {
+                RenderMode = WsB5ConditionalRenderModes.HonestyState,
+                PublicationState = WsB5ResponsePublicationStates.InsufficientEvidence,
+                Headline = "Insufficient Evidence",
+                Message = "Conditional outputs are present only as bounded non-publishable rows.",
+                Reason = "current_world:insufficient_evidence"
+            }
+        };
+    }
+
+    private static string ResolveConditionalPublicationState(CurrentWorldApproximationSnapshot snapshot)
+    {
+        var states = snapshot.ConditionalBaselineRuleRows.Select(x => x.PublicationState)
+            .Concat(snapshot.ConditionalExceptionRuleRows.Select(x => x.PublicationState))
+            .Concat(snapshot.ActiveNowConditionalRows.Select(x => x.PublicationState))
+            .Concat(snapshot.ConditionalPhaseMarkerRows.Select(x => x.PublicationState))
+            .Where(x => WsB5ResponsePublicationStates.IsSupported(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (states.Contains(WsB5ResponsePublicationStates.InsufficientEvidence, StringComparer.Ordinal))
+        {
+            return WsB5ResponsePublicationStates.InsufficientEvidence;
+        }
+
+        if (states.Contains(WsB5ResponsePublicationStates.EscalationOnly, StringComparer.Ordinal))
+        {
+            return WsB5ResponsePublicationStates.EscalationOnly;
+        }
+
+        if (states.Contains(WsB5ResponsePublicationStates.ManualReviewRequired, StringComparer.Ordinal))
+        {
+            return WsB5ResponsePublicationStates.ManualReviewRequired;
+        }
+
+        return WsB5ResponsePublicationStates.Publishable;
     }
 
     public async Task<OperatorResolutionQueueQueryResult> GetResolutionQueueAsync(
