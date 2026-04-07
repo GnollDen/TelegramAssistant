@@ -272,6 +272,62 @@ public static class ConflictResolutionSessionToolDecisions
     public const string FollowUpBudgetExceededRejected = "followup_budget_exceeded_rejected";
 }
 
+public static class ConflictResolutionSessionVerdictViolationReasons
+{
+    public const string SchemaInvalid = "schema_invalid";
+    public const string BudgetExceeded = "budget_exceeded";
+    public const string ScopeRejected = "scope_rejected";
+    public const string PublicationHonestyBlock = "publication_honesty_block";
+}
+
+public static class ConflictResolutionSessionFallbackReasons
+{
+    public const string ManualReviewRequired = "fallback_manual_review_required";
+    public const string EscalationOnly = "fallback_escalation_only";
+    public const string ScopeRejected = "fallback_scope_rejected";
+    public const string InsufficientEvidence = "fallback_insufficient_evidence";
+}
+
+public static class ConflictResolutionSessionFallbackMapping
+{
+    public static string MapViolationToFallbackReason(string violationReason)
+    {
+        return NormalizeViolationReason(violationReason) switch
+        {
+            ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid => ConflictResolutionSessionFallbackReasons.ManualReviewRequired,
+            ConflictResolutionSessionVerdictViolationReasons.BudgetExceeded => ConflictResolutionSessionFallbackReasons.EscalationOnly,
+            ConflictResolutionSessionVerdictViolationReasons.ScopeRejected => ConflictResolutionSessionFallbackReasons.ScopeRejected,
+            ConflictResolutionSessionVerdictViolationReasons.PublicationHonestyBlock => ConflictResolutionSessionFallbackReasons.InsufficientEvidence,
+            _ => ConflictResolutionSessionFallbackReasons.ManualReviewRequired
+        };
+    }
+
+    public static string ResolvePublicationState(string fallbackReason)
+    {
+        return fallbackReason switch
+        {
+            ConflictResolutionSessionFallbackReasons.EscalationOnly => ConflictResolutionStructuredPublicationStates.EscalationOnly,
+            ConflictResolutionSessionFallbackReasons.InsufficientEvidence => ConflictResolutionStructuredPublicationStates.InsufficientEvidence,
+            _ => ConflictResolutionStructuredPublicationStates.ManualReviewRequired
+        };
+    }
+
+    public static string NormalizeViolationReason(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+}
+
+public sealed class ConflictResolutionVerdictNormalizationResult
+{
+    [JsonPropertyName("normalizedVerdict")]
+    public ResolutionConflictSessionVerdict NormalizedVerdict { get; set; } = new();
+
+    [JsonPropertyName("fallbackReason")]
+    public string? FallbackReason { get; set; }
+
+    [JsonPropertyName("publicationState")]
+    public string PublicationState { get; set; } = ConflictResolutionStructuredPublicationStates.ManualReviewRequired;
+}
+
 public static class ConflictResolutionSessionToolContract
 {
     public const int MaxToolRequestsPerRound = 4;

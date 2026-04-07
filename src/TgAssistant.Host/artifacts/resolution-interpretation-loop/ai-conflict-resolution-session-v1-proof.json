@@ -1,6 +1,6 @@
 {
-  "GeneratedAtUtc": "2026-04-07T14:23:23.1928668Z",
-  "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json",
+  "GeneratedAtUtc": "2026-04-07T14:41:57.5966594Z",
+  "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/ai-conflict-resolution-session-v1-proof.json",
   "ScopeKey": "chat:885574984",
   "TrackedPersonId": "80c384f3-a79f-4356-b832-45e636353f59",
   "TrackedPersonDisplayName": "\u0413\u0430\u0439\u043D\u0443\u0442\u0434\u0438\u043D\u043E\u0432\u0430 \u0410\u043B\u0451\u043D\u0430 \u0410\u043C\u0438\u0440\u043E\u0432\u043D\u0430",
@@ -8,9 +8,9 @@
   "ItemType": "review",
   "SourceKind": "durable_object_metadata",
   "StartAccepted": true,
-  "ConflictSessionId": "f59700c0-9d4e-4bee-a70c-05631ed1b240",
+  "ConflictSessionId": "78db70c2-3fdd-4704-af0e-e7f7ac7d22df",
   "StartState": "fallback",
-  "StartStateReason": "initial_model_error",
+  "StartStateReason": "fallback_manual_review_required",
   "AuditEntriesAfterStart": 1,
   "InitialCasePacket": {
     "Item": {
@@ -79,23 +79,23 @@
               "885574984:293951",
               "885574984:293948"
             ],
-            "observed_at_utc": "2026-04-07T14:23:50.6745152Z"
+            "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
           },
           {
             "step": "model_round",
             "retrieval_round": 0,
-            "requested_context_type": "additional_evidence",
+            "requested_context_type": "none",
             "status": "completed",
-            "details": "Initial model response received. total_tokens=2515.",
+            "details": "Initial model response received. total_tokens=2650.",
             "provider": "codex-lb",
             "model": "gpt-5.4-mini",
             "model_id": null,
             "model_version": null,
-            "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
-            "latency_ms": 4083,
+            "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+            "latency_ms": 7611,
             "prompt_tokens": 2111,
-            "completion_tokens": 404,
-            "total_tokens": 2515,
+            "completion_tokens": 539,
+            "total_tokens": 2650,
             "cost_usd": null,
             "context_manifest": null,
             "retrieval_requests": null,
@@ -103,28 +103,25 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [
-              "13bd21fe-fb7a-4575-b834-27041d8ad063",
-              "885574984:293948",
-              "885574984:293950",
-              "885574984:293951"
+              "13bd21fe-fb7a-4575-b834-27041d8ad063"
             ],
-            "observed_at_utc": "2026-04-07T14:23:54.7597583Z"
+            "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
           },
           {
             "step": "budget_guard",
             "retrieval_round": 0,
-            "requested_context_type": "additional_evidence",
+            "requested_context_type": "none",
             "status": "breached",
             "details": "Budget ceiling reached after initial model round: usage_unavailable.",
             "provider": "codex-lb",
             "model": "gpt-5.4-mini",
             "model_id": null,
             "model_version": null,
-            "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
-            "latency_ms": 4083,
+            "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+            "latency_ms": 7611,
             "prompt_tokens": 2111,
-            "completion_tokens": 404,
-            "total_tokens": 2515,
+            "completion_tokens": 539,
+            "total_tokens": 2650,
             "cost_usd": null,
             "context_manifest": null,
             "retrieval_requests": null,
@@ -132,7 +129,7 @@
             "normalization_status": null,
             "gate_decision": null,
             "evidence_refs": [],
-            "observed_at_utc": "2026-04-07T14:23:54.7597718Z"
+            "observed_at_utc": "2026-04-07T14:42:37.4868437Z"
           },
           {
             "step": "fallback",
@@ -159,7 +156,7 @@
               "885574984:293950",
               "885574984:293951"
             ],
-            "observed_at_utc": "2026-04-07T14:23:54.7598083Z"
+            "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
           }
         ]
       },
@@ -361,23 +358,23 @@
             "885574984:293951",
             "885574984:293948"
           ],
-          "observed_at_utc": "2026-04-07T14:23:50.6745152Z"
+          "observed_at_utc": "2026-04-07T14:42:29.8745427Z"
         },
         {
           "step": "model_round",
           "retrieval_round": 0,
-          "requested_context_type": "additional_evidence",
+          "requested_context_type": "none",
           "status": "completed",
-          "details": "Initial model response received. total_tokens=2515.",
+          "details": "Initial model response received. total_tokens=2650.",
           "provider": "codex-lb",
           "model": "gpt-5.4-mini",
           "model_id": null,
           "model_version": null,
-          "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
-          "latency_ms": 4083,
+          "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+          "latency_ms": 7611,
           "prompt_tokens": 2111,
-          "completion_tokens": 404,
-          "total_tokens": 2515,
+          "completion_tokens": 539,
+          "total_tokens": 2650,
           "cost_usd": null,
           "context_manifest": null,
           "retrieval_requests": null,
@@ -385,28 +382,25 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [
-            "13bd21fe-fb7a-4575-b834-27041d8ad063",
-            "885574984:293948",
-            "885574984:293950",
-            "885574984:293951"
+            "13bd21fe-fb7a-4575-b834-27041d8ad063"
           ],
-          "observed_at_utc": "2026-04-07T14:23:54.7597583Z"
+          "observed_at_utc": "2026-04-07T14:42:37.4868334Z"
         },
         {
           "step": "budget_guard",
           "retrieval_round": 0,
-          "requested_context_type": "additional_evidence",
+          "requested_context_type": "none",
           "status": "breached",
           "details": "Budget ceiling reached after initial model round: usage_unavailable.",
           "provider": "codex-lb",
           "model": "gpt-5.4-mini",
           "model_id": null,
           "model_version": null,
-          "request_id": "0c4c3760-a62a-4960-82fe-5ea796f97b84",
-          "latency_ms": 4083,
+          "request_id": "f9aff221-ef01-4898-a79f-74b85a4c2d0e",
+          "latency_ms": 7611,
           "prompt_tokens": 2111,
-          "completion_tokens": 404,
-          "total_tokens": 2515,
+          "completion_tokens": 539,
+          "total_tokens": 2650,
           "cost_usd": null,
           "context_manifest": null,
           "retrieval_requests": null,
@@ -414,7 +408,7 @@
           "normalization_status": null,
           "gate_decision": null,
           "evidence_refs": [],
-          "observed_at_utc": "2026-04-07T14:23:54.7597718Z"
+          "observed_at_utc": "2026-04-07T14:42:37.4868437Z"
         },
         {
           "step": "fallback",
@@ -441,7 +435,7 @@
             "885574984:293950",
             "885574984:293951"
           ],
-          "observed_at_utc": "2026-04-07T14:23:54.7598083Z"
+          "observed_at_utc": "2026-04-07T14:42:37.4868826Z"
         }
       ]
     },
@@ -575,11 +569,11 @@
     "EvidenceRefsUsed": [],
     "OperatorInputsUsed": [],
     "RemainingUncertainties": [
-      "AI conflict session returned a fallback result; operator manual review is required."
+      "AI conflict session returned deterministic fallback: fallback_manual_review_required."
     ],
     "NormalizationProposal": {
       "RecommendedAction": "clarify",
-      "Explanation": "Fallback: initial_model_error",
+      "Explanation": "Fallback: fallback_manual_review_required",
       "ClarificationPayload": null
     },
     "ConfidenceCalibration": {
@@ -587,23 +581,23 @@
       "Rationale": "fallback"
     },
     "StructuredVerdict": {
-      "verdict_id": "2091ce254a9e4c31ae7434d294f4bea2",
+      "verdict_id": "0d4dc9c033bf434a8902b4ea511dc71e",
       "scope_key": "chat:885574984",
       "scope_item_key": "review:durable_object_metadata:13bd21fe-fb7a-4575-b834-27041d8ad063",
       "carry_forward_case_id": null,
-      "decision": "escalate",
-      "publication_state": "escalation_only",
+      "decision": "defer",
+      "publication_state": "manual_review_required",
       "claim_rows": [],
       "uncertainty_rows": [
-        "AI conflict session returned a fallback result; operator manual review is required."
+        "AI conflict session returned deterministic fallback: fallback_manual_review_required."
       ],
       "normalization_plan": {
         "recommended_action": "clarify",
-        "explanation": "Fallback: initial_model_error",
+        "explanation": "Fallback: fallback_manual_review_required",
         "clarification_payload": null
       },
       "evidence_refs": [],
-      "created_at_utc": "2026-04-07T14:23:50.6184987Z"
+      "created_at_utc": "2026-04-07T14:42:29.8357245Z"
     }
   },
   "RequiredAuditKeysPresent": true,
@@ -665,6 +659,50 @@
       "CaseId": "cross_scope_tool_request_rejected",
       "ExpectedDecision": "cross_scope_tool_request_rejected",
       "ActualDecision": "cross_scope_tool_request_rejected",
+      "Passed": true
+    },
+    {
+      "CaseId": "followup_budget_exceeded_rejected",
+      "ExpectedDecision": "followup_budget_exceeded_rejected",
+      "ActualDecision": "followup_budget_exceeded_rejected",
+      "Passed": true
+    }
+  ],
+  "FallbackMappingProofRows": [
+    {
+      "CaseId": "schema_invalid_to_manual_review",
+      "ViolationReason": "schema_invalid",
+      "ExpectedFallbackReason": "fallback_manual_review_required",
+      "ActualFallbackReason": "fallback_manual_review_required",
+      "ExpectedPublicationState": "manual_review_required",
+      "ActualPublicationState": "manual_review_required",
+      "Passed": true
+    },
+    {
+      "CaseId": "budget_exceeded_to_escalation_only",
+      "ViolationReason": "budget_exceeded",
+      "ExpectedFallbackReason": "fallback_escalation_only",
+      "ActualFallbackReason": "fallback_escalation_only",
+      "ExpectedPublicationState": "escalation_only",
+      "ActualPublicationState": "escalation_only",
+      "Passed": true
+    },
+    {
+      "CaseId": "scope_rejected_to_scope_rejected",
+      "ViolationReason": "scope_rejected",
+      "ExpectedFallbackReason": "fallback_scope_rejected",
+      "ActualFallbackReason": "fallback_scope_rejected",
+      "ExpectedPublicationState": "manual_review_required",
+      "ActualPublicationState": "manual_review_required",
+      "Passed": true
+    },
+    {
+      "CaseId": "publication_honesty_block_to_insufficient_evidence",
+      "ViolationReason": "publication_honesty_block",
+      "ExpectedFallbackReason": "fallback_insufficient_evidence",
+      "ActualFallbackReason": "fallback_insufficient_evidence",
+      "ExpectedPublicationState": "insufficient_evidence",
+      "ActualPublicationState": "insufficient_evidence",
       "Passed": true
     }
   ],

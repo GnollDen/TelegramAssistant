@@ -2233,13 +2233,15 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 maxOperatorTurns: GetMaxFollowUpTurns(),
                 ct);
 
-            verdict = NormalizeConflictVerdict(
+            var normalizedVerdict = NormalizeConflictVerdict(
                 modelResult.FinalVerdict,
                 casePacket,
                 trackedPerson.ScopeKey,
                 scopeItemKey!,
                 carryForwardCaseId: null,
-                nowUtc);
+                nowUtc,
+                operatorInput: null);
+            verdict = normalizedVerdict.NormalizedVerdict;
             question = modelResult.AskFollowUpQuestion ? NormalizeQuestion(modelResult.FollowUpQuestion) : null;
             if (question == null
                 && TryBuildQuestionFromToolRequest(
@@ -2260,16 +2262,24 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 stateReason = "initial_verdict_ready";
             }
 
+            if (!string.IsNullOrWhiteSpace(normalizedVerdict.FallbackReason))
+            {
+                state = ResolveSessionStateFromFallbackReason(normalizedVerdict.FallbackReason, verdict.ResolutionVerdict);
+                stateReason = normalizedVerdict.FallbackReason!;
+                question = null;
+            }
+
             if (!string.IsNullOrWhiteSpace(toolExecution.RejectionDecision))
             {
-                verdict = BuildFallbackVerdict(
-                    toolExecution.RejectionDecision!,
+                var fallback = BuildFallbackVerdict(
+                    MapToolDecisionToViolationReason(toolExecution.RejectionDecision!),
                     trackedPerson.ScopeKey,
                     scopeItemKey!,
                     carryForwardCaseId: null,
                     nowUtc);
+                verdict = fallback.NormalizedVerdict;
                 state = ResolutionConflictSessionStates.Fallback;
-                stateReason = toolExecution.RejectionDecision!;
+                stateReason = fallback.FallbackReason ?? toolExecution.RejectionDecision!;
                 question = null;
             }
 
@@ -2300,14 +2310,15 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
         catch (Exception ex)
         {
-            verdict = BuildFallbackVerdict(
-                "initial_model_error",
+            var fallback = BuildFallbackVerdict(
+                ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid,
                 trackedPerson.ScopeKey,
                 scopeItemKey!,
                 carryForwardCaseId: null,
                 nowUtc);
+            verdict = fallback.NormalizedVerdict;
             state = ResolutionConflictSessionStates.Fallback;
-            stateReason = "initial_model_error";
+            stateReason = fallback.FallbackReason ?? "initial_model_error";
             auditTrail.Add(new ResolutionInterpretationAuditEntry
             {
                 Step = "model_round",
@@ -2511,22 +2522,29 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 usedAnswerCount: sessionRow.AnswerCount + 1,
                 maxOperatorTurns: maxFollowUpTurns,
                 ct);
-            verdict = NormalizeConflictVerdict(
+            var normalizedVerdict = NormalizeConflictVerdict(
                 modelResult.FinalVerdict,
                 casePacket,
                 sessionRow.ScopeKey,
                 sessionRow.ScopeItemKey,
                 carryForwardCaseId: null,
-                nowUtc);
+                nowUtc,
+                operatorInput);
+            verdict = normalizedVerdict.NormalizedVerdict;
+            if (!string.IsNullOrWhiteSpace(normalizedVerdict.FallbackReason))
+            {
+                sessionRow.StateReason = normalizedVerdict.FallbackReason;
+            }
             if (!string.IsNullOrWhiteSpace(toolExecution.RejectionDecision))
             {
-                verdict = BuildFallbackVerdict(
-                    toolExecution.RejectionDecision!,
+                var fallback = BuildFallbackVerdict(
+                    MapToolDecisionToViolationReason(toolExecution.RejectionDecision!),
                     sessionRow.ScopeKey,
                     sessionRow.ScopeItemKey,
                     carryForwardCaseId: null,
                     nowUtc);
-                sessionRow.StateReason = toolExecution.RejectionDecision;
+                verdict = fallback.NormalizedVerdict;
+                sessionRow.StateReason = fallback.FallbackReason ?? toolExecution.RejectionDecision;
             }
             auditTrail.Add(new ResolutionInterpretationAuditEntry
             {
@@ -2557,13 +2575,15 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
         catch (Exception ex)
         {
-            verdict = BuildFallbackVerdict(
-                "final_model_error",
+            var fallback = BuildFallbackVerdict(
+                ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid,
                 sessionRow.ScopeKey,
                 sessionRow.ScopeItemKey,
                 carryForwardCaseId: null,
                 nowUtc);
+            verdict = fallback.NormalizedVerdict;
             sessionRow.FailureReason = ex.Message;
+            sessionRow.StateReason = fallback.FallbackReason ?? "final_model_error";
             auditTrail.Add(new ResolutionInterpretationAuditEntry
             {
                 Step = "model_round",
@@ -2594,9 +2614,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         sessionRow.AuditTrailJson = JsonSerializer.Serialize(auditTrail, JsonOptions);
         sessionRow.Revision += 1;
         sessionRow.Status = NormalizeVerdictState(verdict.ResolutionVerdict);
+        var existingStateReason = NormalizeOptional(sessionRow.StateReason);
         sessionRow.StateReason = string.Equals(sessionRow.Status, ResolutionConflictSessionStates.Fallback, StringComparison.Ordinal)
-            ? (NormalizeOptional(sessionRow.StateReason) ?? "final_model_error")
-            : "final_verdict_ready";
+            ? (existingStateReason ?? "final_model_error")
+            : (existingStateReason ?? "final_verdict_ready");
         sessionRow.UpdatedAtUtc = nowUtc;
         sessionRow.CompletedAtUtc = nowUtc;
         await db.SaveChangesAsync(ct);
@@ -4284,39 +4305,94 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         };
     }
 
-    private static ResolutionConflictSessionVerdict NormalizeConflictVerdict(
+    private static ConflictResolutionVerdictNormalizationResult NormalizeConflictVerdict(
         ResolutionConflictSessionVerdict verdict,
         ResolutionConflictSessionCasePacket casePacket,
         string scopeKey,
         string scopeItemKey,
         Guid? carryForwardCaseId,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        ResolutionConflictSessionOperatorInput? operatorInput)
     {
         var knownEvidenceRefs = (casePacket.Evidence ?? [])
             .Select(x => NormalizeOptional(x.SourceRef) ?? $"evidence:{x.EvidenceItemId:D}")
             .Distinct(StringComparer.Ordinal)
             .ToHashSet(StringComparer.Ordinal);
-        var normalizedClaims = (verdict.ResolvedClaims ?? [])
-            .Where(x => !string.IsNullOrWhiteSpace(x.Summary))
-            .Select(x => new ResolutionConflictSessionClaim
+        var normalizedUncertainties = (verdict.RemainingUncertainties ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var normalizedClaims = new List<ResolutionConflictSessionClaim>();
+        foreach (var claim in verdict.ResolvedClaims ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(claim?.Summary))
             {
-                ClaimType = ResolutionInterpretationClaimTypes.Normalize(x.ClaimType),
-                Summary = x.Summary.Trim(),
-                EvidenceRefs = (x.EvidenceRefs ?? [])
-                    .Where(knownEvidenceRefs.Contains)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList(),
-                OperatorInputRefs = (x.OperatorInputRefs ?? [])
+                continue;
+            }
+
+            if (!IsSupportedConflictClaimType(claim.ClaimType))
+            {
+                normalizedUncertainties.Add($"Unsupported claim type downgraded to uncertainty: {claim.Summary.Trim()}");
+                continue;
+            }
+
+            var normalizedEvidenceRefs = (claim.EvidenceRefs ?? [])
+                .Where(knownEvidenceRefs.Contains)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (normalizedEvidenceRefs.Count == 0)
+            {
+                normalizedUncertainties.Add($"Claim omitted due to missing evidence refs: {claim.Summary.Trim()}");
+                continue;
+            }
+
+            normalizedClaims.Add(new ResolutionConflictSessionClaim
+            {
+                ClaimType = ResolutionInterpretationClaimTypes.Normalize(claim.ClaimType),
+                Summary = claim.Summary.Trim(),
+                EvidenceRefs = normalizedEvidenceRefs,
+                OperatorInputRefs = (claim.OperatorInputRefs ?? [])
                     .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Select(v => v.Trim())
                     .Distinct(StringComparer.Ordinal)
                     .ToList()
-            })
-            .ToList();
+            });
+        }
 
         var recommendedAction = ResolutionActionTypes.Normalize(verdict.NormalizationProposal?.RecommendedAction);
+        var schemaViolation = false;
         if (!ResolutionActionTypes.IsMutatingSupported(recommendedAction))
         {
+            schemaViolation = true;
             recommendedAction = ResolutionActionTypes.Clarify;
+        }
+
+        var normalizedOperatorInputRefs = (verdict.OperatorInputsUsed ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (normalizedOperatorInputRefs.Count > 0)
+        {
+            if (operatorInput == null || string.IsNullOrWhiteSpace(operatorInput.QuestionKey))
+            {
+                schemaViolation = true;
+            }
+            else
+            {
+                var questionKey = operatorInput.QuestionKey.Trim();
+                var allowed = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    questionKey,
+                    $"question:{questionKey}",
+                    $"answer:{questionKey}"
+                };
+                if (normalizedOperatorInputRefs.Any(x => !allowed.Contains(x)))
+                {
+                    schemaViolation = true;
+                }
+            }
         }
 
         var normalizedVerdict = new ResolutionConflictSessionVerdict
@@ -4335,14 +4411,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 .Where(knownEvidenceRefs.Contains)
                 .Distinct(StringComparer.Ordinal)
                 .ToList(),
-            OperatorInputsUsed = (verdict.OperatorInputsUsed ?? [])
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.Ordinal)
-                .ToList(),
-            RemainingUncertainties = (verdict.RemainingUncertainties ?? [])
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.Ordinal)
-                .ToList(),
+            OperatorInputsUsed = normalizedOperatorInputRefs,
+            RemainingUncertainties = normalizedUncertainties,
             NormalizationProposal = new ResolutionConflictNormalizationProposal
             {
                 RecommendedAction = recommendedAction,
@@ -4356,6 +4426,27 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             }
         };
 
+        if (schemaViolation)
+        {
+            return BuildFallbackVerdict(
+                ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid,
+                scopeKey,
+                scopeItemKey,
+                carryForwardCaseId,
+                nowUtc);
+        }
+
+        if (string.Equals(normalizedVerdict.ResolutionVerdict, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal)
+            && normalizedVerdict.ResolvedClaims.Count == 0)
+        {
+            return BuildFallbackVerdict(
+                ConflictResolutionSessionVerdictViolationReasons.PublicationHonestyBlock,
+                scopeKey,
+                scopeItemKey,
+                carryForwardCaseId,
+                nowUtc);
+        }
+
         normalizedVerdict.StructuredVerdict = BuildStructuredVerdict(
             normalizedVerdict,
             scopeKey,
@@ -4365,30 +4456,46 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 
         if (!ConflictResolutionStructuredVerdictContract.TryValidate(normalizedVerdict.StructuredVerdict, out var failureReason))
         {
-            throw new InvalidOperationException($"Structured verdict contract validation failed: {failureReason}.");
+            return BuildFallbackVerdict(
+                ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid,
+                scopeKey,
+                scopeItemKey,
+                carryForwardCaseId,
+                nowUtc);
         }
 
-        return normalizedVerdict;
+        return new ConflictResolutionVerdictNormalizationResult
+        {
+            NormalizedVerdict = normalizedVerdict,
+            FallbackReason = null,
+            PublicationState = normalizedVerdict.StructuredVerdict.PublicationState
+        };
     }
 
-    private static ResolutionConflictSessionVerdict BuildFallbackVerdict(
-        string reason,
+    private static ConflictResolutionVerdictNormalizationResult BuildFallbackVerdict(
+        string violationReason,
         string scopeKey,
         string scopeItemKey,
         Guid? carryForwardCaseId,
         DateTime nowUtc)
     {
+        var fallbackReason = ConflictResolutionSessionFallbackMapping.MapViolationToFallbackReason(violationReason);
+        var publicationState = ConflictResolutionSessionFallbackMapping.ResolvePublicationState(fallbackReason);
+        var decision = ResolveFallbackDecision(fallbackReason);
+        var resolutionVerdict = string.Equals(fallbackReason, ConflictResolutionSessionFallbackReasons.InsufficientEvidence, StringComparison.Ordinal)
+            ? ResolutionConflictSessionStates.NeedsWebReview
+            : ResolutionConflictSessionStates.Fallback;
         var verdict = new ResolutionConflictSessionVerdict
         {
-            ResolutionVerdict = ResolutionConflictSessionStates.Fallback,
+            ResolutionVerdict = resolutionVerdict,
             RemainingUncertainties =
             [
-                "AI conflict session returned a fallback result; operator manual review is required."
+                $"AI conflict session returned deterministic fallback: {fallbackReason}."
             ],
             NormalizationProposal = new ResolutionConflictNormalizationProposal
             {
                 RecommendedAction = ResolutionActionTypes.Clarify,
-                Explanation = $"Fallback: {reason}"
+                Explanation = $"Fallback: {fallbackReason}"
             },
             ConfidenceCalibration = new ResolutionConflictConfidenceCalibration
             {
@@ -4402,14 +4509,21 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             scopeKey,
             scopeItemKey,
             carryForwardCaseId,
-            nowUtc);
+            nowUtc,
+            forcedDecision: decision,
+            forcedPublicationState: publicationState);
 
         if (!ConflictResolutionStructuredVerdictContract.TryValidate(verdict.StructuredVerdict, out var failureReason))
         {
             throw new InvalidOperationException($"Fallback structured verdict contract validation failed: {failureReason}.");
         }
 
-        return verdict;
+        return new ConflictResolutionVerdictNormalizationResult
+        {
+            NormalizedVerdict = verdict,
+            FallbackReason = fallbackReason,
+            PublicationState = publicationState
+        };
     }
 
     private static string NormalizeVerdictState(string? verdict)
@@ -4432,10 +4546,16 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         string scopeKey,
         string scopeItemKey,
         Guid? carryForwardCaseId,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        string? forcedDecision = null,
+        string? forcedPublicationState = null)
     {
-        var decision = ResolveStructuredDecision(normalizedVerdict.ResolutionVerdict);
-        var publicationState = ResolveStructuredPublicationState(normalizedVerdict.ResolutionVerdict, decision);
+        var decision = string.IsNullOrWhiteSpace(forcedDecision)
+            ? ResolveStructuredDecision(normalizedVerdict.ResolutionVerdict)
+            : forcedDecision;
+        var publicationState = string.IsNullOrWhiteSpace(forcedPublicationState)
+            ? ResolveStructuredPublicationState(normalizedVerdict.ResolutionVerdict, decision)
+            : forcedPublicationState;
         return new ConflictResolutionStructuredVerdict
         {
             VerdictId = Guid.NewGuid().ToString("N"),
@@ -4479,6 +4599,16 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         return ConflictResolutionStructuredDecisionTypes.Defer;
     }
 
+    private static string ResolveFallbackDecision(string fallbackReason)
+    {
+        return fallbackReason switch
+        {
+            ConflictResolutionSessionFallbackReasons.ScopeRejected => ConflictResolutionStructuredDecisionTypes.RejectScope,
+            ConflictResolutionSessionFallbackReasons.EscalationOnly => ConflictResolutionStructuredDecisionTypes.Escalate,
+            _ => ConflictResolutionStructuredDecisionTypes.Defer
+        };
+    }
+
     private static string ResolveStructuredPublicationState(string resolutionVerdict, string decision)
     {
         if (string.Equals(resolutionVerdict, ResolutionConflictSessionStates.ReadyForCommit, StringComparison.Ordinal))
@@ -4497,6 +4627,44 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         return ConflictResolutionStructuredPublicationStates.ManualReviewRequired;
+    }
+
+    private static bool IsSupportedConflictClaimType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        return string.Equals(normalized, ResolutionInterpretationClaimTypes.Fact, StringComparison.Ordinal)
+               || string.Equals(normalized, ResolutionInterpretationClaimTypes.Inference, StringComparison.Ordinal)
+               || string.Equals(normalized, ResolutionInterpretationClaimTypes.Hypothesis, StringComparison.Ordinal);
+    }
+
+    private static string ResolveSessionStateFromFallbackReason(string fallbackReason, string defaultVerdictState)
+    {
+        if (string.Equals(fallbackReason, ConflictResolutionSessionFallbackReasons.InsufficientEvidence, StringComparison.Ordinal))
+        {
+            return ResolutionConflictSessionStates.NeedsWebReview;
+        }
+
+        return NormalizeVerdictState(defaultVerdictState);
+    }
+
+    private static string MapToolDecisionToViolationReason(string toolDecision)
+    {
+        if (string.Equals(toolDecision, ConflictResolutionSessionToolDecisions.CrossScopeToolRequestRejected, StringComparison.Ordinal))
+        {
+            return ConflictResolutionSessionVerdictViolationReasons.ScopeRejected;
+        }
+
+        if (string.Equals(toolDecision, ConflictResolutionSessionToolDecisions.FollowUpBudgetExceededRejected, StringComparison.Ordinal))
+        {
+            return ConflictResolutionSessionVerdictViolationReasons.BudgetExceeded;
+        }
+
+        return ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid;
     }
 
     private static OperatorWorkflowStepContext? BuildConflictSessionStep(DbOperatorResolutionConflictSession row)

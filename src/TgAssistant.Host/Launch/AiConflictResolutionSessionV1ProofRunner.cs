@@ -187,6 +187,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     EnsureAuditContract(finalEnvelope.ConflictSession.AuditTrail);
                     EnsureStructuredVerdictProofRows(report, finalEnvelope.ConflictSession.FinalVerdict);
                     EnsureToolContractProofRows(report, finalEnvelope.ConflictSession.ScopeItemKey);
+                    EnsureFallbackMappingProofRows(report);
 
                     if (!sessionContractSatisfied)
                     {
@@ -279,7 +280,8 @@ public static class AiConflictResolutionSessionV1ProofRunner
                 && report.FinalVerdict != null
                 && report.RequiredAuditKeysPresent
                 && report.StructuredVerdictProofRows.All(x => x.Passed)
-                && report.ToolProofRows.All(x => x.Passed);
+                && report.ToolProofRows.All(x => x.Passed)
+                && report.FallbackMappingProofRows.All(x => x.Passed);
         }
         catch (Exception ex)
         {
@@ -516,6 +518,59 @@ public static class AiConflictResolutionSessionV1ProofRunner
         }
     }
 
+    private static void EnsureFallbackMappingProofRows(AiConflictResolutionSessionV1ProofReport report)
+    {
+        report.FallbackMappingProofRows =
+        [
+            BuildFallbackMappingRow(
+                caseId: "schema_invalid_to_manual_review",
+                violationReason: ConflictResolutionSessionVerdictViolationReasons.SchemaInvalid,
+                expectedFallbackReason: ConflictResolutionSessionFallbackReasons.ManualReviewRequired,
+                expectedPublicationState: ConflictResolutionStructuredPublicationStates.ManualReviewRequired),
+            BuildFallbackMappingRow(
+                caseId: "budget_exceeded_to_escalation_only",
+                violationReason: ConflictResolutionSessionVerdictViolationReasons.BudgetExceeded,
+                expectedFallbackReason: ConflictResolutionSessionFallbackReasons.EscalationOnly,
+                expectedPublicationState: ConflictResolutionStructuredPublicationStates.EscalationOnly),
+            BuildFallbackMappingRow(
+                caseId: "scope_rejected_to_scope_rejected",
+                violationReason: ConflictResolutionSessionVerdictViolationReasons.ScopeRejected,
+                expectedFallbackReason: ConflictResolutionSessionFallbackReasons.ScopeRejected,
+                expectedPublicationState: ConflictResolutionStructuredPublicationStates.ManualReviewRequired),
+            BuildFallbackMappingRow(
+                caseId: "publication_honesty_block_to_insufficient_evidence",
+                violationReason: ConflictResolutionSessionVerdictViolationReasons.PublicationHonestyBlock,
+                expectedFallbackReason: ConflictResolutionSessionFallbackReasons.InsufficientEvidence,
+                expectedPublicationState: ConflictResolutionStructuredPublicationStates.InsufficientEvidence)
+        ];
+
+        if (report.FallbackMappingProofRows.Any(x => !x.Passed))
+        {
+            throw new InvalidOperationException("Conflict-session fallback mapping proof rows include failures.");
+        }
+    }
+
+    private static AiConflictResolutionFallbackMappingProofRow BuildFallbackMappingRow(
+        string caseId,
+        string violationReason,
+        string expectedFallbackReason,
+        string expectedPublicationState)
+    {
+        var actualFallbackReason = ConflictResolutionSessionFallbackMapping.MapViolationToFallbackReason(violationReason);
+        var actualPublicationState = ConflictResolutionSessionFallbackMapping.ResolvePublicationState(actualFallbackReason);
+        return new AiConflictResolutionFallbackMappingProofRow
+        {
+            CaseId = caseId,
+            ViolationReason = violationReason,
+            ExpectedFallbackReason = expectedFallbackReason,
+            ActualFallbackReason = actualFallbackReason,
+            ExpectedPublicationState = expectedPublicationState,
+            ActualPublicationState = actualPublicationState,
+            Passed = string.Equals(expectedFallbackReason, actualFallbackReason, StringComparison.Ordinal)
+                && string.Equals(expectedPublicationState, actualPublicationState, StringComparison.Ordinal)
+        };
+    }
+
     private static AiConflictResolutionToolProofRow BuildToolProofRow(
         string caseId,
         string expectedDecision,
@@ -588,6 +643,7 @@ public sealed class AiConflictResolutionSessionV1ProofReport
     public string? ApplyPathNonBlockingFailureReason { get; set; }
     public List<AiConflictResolutionStructuredVerdictProofRow> StructuredVerdictProofRows { get; set; } = [];
     public List<AiConflictResolutionToolProofRow> ToolProofRows { get; set; } = [];
+    public List<AiConflictResolutionFallbackMappingProofRow> FallbackMappingProofRows { get; set; } = [];
     public List<AiConflictResolutionSessionV1CandidateAttempt> CandidateAttempts { get; set; } = [];
     public bool Passed { get; set; }
     public string? FatalError { get; set; }
@@ -619,5 +675,16 @@ public sealed class AiConflictResolutionToolProofRow
     public string CaseId { get; set; } = string.Empty;
     public string ExpectedDecision { get; set; } = string.Empty;
     public string ActualDecision { get; set; } = string.Empty;
+    public bool Passed { get; set; }
+}
+
+public sealed class AiConflictResolutionFallbackMappingProofRow
+{
+    public string CaseId { get; set; } = string.Empty;
+    public string ViolationReason { get; set; } = string.Empty;
+    public string ExpectedFallbackReason { get; set; } = string.Empty;
+    public string ActualFallbackReason { get; set; } = string.Empty;
+    public string ExpectedPublicationState { get; set; } = string.Empty;
+    public string ActualPublicationState { get; set; } = string.Empty;
     public bool Passed { get; set; }
 }

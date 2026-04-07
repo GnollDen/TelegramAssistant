@@ -212,6 +212,29 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
                     ct);
             }
 
+            if (request.ConflictVerdict != null)
+            {
+                var verdictFailure = ValidateConflictVerdictForApply(
+                    request.ConflictVerdict,
+                    trackedPerson.ScopeKey,
+                    normalizedScopeItemKey);
+                if (!string.IsNullOrWhiteSpace(verdictFailure))
+                {
+                    return await PersistDeniedAuditAsync(
+                        db,
+                        request,
+                        trackedPerson,
+                        normalizedRequestId,
+                        normalizedScopeItemKey,
+                        normalizedAction,
+                        normalizedExplanation,
+                        detail.Item.ItemType,
+                        verdictFailure,
+                        nowUtc,
+                        ct);
+                }
+            }
+
             if (linkedNormalizationProposal != null)
             {
                 if (string.IsNullOrWhiteSpace(normalizedExplanation) && !string.IsNullOrWhiteSpace(linkedNormalizationProposal.Explanation))
@@ -1001,6 +1024,32 @@ public sealed class ResolutionActionCommandService : IResolutionActionService
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException is PostgresException postgres
            && string.Equals(postgres.SqlState, PostgresErrorCodes.UniqueViolation, StringComparison.Ordinal);
+
+    private static string? ValidateConflictVerdictForApply(
+        ResolutionConflictSessionVerdict verdict,
+        string scopeKey,
+        string scopeItemKey)
+    {
+        if (verdict.StructuredVerdict == null
+            || !ConflictResolutionStructuredVerdictContract.TryValidate(verdict.StructuredVerdict, out _))
+        {
+            return ConflictResolutionSessionFallbackReasons.ManualReviewRequired;
+        }
+
+        if (!string.Equals(verdict.StructuredVerdict.ScopeKey, scopeKey, StringComparison.Ordinal)
+            || !string.Equals(verdict.StructuredVerdict.ScopeItemKey, scopeItemKey, StringComparison.Ordinal))
+        {
+            return ConflictResolutionSessionFallbackReasons.ScopeRejected;
+        }
+
+        if (string.Equals(verdict.StructuredVerdict.PublicationState, ConflictResolutionStructuredPublicationStates.Publishable, StringComparison.Ordinal)
+            && verdict.StructuredVerdict.ClaimRows.Count == 0)
+        {
+            return ConflictResolutionSessionFallbackReasons.InsufficientEvidence;
+        }
+
+        return null;
+    }
 
     private static string NormalizeRequired(string? value, string fallback = "")
     {
