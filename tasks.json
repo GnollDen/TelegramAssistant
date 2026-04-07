@@ -916,8 +916,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-017 completed: extended operator current-world response contract with explicit WS-B5 conditional arrays for baseline rules, exception rules, active-now conditionals, and phase markers; introduced shared WS-B5 response publication-state constants (`publishable`, `insufficient_evidence`, `escalation_only`, `manual_review_required`) in OperatorResolutionApiModels; CurrentWorldApproximationReadService now composes and emits deterministic conditional rows with publication-state mapping while OperatorResolutionApplicationService remains adapter-only and forwards shaped read outputs. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-016C"
       ]

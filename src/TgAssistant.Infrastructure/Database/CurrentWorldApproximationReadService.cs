@@ -102,6 +102,7 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
         }
 
         ApplyPublicationState(snapshot);
+        ApplyConditionalPublicationState(snapshot);
         return snapshot;
     }
 
@@ -247,6 +248,20 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
                      .OrderByDescending(x => x.ValidFromUtc)
                      .ThenByDescending(x => x.Id))
         {
+            var evidenceRefs = conditionalState.EvidenceRefs
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var sourceRefIds = conditionalState.SourceRefIds
+                .Concat(GetSourceRefs(conditionalState))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var linkedTemporalStateIds = conditionalState.LinkedTemporalStateIds
+                .Where(x => x != Guid.Empty)
+                .Distinct()
+                .ToList();
+
             snapshot.ActiveConditionRows.Add(new ActiveConditionRow
             {
                 ConditionRowId = Guid.NewGuid(),
@@ -256,19 +271,111 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
                 ConditionValue = BuildConditionalConditionValue(conditionalState),
                 ValidFromUtc = conditionalState.ValidFromUtc,
                 ValidToUtc = conditionalState.ValidToUtc,
-                EvidenceRefs = conditionalState.EvidenceRefs
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList(),
-                SourceRefIds = conditionalState.SourceRefIds
-                    .Concat(GetSourceRefs(conditionalState))
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList()
+                EvidenceRefs = evidenceRefs,
+                SourceRefIds = sourceRefIds
             });
+
+            snapshot.ActiveNowConditionalRows.Add(new ActiveNowConditionalRow
+            {
+                ActiveNowConditionalRowId = Guid.NewGuid(),
+                SnapshotId = snapshot.SnapshotId,
+                ConditionalStateId = conditionalState.Id,
+                RuleKind = conditionalState.RuleKind,
+                RuleId = conditionalState.RuleId,
+                ParentRuleId = conditionalState.ParentRuleId,
+                SubjectRef = conditionalState.SubjectRef,
+                FactFamily = conditionalState.FactFamily,
+                ResolvedValue = BuildConditionalConditionValue(conditionalState),
+                ValidFromUtc = conditionalState.ValidFromUtc,
+                ValidToUtc = conditionalState.ValidToUtc,
+                Confidence = conditionalState.Confidence,
+                EvidenceRefs = evidenceRefs,
+                SourceRefIds = sourceRefIds,
+                LinkedTemporalStateIds = linkedTemporalStateIds
+            });
+
+            if (string.Equals(conditionalState.RuleKind, ConditionalKnowledgeRuleKinds.BaselineRule, StringComparison.Ordinal))
+            {
+                snapshot.ConditionalBaselineRuleRows.Add(new ConditionalBaselineRuleRow
+                {
+                    RuleRowId = Guid.NewGuid(),
+                    SnapshotId = snapshot.SnapshotId,
+                    ConditionalStateId = conditionalState.Id,
+                    RuleId = conditionalState.RuleId,
+                    SubjectRef = conditionalState.SubjectRef,
+                    FactFamily = conditionalState.FactFamily,
+                    BaselineValue = NormalizeOptional(conditionalState.BaselineValue) ?? string.Empty,
+                    ValidFromUtc = conditionalState.ValidFromUtc,
+                    ValidToUtc = conditionalState.ValidToUtc,
+                    Confidence = conditionalState.Confidence,
+                    EvidenceRefs = evidenceRefs,
+                    SourceRefIds = sourceRefIds,
+                    LinkedTemporalStateIds = linkedTemporalStateIds
+                });
+            }
+            else if (string.Equals(conditionalState.RuleKind, ConditionalKnowledgeRuleKinds.ExceptionRule, StringComparison.Ordinal))
+            {
+                snapshot.ConditionalExceptionRuleRows.Add(new ConditionalExceptionRuleRow
+                {
+                    ExceptionRowId = Guid.NewGuid(),
+                    SnapshotId = snapshot.SnapshotId,
+                    ConditionalStateId = conditionalState.Id,
+                    ExceptionId = conditionalState.Id,
+                    RuleId = conditionalState.RuleId,
+                    SubjectRef = conditionalState.SubjectRef,
+                    FactFamily = conditionalState.FactFamily,
+                    ExceptionValue = NormalizeOptional(conditionalState.ExceptionValue) ?? string.Empty,
+                    ConditionClauseIds = conditionalState.ConditionClauseIds
+                        .Where(x => x != Guid.Empty)
+                        .Distinct()
+                        .ToList(),
+                    ValidFromUtc = conditionalState.ValidFromUtc,
+                    ValidToUtc = conditionalState.ValidToUtc,
+                    Confidence = conditionalState.Confidence,
+                    EvidenceRefs = evidenceRefs,
+                    SourceRefIds = sourceRefIds,
+                    LinkedTemporalStateIds = linkedTemporalStateIds
+                });
+            }
+            else if (string.Equals(conditionalState.RuleKind, ConditionalKnowledgeRuleKinds.PhaseMarker, StringComparison.Ordinal))
+            {
+                snapshot.ConditionalPhaseMarkerRows.Add(new ConditionalPhaseMarkerRow
+                {
+                    PhaseMarkerRowId = Guid.NewGuid(),
+                    SnapshotId = snapshot.SnapshotId,
+                    ConditionalStateId = conditionalState.Id,
+                    PhaseMarkerId = conditionalState.Id,
+                    SubjectRef = conditionalState.SubjectRef,
+                    FactFamily = conditionalState.FactFamily,
+                    PhaseLabel = NormalizeOptional(conditionalState.PhaseLabel) ?? string.Empty,
+                    PhaseReason = NormalizeOptional(conditionalState.PhaseReason) ?? string.Empty,
+                    ValidFromUtc = conditionalState.ValidFromUtc,
+                    ValidToUtc = conditionalState.ValidToUtc,
+                    Confidence = conditionalState.Confidence,
+                    EvidenceRefs = evidenceRefs,
+                    SourceRefIds = sourceRefIds,
+                    LinkedTemporalStateIds = linkedTemporalStateIds
+                });
+            }
         }
 
         snapshot.ActiveConditionRows = snapshot.ActiveConditionRows
+            .OrderBy(x => x.SubjectRef, StringComparer.Ordinal)
+            .ThenByDescending(x => x.ValidFromUtc)
+            .ToList();
+        snapshot.ActiveNowConditionalRows = snapshot.ActiveNowConditionalRows
+            .OrderBy(x => x.SubjectRef, StringComparer.Ordinal)
+            .ThenByDescending(x => x.ValidFromUtc)
+            .ToList();
+        snapshot.ConditionalBaselineRuleRows = snapshot.ConditionalBaselineRuleRows
+            .OrderBy(x => x.SubjectRef, StringComparer.Ordinal)
+            .ThenByDescending(x => x.ValidFromUtc)
+            .ToList();
+        snapshot.ConditionalExceptionRuleRows = snapshot.ConditionalExceptionRuleRows
+            .OrderBy(x => x.SubjectRef, StringComparer.Ordinal)
+            .ThenByDescending(x => x.ValidFromUtc)
+            .ToList();
+        snapshot.ConditionalPhaseMarkerRows = snapshot.ConditionalPhaseMarkerRows
             .OrderBy(x => x.SubjectRef, StringComparer.Ordinal)
             .ThenByDescending(x => x.ValidFromUtc)
             .ToList();
@@ -372,6 +479,50 @@ public sealed class CurrentWorldApproximationReadService : ICurrentWorldApproxim
         {
             row.PublicationState = publicationState;
         }
+    }
+
+    private static void ApplyConditionalPublicationState(CurrentWorldApproximationSnapshot snapshot)
+    {
+        var publicationState = ResolveWsB5PublicationState(snapshot);
+        foreach (var row in snapshot.ConditionalBaselineRuleRows)
+        {
+            row.PublicationState = publicationState;
+        }
+
+        foreach (var row in snapshot.ConditionalExceptionRuleRows)
+        {
+            row.PublicationState = publicationState;
+        }
+
+        foreach (var row in snapshot.ActiveNowConditionalRows)
+        {
+            row.PublicationState = publicationState;
+        }
+
+        foreach (var row in snapshot.ConditionalPhaseMarkerRows)
+        {
+            row.PublicationState = publicationState;
+        }
+    }
+
+    private static string ResolveWsB5PublicationState(CurrentWorldApproximationSnapshot snapshot)
+    {
+        if (string.Equals(snapshot.PublicationState, CurrentWorldApproximationPublicationStates.Publishable, StringComparison.Ordinal))
+        {
+            return WsB5ResponsePublicationStates.Publishable;
+        }
+
+        if (string.Equals(snapshot.PublicationState, CurrentWorldApproximationPublicationStates.InsufficientEvidence, StringComparison.Ordinal))
+        {
+            return WsB5ResponsePublicationStates.InsufficientEvidence;
+        }
+
+        var requiresEscalation = snapshot.UncertaintyRefs.Any(x =>
+            x.Contains("contradiction", StringComparison.Ordinal)
+            || x.Contains("disagreement", StringComparison.Ordinal));
+        return requiresEscalation
+            ? WsB5ResponsePublicationStates.EscalationOnly
+            : WsB5ResponsePublicationStates.ManualReviewRequired;
     }
 
     private static bool IsInactiveStatus(string statusValue)

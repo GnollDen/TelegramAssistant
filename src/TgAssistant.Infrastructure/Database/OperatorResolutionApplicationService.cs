@@ -2035,6 +2035,10 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 ActiveConditionCount = snapshot.ActiveConditionRows.Count,
                 RecentChangeCount = snapshot.RecentChangeRows.Count,
                 UncertaintyRefs = [.. snapshot.UncertaintyRefs],
+                BaselineRules = [.. snapshot.ConditionalBaselineRuleRows],
+                ExceptionRules = [.. snapshot.ConditionalExceptionRuleRows],
+                ActiveNowConditionals = [.. snapshot.ActiveNowConditionalRows],
+                PhaseMarkers = [.. snapshot.ConditionalPhaseMarkerRows],
                 Snapshot = snapshot
             }
         };

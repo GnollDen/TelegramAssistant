@@ -288,6 +288,27 @@ public static class TemporalPersonHistoryPublicationStates
     public const string MissingEvidence = "missing_evidence";
 }
 
+public static class WsB5ResponsePublicationStates
+{
+    public const string Publishable = "publishable";
+    public const string InsufficientEvidence = "insufficient_evidence";
+    public const string EscalationOnly = "escalation_only";
+    public const string ManualReviewRequired = "manual_review_required";
+
+    public static readonly string[] Ordered =
+    [
+        Publishable,
+        InsufficientEvidence,
+        EscalationOnly,
+        ManualReviewRequired
+    ];
+
+    private static readonly HashSet<string> Supported = new(Ordered, StringComparer.Ordinal);
+
+    public static bool IsSupported(string? value)
+        => !string.IsNullOrWhiteSpace(value) && Supported.Contains(value);
+}
+
 public class OperatorPersonWorkspaceView
 {
     public OperatorTrackedPersonScopeSummary? TrackedPerson { get; set; }
@@ -495,6 +516,10 @@ public class OperatorPersonWorkspaceCurrentWorldSectionView
     public int ActiveConditionCount { get; set; }
     public int RecentChangeCount { get; set; }
     public List<string> UncertaintyRefs { get; set; } = [];
+    public List<ConditionalBaselineRuleRow> BaselineRules { get; set; } = [];
+    public List<ConditionalExceptionRuleRow> ExceptionRules { get; set; } = [];
+    public List<ActiveNowConditionalRow> ActiveNowConditionals { get; set; } = [];
+    public List<ConditionalPhaseMarkerRow> PhaseMarkers { get; set; } = [];
     public CurrentWorldApproximationSnapshot Snapshot { get; set; } = new();
 }
 

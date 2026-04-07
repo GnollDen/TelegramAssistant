@@ -69,6 +69,18 @@ public sealed class CurrentWorldApproximationSnapshot
     [JsonPropertyName("active_condition_rows")]
     public List<ActiveConditionRow> ActiveConditionRows { get; set; } = [];
 
+    [JsonPropertyName("conditional_baseline_rule_rows")]
+    public List<ConditionalBaselineRuleRow> ConditionalBaselineRuleRows { get; set; } = [];
+
+    [JsonPropertyName("conditional_exception_rule_rows")]
+    public List<ConditionalExceptionRuleRow> ConditionalExceptionRuleRows { get; set; } = [];
+
+    [JsonPropertyName("active_now_conditional_rows")]
+    public List<ActiveNowConditionalRow> ActiveNowConditionalRows { get; set; } = [];
+
+    [JsonPropertyName("conditional_phase_marker_rows")]
+    public List<ConditionalPhaseMarkerRow> ConditionalPhaseMarkerRows { get; set; } = [];
+
     [JsonPropertyName("recent_change_rows")]
     public List<RecentChangeRow> RecentChangeRows { get; set; } = [];
 }
@@ -233,6 +245,201 @@ public sealed class RecentChangeRow
 
     [JsonPropertyName("publication_state")]
     public string PublicationState { get; set; } = CurrentWorldApproximationPublicationStates.InsufficientEvidence;
+}
+
+public sealed class ConditionalBaselineRuleRow
+{
+    [JsonPropertyName("rule_row_id")]
+    public Guid RuleRowId { get; set; }
+
+    [JsonPropertyName("snapshot_id")]
+    public Guid SnapshotId { get; set; }
+
+    [JsonPropertyName("conditional_state_id")]
+    public Guid ConditionalStateId { get; set; }
+
+    [JsonPropertyName("rule_id")]
+    public Guid RuleId { get; set; }
+
+    [JsonPropertyName("subject_ref")]
+    public string SubjectRef { get; set; } = string.Empty;
+
+    [JsonPropertyName("fact_family")]
+    public string FactFamily { get; set; } = string.Empty;
+
+    [JsonPropertyName("baseline_value")]
+    public string BaselineValue { get; set; } = string.Empty;
+
+    [JsonPropertyName("valid_from_utc")]
+    public DateTime ValidFromUtc { get; set; }
+
+    [JsonPropertyName("valid_to_utc")]
+    public DateTime? ValidToUtc { get; set; }
+
+    [JsonPropertyName("confidence")]
+    public float? Confidence { get; set; }
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("source_ref_ids")]
+    public List<string> SourceRefIds { get; set; } = [];
+
+    [JsonPropertyName("linked_temporal_state_ids")]
+    public List<Guid> LinkedTemporalStateIds { get; set; } = [];
+
+    [JsonPropertyName("publication_state")]
+    public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+}
+
+public sealed class ConditionalExceptionRuleRow
+{
+    [JsonPropertyName("exception_row_id")]
+    public Guid ExceptionRowId { get; set; }
+
+    [JsonPropertyName("snapshot_id")]
+    public Guid SnapshotId { get; set; }
+
+    [JsonPropertyName("conditional_state_id")]
+    public Guid ConditionalStateId { get; set; }
+
+    [JsonPropertyName("exception_id")]
+    public Guid ExceptionId { get; set; }
+
+    [JsonPropertyName("rule_id")]
+    public Guid RuleId { get; set; }
+
+    [JsonPropertyName("subject_ref")]
+    public string SubjectRef { get; set; } = string.Empty;
+
+    [JsonPropertyName("fact_family")]
+    public string FactFamily { get; set; } = string.Empty;
+
+    [JsonPropertyName("exception_value")]
+    public string ExceptionValue { get; set; } = string.Empty;
+
+    [JsonPropertyName("condition_clause_ids")]
+    public List<Guid> ConditionClauseIds { get; set; } = [];
+
+    [JsonPropertyName("valid_from_utc")]
+    public DateTime ValidFromUtc { get; set; }
+
+    [JsonPropertyName("valid_to_utc")]
+    public DateTime? ValidToUtc { get; set; }
+
+    [JsonPropertyName("confidence")]
+    public float? Confidence { get; set; }
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("source_ref_ids")]
+    public List<string> SourceRefIds { get; set; } = [];
+
+    [JsonPropertyName("linked_temporal_state_ids")]
+    public List<Guid> LinkedTemporalStateIds { get; set; } = [];
+
+    [JsonPropertyName("publication_state")]
+    public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+}
+
+public sealed class ActiveNowConditionalRow
+{
+    [JsonPropertyName("active_now_conditional_row_id")]
+    public Guid ActiveNowConditionalRowId { get; set; }
+
+    [JsonPropertyName("snapshot_id")]
+    public Guid SnapshotId { get; set; }
+
+    [JsonPropertyName("conditional_state_id")]
+    public Guid ConditionalStateId { get; set; }
+
+    [JsonPropertyName("rule_kind")]
+    public string RuleKind { get; set; } = ConditionalKnowledgeRuleKinds.BaselineRule;
+
+    [JsonPropertyName("rule_id")]
+    public Guid RuleId { get; set; }
+
+    [JsonPropertyName("parent_rule_id")]
+    public Guid? ParentRuleId { get; set; }
+
+    [JsonPropertyName("subject_ref")]
+    public string SubjectRef { get; set; } = string.Empty;
+
+    [JsonPropertyName("fact_family")]
+    public string FactFamily { get; set; } = string.Empty;
+
+    [JsonPropertyName("resolved_value")]
+    public string ResolvedValue { get; set; } = string.Empty;
+
+    [JsonPropertyName("valid_from_utc")]
+    public DateTime ValidFromUtc { get; set; }
+
+    [JsonPropertyName("valid_to_utc")]
+    public DateTime? ValidToUtc { get; set; }
+
+    [JsonPropertyName("confidence")]
+    public float? Confidence { get; set; }
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("source_ref_ids")]
+    public List<string> SourceRefIds { get; set; } = [];
+
+    [JsonPropertyName("linked_temporal_state_ids")]
+    public List<Guid> LinkedTemporalStateIds { get; set; } = [];
+
+    [JsonPropertyName("publication_state")]
+    public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
+}
+
+public sealed class ConditionalPhaseMarkerRow
+{
+    [JsonPropertyName("phase_marker_row_id")]
+    public Guid PhaseMarkerRowId { get; set; }
+
+    [JsonPropertyName("snapshot_id")]
+    public Guid SnapshotId { get; set; }
+
+    [JsonPropertyName("conditional_state_id")]
+    public Guid ConditionalStateId { get; set; }
+
+    [JsonPropertyName("phase_marker_id")]
+    public Guid PhaseMarkerId { get; set; }
+
+    [JsonPropertyName("subject_ref")]
+    public string SubjectRef { get; set; } = string.Empty;
+
+    [JsonPropertyName("fact_family")]
+    public string FactFamily { get; set; } = string.Empty;
+
+    [JsonPropertyName("phase_label")]
+    public string PhaseLabel { get; set; } = string.Empty;
+
+    [JsonPropertyName("phase_reason")]
+    public string PhaseReason { get; set; } = string.Empty;
+
+    [JsonPropertyName("valid_from_utc")]
+    public DateTime ValidFromUtc { get; set; }
+
+    [JsonPropertyName("valid_to_utc")]
+    public DateTime? ValidToUtc { get; set; }
+
+    [JsonPropertyName("confidence")]
+    public float? Confidence { get; set; }
+
+    [JsonPropertyName("evidence_refs")]
+    public List<string> EvidenceRefs { get; set; } = [];
+
+    [JsonPropertyName("source_ref_ids")]
+    public List<string> SourceRefIds { get; set; } = [];
+
+    [JsonPropertyName("linked_temporal_state_ids")]
+    public List<Guid> LinkedTemporalStateIds { get; set; } = [];
+
+    [JsonPropertyName("publication_state")]
+    public string PublicationState { get; set; } = WsB5ResponsePublicationStates.InsufficientEvidence;
 }
 
 public sealed class CurrentWorldPairDynamicsReadSurface
