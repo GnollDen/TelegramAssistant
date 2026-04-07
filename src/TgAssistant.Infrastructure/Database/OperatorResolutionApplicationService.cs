@@ -14,6 +14,8 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private const string OfflineEventScopeItemPrefix = "offline_event:";
     private const string ConflictSessionCanonicalScopeKey = "chat:885574984";
     private const int ConflictSessionTtlMinutes = 30;
+    private const string TemporalHistoryPublicationStatePublishable = "publishable";
+    private const string TemporalHistoryPublicationStateInsufficientEvidence = "insufficient_evidence";
     private static readonly HashSet<string> ConflictSessionEligibleReviewSourceKinds = new(StringComparer.Ordinal)
     {
         "durable_object_metadata"
@@ -40,6 +42,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly IResolutionActionService _resolutionActionService;
     private readonly IConflictResolutionSessionModel _conflictResolutionSessionModel;
     private readonly IOperatorOfflineEventRepository _operatorOfflineEventRepository;
+    private readonly ITemporalPersonStateRepository _temporalPersonStateRepository;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
 
     public OperatorResolutionApplicationService(
@@ -48,6 +51,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IResolutionActionService resolutionActionService,
         IConflictResolutionSessionModel conflictResolutionSessionModel,
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
+        ITemporalPersonStateRepository temporalPersonStateRepository,
         ILogger<OperatorResolutionApplicationService> logger)
     {
         _dbFactory = dbFactory;
@@ -55,6 +59,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         _resolutionActionService = resolutionActionService;
         _conflictResolutionSessionModel = conflictResolutionSessionModel;
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
+        _temporalPersonStateRepository = temporalPersonStateRepository;
         _logger = logger;
     }
 
@@ -1807,6 +1812,116 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
                 StatusCounts = queue.StatusCounts,
                 PriorityCounts = queue.PriorityCounts,
                 Items = items
+            }
+        };
+    }
+
+    public async Task<OperatorPersonWorkspaceHistoryQueryResult> QueryPersonWorkspaceHistoryAsync(
+        OperatorPersonWorkspaceHistoryQueryRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var nowUtc = DateTime.UtcNow;
+        var trackedPersonId = ResolveTrackedPersonId(request.TrackedPersonId, request.Session);
+        var validationFailure = ValidateOperatorIdentityAndSession(
+            request.OperatorIdentity,
+            request.Session,
+            requireActiveTrackedPerson: false,
+            requireSupportedMode: false,
+            requireActiveScopeItem: false,
+            requireMatchingUnfinishedStep: false,
+            expectedTrackedPersonId: null,
+            expectedScopeItemKey: null,
+            nowUtc);
+        if (validationFailure != null)
+        {
+            return new OperatorPersonWorkspaceHistoryQueryResult
+            {
+                Accepted = false,
+                FailureReason = validationFailure,
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        if (!trackedPersonId.HasValue || trackedPersonId.Value == Guid.Empty)
+        {
+            return new OperatorPersonWorkspaceHistoryQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_id_required",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var trackedPerson = await LoadTrackedPersonByIdAsync(db, trackedPersonId.Value, ct);
+        if (trackedPerson == null)
+        {
+            return new OperatorPersonWorkspaceHistoryQueryResult
+            {
+                Accepted = false,
+                FailureReason = "tracked_person_not_found_or_inactive",
+                Session = CloneSession(request.Session, nowUtc)
+            };
+        }
+
+        await PopulateResolutionSignalsAsync([trackedPerson], ct);
+
+        var states = await _temporalPersonStateRepository.QueryScopedAsync(
+            new TemporalPersonStateScopeQuery
+            {
+                ScopeKey = trackedPerson.ScopeKey,
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                SubjectRef = NormalizeOptional(request.SubjectRef),
+                FactType = NormalizeOptional(request.FactType),
+                Limit = Math.Clamp(request.Limit <= 0 ? 200 : request.Limit, 1, 500)
+            },
+            ct);
+
+        var historyRows = states
+            .Select(state => new TemporalPersonHistoryRow
+            {
+                StateId = state.Id,
+                ScopeKey = state.ScopeKey,
+                TrackedPersonId = state.TrackedPersonId,
+                SubjectRef = state.SubjectRef,
+                FactType = state.FactType,
+                Value = state.Value,
+                ValidFromUtc = state.ValidFromUtc,
+                ValidToUtc = state.ValidToUtc,
+                StateStatus = state.StateStatus,
+                SupersedesStateId = state.SupersedesStateId,
+                SupersededByStateId = state.SupersededByStateId,
+                EvidenceRefs = [.. state.EvidenceRefs],
+                PublicationState = ResolveTemporalHistoryPublicationState(state)
+            })
+            .ToList();
+
+        var openRows = historyRows.Count(row =>
+            string.Equals(row.StateStatus, TemporalPersonStateStatuses.Open, StringComparison.Ordinal)
+            && row.ValidToUtc == null);
+
+        var session = CloneSession(request.Session, nowUtc);
+        session.ActiveTrackedPersonId = trackedPerson.TrackedPersonId;
+        session.ActiveScopeItemKey = null;
+        session.ActiveMode = OperatorModeTypes.ResolutionQueue;
+        session.UnfinishedStep = null;
+
+        return new OperatorPersonWorkspaceHistoryQueryResult
+        {
+            Accepted = true,
+            FailureReason = null,
+            Session = session,
+            History = new OperatorPersonWorkspaceHistorySectionView
+            {
+                GeneratedAtUtc = nowUtc,
+                TrackedPersonId = trackedPerson.TrackedPersonId,
+                ScopeKey = trackedPerson.ScopeKey,
+                TotalRows = historyRows.Count,
+                OpenRows = openRows,
+                HistoricalRows = historyRows.Count - openRows,
+                Rows = historyRows
             }
         };
     }
@@ -4792,6 +4907,13 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
 
     private static float Clamp01(float value)
         => Math.Clamp(value, 0f, 1f);
+
+    private static string ResolveTemporalHistoryPublicationState(TemporalPersonState state)
+    {
+        return state.EvidenceRefs.Count == 0
+            ? TemporalHistoryPublicationStateInsufficientEvidence
+            : TemporalHistoryPublicationStatePublishable;
+    }
 
     private static string ToFamilyLabel(string family)
     {

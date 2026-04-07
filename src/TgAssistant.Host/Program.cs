@@ -212,6 +212,10 @@ try
     var temporalPersonStateProofOutput = temporalPersonStateProofOutputArg is null
         ? null
         : temporalPersonStateProofOutputArg["--temporal-person-state-proof-output=".Length..];
+    var personHistoryProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--person-history-proof-output=", StringComparison.OrdinalIgnoreCase));
+    var personHistoryProofOutput = personHistoryProofOutputArg is null
+        ? null
+        : personHistoryProofOutputArg["--person-history-proof-output=".Length..];
     var stageSemanticContractProofOutputArg = args.FirstOrDefault(arg => arg.StartsWith("--stage-semantic-contract-proof-output=", StringComparison.OrdinalIgnoreCase));
     var stageSemanticContractProofOutput = stageSemanticContractProofOutputArg is null
         ? null
@@ -246,6 +250,7 @@ try
     var runResolutionInterpretationLoopValidate = args.Any(arg => string.Equals(arg, "--resolution-interpretation-loop-v1-validate", StringComparison.OrdinalIgnoreCase));
     var runRuntimeControlDetailProof = args.Any(arg => string.Equals(arg, "--runtime-control-detail-proof", StringComparison.OrdinalIgnoreCase));
     var runTemporalPersonStateProof = args.Any(arg => string.Equals(arg, "--temporal-person-state-proof", StringComparison.OrdinalIgnoreCase));
+    var runPersonHistoryProof = args.Any(arg => string.Equals(arg, "--person-history-proof", StringComparison.OrdinalIgnoreCase));
     var runStageSemanticContractProof = args.Any(arg => string.Equals(arg, "--stage-semantic-contract-proof", StringComparison.OrdinalIgnoreCase));
     var runAiConflictSessionV1Proof = args.Any(arg => string.Equals(arg, "--ai-conflict-session-v1-proof", StringComparison.OrdinalIgnoreCase));
     var runLaunchSmoke = args.Any(arg => string.Equals(arg, "--launch-smoke", StringComparison.OrdinalIgnoreCase));
@@ -340,6 +345,7 @@ try
         "--opint-home-dashboard-smoke",
         "--resolution-interpretation-loop-v1-validate",
         "--temporal-person-state-proof",
+        "--person-history-proof",
         "--stage-semantic-contract-proof",
         "--ai-conflict-session-v1-proof",
         "--launch-smoke",
@@ -771,6 +777,21 @@ try
                 report.OutputPath,
                 report.Passed,
                 report.Rows.Count,
+                report.ScopeKey);
+            return;
+        }
+
+        if (runPersonHistoryProof)
+        {
+            var report = await PersonHistoryProofRunner.RunAsync(
+                host.Services,
+                personHistoryProofOutput,
+                CancellationToken.None);
+            Log.Information(
+                "Person-history proof requested via --person-history-proof. output={OutputPath}, passed={Passed}, row_count={RowCount}, scope_key={ScopeKey}. Exiting after successful verification.",
+                report.OutputPath,
+                report.Passed,
+                report.Cases.Count,
                 report.ScopeKey);
             return;
         }

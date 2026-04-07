@@ -566,6 +566,26 @@ public static class OperatorApiEndpointExtensions
             return ToResult(result.Accepted, result.FailureReason, result);
         });
 
+        group.MapPost("/person-workspace/person-history/query", async (
+            HttpContext httpContext,
+            OperatorPersonWorkspaceHistoryQueryRequest request,
+            WebOperatorAuthSessionResolver webAuthResolver,
+            IOperatorResolutionApplicationService service,
+            CancellationToken ct) =>
+        {
+            var auth = await webAuthResolver.ResolveAsync(httpContext, OperatorModeTypes.ResolutionQueue, ct);
+            if (!auth.Accepted)
+            {
+                return ToAuthFailureResult(auth);
+            }
+
+            request.OperatorIdentity = auth.OperatorIdentity;
+            request.Session = auth.Session;
+            var result = await service.QueryPersonWorkspaceHistoryAsync(request, ct);
+            webAuthResolver.PersistSession(httpContext, result.Session, OperatorModeTypes.ResolutionQueue);
+            return ToResult(result.Accepted, result.FailureReason, result);
+        });
+
         group.MapPost("/resolution/queue/query", async (
             HttpContext httpContext,
             OperatorResolutionQueueQueryRequest request,

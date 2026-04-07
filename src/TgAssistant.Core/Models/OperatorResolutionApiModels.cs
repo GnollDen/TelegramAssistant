@@ -188,6 +188,14 @@ public class OperatorPersonWorkspaceResolutionQueryRequest : OperatorContractReq
     public Guid? TrackedPersonId { get; set; }
 }
 
+public class OperatorPersonWorkspaceHistoryQueryRequest : OperatorContractRequestBase
+{
+    public Guid? TrackedPersonId { get; set; }
+    public string? SubjectRef { get; set; }
+    public string? FactType { get; set; }
+    public int Limit { get; set; } = 200;
+}
+
 public class OperatorPersonWorkspaceSummaryQueryResult
 {
     public bool Accepted { get; set; }
@@ -250,6 +258,21 @@ public class OperatorPersonWorkspaceResolutionQueryResult
     public string? FailureReason { get; set; }
     public OperatorSessionContext Session { get; set; } = new();
     public OperatorPersonWorkspaceResolutionSectionView Resolution { get; set; } = new();
+}
+
+public class OperatorPersonWorkspaceHistoryQueryResult
+{
+    public bool Accepted { get; set; }
+    public string? FailureReason { get; set; }
+    public OperatorSessionContext Session { get; set; } = new();
+    public OperatorPersonWorkspaceHistorySectionView History { get; set; } = new();
+}
+
+public static class TemporalPersonHistoryPublicationStates
+{
+    public const string EvidenceLinkedCurrent = "evidence_linked_current";
+    public const string EvidenceLinkedHistorical = "evidence_linked_historical";
+    public const string MissingEvidence = "missing_evidence";
 }
 
 public class OperatorPersonWorkspaceView
@@ -431,6 +454,34 @@ public class OperatorPersonWorkspaceResolutionSectionView
     public List<ResolutionFacetCount> StatusCounts { get; set; } = [];
     public List<ResolutionFacetCount> PriorityCounts { get; set; } = [];
     public List<OperatorWorkspaceResolutionItemView> Items { get; set; } = [];
+}
+
+public class OperatorPersonWorkspaceHistorySectionView
+{
+    public DateTime GeneratedAtUtc { get; set; }
+    public Guid TrackedPersonId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public int TotalRows { get; set; }
+    public int OpenRows { get; set; }
+    public int HistoricalRows { get; set; }
+    public List<TemporalPersonHistoryRow> Rows { get; set; } = [];
+}
+
+public class TemporalPersonHistoryRow
+{
+    public Guid StateId { get; set; }
+    public string ScopeKey { get; set; } = string.Empty;
+    public Guid TrackedPersonId { get; set; }
+    public string SubjectRef { get; set; } = string.Empty;
+    public string FactType { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public DateTime ValidFromUtc { get; set; }
+    public DateTime? ValidToUtc { get; set; }
+    public string StateStatus { get; set; } = string.Empty;
+    public Guid? SupersedesStateId { get; set; }
+    public Guid? SupersededByStateId { get; set; }
+    public List<string> EvidenceRefs { get; set; } = [];
+    public string PublicationState { get; set; } = TemporalPersonHistoryPublicationStates.MissingEvidence;
 }
 
 public class OperatorWorkspaceResolutionItemView

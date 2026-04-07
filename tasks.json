@@ -555,8 +555,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-006B completed: added bounded person-history proof runner and CLI switch --person-history-proof (optional --person-history-proof-output) with artifact output at src/TgAssistant.Host/artifacts/phase-b/person-history-proof.json; wired operator application contract endpoint support for person-workspace history query returning required TemporalPersonHistoryRow fields including publication_state; verified with dotnet build TelegramAssistant.sln and dotnet run --project src/TgAssistant.Host/TgAssistant.Host.csproj -- --person-history-proof.",
       "dependencies": [
         "PHB-006A"
       ]

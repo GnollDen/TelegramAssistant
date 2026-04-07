@@ -307,6 +307,9 @@ public static class Opint009WebAlertsSmokeRunner
         public Task<OperatorPersonWorkspaceResolutionQueryResult> QueryPersonWorkspaceResolutionAsync(OperatorPersonWorkspaceResolutionQueryRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-C1 smoke should not query person workspace resolution.");
 
+        public Task<OperatorPersonWorkspaceHistoryQueryResult> QueryPersonWorkspaceHistoryAsync(OperatorPersonWorkspaceHistoryQueryRequest request, CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-009-C1 smoke should not query person workspace history.");
+
         public Task<OperatorOfflineEventQueryApiResult> QueryOfflineEventsAsync(OperatorOfflineEventQueryApiRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-009-C1 smoke should not query offline events.");
 

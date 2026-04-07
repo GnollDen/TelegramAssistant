@@ -386,6 +386,9 @@ public static class Opint012ATelegramResolutionParitySmokeRunner
         public Task<OperatorPersonWorkspaceResolutionQueryResult> QueryPersonWorkspaceResolutionAsync(OperatorPersonWorkspaceResolutionQueryRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-012-A smoke should not query person workspace resolution.");
 
+        public Task<OperatorPersonWorkspaceHistoryQueryResult> QueryPersonWorkspaceHistoryAsync(OperatorPersonWorkspaceHistoryQueryRequest request, CancellationToken ct = default)
+            => throw new NotSupportedException("OPINT-012-A smoke should not query person workspace history.");
+
         public Task<OperatorConflictResolutionSessionResultEnvelope> StartConflictResolutionSessionAsync(OperatorConflictResolutionSessionStartRequest request, CancellationToken ct = default)
             => throw new NotSupportedException("OPINT-012-A smoke should not start AI conflict sessions.");
 
