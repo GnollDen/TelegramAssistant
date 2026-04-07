@@ -593,8 +593,8 @@
       "test_steps": [
         "Run task-specific verify commands"
       ],
-      "status": "pending",
-      "notes": "",
+      "status": "done",
+      "notes": "PHB-007 completed: added contract-only iterative reintegration models (`IterativeCaseModels`, `ReintegrationLedgerModels`) with closed `origin_source_kind` enum, full carry-forward status set, explicit allowed transition matrix helpers, identity distinctness guard (`carry_forward_case_id` vs `scope_item_key` / conflict session id), and shared reintegration linkage fields (`carry_forward_case_id`, `reintegration_entry_id`, predecessor/successor, recompute target linkage) surfaced on resolution/operator session/action contracts for the non-legacy Stage7->Stage8 boundary. Verified with dotnet build TelegramAssistant.sln.",
       "dependencies": [
         "PHB-006C"
       ]

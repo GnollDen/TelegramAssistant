@@ -176,6 +176,15 @@ public class ResolutionActionRequest
     public string RequestId { get; set; } = string.Empty;
     public Guid TrackedPersonId { get; set; }
     public string ScopeItemKey { get; set; } = string.Empty;
+    public Guid? CarryForwardCaseId { get; set; }
+    public Guid? ReintegrationEntryId { get; set; }
+    public string? OriginSourceKind { get; set; }
+    public Guid? PredecessorCarryForwardCaseId { get; set; }
+    public Guid? SuccessorCarryForwardCaseId { get; set; }
+    public string? PreviousCaseStatus { get; set; }
+    public string? NextCaseStatus { get; set; }
+    public string? RecomputeTargetFamily { get; set; }
+    public string? RecomputeTargetRef { get; set; }
     public string ActionType { get; set; } = string.Empty;
     public string? Explanation { get; set; }
     public ResolutionClarificationPayload? ClarificationPayload { get; set; }
@@ -196,6 +205,15 @@ public class ResolutionActionResult
     public Guid? AuditEventId { get; set; }
     public Guid? TrackedPersonId { get; set; }
     public string ScopeItemKey { get; set; } = string.Empty;
+    public Guid? CarryForwardCaseId { get; set; }
+    public Guid? ReintegrationEntryId { get; set; }
+    public string? OriginSourceKind { get; set; }
+    public Guid? PredecessorCarryForwardCaseId { get; set; }
+    public Guid? SuccessorCarryForwardCaseId { get; set; }
+    public string? PreviousCaseStatus { get; set; }
+    public string? NextCaseStatus { get; set; }
+    public string? RecomputeTargetFamily { get; set; }
+    public string? RecomputeTargetRef { get; set; }
     public string ActionType { get; set; } = string.Empty;
     public string? ItemType { get; set; }
     public Guid? ConflictResolutionSessionId { get; set; }
@@ -303,6 +321,15 @@ public class ResolutionConflictSessionCasePacket
 public class ResolutionConflictSessionView
 {
     public Guid ConflictSessionId { get; set; }
+    public Guid? CarryForwardCaseId { get; set; }
+    public Guid? ReintegrationEntryId { get; set; }
+    public string? OriginSourceKind { get; set; }
+    public Guid? PredecessorCarryForwardCaseId { get; set; }
+    public Guid? SuccessorCarryForwardCaseId { get; set; }
+    public string? PreviousCaseStatus { get; set; }
+    public string? NextCaseStatus { get; set; }
+    public string? RecomputeTargetFamily { get; set; }
+    public string? RecomputeTargetRef { get; set; }
     public string ContractVersion { get; set; } = ResolutionConflictSessionContract.Version;
     public string State { get; set; } = ResolutionConflictSessionStates.RunningInitial;
     public string? StateReason { get; set; }

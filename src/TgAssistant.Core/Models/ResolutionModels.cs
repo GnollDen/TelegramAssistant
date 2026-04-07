@@ -402,6 +402,15 @@ public class ResolutionConflictSessionModelRequest
     public string ScopeKey { get; set; } = string.Empty;
     public Guid TrackedPersonId { get; set; }
     public string ScopeItemKey { get; set; } = string.Empty;
+    public Guid? CarryForwardCaseId { get; set; }
+    public Guid? ReintegrationEntryId { get; set; }
+    public string? OriginSourceKind { get; set; }
+    public Guid? PredecessorCarryForwardCaseId { get; set; }
+    public Guid? SuccessorCarryForwardCaseId { get; set; }
+    public string? PreviousStatus { get; set; }
+    public string? NextStatus { get; set; }
+    public string? RecomputeTargetFamily { get; set; }
+    public string? RecomputeTargetRef { get; set; }
     public ResolutionConflictSessionCasePacket CasePacket { get; set; } = new();
     public ResolutionConflictSessionQuestion? OperatorQuestion { get; set; }
     public ResolutionConflictSessionOperatorInput? OperatorInput { get; set; }
