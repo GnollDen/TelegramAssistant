@@ -41,6 +41,7 @@ public static class IterativeCaseStatuses
         },
         [NeedsMoreContext] = new HashSet<string>(StringComparer.Ordinal)
         {
+            NeedsMoreContext,
             ResolvingAi,
             DeferredToNextPass,
             Superseded

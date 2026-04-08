@@ -1,0 +1,160 @@
+{
+  "GeneratedAtUtc": "2026-04-07T18:40:05.7558202Z",
+  "OutputPath": "/home/codex/projects/TelegramAssistant/src/TgAssistant.Host/artifacts/resolution-interpretation-loop/resolution-interpretation-loop-v1-validation-report.json",
+  "ScopeKey": "chat:885574984",
+  "ChatId": 885574984,
+  "TrackedPersonId": "88557498-4984-4984-4984-885574984001",
+  "ScopeItemKey": "resolution:review:validation-seeded-item",
+  "RequestedContextType": "additional_evidence",
+  "FinalInterpretation": "The additional bounded evidence shows that the scheduling conflict softened into renewed engagement, but the commitment level still needs operator judgment.",
+  "KeyClaims": [
+    "Recent messages support a re-engagement interpretation rather than a clean withdrawal.",
+    "Engagement may remain unstable if no concrete follow-through appears in the next exchange."
+  ],
+  "ExplicitUncertainties": [
+    "The bounded record still does not prove how durable the renewed engagement will be.",
+    "Uncertainty retained as hypothesis without direct evidence refs: Engagement may remain unstable if no concrete follow-through appears in the next exchange."
+  ],
+  "ReviewRecommendationDecision": "review",
+  "ReviewRecommendationReason": "Operator review is still recommended because the latest evidence improves the interpretation but does not eliminate ambiguity.",
+  "EvidenceRefsUsed": [
+    "message:1010",
+    "message:1012"
+  ],
+  "UsedFallback": false,
+  "FailureReason": null,
+  "NoDirectModelToDurableWrites": true,
+  "AuditTrailPresent": true,
+  "AuditTrail": [
+    {
+      "step": "context_manifest",
+      "retrieval_round": 0,
+      "requested_context_type": "none",
+      "status": "recorded",
+      "details": "Initial bounded context contains 2 evidence refs, 2 notes, and 2 durable summaries.",
+      "provider": null,
+      "model": null,
+      "model_id": null,
+      "model_version": null,
+      "request_id": null,
+      "latency_ms": null,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "total_tokens": null,
+      "cost_usd": null,
+      "context_manifest": null,
+      "retrieval_requests": null,
+      "retrieval_results": null,
+      "normalization_status": null,
+      "gate_decision": null,
+      "evidence_refs": [
+        "message:1001",
+        "message:1004"
+      ],
+      "observed_at_utc": "2026-04-07T18:40:05.8154647Z"
+    },
+    {
+      "step": "model_round",
+      "retrieval_round": 0,
+      "requested_context_type": "additional_evidence",
+      "status": "completed",
+      "details": "Initial model response received. total_tokens=210.",
+      "provider": "validation-stub",
+      "model": "resolution-interpretation-loop-v1-stub",
+      "model_id": null,
+      "model_version": null,
+      "request_id": "validation-initial",
+      "latency_ms": 5,
+      "prompt_tokens": 130,
+      "completion_tokens": 80,
+      "total_tokens": 210,
+      "cost_usd": 0.0035,
+      "context_manifest": null,
+      "retrieval_requests": null,
+      "retrieval_results": null,
+      "normalization_status": null,
+      "gate_decision": null,
+      "evidence_refs": [
+        "message:1001",
+        "message:1004"
+      ],
+      "observed_at_utc": "2026-04-07T18:40:05.8288478Z"
+    },
+    {
+      "step": "retrieval_round",
+      "retrieval_round": 1,
+      "requested_context_type": "additional_evidence",
+      "status": "completed",
+      "details": "Returned one bounded retrieval round for \u0027additional_evidence\u0027.",
+      "provider": null,
+      "model": null,
+      "model_id": null,
+      "model_version": null,
+      "request_id": null,
+      "latency_ms": null,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "total_tokens": null,
+      "cost_usd": null,
+      "context_manifest": null,
+      "retrieval_requests": null,
+      "retrieval_results": null,
+      "normalization_status": null,
+      "gate_decision": null,
+      "evidence_refs": [
+        "message:1010",
+        "message:1012"
+      ],
+      "observed_at_utc": "2026-04-07T18:40:05.833466Z"
+    },
+    {
+      "step": "model_round",
+      "retrieval_round": 1,
+      "requested_context_type": "additional_evidence",
+      "status": "completed",
+      "details": "Final model response received after one bounded retrieval round. total_tokens=245.",
+      "provider": "validation-stub",
+      "model": "resolution-interpretation-loop-v1-stub",
+      "model_id": null,
+      "model_version": null,
+      "request_id": "validation-final",
+      "latency_ms": 6,
+      "prompt_tokens": 150,
+      "completion_tokens": 95,
+      "total_tokens": 245,
+      "cost_usd": 0.0045,
+      "context_manifest": null,
+      "retrieval_requests": null,
+      "retrieval_results": null,
+      "normalization_status": null,
+      "gate_decision": null,
+      "evidence_refs": [
+        "message:1010",
+        "message:1012"
+      ],
+      "observed_at_utc": "2026-04-07T18:40:05.8348457Z"
+    }
+  ],
+  "ClaimValidationRows": [
+    {
+      "ClaimType": "inference",
+      "DisplayLabel": "Inference",
+      "ClaimSummary": "Recent messages support a re-engagement interpretation rather than a clean withdrawal.",
+      "HasEvidenceRefs": true,
+      "HasExplicitUncertaintyLabel": true,
+      "TrustPercent": 74,
+      "Supported": true
+    },
+    {
+      "ClaimType": "hypothesis",
+      "DisplayLabel": "Hypothesis",
+      "ClaimSummary": "Engagement may remain unstable if no concrete follow-through appears in the next exchange.",
+      "HasEvidenceRefs": false,
+      "HasExplicitUncertaintyLabel": true,
+      "TrustPercent": null,
+      "Supported": true
+    }
+  ],
+  "Passed": true,
+  "FatalError": null
+}

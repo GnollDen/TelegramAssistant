@@ -47,6 +47,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private readonly ICurrentWorldApproximationReadService _currentWorldApproximationReadService;
     private readonly ILogger<OperatorResolutionApplicationService> _logger;
     private readonly ConflictResolutionSessionSettings _conflictSessionSettings;
+    private readonly WebSettings _webSettings;
 
     public OperatorResolutionApplicationService(
         IDbContextFactory<TgAssistantDbContext> dbFactory,
@@ -57,6 +58,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         IOperatorOfflineEventRepository operatorOfflineEventRepository,
         ITemporalPersonStateRepository temporalPersonStateRepository,
         ICurrentWorldApproximationReadService currentWorldApproximationReadService,
+        IOptions<WebSettings> webSettings,
         IOptions<ConflictResolutionSessionSettings> conflictSessionSettings,
         ILogger<OperatorResolutionApplicationService> logger)
     {
@@ -68,6 +70,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         _operatorOfflineEventRepository = operatorOfflineEventRepository;
         _temporalPersonStateRepository = temporalPersonStateRepository;
         _currentWorldApproximationReadService = currentWorldApproximationReadService;
+        _webSettings = webSettings.Value ?? new WebSettings();
         _conflictSessionSettings = conflictSessionSettings.Value ?? new ConflictResolutionSessionSettings();
         _logger = logger;
     }
@@ -91,7 +94,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             nowUtc);
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var trackedPersons = await LoadTrackedPersonsAsync(db, Math.Clamp(request.Limit, 1, 50), ct);
+        var trackedPersons = await LoadTrackedPersonsAsync(
+            db,
+            Math.Clamp(request.Limit, 1, 50),
+            includeSyntheticScopes: _webSettings.AllowSyntheticScopes,
+            ct);
 
         var response = new OperatorTrackedPersonQueryResult
         {
@@ -185,7 +192,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             validationFailure = "tracked_person_id_required";
         }
 
-        var trackedPersons = await LoadTrackedPersonsAsync(db, 50, ct);
+        var trackedPersons = await LoadTrackedPersonsAsync(
+            db,
+            50,
+            includeSyntheticScopes: _webSettings.AllowSyntheticScopes,
+            ct);
         var target = request.TrackedPersonId == Guid.Empty
             ? null
             : trackedPersons.FirstOrDefault(x => x.TrackedPersonId == request.TrackedPersonId);
@@ -283,7 +294,11 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var trackedPersons = await LoadTrackedPersonsAsync(db, 200, ct);
+        var trackedPersons = await LoadTrackedPersonsAsync(
+            db,
+            200,
+            includeSyntheticScopes: _webSettings.AllowSyntheticScopes,
+            ct);
         await PopulateResolutionSignalsAsync(trackedPersons, ct);
 
         var normalizedSearch = NormalizeOptional(request.Search);
@@ -3315,6 +3330,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
     private static async Task<List<OperatorTrackedPersonScopeSummary>> LoadTrackedPersonsAsync(
         TgAssistantDbContext db,
         int limit,
+        bool includeSyntheticScopes,
         CancellationToken ct)
     {
         var evidenceCounts = await db.EvidenceItemPersonLinks
@@ -3334,12 +3350,22 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
             .Select(link => link.PersonId)
             .Distinct();
 
-        var rows = await db.Persons
+        var rowsQuery = db.Persons
             .AsNoTracking()
             .Where(person =>
                 person.Status == ActiveStatus
                 && person.PersonType == "tracked_person"
                 && activePersonIds.Contains(person.Id))
+            .AsQueryable();
+
+        if (!includeSyntheticScopes)
+        {
+            rowsQuery = rowsQuery.Where(person =>
+                !EF.Functions.Like(person.ScopeKey, "proof:%")
+                && !EF.Functions.Like(person.ScopeKey, "chat:%smoke%"));
+        }
+
+        var rows = await rowsQuery
             .OrderBy(person => person.DisplayName)
             .ThenBy(person => person.CanonicalName)
             .ThenByDescending(person => person.UpdatedAt)
@@ -5013,7 +5039,7 @@ public sealed class OperatorResolutionApplicationService : IOperatorResolutionAp
         Guid trackedPersonId,
         CancellationToken ct)
     {
-        return (await LoadTrackedPersonsAsync(db, 200, ct))
+        return (await LoadTrackedPersonsAsync(db, 200, includeSyntheticScopes: true, ct))
             .FirstOrDefault(x => x.TrackedPersonId == trackedPersonId);
     }
 

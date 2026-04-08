@@ -2,6 +2,21 @@
 
 Personal Telegram assistant monorepo focused on message ingestion, processing, and intelligence extraction.
 
+## Start Here: Runtime Requires Docker
+
+Runtime/proof/smoke verification is container-first and must run via Docker Compose.
+
+- Use `docker compose` for behavior checks (`--*-smoke`, `--*-proof`, readiness/liveness, runtime commands).
+- Non-container runs (for example, `dotnet build`) are code checks only.
+- Baseline policy: `docs/runbooks/container-first-testing-policy.md`
+
+Quick start:
+
+```bash
+docker compose build app
+docker compose run --rm app --list-smokes
+```
+
 ## Authority Chain
 
 Use a single planning authority entrypoint:

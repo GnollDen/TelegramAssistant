@@ -111,10 +111,17 @@ public sealed class ResolutionCaseReintegrationService : IResolutionCaseReintegr
         }
 
         var nowUtc = DateTime.UtcNow;
-        predecessor.SuccessorLedgerEntryId = successorLedgerEntryId;
-        predecessor.UpdatedAtUtc = nowUtc;
         successor.PredecessorLedgerEntryId = predecessorLedgerEntryId;
         successor.UpdatedAtUtc = nowUtc;
+
+        // Ensure successor row exists before predecessor points to it to satisfy FK ordering.
+        if (db.Entry(successor).State == EntityState.Added)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        predecessor.SuccessorLedgerEntryId = successorLedgerEntryId;
+        predecessor.UpdatedAtUtc = nowUtc;
     }
 
     private static async Task<ResolutionCaseReintegrationLedgerEntry> RecordInternalAsync(

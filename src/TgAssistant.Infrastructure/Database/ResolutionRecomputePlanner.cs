@@ -53,10 +53,7 @@ public static class ResolutionRecomputePlanner
         ResolutionItemDetail item)
     {
         var normalizedFamily = item.AffectedFamily?.Trim() ?? string.Empty;
-        if (StageSemanticContract.TryMapStage8RecomputeTargetFamilyToSemanticFamily(normalizedFamily, out var semanticFamily)
-            && !string.IsNullOrWhiteSpace(semanticFamily)
-            && StageSemanticContract.TryMapSemanticFamilyToStage8RecomputeTargetFamily(semanticFamily, out var targetFamily)
-            && !string.IsNullOrWhiteSpace(targetFamily))
+        if (TryResolveStage8TargetFamily(normalizedFamily, out var targetFamily))
         {
             return new ResolutionRecomputeTarget
             {
@@ -88,6 +85,46 @@ public static class ResolutionRecomputePlanner
         }
 
         return null;
+    }
+
+    private static bool TryResolveStage8TargetFamily(string affectedFamily, out string targetFamily)
+    {
+        targetFamily = string.Empty;
+        if (string.IsNullOrWhiteSpace(affectedFamily))
+        {
+            return false;
+        }
+
+        var normalized = affectedFamily.Trim();
+        if (StageSemanticContract.TryMapStage8RecomputeTargetFamilyToSemanticFamily(normalized, out var semanticFamily)
+            && !string.IsNullOrWhiteSpace(semanticFamily)
+            && StageSemanticContract.TryMapSemanticFamilyToStage8RecomputeTargetFamily(semanticFamily, out var stage8TargetFamily)
+            && !string.IsNullOrWhiteSpace(stage8TargetFamily))
+        {
+            targetFamily = stage8TargetFamily;
+            return true;
+        }
+
+        var semanticFromStage7Object = normalized switch
+        {
+            Stage7DurableObjectFamilies.Dossier => StageSemanticOwnedOutputFamilies.Stage7DurableProfile,
+            Stage7DurableObjectFamilies.Profile => StageSemanticOwnedOutputFamilies.Stage7DurableProfile,
+            Stage7DurableObjectFamilies.PairDynamics => StageSemanticOwnedOutputFamilies.Stage7PairDynamics,
+            Stage7DurableObjectFamilies.Event => StageSemanticOwnedOutputFamilies.Stage7DurableTimeline,
+            Stage7DurableObjectFamilies.TimelineEpisode => StageSemanticOwnedOutputFamilies.Stage7DurableTimeline,
+            Stage7DurableObjectFamilies.StoryArc => StageSemanticOwnedOutputFamilies.Stage7DurableTimeline,
+            _ => null
+        };
+
+        if (!string.IsNullOrWhiteSpace(semanticFromStage7Object)
+            && StageSemanticContract.TryMapSemanticFamilyToStage8RecomputeTargetFamily(semanticFromStage7Object, out var mappedTargetFamily)
+            && !string.IsNullOrWhiteSpace(mappedTargetFamily))
+        {
+            targetFamily = mappedTargetFamily;
+            return true;
+        }
+
+        return false;
     }
 
     private static string BuildTriggerKind(string normalizedAction)

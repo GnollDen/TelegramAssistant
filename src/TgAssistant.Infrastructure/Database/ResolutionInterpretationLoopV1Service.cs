@@ -378,8 +378,7 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
     {
         if (_settings.MaxInputTokens <= 0
             || _settings.MaxOutputTokens <= 0
-            || _settings.MaxTotalTokens <= 0
-            || _settings.MaxCostUsdPerLoop <= 0m)
+            || _settings.MaxTotalTokens <= 0)
         {
             return InvalidBudgetConfiguration;
         }
@@ -417,15 +416,20 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
             return TotalTokenBudgetExceeded;
         }
 
-        if (cumulativeCostUsd > _settings.MaxCostUsdPerLoop)
+        var isCostBudgetEnabled = _settings.MaxCostUsdPerLoop > 0m;
+        if (isCostBudgetEnabled && cumulativeCostUsd > _settings.MaxCostUsdPerLoop)
         {
             return CostBudgetExceeded;
         }
 
         if (!response.PromptTokens.HasValue
             || !response.CompletionTokens.HasValue
-            || !response.TotalTokens.HasValue
-            || !response.CostUsd.HasValue)
+            || !response.TotalTokens.HasValue)
+        {
+            return UsageUnavailable;
+        }
+
+        if (isCostBudgetEnabled && !response.CostUsd.HasValue)
         {
             return UsageUnavailable;
         }
@@ -742,9 +746,12 @@ public sealed class ResolutionInterpretationLoopV1Service : IResolutionInterpret
                 {
                     LinkType = evidence.DecisionLinkage.LinkType,
                     LinkTarget = evidence.DecisionLinkage.LinkTarget,
+                    Criterion = evidence.DecisionLinkage.Criterion,
                     ReviewQuestion = evidence.DecisionLinkage.ReviewQuestion,
                     Stance = evidence.DecisionLinkage.Stance,
                     Summary = evidence.DecisionLinkage.Summary,
+                    EvidenceRefsUsed = [.. evidence.DecisionLinkage.EvidenceRefsUsed],
+                    KeyClaims = [.. evidence.DecisionLinkage.KeyClaims],
                     IsHeuristic = evidence.DecisionLinkage.IsHeuristic,
                     HeuristicCalibration = evidence.DecisionLinkage.HeuristicCalibration
                 }

@@ -486,9 +486,12 @@ public class ResolutionEvidenceDecisionLinkage
 {
     public string LinkType { get; set; } = ResolutionDecisionLinkTypes.Criterion;
     public string LinkTarget { get; set; } = string.Empty;
+    public string? Criterion { get; set; }
     public string? ReviewQuestion { get; set; }
     public string Stance { get; set; } = ResolutionDecisionStances.Ambiguous;
     public string Summary { get; set; } = string.Empty;
+    public List<string> EvidenceRefsUsed { get; set; } = [];
+    public List<string> KeyClaims { get; set; } = [];
     public bool IsHeuristic { get; set; } = true;
     public string? HeuristicCalibration { get; set; }
 }

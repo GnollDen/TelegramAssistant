@@ -11,6 +11,7 @@ namespace TgAssistant.Host.Launch;
 public static class AiConflictResolutionSessionV1ProofRunner
 {
     private const string ScopeKey = "chat:885574984";
+    private const string ActiveStatus = "active";
     private const string OperatorId = "ai-conflict-v1-proof";
     private const string OperatorDisplay = "AI Conflict V1 Proof";
     private const string SurfaceSubject = "validation";
@@ -53,49 +54,33 @@ public static class AiConflictResolutionSessionV1ProofRunner
             var sessionId = $"web:ai-conflict-v1-proof:{Guid.NewGuid():N}";
             var identity = BuildIdentity(nowUtc);
             var session = BuildSession(sessionId, nowUtc, nowUtc.AddMinutes(20));
-
             await using var db = await dbFactory.CreateDbContextAsync(ct);
             var trackedPerson = await db.Persons
                 .AsNoTracking()
                 .Where(x => x.ScopeKey == ScopeKey
-                    && x.Status == "active"
+                    && x.Status == ActiveStatus
                     && x.PersonType == "tracked_person")
                 .OrderByDescending(x => x.UpdatedAt)
                 .Select(x => new { x.Id, x.DisplayName })
                 .FirstOrDefaultAsync(ct);
             Ensure(trackedPerson != null, $"Active tracked person was not found for scope '{ScopeKey}'.");
 
-            report.TrackedPersonId = trackedPerson!.Id;
+            var selectedTrackedPersonId = trackedPerson!.Id;
+            report.ScopeKey = ScopeKey;
+            report.TrackedPersonId = selectedTrackedPersonId;
             report.TrackedPersonDisplayName = trackedPerson.DisplayName;
 
-            var query = await appService.QueryTrackedPersonsAsync(
-                new OperatorTrackedPersonQueryRequest
-                {
-                    OperatorIdentity = identity,
-                    Session = session,
-                    PreferredTrackedPersonId = trackedPerson.Id,
-                    Limit = 50
-                },
-                ct);
-            Ensure(query.Accepted, $"Tracked-person query failed: {query.FailureReason ?? "unknown"}");
-
-            var selection = await appService.SelectTrackedPersonAsync(
-                new OperatorTrackedPersonSelectionRequest
-                {
-                    OperatorIdentity = identity,
-                    Session = query.Session,
-                    TrackedPersonId = trackedPerson.Id,
-                    RequestedAtUtc = nowUtc
-                },
-                ct);
-            Ensure(selection.Accepted, $"Tracked-person selection failed: {selection.FailureReason ?? "unknown"}");
+            var selectedSession = session;
+            selectedSession.ActiveTrackedPersonId = selectedTrackedPersonId;
+            selectedSession.ActiveScopeItemKey = null;
+            selectedSession.ActiveMode = OperatorModeTypes.ResolutionQueue;
 
             var queue = await appService.GetResolutionQueueAsync(
                 new OperatorResolutionQueueQueryRequest
                 {
                     OperatorIdentity = identity,
-                    Session = selection.Session,
-                    TrackedPersonId = trackedPerson.Id,
+                    Session = selectedSession,
+                    TrackedPersonId = selectedTrackedPersonId,
                     ItemTypes = [ResolutionItemTypes.Contradiction, ResolutionItemTypes.Review],
                     SortBy = ResolutionQueueSortFields.UpdatedAt,
                     SortDirection = ResolutionSortDirections.Desc,
@@ -112,7 +97,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                     {
                         OperatorIdentity = identity,
                         Session = queue.Session,
-                        TrackedPersonId = trackedPerson.Id,
+                        TrackedPersonId = selectedTrackedPersonId,
                         ScopeItemKey = summary.ScopeItemKey,
                         EvidenceLimit = 8,
                         EvidenceSortBy = ResolutionEvidenceSortFields.ObservedAt,
@@ -154,7 +139,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                             RequestId = $"ai-conflict-session-proof-start-{Guid.NewGuid():N}",
                             OperatorIdentity = identity,
                             Session = candidate.Session,
-                            TrackedPersonId = trackedPerson.Id,
+                            TrackedPersonId = selectedTrackedPersonId,
                             ScopeItemKey = candidate.Detail.ScopeItemKey
                         },
                         ct);
@@ -195,7 +180,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                         appService,
                         identity,
                         finalEnvelope.Session,
-                        trackedPerson.Id,
+                        selectedTrackedPersonId,
                         finalEnvelope.ConflictSession.ScopeItemKey,
                         candidate.Detail.ItemType,
                         candidate.Detail.SourceKind,
@@ -229,7 +214,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
                             RequestId = $"ai-conflict-session-proof-apply-{Guid.NewGuid():N}",
                             OperatorIdentity = identity,
                             Session = finalEnvelope.Session,
-                            TrackedPersonId = trackedPerson.Id,
+                            TrackedPersonId = selectedTrackedPersonId,
                             ScopeItemKey = finalEnvelope.ConflictSession.ScopeItemKey,
                             ActionType = proposal.RecommendedAction,
                             Explanation = proposal.Explanation,
@@ -328,8 +313,7 @@ public static class AiConflictResolutionSessionV1ProofRunner
             return true;
         }
 
-        return string.Equals(item.ItemType, ResolutionItemTypes.Review, StringComparison.Ordinal)
-            && string.Equals(item.SourceKind, "durable_object_metadata", StringComparison.Ordinal);
+        return string.Equals(item.ItemType, ResolutionItemTypes.Review, StringComparison.Ordinal);
     }
 
     private static OperatorIdentityContext BuildIdentity(DateTime authTimeUtc)

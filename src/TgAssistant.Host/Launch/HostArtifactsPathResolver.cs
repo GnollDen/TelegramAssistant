@@ -28,6 +28,14 @@ public static class HostArtifactsPathResolver
             return candidate;
         }
 
+        var containerLogsRoot = Path.Combine("/app", "logs");
+        if (Directory.Exists(containerLogsRoot))
+        {
+            var persistedArtifactsRoot = Path.Combine(containerLogsRoot, "artifacts");
+            Directory.CreateDirectory(persistedArtifactsRoot);
+            return persistedArtifactsRoot;
+        }
+
         return Path.Combine(AppContext.BaseDirectory, "artifacts");
     }
 

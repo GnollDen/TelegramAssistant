@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using TgAssistant.Core.Models;
 using TgAssistant.Infrastructure.Database;
+using TgAssistant.Infrastructure.Database.Ef;
 using TgAssistant.Intelligence.Stage5;
 using TgAssistant.Core.Interfaces;
 
@@ -46,23 +48,32 @@ public class LaunchReadinessVerificationService
     public async Task RunAsync(CancellationToken ct = default)
     {
         InvalidatePhaseBMarker();
-        await RunStepAsync("foundation", token => _foundationVerificationService.RunAsync(token), ct);
-        await RunStepAsync("stage5", token => _stage5VerificationService.RunAsync(token), ct);
-        await RunStepAsync("budget-visibility", RunBudgetVisibilityStepAsync, ct);
-        await RunStepAsync("phase-b-stage-semantic-contract-proof", RunPhaseBStageSemanticContractProofAsync, ct);
-        await RunStepAsync("phase-b-temporal-person-state-proof", RunPhaseBTemporalPersonStateProofAsync, ct);
-        await RunStepAsync("phase-b-person-history-proof", RunPhaseBPersonHistoryProofAsync, ct);
-        await RunStepAsync("phase-b-current-world-proof", RunPhaseBCurrentWorldApproximationProofAsync, ct);
-        await RunStepAsync("phase-b-conditional-modeling-proof", RunPhaseBConditionalModelingProofAsync, ct);
-        await RunStepAsync("phase-b-iterative-reintegration-proof", RunPhaseBIterativeReintegrationProofAsync, ct);
-        await RunStepAsync("phase-b-ai-conflict-session-v1-proof", RunPhaseBAiConflictSessionV1ProofAsync, ct);
-        await RunStepAsync("phase-b-stage7-dossier-profile-smoke", RunPhaseBStage7DossierProfileSmokeAsync, ct);
-        await RunStepAsync("phase-b-stage7-timeline-smoke", RunPhaseBStage7TimelineSmokeAsync, ct);
-        await RunStepAsync("phase-b-stage8-recompute-smoke", RunPhaseBStage8RecomputeSmokeAsync, ct);
-        await WritePhaseBMarkerAsync(ct);
+        await CleanupSyntheticProofPersonsAsync(ct);
 
-        _logger.LogInformation(
-            "Launch readiness verification bundle passed. Verified: foundation, stage5, budget-visibility, and phase-b proofs.");
+        try
+        {
+            await RunStepAsync("foundation", token => _foundationVerificationService.RunAsync(token), ct);
+            await RunStepAsync("stage5", token => _stage5VerificationService.RunAsync(token), ct);
+            await RunStepAsync("budget-visibility", RunBudgetVisibilityStepAsync, ct);
+            await RunStepAsync("phase-b-stage-semantic-contract-proof", RunPhaseBStageSemanticContractProofAsync, ct);
+            await RunStepAsync("phase-b-temporal-person-state-proof", RunPhaseBTemporalPersonStateProofAsync, ct);
+            await RunStepAsync("phase-b-person-history-proof", RunPhaseBPersonHistoryProofAsync, ct);
+            await RunStepAsync("phase-b-current-world-proof", RunPhaseBCurrentWorldApproximationProofAsync, ct);
+            await RunStepAsync("phase-b-conditional-modeling-proof", RunPhaseBConditionalModelingProofAsync, ct);
+            await RunStepAsync("phase-b-iterative-reintegration-proof", RunPhaseBIterativeReintegrationProofAsync, ct);
+            await RunStepAsync("phase-b-ai-conflict-session-v1-proof", RunPhaseBAiConflictSessionV1ProofAsync, ct);
+            await RunStepAsync("phase-b-stage7-dossier-profile-smoke", RunPhaseBStage7DossierProfileSmokeAsync, ct);
+            await RunStepAsync("phase-b-stage7-timeline-smoke", RunPhaseBStage7TimelineSmokeAsync, ct);
+            await RunStepAsync("phase-b-stage8-recompute-smoke", RunPhaseBStage8RecomputeSmokeAsync, ct);
+            await WritePhaseBMarkerAsync(ct);
+
+            _logger.LogInformation(
+                "Launch readiness verification bundle passed. Verified: foundation, stage5, budget-visibility, and phase-b proofs.");
+        }
+        finally
+        {
+            await CleanupSyntheticProofPersonsAsync(ct);
+        }
     }
 
     private async Task RunStepAsync(string stepName, Func<CancellationToken, Task> action, CancellationToken ct)
@@ -158,6 +169,28 @@ public class LaunchReadinessVerificationService
         if (File.Exists(markerPath))
         {
             File.Delete(markerPath);
+        }
+    }
+
+    private async Task CleanupSyntheticProofPersonsAsync(CancellationToken ct)
+    {
+        var dbFactory = _services.GetRequiredService<IDbContextFactory<TgAssistantDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        const string predicate = "(scope_key LIKE 'proof:%' OR scope_key LIKE 'chat:%smoke%')";
+        var deletedLinks = await db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM person_operator_links WHERE {predicate}",
+            ct);
+        var deletedPersons = await db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM persons WHERE {predicate}",
+            ct);
+
+        if (deletedLinks > 0 || deletedPersons > 0)
+        {
+            _logger.LogInformation(
+                "Launch synthetic scope cleanup executed: deleted_person_operator_links={DeletedLinks}, deleted_persons={DeletedPersons}",
+                deletedLinks,
+                deletedPersons);
         }
     }
 }

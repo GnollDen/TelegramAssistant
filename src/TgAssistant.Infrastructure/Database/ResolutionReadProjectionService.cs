@@ -263,6 +263,10 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
             request.EvidenceSortBy,
             request.EvidenceSortDirection,
             request.EvidenceLimit);
+        evidence = FilterRuntimeControlEvidence(
+            match,
+            evidence,
+            request.EvidenceLimit);
         ApplyEvidenceRelevanceHints(match, evidence);
         var evidenceRationaleSummary = BuildEvidenceRationaleSummary(match, evidence);
         var autoResolutionGap = BuildAutoResolutionGap(match);
@@ -413,7 +417,7 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
                 AffectedObjectRef = match.Summary.AffectedObjectRef,
                 TrustFactor = match.Summary.TrustFactor,
                 Status = match.Summary.Status,
-                EvidenceCount = match.Summary.EvidenceCount,
+                EvidenceCount = evidence.Count,
                 UpdatedAtUtc = match.Summary.UpdatedAtUtc,
                 Priority = match.Summary.Priority,
                 RecommendedNextAction = match.Summary.RecommendedNextAction,
@@ -1339,6 +1343,27 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         }
     }
 
+    private static List<ResolutionEvidenceSummary> FilterRuntimeControlEvidence(
+        ProjectedResolutionItem item,
+        List<ResolutionEvidenceSummary> evidence,
+        int evidenceLimit)
+    {
+        if (!string.Equals(item.SourceKind, "runtime_control_state", StringComparison.Ordinal))
+        {
+            return evidence;
+        }
+
+        if (!evidence.Any(IsStructuredRuntimeControlEvidence))
+        {
+            return evidence;
+        }
+
+        return evidence
+            .Where(IsStructuredRuntimeControlEvidence)
+            .Take(Math.Max(1, evidenceLimit))
+            .ToList();
+    }
+
     private static ResolutionEvidenceDecisionLinkage BuildEvidenceDecisionLinkage(
         ProjectedResolutionItem item,
         ResolutionEvidenceSummary evidence)
@@ -1368,9 +1393,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             LinkType = ResolutionDecisionLinkTypes.Criterion,
             LinkTarget = criterion,
+            Criterion = criterion,
             ReviewQuestion = reviewQuestion,
             Stance = stance,
             Summary = summary,
+            EvidenceRefsUsed = BuildLinkageEvidenceRefs(evidence),
             IsHeuristic = true,
             HeuristicCalibration = heuristicCalibration
         };
@@ -1473,9 +1500,11 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             LinkType = ResolutionDecisionLinkTypes.DecisionUnit,
             LinkTarget = decisionUnit,
+            Criterion = ResolveDecisionCriterion(item),
             ReviewQuestion = reviewQuestion,
             Stance = stance,
             Summary = summary,
+            EvidenceRefsUsed = BuildLinkageEvidenceRefs(evidence),
             IsHeuristic = true,
             HeuristicCalibration = calibration
         };
@@ -2920,12 +2949,49 @@ public sealed class ResolutionReadProjectionService : IResolutionReadService
         {
             LinkType = ResolutionDecisionLinkTypes.DecisionUnit,
             LinkTarget = ResolveReviewDecisionUnit(item),
+            Criterion = ResolveDecisionCriterion(item),
             ReviewQuestion = BuildOperatorDecisionFocus(item),
             Stance = ResolutionDecisionStances.Supports,
             Summary = "Структурированная запись прямо поддерживает решение оставить scope в promotion_blocked до снятия defect или gate-причины.",
+            EvidenceRefsUsed = BuildLinkageEvidenceRefs(evidence),
+            KeyClaims = BuildStructuredRuntimeControlClaims(evidence),
             IsHeuristic = false
         };
         return true;
+    }
+
+    private static List<string> BuildLinkageEvidenceRefs(ResolutionEvidenceSummary evidence)
+    {
+        var sourceRef = evidence.SourceRef?.Trim();
+        if (string.IsNullOrWhiteSpace(sourceRef))
+        {
+            return [];
+        }
+
+        return [sourceRef];
+    }
+
+    private static List<string> BuildStructuredRuntimeControlClaims(ResolutionEvidenceSummary evidence)
+    {
+        var sourceRef = evidence.SourceRef?.Trim() ?? string.Empty;
+        if (sourceRef.StartsWith("runtime_control_state:", StringComparison.Ordinal))
+        {
+            return
+            [
+                "active_runtime_control_state_applied",
+                "promotion_scope_is_gate_restricted"
+            ];
+        }
+
+        if (sourceRef.StartsWith("runtime_defect:", StringComparison.Ordinal))
+        {
+            return
+            [
+                "runtime_defect_links_to_promotion_blocking"
+            ];
+        }
+
+        return [];
     }
 
     private static bool IsStructuredRuntimeControlEvidence(ResolutionEvidenceSummary evidence)
